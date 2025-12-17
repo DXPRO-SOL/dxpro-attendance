@@ -9,53 +9,100 @@ const pdf = require('html-pdf');
 const fs = require('fs');
 const moment = require('moment-timezone');
 const multer = require('multer');
-const upload = multer({ dest: 'uploads/' });
-const sgMail = require('@sendgrid/mail');
-const { ObjectId } = require('mongodb');
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-
-const transporter = nodemailer.createTransport({
-  host: 'smtp.sendgrid.net', // 例: SendGrid
-  port: 587,                 // または 465
-  secure: false,             // 465ならtrue, 587ならfalse
-  auth: {
-    user: 'apikey', // ここは固定で 'apikey'
-    pass: process.env.SENDGRID_API_KEY
-}
-});
-
-  // テスト送信
-sgMail.send({
-  to: 'xogns00089@gmail.com', // 送り先
-  from: 'info@dxpro-sol.com', // 認証済みドメイン
-  subject: 'テストメール',
-  text: 'これはテスト送信です'
-})
-.then(() => {
-  console.log('メール送信成功');
-})
-.catch(error => {
-  // ここでエラー詳細を出す
-  console.error('メール送信エラー:', error.response?.body?.errors || error.message || error);
-});
-
-  app.get('/test-send-mail', async (req, res) => {
-    try {
-      const mailOptions = {
-        from: 'info@dxpro-sol.com',
-        to: 'xogns00089@gmail.com',
-        subject: '📧 テストメール from DXPRO',
-        text: 'このメールはシステムからのテスト送信です。',
-      };
-  
-      const info = await transporter.sendMail(mailOptions);
-      console.log('✅ メール送信成功:', info);
-      res.send('✅ メール送信に成功しました。');
-    } catch (error) {
-      console.error('❌ メール送信失敗:', error);
-      res.status(500).send('❌ メール送信に失敗しました。');
+const path = require('path');
+// store uploaded files with original extension so browsers can infer Content-Type
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) { cb(null, 'uploads/'); },
+    filename: function (req, file, cb) {
+        const ext = path.extname(file.originalname) || '';
+        cb(null, Date.now() + '-' + Math.round(Math.random() * 1e9) + ext);
     }
-  });
+});
+const upload = multer({ storage });
+const { ObjectId } = require('mongodb');
+const rawApiKey = process.env.SENDGRID_API_KEY || '';
+const useSendGrid = typeof rawApiKey === 'string' && rawApiKey.startsWith('SG.');
+const useBrevoApiKey = typeof rawApiKey === 'string' && rawApiKey.startsWith('xkeysib-');
+
+let sgMail = null;
+if (useSendGrid) {
+    try {
+        sgMail = require('@sendgrid/mail');
+        sgMail.setApiKey(rawApiKey);
+        console.log('メール送信: SendGrid を使用します');
+    } catch (e) {
+        console.warn('SendGrid モジュール初期化エラー:', e.message);
+        sgMail = null;
+    }
+} else if (useBrevoApiKey) {
+    console.log('メール送信: Brevo APIキーが設定されています（SMTP/RESTどちらでも利用可）。SMTP情報を優先します。');
+} else {
+    console.log('メール送信: SendGrid/Brevo の API キーが見つかりません。SMTP フォールバックを使用します。');
+}
+
+// nodemailer トランスポーター（SMTP）
+const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp-relay.brevo.com',
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: Number(process.env.SMTP_PORT || 587) === 465,
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+    }
+});
+
+async function sendMail({ to, from, subject, text, html, attachments } = {}) {
+    const msg = { to, from, subject, text, html, attachments };
+    try {
+        if (useSendGrid && sgMail) {
+            await sgMail.send(msg);
+            console.log('SendGrid: メール送信成功', to);
+            return;
+        }
+        // Brevo (Sendinblue) REST API via sib-api-v3-sdk
+        if (useBrevoApiKey) {
+            try {
+                const SibApiV3Sdk = require('sib-api-v3-sdk');
+                // set API key
+                SibApiV3Sdk.ApiClient.instance.authentications['api-key'].apiKey = rawApiKey;
+                const brevoClient = new SibApiV3Sdk.TransactionalEmailsApi();
+                const sendSmtpEmail = {
+                    sender: { email: from },
+                    to: [{ email: to }],
+                    subject: subject,
+                    htmlContent: html || text,
+                    textContent: text
+                };
+                await brevoClient.sendTransacEmail(sendSmtpEmail);
+                console.log('Brevo: メール送信成功', to);
+                return;
+            } catch (brevoErr) {
+                console.warn('Brevo REST送信エラー、SMTPへフォールバックします:', brevoErr && (brevoErr.response || brevoErr.message) || brevoErr);
+            }
+        }
+        // SMTP フォールバック
+        await transporter.sendMail({ from, to, subject, text, html, attachments });
+        console.log('SMTP: メール送信成功', to);
+    } catch (err) {
+        console.error('メール送信エラー:', err && (err.response || err.message) || err);
+        throw err;
+    }
+}
+
+    app.get('/test-send-mail', async (req, res) => {
+        try {
+            await sendMail({
+                from: 'info@dxpro-sol.com',
+                to: 'kim_taehoon@dxpro-sol.com',
+                subject: '📧 テストメール from DXPRO SOLUTIONS',
+                text: 'このメールはシステムからのテスト送信です。',
+            });
+            res.send('✅ メール送信に成功しました。');
+        } catch (error) {
+            console.error('❌ メール送信失敗:', error && (error.response || error.message) || error);
+            res.status(500).send('❌ メール送信に失敗しました。');
+        }
+    });
 
   const generatePdf = (html, options = {}) => {
     return new Promise((resolve, reject) => {
@@ -209,6 +256,9 @@ const goalSchema = new mongoose.Schema({
     description: String,
     ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee' },
     ownerName: { type: String, required: true },
+    // 目標の作成者（閲覧・評価の本人側可視性を担保）
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee' },
+    createdByName: { type: String },
     progress: { type: Number, default: 0 },
     grade: String,
     deadline: Date,
@@ -216,7 +266,7 @@ const goalSchema = new mongoose.Schema({
     currentApprover: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee' },
     history: [
         {
-            action: { type: String, enum: ['submit1','approve1','reject1','submit2','approve2','reject2'] },
+            action: { type: String, enum: ['create','edit','delete','evaluate','submit1','approve1','reject1','submit2','approve2','reject2'] },
             by: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee' },
             date: { type: Date, default: Date.now },
             comment: String
@@ -256,6 +306,18 @@ const LeaveRequestSchema = new mongoose.Schema({
 });
 
 const LeaveRequest = mongoose.model('LeaveRequest', LeaveRequestSchema);
+
+// 半期評価フィードバックモデル
+const SemiAnnualFeedbackSchema = new mongoose.Schema({
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    employeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee' },
+    predictedGrade: String,
+    predictedScore: Number,
+    agree: { type: Boolean },
+    comment: String,
+    createdAt: { type: Date, default: Date.now }
+});
+const SemiAnnualFeedback = mongoose.model('SemiAnnualFeedback', SemiAnnualFeedbackSchema);
 
 const EmployeeSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
@@ -298,6 +360,8 @@ app.use(session({
     }
 }));
 app.use(express.static('public'));
+// serve uploaded files
+app.use('/uploads', express.static('uploads'));
 
 // 認証ミドルウェア
 function requireLogin(req, res, next) {
@@ -695,6 +759,135 @@ app.post('/login', async (req, res) => {
     }
 });
 
+// 軽量なルールベースAIレコメンド（外部API不要）
+function computeAIRecommendations({ attendanceSummary, goalSummary, leaveSummary, payrollSummary, monthlyAttendance }) {
+    const recs = [];
+
+    // 1) 休暇残が少ない -> 休暇確認を促す
+    if (leaveSummary && leaveSummary.upcoming >= 2) {
+        recs.push({ title: '休暇残確認', description: `申請済・予定の休暇が複数あります。残日数を確認してください。`, link: '/leave/my-requests', confidence: 88, reason: '予定休が複数' });
+    } else if (leaveSummary && leaveSummary.pending > 0) {
+        recs.push({ title: '休暇承認待ち', description: `未承認の休暇申請が ${leaveSummary.pending} 件あります。承認対応をお願いします。`, link: '/leave/my-requests', confidence: 84, reason: '未承認申請あり' });
+
+    }
+
+    // 2) 残業が多い -> ワークロード低減の提案
+    if (attendanceSummary && attendanceSummary.overtime >= 20) {
+        recs.push({ title: '残業軽減の提案', description: `今月の残業が ${attendanceSummary.overtime} 時間です。タスク見直しや代替リソースを検討してください。`, link: '/attendance-main', confidence: 92, reason: '残業高' });
+    } else if (attendanceSummary && attendanceSummary.overtime >= 8) {
+        recs.push({ title: '残業注意', description: `今月の残業は ${attendanceSummary.overtime} 時間です。優先度の見直しを検討してください。`, link: '/attendance-main', confidence: 76, reason: '残業中程度' });
+    }
+
+    // 3) 目標達成率が低い -> リマインド（値がある場合のみ）
+    if (goalSummary && typeof goalSummary.personal === 'number' && goalSummary.personal < 50) {
+        recs.push({ title: '目標進捗が低い', description: `個人目標の達成率が ${goalSummary.personal}% と低めです。期日/タスクを再確認してください。`, link: '/goals', confidence: 86, reason: '目標低進捗' });
+    }
+
+    // 4) 給与処理の未処理がある -> 対応促進
+    if (payrollSummary && payrollSummary.pending > 0) {
+        recs.push({ title: '給与処理の確認', description: `未処理の給与件数: ${payrollSummary.pending}。締め処理や確認が必要です。`, link: '/hr/payroll', confidence: 80, reason: '未処理給与あり' });
+    }
+
+    // 5) 月末近くで未提出・未打刻が目立つ -> 打刻漏れアラート
+    const unposted = (monthlyAttendance || []).filter(d => !d || !d.type).length;
+    if (unposted > 3) {
+        recs.push({ title: '打刻漏れの可能性', description: `今月 ${unposted} 日分で勤務状況が未設定です。打刻漏れの確認をしてください。`, link: '/attendance-main', confidence: 78, reason: '未設定日多数' });
+    }
+
+    // 6) 推奨トレーニング（教育コンテンツへのショートカット）
+    if (goalSummary && typeof goalSummary.personal === 'number' && goalSummary.personal < 80) {
+        recs.push({ title: '推奨トレーニング', description: `目標達成のための関連教育コンテンツを提案します。`, link: 'https://dxpro-edu.web.app/', confidence: 70, reason: '目標補助' });
+    }
+
+    // 6b) 目標が未設定 -> 作成を促す
+    if (goalSummary && (goalSummary.personal == null)) {
+        recs.push({ title: '個人目標を設定', description: '今期の目標を作成して進捗の可視化を始めましょう。', link: '/goals', confidence: 72, reason: '未設定' });
+    }
+
+    // Sort by confidence desc, and return top 6
+    return recs.sort((a,b)=>b.confidence - a.confidence).slice(0,6);
+}
+
+// 半期（6か月）評価をデータに基づき予測する軽量関数
+// 入力: userId (ObjectId of User), employee (Employee document)
+async function computeSemiAnnualGrade(userId, employee) {
+    try {
+        const sixMonthsAgo = moment().tz('Asia/Tokyo').subtract(6, 'months').startOf('day').toDate();
+
+        // 出勤データ（遅刻/早退/欠勤の件数、残業合計）
+        const attendances = await Attendance.find({ userId: userId, date: { $gte: sixMonthsAgo } });
+        // 目標・休暇データ（初期状態判定に使用）
+        const goals = await Goal.find({ ownerId: employee._id }).sort({ createdAt: -1 }).lean();
+        const leaves = await LeaveRequest.find({ userId: userId, createdAt: { $gte: sixMonthsAgo } });
+
+        // 初期状態（データなし）は最低グレードへ固定
+        if ((attendances.length === 0) && (!goals || goals.length === 0) && (!leaves || leaves.length === 0)) {
+            return {
+                grade: 'D',
+                score: 0,
+                breakdown: { attendanceScore: 0, goalScore: 0, leaveScore: 0, overtimeScore: 0, payrollScore: 0 },
+                explanation: '初期状態（データなし）のため暫定的に最低グレードを設定。データが蓄積されると自動で再評価されます。'
+            };
+        }
+
+        const totalDays = attendances.length || 0;
+        const lateCount = attendances.filter(a => a.status === '遅刻').length;
+        const earlyCount = attendances.filter(a => a.status === '早退').length;
+        const absentCount = attendances.filter(a => a.status === '欠勤').length;
+        const overtimeSum = attendances.reduce((s, a) => s + (a.overtimeHours || 0) , 0) || 0;
+
+        // 目標データ（進捗平均）
+        const goalAvg = (goals && goals.length) ? Math.round(goals.reduce((s,g)=>s + (g.progress||0),0) / goals.length) : 70;
+
+        // 休暇・申請状況
+        const leavePending = leaves.filter(l => l.status === 'pending').length;
+        const leaveApproved = leaves.filter(l => l.status === 'approved').length;
+
+        // シンプルなスコアリング（総点 100）
+        // 出勤（30点）: 遅刻/早退/欠勤で減点
+        let attendanceScore = 30;
+        if (totalDays > 0) {
+            const issues = lateCount + earlyCount + absentCount;
+            const reduce = Math.min(25, Math.round((issues / Math.max(1, totalDays)) * 30));
+            attendanceScore = Math.max(5, attendanceScore - reduce);
+        }
+
+        // 目標（30点）: 目標進捗の割合に比例
+        const goalScore = Math.round(Math.min(30, (goalAvg / 100) * 30));
+
+        // 休暇（10点）: 未承認が多いと減点
+        let leaveScore = 10;
+        if (leavePending >= 3) leaveScore = 4;
+        else if (leavePending > 0) leaveScore = 7;
+
+        // 残業（10点）: 過度の残業はマイナス
+        let overtimeScore = 10;
+        if (overtimeSum >= 80) overtimeScore = 4;
+        else if (overtimeSum >= 40) overtimeScore = 7;
+
+        // 給与/その他（20点）: 今は簡易チェック（将来は欠勤率や経費精度など拡張）
+        let payrollScore = 20;
+
+        const total = attendanceScore + goalScore + leaveScore + overtimeScore + payrollScore;
+
+        // grade mapping
+        let grade = 'C';
+        if (total >= 88) grade = 'S';
+        else if (total >= 75) grade = 'A';
+        else if (total >= 60) grade = 'B';
+        else if (total >= 45) grade = 'C';
+        else grade = 'D';
+
+        const breakdown = { attendanceScore, goalScore, leaveScore, overtimeScore, payrollScore };
+        const explanation = `過去6か月の出勤・目標・休暇・残業データを基に算出しました。出勤問題:${lateCount + earlyCount + absentCount}件、目標平均:${goalAvg}%、残業合計:${Math.round(overtimeSum)}h`;
+
+        return { grade, score: total, breakdown, explanation };
+    } catch (err) {
+        console.error('computeSemiAnnualGrade error', err);
+        return { grade: 'C', score: 60, breakdown: {}, explanation: 'データ不足のため推定値です' };
+    }
+}
+
 app.get('/dashboard', requireLogin, async (req, res) => {
     try {
         const user = await User.findById(req.session.userId);
@@ -702,219 +895,477 @@ app.get('/dashboard', requireLogin, async (req, res) => {
         req.session.user = user;
         req.session.employee = employee;
 
-        // サンプルデータ
-        const attendanceSummary = { workDays: 20, late: 2, earlyLeave: 1, overtime: 12 };
-        const goalSummary = { personal: 80, team: 65 };
-        const leaveSummary = { pending: 2, upcoming: 3 };
-        const payrollSummary = { pending: 1, upcoming: 2 };
-        const notifications = [
-            { message: "新しい社内イベントのお知らせ", date: "2025-08-28" },
-            { message: "目標提出締切が近づいています", date: "2025-08-27" },
-            { message: "経費申請が承認されました", date: "2025-08-26" }
-        ];
-        const todayActions = [
-            { title: "勤怠承認", module: "勤怠管理" },
-            { title: "目標確認", module: "目標設定" },
-            { title: "休暇承認", module: "休暇管理" },
-        ];
-        const recommendedActions = [
-            { title: "休暇残確認", description: "残り休暇日数が少なくなっています。申請を検討してください", link: "/leave/my-requests" },
-            { title: "未完了タスク確認", description: "今日中に完了すべきタスクがあります", link: "/goals" },
-            { title: "勤怠打刻漏れ", description: "出勤・退勤の打刻がまだ完了していません", link: "/attendance-main" },
-        ];
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth(); // 0～11
+        // DBから実際のサマリー/アクティビティを取得して表示
+        const now = moment().tz('Asia/Tokyo');
+        const firstDayOfMonth = now.clone().startOf('month').toDate();
+        const firstDayOfNextMonth = now.clone().add(1, 'month').startOf('month').toDate();
+
+        // 出勤サマリー（当月）
+        const monthlyAttendances = await Attendance.find({ userId: user._id, date: { $gte: firstDayOfMonth, $lt: firstDayOfNextMonth } }).sort({ date: 1 });
+        const workDays = monthlyAttendances.filter(a => a.status !== '欠勤').length;
+        const late = monthlyAttendances.filter(a => a.status === '遅刻').length;
+        const earlyLeave = monthlyAttendances.filter(a => a.status === '早退').length;
+        const overtime = Math.round(monthlyAttendances.reduce((s,a)=>s + (a.overtimeHours||0),0));
+        const attendanceSummary = { workDays, late, earlyLeave, overtime };
+
+    // 欠勤数（当月）
+    const absentCount = monthlyAttendances.filter(a => a.status === '欠勤').length;
+
+    // 承認待ち申請数（全体）
+    const approvalPendingCount = await ApprovalRequest.countDocuments({ status: 'pending' });
+
+    // 過去30日間の平均承認時間（時間単位）と未処理平均経過時間
+    const since30 = now.clone().subtract(30, 'days').startOf('day').toDate();
+    const approvalAgg = await ApprovalRequest.aggregate([
+        { $match: { requestedAt: { $exists: true, $ne: null }, processedAt: { $exists: true, $ne: null }, processedAt: { $gte: since30 } } },
+        { $project: { durationHours: { $divide: [{ $subtract: ["$processedAt", "$requestedAt"] }, 1000 * 60 * 60] } } },
+        { $group: { _id: null, avgHours: { $avg: "$durationHours" }, count: { $sum: 1 } } }
+    ]);
+    const avgApprovalHours = (approvalAgg && approvalAgg[0] && approvalAgg[0].avgHours != null) ? Math.round(approvalAgg[0].avgHours * 10) / 10 : null;
+    const approvalProcessedCount = (approvalAgg && approvalAgg[0]) ? approvalAgg[0].count : 0;
+    const pendingReqs = await ApprovalRequest.find({ status: 'pending' }).lean();
+    const pendingAvgHours = pendingReqs.length ? Math.round(pendingReqs.reduce((s, r) => s + ((Date.now() - new Date(r.requestedAt)) / (1000 * 60 * 60)), 0) / pendingReqs.length * 10) / 10 : null;
+
+        // 目標サマリー
+    const goals = await Goal.find({ ownerId: employee._id }).lean();
+    const goalPersonal = goals && goals.length ? Math.round(goals.reduce((s,g)=>s + (g.progress||0),0) / goals.length) : null;
+    const goalSummary = { personal: goalPersonal, team: 65 };
+    // 目標 KPI
+    const goalsTotal = goals ? goals.length : 0;
+    const goalsCompleted = goals ? goals.filter(g => (g.status === 'completed' || (g.progress || 0) >= 100)).length : 0;
+    const goalsOverdue = goals ? goals.filter(g => g.deadline && new Date(g.deadline) < now.toDate() && g.status !== 'completed').length : 0;
+    const goalsInProgress = Math.max(0, goalsTotal - goalsCompleted);
+
+        // 休暇サマリー
+        const leavePendingCount = await LeaveRequest.countDocuments({ userId: user._id, status: 'pending' });
+        const leaveUpcomingCount = await LeaveRequest.countDocuments({ userId: user._id, startDate: { $gte: now.toDate() } });
+        const leaveSummary = { pending: leavePendingCount, upcoming: leaveUpcomingCount };
+    const leaveApprovedCount = await LeaveRequest.countDocuments({ userId: user._id, status: 'approved' });
+    const leaveRejectedCount = await LeaveRequest.countDocuments({ userId: user._id, status: 'rejected' });
+
+        // 給与サマリー（簡易）
+        const payrollPending = await PayrollSlip.countDocuments({ employeeId: employee._id, status: { $ne: 'paid' } });
+        const payrollUpcoming = await PayrollRun.countDocuments({ locked: false });
+        const payrollSummary = { pending: payrollPending, upcoming: payrollUpcoming };
+    // 給与 KPI: 未払合計（簡易）
+    const unpaidSlips = await PayrollSlip.find({ status: { $ne: 'paid' } }).lean();
+    const unpaidTotalNet = unpaidSlips.reduce((s,p) => s + (p.net || 0), 0) || 0;
+    const unpaidCount = unpaidSlips.length;
+    const paidCount = await PayrollSlip.countDocuments({ employeeId: employee._id, status: 'paid' });
+
+    // 勤怠の内訳（当月）
+    const attendanceNormal = Math.max(0, attendanceSummary.workDays - attendanceSummary.late - attendanceSummary.earlyLeave - absentCount);
+
+        // 通知: 掲示板・休暇・勤怠・目標の最新イベントをまとめる
+        const recentPosts = await BoardPost.find().sort({ createdAt: -1 }).limit(5).lean();
+        const recentLeaves = await LeaveRequest.find({}).sort({ createdAt: -1 }).limit(5).lean();
+        const recentGoals = await Goal.find({ ownerId: employee._id }).sort({ createdAt: -1 }).limit(5).lean();
+        const recentAttendances = await Attendance.find({ userId: user._id }).sort({ date: -1 }).limit(7).lean();
+
+        let notifications = [];
+        notifications.push(...recentPosts.map(p => ({ message: `掲示板: ${p.title}`, date: p.createdAt || p.updatedAt || new Date() })));
+        notifications.push(...recentLeaves.map(l => ({ message: `休暇申請: ${l.name} (${l.leaveType}) - ${l.status}`, date: l.createdAt })));
+        notifications.push(...recentGoals.map(g => ({ message: `目標: ${g.title} の更新`, date: g.createdAt })));
+        notifications.push(...recentAttendances.map(a => ({ message: `勤怠: ${moment(a.date).format('YYYY-MM-DD')} - ${a.status || '出勤'}`, date: a.date })));
+
+    // 日付でソート
+    notifications = notifications.sort((a,b)=> new Date(b.date) - new Date(a.date)).map(n=>({ message: n.message, date: moment(n.date).format('YYYY-MM-DD') }));
+    // ページング（表示はサーバーサイドで4件/ページ）
+    const activityPage = Math.max(1, parseInt(req.query.activityPage || '1'));
+    const activityPageSize = 4;
+    const activityTotal = notifications.length;
+    const activityPages = Math.max(1, Math.ceil(activityTotal / activityPageSize));
+    const pagedNotifications = notifications.slice((activityPage - 1) * activityPageSize, activityPage * activityPageSize);
+
+        // 今日のアクション（動的）
+        const todayActions = [];
+        if (leaveSummary.pending > 0) todayActions.push({ title: '休暇承認', module: '休暇管理' });
+        if (payrollSummary.pending > 0) todayActions.push({ title: '給与処理確認', module: '給与管理' });
+        todayActions.push({ title: '目標確認', module: '目標設定' });
+
+        // 月間カレンダー配列（勤務状況）
+        const year = now.year();
+        const month = now.month();
         const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-        // 出勤・休暇情報サンプル（DBから取得しても可）
-        const attendanceData = {
-            "2025-08-01": { type: "work", overtime: 1 },
-            "2025-08-02": { type: "work", overtime: 0 },
-            "2025-08-03": { type: "leave" },
-            // ...必要に応じて追加
-        };
-
-        // 月全体のカレンダー配列を作成
         const monthCalendar = [];
+        const attendanceByDate = {};
+        monthlyAttendances.forEach(a => attendanceByDate[moment(a.date).format('YYYY-MM-DD')] = a);
         for (let d = 1; d <= daysInMonth; d++) {
             const dateStr = `${year}-${String(month + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-            monthCalendar.push({
-                date: dateStr,
-                ...attendanceData[dateStr] // なければ undefined
-            });
+            monthCalendar.push({ date: dateStr, ...(attendanceByDate[dateStr] ? { type: attendanceByDate[dateStr].status || 'work', overtime: attendanceByDate[dateStr].overtimeHours || 0 } : {}) });
         }
-        // ミニカレンダー・勤務状況サンプル
-        const miniCalendar = [
-            { date: "2025-08-25", type: "work", overtime: 2 },
-            { date: "2025-08-26", type: "work", overtime: 0 },
-            { date: "2025-08-27", type: "leave" },
-            { date: "2025-08-28", type: "work", overtime: 1.5 },
-        ];
-        renderPage(req, res, '総合ダッシュボード', `${employee.name} さん、こんにちは`, `
+
+        // AIレコメンデーション
+        const aiRecommendations = computeAIRecommendations({ attendanceSummary, goalSummary, leaveSummary, payrollSummary, monthlyAttendance: monthCalendar });
+
+        // 半期評価（予測）を計算
+        const semi = await computeSemiAnnualGrade(user._id, employee);
+
+        // 過去6か月の出勤推移（各月の出勤日数）
+        const attendanceTrend = [];
+        for (let i = 5; i >= 0; i--) {
+            const mStart = now.clone().subtract(i, 'months').startOf('month').toDate();
+            const mEnd = now.clone().subtract(i, 'months').endOf('month').toDate();
+            const label = now.clone().subtract(i, 'months').format('YYYY-MM');
+            const count = await Attendance.countDocuments({ userId: user._id, date: { $gte: mStart, $lte: mEnd }, status: { $ne: '欠勤' } });
+            attendanceTrend.push({ label, count });
+        }
+
+        // ユーザーの過去フィードバック履歴（表示用）
+        const feedbackHistory = await SemiAnnualFeedback.find({ userId: user._id }).sort({ createdAt: -1 }).limit(6).lean();
+
+    renderPage(req, res, '総合ダッシュボード', `${employee.name} さん、こんにちは`, `
             <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
             <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
-            <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+            <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
             <style>
-                body { font-family: 'Roboto', sans-serif; background:#f9f9f9; }
-                .card {
-                border-radius: 10px;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.08);
-                transition: transform 0.15s, box-shadow 0.15s;
-                }
-                .card:hover {
-                transform: translateY(-3px);
-                box-shadow: 0 6px 15px rgba(0,0,0,0.12);
-                }
-                .icon-large { font-size:2rem; margin-bottom:10px; }
-                .section-title { margin-bottom:15px; font-weight:600; }
-                .activity-item { padding:8px 0; border-bottom:1px solid #eee; }
-                .activity-item:last-child { border-bottom:none; }
-                .progress { height:10px; border-radius:5px; }
+                :root{--primary:#0b5fff;--muted:#6b7280;--card:#ffffff}
+                body{font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif;background:linear-gradient(180deg,#f4f7fb,#ffffff)}
+                .hero{display:flex;justify-content:space-between;align-items:center;padding:20px;border-radius:12px;background:linear-gradient(90deg,#eef4ff,#ffffff);box-shadow:0 10px 30px rgba(11,95,255,0.06);margin-bottom:18px}
+                .hero .title{font-weight:800;font-size:20px;color:#072144}
+                .hero .meta{color:var(--muted);font-size:13px}
+                .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+                @media(max-width:1100px){.cards{grid-template-columns:repeat(2,1fr)}}
+                .card-enterprise{background:var(--card);border-radius:12px;padding:16px;box-shadow:0 8px 30px rgba(12,20,40,0.04)}
+                .kpi-value{font-size:20px;font-weight:800;color:#072144}
+                .kpi-label{color:var(--muted);font-size:13px}
+                .grid{display:grid;grid-template-columns:2fr 1fr;gap:18px}
+                @media(max-width:980px){.grid{grid-template-columns:1fr}}
+                .ai-panel .ai-item{display:flex;justify-content:space-between;align-items:center;padding:10px;border-radius:8px;background:#fbfdff;margin-bottom:8px}
+                .ai-badge{background:linear-gradient(90deg,#f9fafb,#eef8ff);padding:6px 8px;border-radius:999px;font-weight:700;color:var(--primary);font-size:12px}
+                .activity-list{display:flex;flex-direction:column;gap:8px}
+                .activity{padding:10px;border-radius:8px;background:#fff}
+                .shortcut-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+                .shortcut-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:10px;border-radius:10px;border:1px solid #eef2ff;background:#fff;color:#0b2540;text-decoration:none;font-weight:700;font-size:13px;height:72px}
+                .shortcut-btn .shortcut-icon{font-size:18px;color:#0b5fff}
+                .shortcut-btn:hover{transform:translateY(-4px);box-shadow:0 8px 20px rgba(11,95,255,0.06)}
+                @media(max-width:480px){.shortcut-grid{grid-template-columns:repeat(2,1fr)}}
+
+                /* Sidebar summary single-line and mini-chart sizing */
+                .summary-line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--muted)}
+                .mini-chart{width:120px !important;height:120px !important;max-width:120px;max-height:120px}
             </style>
 
-            <div class="container-fluid mt-4">
-                <!-- ウェルカム -->
-                <div class="mb-4">
-                    <p>従業員ID: ${employee.employeeId} ｜ 部署: ${employee.department}</p>
-                </div>
-
-                <!-- 上段カード: サマリー -->
-                <div class="row g-3">
-                    <div class="col-md-3">
-                        <div class="card p-3 text-center bg-light">
-                            <i class="fa-solid fa-calendar-check icon-large text-primary"></i>
-                            <h6>出勤日数</h6>
-                            <strong>${attendanceSummary.workDays}日</strong>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card p-3 text-center bg-white">
-                        <i class="fa-solid fa-clock icon-large text-warning"></i>
-                        <h6 class="mt-2">残業時間</h6>
-                        <strong>${attendanceSummary.overtime}h</strong>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card p-3 text-center bg-light">
-                            <i class="fa-solid fa-bullseye icon-large text-success"></i>
-                            <h6>個人目標達成率</h6>
-                            <div class="progress mb-1">
-                                <div class="progress-bar bg-success" role="progressbar" style="width: ${goalSummary.personal}%"></div>
-                            </div>
-                            <small>${goalSummary.personal}%</small>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card p-3 text-center bg-light">
-                            <i class="fa-solid fa-users icon-large text-info"></i>
-                            <h6>チーム目標達成率</h6>
-                            <div class="progress mb-1">
-                                <div class="progress-bar bg-info" role="progressbar" style="width: ${goalSummary.team}%"></div>
-                            </div>
-                            <small>${goalSummary.team}%</small>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 中段: 今日のアクション -->
-                <div class="row mt-4">
-                    <div class="col-md-6">
-                        <div class="card p-3">
-                            <h5 class="section-title">今日のアクション</h5>
-                            ${todayActions.map(a => `
-                                <div class="activity-item">
-                                    <i class="fa-solid fa-angle-right me-2"></i> ${a.title} (${a.module})
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-
-                    <!-- 最近の通知 -->
-                    <div class="col-md-6">
-                        <div class="card p-3">
-                            <h5 class="section-title">最近の通知</h5>
-                            ${notifications.map(n => `
-                                <div class="activity-item">
-                                    <i class="fa-solid fa-bell me-2"></i> ${n.message} <small class="text-muted">(${n.date})</small>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 下段: 主要モジュールショートカット -->
-                <div class="row g-3 mt-4">
-                    ${[
-                        { title: '勤怠管理', icon: 'fa-business-time', color: 'primary', link: '/attendance-main' },
-                        { title: '目標設定管理', icon: 'fa-bullseye', color: 'success', link: '/goals' },
-                        { title: '人事管理', icon: 'fa-users', color: 'info', link: '/hr' },
-                        { title: '休暇管理', icon: 'fa-plane-departure', color: 'warning', link: '/leave/apply' },
-                        { title: '給与管理', icon: 'fa-yen-sign', color: 'secondary', link: '/hr/payroll' },
-                        { title: '社内掲示板', icon: 'fa-comments', color: 'dark', link: '/board' },
-                    ].map(m => `
-                        <div class="col-md-2 col-sm-4">
-                            <a href="${m.link}" class="text-decoration-none text-dark">
-                                <div class="card text-center p-3">
-                                    <i class="fa-solid ${m.icon} icon-large text-${m.color}"></i>
-                                    <h6 class="mt-2">${m.title}</h6>
-                                </div>
-                            </a>
-                        </div>
-                    `).join('')}
-                </div>
-                <!-- 予測・おすすめアクション -->
-                <div class="row g-3 mt-4">
-                <div class="col-md-12">
-                    <div class="card p-3 border-0 shadow-sm" style="background: linear-gradient(135deg,#f0f7ff,#ffffff); border-left: 6px solid #0d6efd;">
-                    <h5 class="section-title d-flex align-items-center">
-                        <i class="fa-solid fa-robot text-primary me-2"></i> AIによるおすすめアクション
-                    </h5>
-                    <p class="text-muted small mb-3">
-                        社内用に研究されたAI機能が勤務データやタスク進捗を分析し、優先度の高いアクションを提示します。
-                    </p>
-                    ${recommendedActions.map(r => `
-                        <div class="activity-item d-flex justify-content-between align-items-center p-2 mb-2 rounded" style="background:#f8f9fa;">
+            <div class="container-fluid mt-3">
+                <div class="container">
+                    <div class="hero">
                         <div>
-                            <i class="fa-solid fa-lightbulb text-warning me-1"></i>
-                            <strong>${r.title}</strong> - ${r.description}
+                            <div class="title">DXPRO SOLUTIONS 様</div>
+                            <div class="meta">${escapeHtml(employee.name)} • ${escapeHtml(employee.position || '')} | ${escapeHtml(employee.department || '')}</div>
                         </div>
-                        <a href="${r.link}" class="btn btn-sm btn-outline-primary">確認</a>
+                        <div style="text-align:right">
+                            <div class="meta">従業員ID: <strong>${escapeHtml(employee.employeeId)}</strong></div>
+                            <div id="current-time-inline" style="margin-top:6px;color:var(--muted)"></div>
                         </div>
-                    `).join('')}
                     </div>
-                </div>
-                </div>
-                <div class="row g-3">
-                    <!-- ミニカレンダー・勤務状況 -->
-                    <div class="col-md-12">
-                        <div class="card p-3">
-                            <h5 class="section-title">今月の勤務状況</h5>
-                                <div style="display:grid; grid-template-columns: repeat(7, 1fr); gap:3px; font-size:0.75rem;">
-                                ${monthCalendar.map(d => {
-                                    const isWeekend = new Date(d.date).getDay() === 0 || new Date(d.date).getDay() === 6;
-                                    const bgColor = d.type==='work' ? '#e6f4ea' : (d.type==='leave' ? '#fbeaea' : isWeekend ? '#f0f0f0' : '#fff');
-                                    const overtimeText = d.overtime ? `+${d.overtime}h` : '';
-                                    return `<div style="padding:6px; border-radius:4px; background:${bgColor}; cursor:pointer;" title="${d.date} ${overtimeText}">
-                                            <div>${d.date.slice(-2)}</div>
-                                            <div style="font-size:0.65rem; color:#555;">${overtimeText}</div>
-                                            </div>`;
-                                }).join('')}
-                                </div>
-                            <div class="mt-2" style="font-size:0.7rem;">
-                                <span style="color:#155724;">■ 出勤日</span>
-                                <span style="color:#721c24; margin-left:5px;">■ 休暇日</span>
-                                <span style="color:#6c757d; margin-left:5px;">■ 未設定</span>
+
+                    <div class="cards">
+                        <div class="card-enterprise">
+                            <div class="kpi-label">出勤日数（今月）</div>
+                            <div class="kpi-value">${attendanceSummary.workDays} 日</div>
+                            <div style="color:var(--muted);font-size:13px">遅刻: ${attendanceSummary.late} / 早退: ${attendanceSummary.earlyLeave}</div>
+                        </div>
+                        <div class="card-enterprise">
+                            <div class="kpi-label">残業時間（今月）</div>
+                            <div class="kpi-value">${attendanceSummary.overtime} h</div>
+                            <canvas id="overtimeSpark" height="60"></canvas>
+                        </div>
+                        <div class="card-enterprise">
+                            <div class="kpi-label">半期評価予測</div>
+                            <div class="kpi-value">GRADE ${semi.grade} ・ ${semi.score} 点</div>
+                            <div style="color:var(--muted);font-size:13px">${escapeHtml(semi.explanation)}</div>
+                        </div>
+                        <div class="card-enterprise">
+                            <div class="kpi-label">未承認休暇</div>
+                            <div class="kpi-value">${leaveSummary.pending} 件</div>
+                            <div style="color:var(--muted);font-size:13px">今後の休暇: ${leaveSummary.upcoming} 件</div>
+                        </div>
+                        <div class="card-enterprise">
+                            <div class="kpi-label">個人目標達成率</div>
+                            <div class="kpi-value">${goalSummary.personal != null ? goalSummary.personal + '%' : '未設定'}</div>
+                            <div style="margin-top:8px">
+                                ${goalSummary.personal != null ? `
+                                <div class=\"progress\" style=\"height:8px;background:#eef2ff;border-radius:8px\"><div class=\"progress-bar bg-primary\" role=\"progressbar\" style=\"width:${goalSummary.personal}%\"></div></div>
+                                ` : `
+                                <div style=\"font-size:12px;color:var(--muted)\">目標を作成して進捗を可視化しましょう</div>
+                                `}
                             </div>
                         </div>
+                        <div class="card-enterprise">
+                            <div class="kpi-label">欠勤数（今月）</div>
+                            <div class="kpi-value">${absentCount} 日</div>
+                            <div style="color:var(--muted);font-size:13px">遅刻/早退:${attendanceSummary.late}/${attendanceSummary.earlyLeave}</div>
+                        </div>
+                        <div class="card-enterprise">
+                            <div class="kpi-label">平均承認時間（30日）</div>
+                            <div class="kpi-value">${avgApprovalHours != null ? avgApprovalHours + ' h' : 'データ不足'}</div>
+                            <div style="color:var(--muted);font-size:13px">処理済: ${approvalProcessedCount} 件 / 未処理平均: ${pendingAvgHours != null ? pendingAvgHours + ' h' : '0 h'}</div>
+                        </div>
+                        <div class="card-enterprise">
+                            <div class="kpi-label">承認待ち申請</div>
+                            <div class="kpi-value">${approvalPendingCount} 件</div>
+                            <div style="color:var(--muted);font-size:13px">承認が必要な申請を確認してください</div>
+                        </div>
+                    </div>
+
+                    <div class="grid">
+                        <main>
+                            <div class="card-enterprise">
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                                    <h4 style="margin:0">今日のアクション</h4>
+                                    <div style="color:var(--muted);font-size:13px">${todayActions.length} 件</div>
+                                </div>
+                                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+                                    ${todayActions.map(a => `<div style="min-width:220px;flex:1" class="p-2 rounded" title="${escapeHtml(a.title)}"><div style="display:flex;justify-content:space-between;align-items:center"><div><strong>${escapeHtml(a.title)}</strong><div style="color:var(--muted);font-size:13px">${escapeHtml(a.module || '')}</div></div><div><a href="#" class="btn btn-sm btn-outline-primary">移動</a></div></div></div>`).join('')}
+                                </div>
+
+                                <div style="display:flex;gap:12px;align-items:flex-start">
+                                    <div style="flex:1">
+                                        <h5 style="margin:0 0 8px 0">進行中タスク</h5>
+                                        ${aiRecommendations.slice(0,3).map((r,i) => `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between"><div><strong>${escapeHtml(r.title)}</strong><div style="color:var(--muted);font-size:12px">${escapeHtml(r.description)}</div></div><div class="ai-badge">優先度 ${Math.max(60,85 - i*10)}%</div></div><div class="progress" style="height:8px;margin-top:8px"><div class="progress-bar bg-success" role="progressbar" style="width:${(i+1)*30}%"></div></div></div>`).join('')}
+                                    </div>
+
+                                    <div style="width:260px">
+                                        <h5 style="margin:0 0 8px 0">アクティビティ</h5>
+                                        <div class="activity-list">
+                                            ${pagedNotifications.map(n => `<div class="activity"><div style="font-weight:700">${escapeHtml(n.message)}</div><div style="color:var(--muted);font-size:12px">${escapeHtml(n.date)}</div></div>`).join('')}
+                                        </div>
+                                        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+                                            <div style="font-size:13px;color:var(--muted)">合計 ${activityTotal} 件</div>
+                                            <div style="display:flex;gap:6px;align-items:center">
+                                                ${activityPage > 1 ? `<a href="/dashboard?activityPage=${activityPage-1}" class="btn btn-outline-secondary">前へ</a>` : ''}
+                                                ${activityPage < activityPages ? `<a href="/dashboard?activityPage=${activityPage+1}" class="btn btn-outline-secondary">次へ</a>` : ''}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="card-enterprise mt-3">
+                                <h5 style="margin-bottom:12px">AIレコメンデーション</h5>
+                                <div class="ai-panel">
+                                    ${aiRecommendations.map(r => `
+                                        <div class="ai-item">
+                                            <div>
+                                                <div style="font-weight:700">${escapeHtml(r.title)}</div>
+                                                <div style="color:var(--muted);font-size:12px">${escapeHtml(r.description)}</div>
+                                                <div style="color:#9ca3af;font-size:11px">理由: ${escapeHtml(r.reason || 'データ分析')}</div>
+                                            </div>
+                                            <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+                                                <div class="ai-badge">信頼度 ${r.confidence}%</div>
+                                                <div><a href="${r.link}" class="btn btn-sm btn-primary">実行</a></div>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                        <div style="margin-top:12px;padding:10px;border-radius:8px;background:#fbfbff">
+                                            <div style="font-weight:700;margin-bottom:6px">半期評価の内訳</div>
+                                            <div style="font-size:13px;color:var(--muted)">出勤: ${semi.breakdown.attendanceScore || 0}点 / 目標: ${semi.breakdown.goalScore || 0}点 / 休暇: ${semi.breakdown.leaveScore || 0}点 / 残業: ${semi.breakdown.overtimeScore || 0}点 / 給与: ${semi.breakdown.payrollScore || 0}点</div>
+                                            <div style="margin-top:8px;font-size:13px;color:var(--muted)">${escapeHtml(semi.explanation)}</div>
+                                            <form id="semi-feedback" style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+                                                <div style="display:flex;gap:8px;align-items:center">
+                                                    <label style="font-weight:600">この評価は妥当ですか？</label>
+                                                    <label><input type="radio" name="agree" value="true"> 妥当</label>
+                                                    <label><input type="radio" name="agree" value="false"> 違う</label>
+                                                </div>
+                                                <textarea name="comment" placeholder="コメント（任意）" style="min-height:60px;padding:8px;border-radius:6px;border:1px solid #ddd"></textarea>
+                                                <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" id="semi-submit" class="btn btn-primary">送信</button></div>
+                                            </form>
+                                            <script>
+                                                (function(){
+                                                    const btn = document.getElementById('semi-submit');
+                                                    btn.addEventListener('click', async ()=>{
+                                                        const form = document.getElementById('semi-feedback');
+                                                        const formData = new FormData(form);
+                                                        const agree = formData.get('agree');
+                                                        const comment = formData.get('comment');
+                                                        try {
+                                                            const resp = await fetch('/feedback/semi', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ predictedGrade: '${semi.grade}', predictedScore: ${semi.score}, agree: agree === 'true', comment }) });
+                                                            const j = await resp.json();
+                                                            if (j.ok) { btn.textContent='送信済み'; btn.disabled=true; }
+                                                            else alert('送信に失敗しました');
+                                                        } catch(e){ console.error(e); alert('送信エラー'); }
+                                                    });
+                                                })();
+                                            </script>
+                                        </div>
+                                </div>
+                            </div>
+                            <div class="card-enterprise mt-3">
+                                <h5 style="margin-bottom:12px">過去6か月の出勤推移</h5>
+                                <canvas id="attendanceTrend" height="80"></canvas>
+                                <div style="margin-top:8px;color:var(--muted);font-size:13px">各月の出勤日数 (欠勤を除く)</div>
+                            </div>
+
+                            <div class="card-enterprise mt-3">
+                                <h5 style="margin-bottom:12px">あなたの評価フィードバック履歴</h5>
+                                <div style="display:flex;flex-direction:column;gap:8px">
+                                    ${feedbackHistory.length ? feedbackHistory.map(f=>`<div style="padding:8px;border-radius:6px;background:#fff"><div style="font-weight:700">予測: ${escapeHtml(f.predictedGrade||'') } ・ ${f.predictedScore||''} 点</div><div style="color:var(--muted);font-size:13px">${escapeHtml(f.agree ? '妥当' : '違う')} ・ ${moment(f.createdAt).format('YYYY-MM-DD')}</div><div style="margin-top:6px;color:#333">${escapeHtml(f.comment||'')}</div></div>`).join('') : '<div style="color:var(--muted)">フィードバックはまだありません</div>'}
+                                </div>
+                            </div>
+                        </main>
+
+                        <aside>
+                            <div class="card-enterprise">
+                                <h5 style="margin:0 0 12px 0">ショートカット</h5>
+                                <div class="shortcut-grid">
+                                    ${[
+                                        { title: '勤怠管理', link: '/attendance-main', icon: 'fa-business-time' },
+                                        { title: '目標管理', link: '/goals', icon: 'fa-bullseye' },
+                                        { title: '掲示板', link: '/board', icon: 'fa-comments' },
+                                    ].map(s => `<a href="${s.link}" class="shortcut-btn" aria-label="${s.title}"><div class="shortcut-icon"><i class="fa-solid ${s.icon}"></i></div><div class="shortcut-label">${s.title}</div></a>`).join('')}
+                                </div>
+                                <div style="margin-top:12px">
+                                    <h6 style="margin:0 0 8px 0">稼働サマリー</h6>
+                                    <div style="display:flex;flex-direction:column;gap:8px">
+                                        <div style="background:#fff;padding:10px;border-radius:8px">
+                                            <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:700">目標サマリー</div><canvas id="goalsChart" class="mini-chart" width="120" height="60"></canvas></div>
+                                                <div class="summary-line">${goalsTotal > 0 ? `個人目標達成率: ${goalSummary.personal}% ・ 目標数: ${goalsTotal}` : '目標なし'}</div>
+                                            <div style="display:flex;gap:8px;margin-top:6px;font-size:13px">
+                                                <div style="color:#072144;font-weight:700">完了: ${goalsCompleted} 件</div>
+                                                <div style="color:var(--muted)">進行中: ${goalsInProgress} 件</div>
+                                                <div style="color:var(--muted)">期限切れ: ${goalsOverdue} 件</div>
+                                            </div>
+                                        </div>
+                                        <div style="background:#fff;padding:10px;border-radius:8px">
+                                            <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:700">休暇サマリー</div><canvas id="leaveChart" class="mini-chart" width="120" height="60"></canvas></div>
+                                            <div class="summary-line">未承認: ${leaveSummary.pending} 件 ・ 予定: ${leaveSummary.upcoming} 件</div>
+                                            <div style="display:flex;gap:8px;margin-top:6px;font-size:13px">
+                                                <div style="color:#072144;font-weight:700">承認済: ${leaveApprovedCount} 件</div>
+                                                <div style="color:var(--muted)">却下: ${leaveRejectedCount} 件</div>
+                                            </div>
+                                        </div>
+                                        <div style="background:#fff;padding:10px;border-radius:8px">
+                                            <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:700">勤怠サマリー</div><canvas id="attendanceChart" class="mini-chart" width="120" height="60"></canvas></div>
+                                                <div class="summary-line">出勤: ${attendanceSummary.workDays} 日 ・ 欠勤: ${absentCount} 日 ・ 残業: ${attendanceSummary.overtime} h</div>
+                                            <div style="display:flex;gap:8px;margin-top:6px;font-size:13px">
+                                                <div style="color:#072144;font-weight:700">遅刻: ${attendanceSummary.late} 件</div>
+                                                <div style="color:var(--muted)">早退: ${attendanceSummary.earlyLeave} 件</div>
+                                            </div>
+                                        </div>
+                                        <div style="background:#fff;padding:10px;border-radius:8px">
+                                            <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:700">給与サマリー</div><canvas id="payrollMiniChart" class="mini-chart" width="120" height="60"></canvas></div>
+                                                <div class="summary-line">未処理給与: ${payrollSummary.pending} 件 ・ 次回実行予定: ${payrollSummary.upcoming} 件</div>
+                                            <div style="display:flex;gap:8px;margin-top:6px;font-size:13px">
+                                                <div style="color:#072144;font-weight:700">未払合計: ¥${Math.round(unpaidTotalNet).toLocaleString()}</div>
+                                                <div style="color:var(--muted)">未処理件数: ${payrollSummary.pending} 件</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </aside>
                     </div>
                 </div>
             </div>
+
+            <script>
+                // Sample sparkline data (replace with real series if available)
+                const overtimeData = Array.from({length:12}, (_,i) => Math.round(Math.random()*3 + ${attendanceSummary.overtime}/12));
+                const ctx = document.getElementById('overtimeSpark');
+                if(ctx){ new Chart(ctx, { type: 'line', data: { labels: overtimeData.map((_,i)=>i+1), datasets:[{data:overtimeData,borderColor:'#0b5fff',backgroundColor:'rgba(11,95,255,0.08)',fill:true,tension:0.4,pointRadius:0}] }, options:{responsive:true,plugins:{legend:{display:false},tooltip:{enabled:false}},scales:{x:{display:false},y:{display:false}} } }); }
+
+                const pctx = document.getElementById('payrollChart');
+                if(pctx){ new Chart(pctx, { type:'doughnut', data:{ labels:['処理済','未処理'], datasets:[{data:[${Math.max(0,payrollSummary.upcoming- payrollSummary.pending)}, ${payrollSummary.pending}], backgroundColor:['#16a34a','#f59e0b'] }] }, options:{responsive:true,plugins:{legend:{position:'bottom'}} } }); }
+
+                // Attendance trend
+                const trendCtx = document.getElementById('attendanceTrend');
+                if(trendCtx){
+                    const labels = ${JSON.stringify(attendanceTrend.map(t=>t.label))};
+                    const data = ${JSON.stringify(attendanceTrend.map(t=>t.count))};
+                    new Chart(trendCtx, { type:'line', data:{ labels, datasets:[{ label:'出勤日数', data, borderColor:'#0b5fff', backgroundColor:'rgba(11,95,255,0.08)', fill:true, tension:0.3 }] }, options:{responsive:true, plugins:{legend:{display:false}} , scales:{y:{beginAtZero:true}} } });
+                }
+
+                // Sidebar mini charts: goals, leave, attendance, payrollMini
+                const goalsCtx = document.getElementById('goalsChart');
+                if (goalsCtx) {
+                    new Chart(goalsCtx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['完了','進行中','期限切れ'],
+                            datasets: [{
+                                data: [${goalsCompleted}, ${goalsInProgress}, ${goalsOverdue}],
+                                backgroundColor: ['#16a34a','#0ea5e9','#f59e0b']
+                            }]
+                        },
+                        options: { responsive: true, plugins: { legend: { display: false } } }
+                    });
+                }
+
+                const leaveCtx = document.getElementById('leaveChart');
+                if (leaveCtx) {
+                    new Chart(leaveCtx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['承認済','未承認','却下'],
+                            datasets: [{
+                                data: [${leaveApprovedCount}, ${leaveSummary.pending}, ${leaveRejectedCount}],
+                                backgroundColor: ['#10b981','#f59e0b','#ef4444']
+                            }]
+                        },
+                        options: { responsive: true, plugins: { legend: { display: false } } }
+                    });
+                }
+
+                const attCtx = document.getElementById('attendanceChart');
+                if (attCtx) {
+                    new Chart(attCtx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['出勤','欠勤','遅刻'],
+                            datasets: [{
+                                data: [${attendanceSummary.workDays}, ${absentCount}, ${attendanceSummary.late}],
+                                backgroundColor: ['#0b5fff','#ef4444','#f59e0b']
+                            }]
+                        },
+                        options: { responsive: true, plugins: { legend: { display: false } } }
+                    });
+                }
+
+                // Inline live clock (Asia/Tokyo)
+                const timeEl = document.getElementById('current-time-inline');
+                if (timeEl) {
+                    const fmt = new Intl.DateTimeFormat('ja-JP', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false });
+                    const updateTime = () => { timeEl.textContent = fmt.format(new Date()); };
+                    updateTime();
+                    setInterval(updateTime, 1000);
+                }
+
+                const payrollMiniCtx = document.getElementById('payrollMiniChart');
+                if (payrollMiniCtx) {
+                    new Chart(payrollMiniCtx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['支給済','未払','未処理'],
+                            datasets: [{
+                                data: [${paidCount}, ${unpaidCount}, ${payrollSummary.pending}],
+                                backgroundColor: ['#16a34a','#ef4444','#f59e0b']
+                            }]
+                        },
+                        options: { responsive: true, plugins: { legend: { display: false } } }
+                    });
+                }
+            </script>
         `);
 
     } catch (error) {
         console.error(error);
         res.status(500).send('サーバーエラー');
+    }
+});
+
+// フィードバックを保存する API
+app.post('/feedback/semi', requireLogin, async (req, res) => {
+    try {
+        const user = await User.findById(req.session.userId);
+        const employee = await Employee.findOne({ userId: user._id });
+        const { predictedGrade, predictedScore, agree, comment } = req.body;
+        const fb = new SemiAnnualFeedback({ userId: user._id, employeeId: employee ? employee._id : null, predictedGrade, predictedScore, agree: !!agree, comment });
+        await fb.save();
+        return res.json({ ok: true });
+    } catch (err) {
+        console.error('feedback save error', err);
+        return res.status(500).json({ ok: false, error: 'save_failed' });
     }
 });
 
@@ -930,8 +1381,9 @@ function renderPage(req, res, title, mainTitle, descriptionHtml = '') {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
-body { margin:0; font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background:#f4f6f8; color:#333; display:flex; min-height:100vh; }
-.sidebar { width:220px; background:#1a73e8; color:white; display:flex; flex-direction:column; padding:20px; box-shadow:2px 0 6px rgba(0,0,0,0.1); }
+.style-fixed {}
+body { margin:0; font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background:#f4f6f8; color:#111; display:flex; min-height:100vh; }
+.sidebar { width:320px; background:#1a73e8; color:white; display:flex; flex-direction:column; padding:20px; box-shadow:2px 0 6px rgba(0,0,0,0.1); }
 .sidebar h2 { font-size:18px; margin-bottom:30px; }
 .sidebar a { color:white; text-decoration:none; padding:12px 15px; border-radius:8px; display:flex; align-items:center; margin-bottom:10px; transition:background 0.2s; }
 .sidebar a:hover { background: rgba(255,255,255,0.15); }
@@ -955,10 +1407,14 @@ body { margin:0; font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif; b
 .progress-bar { height:100%; background:#1a73e8; width:0%; transition:width 0.5s; border-radius:6px; }
 
 /* ボタン */
-.btn { padding:6px 14px; border-radius:6px; text-decoration:none; display:inline-block; margin-right:5px; margin-top:5px; font-size:13px; }
-.btn-primary { background:#1a73e8; color:white; }
-.btn-success { background:#28a745; color:white; }
+.btn { padding:8px 16px; border-radius:8px; text-decoration:none; display:inline-flex; align-items:center; gap:8px; margin-right:8px; margin-top:6px; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.btn-primary { background:linear-gradient(90deg,#0b5fff,#184df2); color:white; box-shadow:0 6px 18px rgba(11,95,255,0.08); }
+.btn-success { background:#16a34a; color:white; }
 .btn-danger { background:#dc3545; color:white; }
+
+/* テーブル内の操作ボタンを1行に揃える */
+.table-actions { display:flex; flex-wrap:nowrap; gap:8px; align-items:center; overflow:auto; }
+.table-actions .btn { white-space:nowrap; }
 
 /* フォーム */
 form label { display:flex; flex-direction:column; margin-bottom:12px; font-weight:500; }
@@ -980,6 +1436,8 @@ input, select, textarea { padding:8px; border-radius:6px; border:1px solid #ccc;
 <a href="/dashboard"><i class="fa-solid fa-house"></i>ホーム</a>
 <a href="/attendance-main"><i class="fa-solid fa-business-time"></i>勤怠管理</a>
 <a href="/goals"><i class="fa-solid fa-bullseye"></i>目標設定管理</a>
+<a href="https://dxpro-edu.web.app/" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-graduation-cap"></i>教育コンテンツ</a>
+<a href="/links"><i class="fa-solid fa-link"></i>リンク集</a>
 <a href="/hr"><i class="fa-solid fa-users"></i>人事管理</a>
 <a href="/leave/my-requests"><i class="fa-solid fa-plane-departure"></i>休暇管理</a>
 <a href="/hr/payroll"><i class="fa-solid fa-yen-sign"></i>給与管理</a>
@@ -992,8 +1450,13 @@ ${req.session.isAdmin ? `<a href="/admin"><i class="fa-solid fa-user-shield"></i
 </div>
 
 <div class="main">
-<h2>${mainTitle}</h2>
-<div>${descriptionHtml}</div>
+${ descriptionHtml && descriptionHtml.trim() ? `
+    <div class="page-content">${descriptionHtml}</div>
+` : `
+    <header style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;">
+        <h2 style="margin:0;font-size:28px;color:#0b2540;">${mainTitle}</h2>
+    </header>
+` }
 </div>
 </body>
 </html>
@@ -1024,248 +1487,323 @@ app.get('/attendance-main', requireLogin, async (req, res) => {
         }).sort({ checkIn: 1 });
 
         const firstDayOfMonth = moment().tz('Asia/Tokyo').startOf('month').toDate();
-        const lastDayOfMonth = moment().tz('Asia/Tokyo').endOf('month').toDate();
+        // 上限は次月の1日を排他的に使う（$lt）ことで、タイムゾーン/時刻丸めにより月初のレコードが抜ける問題を防ぐ
+        const firstDayOfNextMonth = moment(firstDayOfMonth).add(1, 'month').toDate();
 
         const monthlyAttendance = await Attendance.find({
             userId: user._id,
-            date: { $gte: firstDayOfMonth, $lte: lastDayOfMonth }
+            date: { $gte: firstDayOfMonth, $lt: firstDayOfNextMonth }
         }).sort({ date: 1 });
 
-res.send(`
-<!DOCTYPE html>
-<html>
+        // 新デザインの HTML
+        res.send(`
+<!doctype html>
+<html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>勤怠システム - ${employee.name}</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>勤怠管理 - ${employee.name}</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
 <style>
-body {
-    margin:0; padding:0; font-family:'Segoe UI Semilight', 'Roboto', sans-serif;
-    background: linear-gradient(135deg, #e0e0e0, #ffffff); color:#333;
+:root{
+  --bg:#f4f7fb;
+  --card:#ffffff;
+  --muted:#6b7280;
+  --accent:#0f6fff;
+  --success:#16a34a;
+  --danger:#ef4444;
+  --glass: rgba(255,255,255,0.6);
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
 }
-.container { max-width:1500px; margin:30px auto; padding:0 20px; }
-
-.header { display:flex; justify-content:space-between; align-items:center; margin-bottom:25px; }
-.header h2 { font-size:2rem; color:#2c3e50; }
-.clock {
-    font-family: 'Inter', 'Segoe UI', sans-serif;
-    font-size: 1.6rem;
-    font-weight: 600;
-    color: #2d3436;
-    background: rgba(255, 255, 255, 0.85);
-    padding: 16px 28px;
-    border-radius: 16px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    min-width: 140px;
-    transition: background 0.3s ease;
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(180deg,var(--bg),#ffffff);color:#0f172a;font-size:14px; -webkit-font-smoothing:antialiased}
+.header{
+  display:flex;align-items:center;justify-content:space-between;padding:18px 28px;background:var(--card);
+  box-shadow:0 6px 18px rgba(15,31,64,0.06);border-bottom:1px solid rgba(15,23,42,0.04);
 }
+.brand{display:flex;align-items:center;gap:14px}
+.brand img{width:48px;height:48px;border-radius:8px;object-fit:cover}
+.brand .title{font-weight:700;font-size:18px;color:var(--accent)}
+.header-right{display:flex;align-items:center;gap:14px}
+.user-info{display:flex;flex-direction:column;text-align:right}
+.user-info .name{font-weight:700}
+.clock{font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px}
 
-.clock::after {
-    content: '';
-    position: absolute;
-    width: 100%; height: 100%;
-    border-radius: 16px;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -1px 2px rgba(0,0,0,0.05);
-    pointer-events: none;
+.container{max-width:1200px;margin:28px auto;padding:0 20px}
+.grid{display:grid;grid-template-columns:1fr 360px;gap:20px}
+@media(max-width:980px){ .grid{grid-template-columns:1fr} .aside{order:2} }
+
+.panel{background:var(--card);border-radius:12px;padding:18px;box-shadow:0 8px 30px rgba(12,20,40,0.04);border:1px solid rgba(15,23,42,0.03)}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:18px}
+@media(max-width:900px){ .kpis{grid-template-columns:repeat(2,1fr)} }
+.kpi{padding:14px;border-radius:10px;background:linear-gradient(180deg,#fff,#fbfdff);display:flex;flex-direction:column;gap:8px}
+.kpi .label{color:var(--muted);font-size:12px}
+.kpi .value{font-weight:800;font-size:20px;color:#0b1220}
+.kpi .sub{font-size:12px;color:var(--muted)}
+
+.attendance-today{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.clock-card{flex:1;min-width:220px;padding:18px;border-radius:12px;background:linear-gradient(90deg,#eef6ff,#ffffff);display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.clock-card .time{font-size:28px;font-weight:800;color:var(--accent)}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:10px;border:none;cursor:pointer;font-weight:600}
+.btn--primary{background:linear-gradient(90deg,var(--accent),#184df2);color:white;box-shadow:0 8px 18px rgba(15,111,255,0.12)}
+.btn--success{background:linear-gradient(90deg,var(--success),#05b075);color:white}
+.btn--danger{background:linear-gradient(90deg,#ff7b7b,var(--danger));color:white}
+.btn--ghost{background:transparent;border:1px solid #e6eefb;color:var(--accent)}
+
+.info-list{display:flex;gap:12px;flex:1;flex-wrap:wrap}
+.info-item{min-width:140px;background:linear-gradient(180deg,#fff,#fbfdff);padding:12px;border-radius:10px;box-shadow:0 6px 18px rgba(12,20,40,0.04)}
+.info-item .name{font-weight:700}
+.info-item .muted{color:var(--muted);font-size:12px;margin-top:6px}
+
+.table-wrap{overflow:auto;border-radius:8px;margin-top:12px}
+table.att-table{width:100%;border-collapse:collapse;min-width:800px}
+.att-table thead th{background:#0b1220;color:#fff;padding:12px;text-align:center;font-weight:700;font-size:13px}
+.att-table tbody td{background:linear-gradient(180deg,#fff,#fbfdff);padding:12px;text-align:center;border-bottom:1px solid rgba(12,20,40,0.04)}
+.att-table tbody tr:hover td{background:#f6fbff}
+.tag{display:inline-block;padding:6px 8px;border-radius:999px;font-size:12px;color:#fff}
+.tag--normal{background:var(--success)}
+.tag--late{background:#ffb020}
+.tag--early{background:#ff6b6b}
+.tag--absent{background:#9ca3af}
+.note-cell{max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.aside .panel{position:sticky;top:20px}
+.quick-links{display:flex;flex-direction:column;gap:8px}
+.link-card{display:flex;justify-content:space-between;align-items:center;padding:12px;border-radius:10px;background:linear-gradient(180deg,#fff,#fbfdff);cursor:pointer;border:1px solid rgba(12,20,40,0.03)}
+.link-card small{color:var(--muted)}
+.footer-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;justify-content:flex-end}
+
+.empty-state{padding:32px;text-align:center;color:var(--muted)}
+
+@media(max-width:520px){
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .info-item{min-width:120px}
 }
-
-.clock span {
-    font-variant-numeric: tabular-nums;
-}
-
-.clock:hover {
-    background: rgba(255,255,255,1);
-}
-.card {
-    background:#fff; border-radius:16px; padding:25px; margin-bottom:25px;
-    box-shadow:0 8px 20px rgba(0,0,0,0.1);
-    transition: transform 0.2s;
-}
-.card:hover { transform: translateY(-2px); }
-
-h3 { color:#2c3e50; margin-bottom:15px; }
-
-button, a.btn {
-    border:none; border-radius:10px; padding:12px 20px; font-weight:500; text-decoration:none;
-    cursor:pointer; transition:0.2s; box-shadow:0 4px 12px rgba(0,0,0,0.1);
-}
-button:hover, a.btn:hover { opacity:0.9; transform: translateY(-1px); }
-
-button.checkin-btn { background:linear-gradient(135deg, #0984e3, #74b9ff); color:#fff; }
-button.checkout-btn { background:linear-gradient(135deg, #e74c3c, #ff7675); color:#fff; }
-button.lunch-btn { background:linear-gradient(135deg, #00b894, #55efc4); color:#fff; }
-button.edit-btn { background:linear-gradient(135deg, #6c5ce7, #a29bfe); color:#fff; }
-
-a.btn.primary { background:linear-gradient(135deg, #0984e3, #74b9ff); color:#fff; }
-a.btn.success { background:linear-gradient(135deg, #00b894, #55efc4); color:#fff; }
-a.btn.danger { background:linear-gradient(135deg, #e74c3c, #ff7675); color:#fff; }
-a.btn.admin-btn { background:linear-gradient(135deg, #6c5ce7, #a29bfe); color:#fff; }
-
-.attendance-header { display:flex; justify-content:space-between; align-items:center; }
-
-table { width:100%; border-collapse:collapse; margin-top:15px; border-radius:12px; overflow:hidden; }
-th, td { padding:12px; text-align:center; border-bottom:1px solid #ddd; }
-th { background:linear-gradient(135deg, #2d3436, #636e72); color:#fff; font-weight:600; }
-tbody tr:nth-child(even) { background:#f7f7f7; }
-.note-cell { max-width:200px; word-wrap:break-word; }
-.attendance-header { display:flex; justify-content:space-between; align-items:center; }
-
-.today-attendance {
-    background: linear-gradient(145deg, #fff, #f7f7f7);
-    border-radius:20px; padding:30px; box-shadow:0 10px 25px rgba(0,0,0,0.12);
-    display:flex; flex-direction:column; gap:15px;
-    transition: all 0.3s ease-in-out;
-}
-
-.attendance-block {
-    background:#fff; padding:20px; border-radius:16px;
-    box-shadow:0 4px 12px rgba(0,0,0,0.08);
-    display:flex; justify-content:space-between; align-items:center;
-    opacity:0; transform: translateY(20px);
-    transition: all 0.4s ease;
-}
-
-.attendance-block.show {
-    opacity:1; transform: translateY(0);
-}
-.actions { display:flex; gap:12px; flex-wrap:wrap; margin-top:10px; }
-
-@media (max-width:768px) {
-    .header { flex-direction:column; }
-    .clock { font-size:1.5rem; padding:12px 20px; min-width:120px; }
-    .card { padding:15px; }
-    button, a.btn { padding:10px 16px; font-size:0.9rem; }
-}
-
 </style>
-<script>
-function updateClock() {
-    const now = new Date();
-    const hours = String(now.getHours()).padStart(2,'0');
-    const minutes = String(now.getMinutes()).padStart(2,'0');
-    const seconds = String(now.getSeconds()).padStart(2,'0');
-    document.getElementById('current-time').innerHTML = hours + ':' + minutes + ':' + seconds;
-}
-setInterval(updateClock, 1000);
-window.onload = updateClock;
-</script>
 </head>
 <body>
-<div class="container">
-    <div class="header">
-        <h2>${employee.name}さんの勤怠管理</h2>
-                    <p>従業員ID: ${employee.employeeId} | 部署: ${employee.department}</p>
-                    <a href="/dashboard" class="btn">🏠 総合システムのダッシュボードに戻る</a>        
-        <div id="current-time" class="clock"></div>
+<header class="header">
+  <div class="brand">
+    <img src="/nokori.png" alt="DXPRO">
+    <div>
+      <div class="title">DXPRO SOLUTIONS</div>
+      <div style="color:var(--muted);font-size:13px">勤怠管理システム</div>
     </div>
+  </div>
+  <div class="header-right">
+    <div class="user-info">
+      <div class="name">${employee.name}（${employee.employeeId}）</div>
+      <div class="clock" id="header-clock">${moment().tz('Asia/Tokyo').format('YYYY/MM/DD HH:mm:ss')}</div>
+    </div>
+    <div style="width:12px"></div>
+    <a href="/dashboard" class="btn btn--ghost" title="ダッシュボード"><i class="fa-solid fa-house"></i></a>
+    <a href="/logout" class="btn btn--ghost" title="ログアウト"><i class="fa-solid fa-right-from-bracket"></i></a>
+  </div>
+</header>
 
-    <div class="card today-attendance">
-        <div class="attendance-header">
-            <h3>本日の勤怠</h3>
-            <a href="/add-attendance" class="btn primary">打刻追加</a>
+<main class="container">
+  <div class="grid">
+    <section>
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div>
+            <h3 style="margin:0">本日の勤怠</h3>
+            <div style="color:var(--muted);font-size:13px">迅速に打刻・編集できます</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <a href="/add-attendance" class="btn btn--ghost"><i class="fa-solid fa-plus"></i> 打刻追加</a>
+            ${req.session.isAdmin ? `<a href="/admin/monthly-attendance" class="btn btn--ghost">管理メニュー</a>` : ''}
+          </div>
         </div>
 
-                        ${todayAttendance ? `
-                            <p>出勤: ${todayAttendance.checkIn ? moment(todayAttendance.checkIn).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}</p>
-                            ${todayAttendance.lunchStart ? `
-                                <p>昼休み開始: ${moment(todayAttendance.lunchStart).tz('Asia/Tokyo').format('HH:mm:ss')}</p>
-                                ${todayAttendance.lunchEnd ? `
-                                    <p>昼休み終了: ${moment(todayAttendance.lunchEnd).tz('Asia/Tokyo').format('HH:mm:ss')}</p>
-                                ` : ''}
-                            ` : ''}
-                            ${todayAttendance.checkOut ? `
-                                <p>退勤: ${moment(todayAttendance.checkOut).tz('Asia/Tokyo').format('HH:mm:ss')}</p>
-                                <p>勤務時間: ${todayAttendance.workingHours || 0}時間 (昼休み除く)</p>
-                                <p>総滞在時間: ${todayAttendance.totalHours || 0}時間</p>
-                                <p>状態: ${todayAttendance.status}</p>
-                                <form action="/edit-attendance/${todayAttendance._id}" method="GET">
-                                    <button type="submit" class="btn edit-btn">編集</button>
-                                </form>
-                            ` : `
-            ${todayAttendance.checkIn && !todayAttendance.lunchStart ? `
-                                    <form action="/start-lunch" method="POST">
-                                        <button type="submit" class="btn lunch-btn">昼休み開始</button>
-                                    </form>
-                                ` : ''}
-                                ${todayAttendance.lunchStart && !todayAttendance.lunchEnd ? `
-                                    <form action="/end-lunch" method="POST">
-                                        <button type="submit" class="btn lunch-btn">昼休み終了</button>
-                                    </form>
-                                ` : ''}
-                                ${todayAttendance.checkIn && (!todayAttendance.lunchStart || todayAttendance.lunchEnd) ? `
-                                    <form action="/checkout" method="POST">
-                                        <button type="submit" class="btn checkout-btn">退勤</button>
-                                    </form>
-                                ` : ''}
-                            `}
-                        ` : `
-                            <form action="/checkin" method="POST">
-                                <button type="submit" class="btn checkin-btn">出勤</button>
-                            </form>
-                        `}
-                    </div>
-    <div class="card monthly-attendance">
-        <h3>今月の勤怠記録</h3>
-        <div class="actions">
-            <a href="/my-monthly-attendance?year=${moment().tz('Asia/Tokyo').year()}&month=${moment().tz('Asia/Tokyo').month()+1}" class="btn primary">月別勤怠照会</a>
+        <div class="kpis">
+          <div class="kpi">
+            <div class="label">出勤</div>
+            <div class="value">${todayAttendance && todayAttendance.checkIn ? moment(todayAttendance.checkIn).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}</div>
+            <div class="sub">出勤時間</div>
+          </div>
+          <div class="kpi">
+            <div class="label">退勤</div>
+            <div class="value">${todayAttendance && todayAttendance.checkOut ? moment(todayAttendance.checkOut).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}</div>
+            <div class="sub">退勤時間</div>
+          </div>
+          <div class="kpi">
+            <div class="label">勤務時間</div>
+            <div class="value">${todayAttendance && todayAttendance.workingHours ? (todayAttendance.workingHours + ' h') : '-'}</div>
+            <div class="sub">昼休みを除く</div>
+          </div>
+          <div class="kpi">
+            <div class="label">状態</div>
+            <div class="value">${todayAttendance ? todayAttendance.status : '-'}</div>
+            <div class="sub">勤怠ステータス</div>
+          </div>
         </div>
-        <table>
+
+        <div class="attendance-today">
+          <div class="clock-card">
+            <div style="display:flex;justify-content:space-between;width:100%;align-items:center">
+              <div>
+                <div style="color:var(--muted);font-size:13px">現在時刻（JST）</div>
+                <div class="time" id="main-clock">${moment().tz('Asia/Tokyo').format('HH:mm:ss')}</div>
+                <div style="color:var(--muted);font-size:13px;margin-top:6px">${moment().tz('Asia/Tokyo').format('YYYY年MM月DD日')}</div>
+              </div>
+              <div style="text-align:right">
+                ${todayAttendance ? `
+                  ${todayAttendance.checkOut ? `<span class="tag tag--normal">退勤済</span>` : `<span class="tag tag--late">${todayAttendance.status}</span>`}
+                ` : `<span class="tag tag--absent">未打刻</span>`}
+              </div>
+            </div>
+
+            <div class="actions">
+              ${todayAttendance ? `
+                ${!todayAttendance.checkOut ? `<form action="/checkout" method="POST" style="display:inline"><button class="btn btn--danger" type="submit"><i class="fa-solid fa-sign-out-alt"></i> 退勤</button></form>` : ''}
+                ${todayAttendance.checkIn && (!todayAttendance.lunchStart || todayAttendance.lunchEnd) ? `
+                  <form action="/start-lunch" method="POST" style="display:inline"><button class="btn btn--primary" type="submit"><i class="fa-solid fa-utensils"></i> 昼休み開始</button></form>
+                ` : ''}
+                ${todayAttendance.lunchStart && !todayAttendance.lunchEnd ? `
+                  <form action="/end-lunch" method="POST" style="display:inline"><button class="btn btn--success" type="submit"><i class="fa-solid fa-handshake"></i> 昼休み終了</button></form>
+                ` : ''}
+                <a href="/edit-attendance/${todayAttendance._id}" class="btn btn--ghost">編集</a>
+              ` : `
+                <form action="/checkin" method="POST" style="display:inline">
+                  <button class="btn btn--primary" type="submit"><i class="fa-solid fa-sign-in-alt"></i> 出勤</button>
+                </form>
+              `}
+            </div>
+          </div>
+
+          <div class="info-list">
+            <div class="info-item">
+              <div class="name">${todayAttendance && todayAttendance.totalHours ? (todayAttendance.totalHours + ' h') : '-'}</div>
+              <div class="muted">滞在時間</div>
+            </div>
+            <div class="info-item">
+              <div class="name">${todayAttendance && todayAttendance.lunchStart ? moment(todayAttendance.lunchStart).tz('Asia/Tokyo').format('HH:mm') : '-'}</div>
+              <div class="muted">昼休み開始</div>
+            </div>
+            <div class="info-item">
+              <div class="name">${todayAttendance && todayAttendance.lunchEnd ? moment(todayAttendance.lunchEnd).tz('Asia/Tokyo').format('HH:mm') : '-'}</div>
+              <div class="muted">昼休み終了</div>
+            </div>
+            <div class="info-item">
+              <div class="name">${monthlyAttendance.length}</div>
+              <div class="muted">今月の記録</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="panel" style="margin-top:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <h4 style="margin:0">今月の勤怠一覧</h4>
+          <div style="color:var(--muted);font-size:13px">編集・印刷は各行の操作から</div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="att-table" aria-label="今月の勤怠">
             <thead>
-                <tr>
-                    <th>日付</th>
-                    <th>出勤</th>
-                    <th>退勤</th>
-                    <th>勤務時間</th>
-                    <th>状態</th>
-                    <th>備考</th>
-                </tr>
+              <tr>
+                <th>日付</th>
+                <th>出勤</th>
+                <th>退勤</th>
+                <th>昼休憩</th>
+                <th>勤務時間</th>
+                <th>状態</th>
+                <th>備考</th>
+                <th>操作</th>
+              </tr>
             </thead>
             <tbody>
-                ${monthlyAttendance.map(record => `
+              ${monthlyAttendance.map(record => {
+                  const lunch = record.lunchStart ? `${moment(record.lunchStart).tz('Asia/Tokyo').format('HH:mm')}～${record.lunchEnd ? moment(record.lunchEnd).tz('Asia/Tokyo').format('HH:mm') : '-'}` : '-';
+                  const statusClass = record.status === '正常' ? 'tag--normal' : record.status === '遅刻' ? 'tag--late' : record.status === '早退' ? 'tag--early' : 'tag--absent';
+                  return `
                     <tr>
-                        <td>${moment(record.date).tz('Asia/Tokyo').format('YYYY/MM/DD')}</td>
-                        <td>${record.checkIn ? moment(record.checkIn).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}</td>
-                        <td>${record.checkOut ? moment(record.checkOut).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}</td>
-                        <td>${record.workingHours || '-'}</td>
-                        <td>${record.status}</td>
-                        <td>${record.notes || '-'}</td>
+                      <td>${moment(record.date).tz('Asia/Tokyo').format('MM/DD')}</td>
+                      <td>${record.checkIn ? moment(record.checkIn).tz('Asia/Tokyo').format('HH:mm') : '-'}</td>
+                      <td>${record.checkOut ? moment(record.checkOut).tz('Asia/Tokyo').format('HH:mm') : '-'}</td>
+                      <td>${lunch}</td>
+                      <td>${record.workingHours ? record.workingHours + ' h' : '-'}</td>
+                      <td><span class="tag ${statusClass}">${record.status}</span></td>
+                      <td class="note-cell">${record.notes || '-'}</td>
+                      <td>
+                        <a class="btn btn--ghost" href="/edit-attendance/${record._id}">編集</a>
+                      </td>
                     </tr>
-                `).join('')}
+                  `;
+              }).join('')}
+
+              ${monthlyAttendance.length === 0 ? `
+                <tr><td colspan="8"><div class="empty-state">該当する勤怠記録がありません</div></td></tr>
+              ` : ''}
             </tbody>
-        </table>
-    </div>
-
-    <div class="card leave-section">
-        <h3>休暇</h3>
-        <div class="actions">
-            <a href="/leave/apply" class="btn success">休暇申請</a>
-            <a href="/leave/my-requests" class="btn primary">申請履歴</a>
-            ${req.session.isAdmin ? `<a href="/admin/leave-requests" class="btn admin-btn">休暇承認管理</a>` : ''}
+          </table>
         </div>
-    </div>
 
-    ${req.session.isAdmin ? `
-    <div class="card admin-links">
-        <div class="actions">
-            <a href="/admin/register-employee" class="btn admin-btn">従業員登録</a>
-            <a href="/admin/monthly-attendance" class="btn admin-btn">月別勤怠照会</a>
-            <a href="/admin/approval-requests" class="btn admin-btn">承認リクエスト一覧</a>
+      </div>
+    </section>
+
+    <aside class="aside">
+      <div class="panel">
+        <h4 style="margin-top:0">クイック操作</h4>
+        <div class="quick-links">
+          <a class="link-card" href="/my-monthly-attendance?year=${moment().tz('Asia/Tokyo').year()}&month=${moment().tz('Asia/Tokyo').month()+1}">
+            <div>
+              <div style="font-weight:700">月別勤怠</div>
+              <small>詳細・承認リクエスト</small>
+            </div>
+            <div><i class="fa-solid fa-file-lines" style="color:var(--accent)"></i></div>
+          </a>
+
+          <a class="link-card" href="/leave/apply">
+            <div>
+              <div style="font-weight:700">休暇申請</div>
+              <small>申請・履歴確認</small>
+            </div>
+            <div><i class="fa-solid fa-plane-departure" style="color:#f59e0b"></i></div>
+          </a>
+
+          <a class="link-card" href="/goals">
+            <div>
+              <div style="font-weight:700">目標管理</div>
+              <small>進捗・承認</small>
+            </div>
+            <div><i class="fa-solid fa-bullseye" style="color:#10b981"></i></div>
+          </a>
         </div>
-    </div>
-    ` : ''}
 
-    <div class="actions">
-        <a href="/change-password" class="btn primary">パスワード変更</a>
-        <a href="/logout" class="btn danger">ログアウト</a>
-    </div>
-</div>
+        <div class="footer-actions">
+          <a href="/change-password" class="btn btn--ghost">パスワード変更</a>
+          <a href="/dashboard" class="btn btn--ghost">ダッシュボードへ</a>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:12px">
+        <h4 style="margin-top:0">ヘルプ & ポリシー</h4>
+        <p style="color:var(--muted);font-size:13px">打刻に関する問い合わせや就業規則は人事までご連絡ください。</p>
+        <a href="https://dxpro-sol.com" target="_blank" class="btn btn--ghost" style="width:100%;margin-top:8px">社内ポータル</a>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<script>
+  function updateClocks(){
+    const d = new Date();
+    const opts = { hour12:false, timeZone:'Asia/Tokyo' };
+    const t = new Date().toLocaleTimeString('ja-JP', opts);
+    document.getElementById('main-clock').textContent = t;
+    document.getElementById('header-clock').textContent = new Date().toLocaleString('ja-JP', { timeZone:'Asia/Tokyo' });
+  }
+  setInterval(updateClocks,1000);
+  window.onload = updateClocks;
+</script>
 </body>
 </html>
-`);
+        `);
 
     } catch (error) {
         console.error(error);
@@ -1661,6 +2199,79 @@ app.get('/admin/leave-requests', requireLogin, isAdmin, async (req, res) => {
         console.error(error);
         res.status(500).send('休暇承認中エラーが発生しました。');
     }
+});
+
+// 管理者ダッシュボード (インデックス)
+app.get('/admin', requireLogin, isAdmin, async (req, res) => {
+        const username = req.session.user?.username || req.session.username || '管理者';
+        const html = `
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+        <style>
+            body{font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif;background:#f5f7fb;margin:0}
+            .wrap{max-width:1100px;margin:28px auto;padding:20px}
+            .card{background:#fff;padding:22px;border-radius:14px;box-shadow:0 14px 40px rgba(12,32,56,0.06)}
+            .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin-top:14px}
+            .admin-card{display:block;padding:18px;border-radius:12px;background:linear-gradient(180deg,#fff,#fbfdff);color:#0b2b3b;text-decoration:none;border:1px solid rgba(6,22,60,0.04);box-shadow:0 8px 20px rgba(8,24,40,0.04);transition:transform .16s ease,box-shadow .16s ease}
+            .admin-card:hover{transform:translateY(-6px);box-shadow:0 20px 40px rgba(8,24,40,0.08)}
+            .admin-head{display:flex;align-items:center;gap:12px}
+            .admin-icon{width:52px;height:52px;border-radius:12px;background:linear-gradient(90deg,#eef4ff,#f0fbff);display:flex;align-items:center;justify-content:center;font-size:20px;color:#0b69ff}
+            .admin-title{font-weight:800;font-size:16px}
+            .admin-desc{color:#6b7280;font-size:13px;margin-top:8px}
+            .meta{color:#6b7280;margin-top:6px}
+            @media(max-width:700px){.wrap{padding:14px}.admin-icon{width:44px;height:44px}}
+        </style>
+
+        <div class="wrap">
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+                    <div>
+                        <h2 style="margin:0">管理者メニュー</h2>
+                        <div class="meta">ようこそ、${escapeHtml(username)}。管理者向けの操作を選択してください。</div>
+                    </div>
+                    <div style="text-align:right;color:#6b7280;font-size:13px">管理ツール</div>
+                </div>
+
+                <div class="grid">
+                    <a class="admin-card" href="/admin/leave-requests">
+                        <div class="admin-head"><div class="admin-icon">📅</div><div class="admin-title">休暇承認管理</div></div>
+                        <div class="admin-desc">従業員からの休暇申請を確認・承認します。</div>
+                    </a>
+
+                    <a class="admin-card" href="/admin/register-employee">
+                        <div class="admin-head"><div class="admin-icon">👥</div><div class="admin-title">従業員登録</div></div>
+                        <div class="admin-desc">新しい社員アカウント・従業員情報を作成します。</div>
+                    </a>
+
+                    <a class="admin-card" href="/admin/monthly-attendance">
+                        <div class="admin-head"><div class="admin-icon">📊</div><div class="admin-title">月別勤怠照会</div></div>
+                        <div class="admin-desc">部門や個人ごとの勤怠実績を確認できます。</div>
+                    </a>
+
+                    <a class="admin-card" href="/goals/admin-fix-drafts">
+                        <div class="admin-head"><div class="admin-icon">🛠️</div><div class="admin-title">目標データ修正</div></div>
+                        <div class="admin-desc">古い目標データの整備・一括修正ツール。</div>
+                    </a>
+
+                    <a class="admin-card" href="/admin/approval-requests">
+                        <div class="admin-head"><div class="admin-icon">🔔</div><div class="admin-title">承認リクエスト一覧</div></div>
+                        <div class="admin-desc">未処理の承認要求をまとめて確認します。</div>
+                    </a>
+
+                    <a class="admin-card" href="/hr/payroll/admin">
+                        <div class="admin-head"><div class="admin-icon">💼</div><div class="admin-title">給与管理（管理者）</div></div>
+                        <div class="admin-desc">給与明細の作成・締め処理を行います。</div>
+                    </a>
+
+                    <a class="admin-card" href="/board">
+                        <div class="admin-head"><div class="admin-icon">📣</div><div class="admin-title">掲示板管理</div></div>
+                        <div class="admin-desc">掲示板の投稿管理・ピン留め・削除を行います。</div>
+                    </a>
+                </div>
+            </div>
+        </div>
+        `;
+
+        renderPage(req, res, '管理者メニュー', '管理者メニュー', html);
 });
 
 // 휴가 승인 처리
@@ -3961,10 +4572,20 @@ const Goal = mongoose.model('Goal', goalSchema);
 
 // 目標一覧
 app.get('/goals', requireLogin, async (req, res) => {
-  const employee = await Employee.findOne({ userId: req.session.user._id });
+    // セッションに user オブジェクトが無い場合でも確実に動くように userId を利用
+    const employee = await Employee.findOne({ userId: req.session.userId });
   if (!employee) return res.send("社員情報が見つかりません");
 
-  const goals = await Goal.find({ ownerId: employee._id }).populate('currentApprover');
+        // 一覧内でクライアント側フィルタを利用できるように全件を取得する
+    // 作成者視点の一覧にしたいので、createdBy = 自分 の目標を表示
+    const goals = await Goal.find({ createdBy: employee._id }).populate('currentApprover').populate('createdBy');
+        // 承認待ち件数（承認者視点）
+        const isAdmin = req.session.isAdmin || req.session.user?.isAdmin;
+        const approverQuery = isAdmin
+            ? { status: { $in: ['pending1','pending2'] } }
+            : { currentApprover: employee._id, status: { $in: ['pending1','pending2'] } };
+    const approverPendingCount = await Goal.countDocuments(approverQuery);
+    const approverTasks = await Goal.find(approverQuery).populate('ownerId').populate('createdBy');
 
   const statusLabels = {
     draft: "下書き",
@@ -3981,314 +4602,185 @@ app.get('/goals', requireLogin, async (req, res) => {
     completed: goals.filter(g => g.status === 'completed').length,
     pendingApproval: goals.filter(g => g.status.startsWith('pending')).length
   };
+        const html = `
+        <style>
+            :root{ --bg:#f6f8fb; --card:#ffffff; --accent:#0b5fff; --muted:#6b7280; --muted-2:#94a3b8 }
+            body{margin:0;font-family:Inter, 'Segoe UI', Roboto, sans-serif;background:var(--bg);color:#0b243b}
+            .container{max-width:1200px;margin:32px auto;padding:0 20px}
+            .header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}
+            .title{font-size:24px;font-weight:700}
+            .subtitle{color:var(--muted);font-size:11px}
+            .actions{display:flex;gap:10px;align-items:center}
+            .btn{padding:10px 14px;border-radius:8px;border:1px solid rgba(15,23,42,0.06);background:var(--card);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+            .btn-primary{background:linear-gradient(90deg,var(--accent),#184df2);color:#fff;border:none}
+            .search-bar{display:flex;gap:12px;align-items:center}
+            .search-input{padding:10px 12px;border-radius:8px;border:1px solid #dbe7ff;min-width:200px}
+            .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}
+            .kpi{background:var(--card);padding:18px;border-radius:12px;box-shadow:0 8px 20px rgba(11,95,255,0.04);display:flex;flex-direction:column}
+            .kpi .num{font-weight:800;font-size:20px;color:#0b3a66}
+            .kpi .label{color:var(--muted);margin-top:6px;font-size:13px}
+            .panel{background:var(--card);padding:18px;border-radius:12px;box-shadow:0 6px 18px rgba(10,20,40,0.04)}
+            table{width:100%;border-collapse:collapse;font-size:14px}
+            thead th{background:#fbfdff;text-align:left;padding:14px;font-weight:700;color:#244b76}
+            tbody td{padding:14px;border-bottom:1px solid #f1f5f9;color:#16324b}
+            .owner{display:flex;align-items:center;gap:10px}
+            .avatar{width:36px;height:36px;border-radius:50%;background:#e6f0ff;color:var(--accent);display:inline-flex;align-items:center;justify-content:center;font-weight:700}
+            .progress-wrap{width:100px}
+            .progress{background:#eef6ff;border-radius:8px;overflow:hidden;height:10px}
+            .progress > i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#184df2);width:0%}
+            .badge{display:inline-block;padding:6px 10px;border-radius:999px;font-weight:700;font-size:12px}
+            .badge-draft{background:#f1f5f9;color:#475569}
+            .badge-pending{background:#fff4e6;color:#944200}
+            .badge-approved{background:#e6ffef;color:#046a38}
+            .badge-completed{background:#eef2ff;color:#0b5fff}
+            .table-actions button{margin-right:8px;white-space:nowrap}
+            /* Ensure action buttons (approval rows / table actions) stay on one line */
+            table tbody td:last-child{display:flex;gap:8px;flex-wrap:nowrap;align-items:center}
+            .approval-actions{display:flex;gap:8px;flex-wrap:nowrap;align-items:center}
+            .approval-actions button{white-space:nowrap}
+            @media(max-width:900px){ .kpi-row{grid-template-columns:repeat(2,1fr)} .search-input{min-width:140px} }
+        </style>
 
-  const html = `
-  <style>
-    body { font-family:"Segoe UI", sans-serif; background:#f5f6fa; margin:0; padding:0; }
-
-    .dashboard-banner {
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    gap:12px;
-    background:linear-gradient(135deg,#4e54c8,#8f94fb);
-    color:white;
-    padding:20px;
-    border-radius:15px;
-    box-shadow:0 8px 20px rgba(0,0,0,0.2);
-    font-size:1.5rem;
-    font-weight:700;
-    animation: fadeInDown 0.8s ease;
-    }
-    .dashboard-banner .icon {
-    font-size:2rem;
-    }
-
-    @keyframes fadeInDown {
-    from { opacity:0; transform:translateY(-20px); }
-    to   { opacity:1; transform:translateY(0); }
-    }
-    .content { padding:25px; }
-
-    /* KPIカード */
-    .summary-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:25px; margin-bottom:30px; }
-    .summary-card {
-        position:relative;
-        padding:25px;
-        border-radius:18px;
-        color:#fff;
-        box-shadow:0 12px 30px rgba(0,0,0,0.2);
-        text-align:center;
-        transition:transform 0.4s, box-shadow 0.4s;
-    }
-    .summary-card:hover { transform:translateY(-10px); box-shadow:0 16px 35px rgba(0,0,0,0.3); }
-    .kpi-icon { font-size:2.8rem; margin-bottom:12px; }
-    .kpi-value { font-size:2rem; font-weight:bold; }
-    .kpi-label { margin-top:8px; font-size:1rem; font-weight:500; }
-    @keyframes bounceIn {
-    0%   { transform: scale(0.8); opacity: 0; }
-    60%  { transform: scale(1.2); opacity: 1; }
-    80%  { transform: scale(0.9); }
-    100% { transform: scale(1); }
-    }    
-    .kpi-ai {
-    opacity: 0; /* 最初は非表示 */
-    margin-top:10px; 
-    font-size:0.9rem; 
-    font-weight:500;
-    color:#f1f3f5;   /* 薄いグレー寄りの白でコントラストUP */
-    text-shadow: 0 1px 2px rgba(0,0,0,0.5); /* 輪郭を出して見やすく */
-    transform: scale(0.8);
-    }
-    .kpi-ai.show {
-    opacity: 1;
-    animation: bounceIn 0.8s cubic-bezier(0.68, -0.55, 0.27, 1.55) forwards;
-    }    
-    /* AIカード */
-    .chart-ai-grid { display:grid; grid-template-columns:1.5fr 1fr; gap:25px; margin-bottom:30px; }
-    .chart-card, .ai-card {
-      border-radius:15px;
-      padding:25px;
-      box-shadow:0 10px 25px rgba(0,0,0,0.25);
-    }
-    .chart-card { background:white; }
-    .chart-card canvas {
-    width: 100% !important;
-    height: 100% !important;
-    max-width: 400px;   /* ← 最大幅を設定 */
-    max-height: 400px;  /* ← 最大高さを設定 */
-    margin: 0 auto;
-    display: block;
-    }
-    .insight-card {
-    margin-top:20px;
-    padding:15px;
-    border-radius:12px;
-    background:#f9fafb;
-    box-shadow:0 5px 12px rgba(0,0,0,0.1);
-    font-size:0.95rem;
-    }
-
-    .ai-side {
-    display:flex;
-    flex-direction:column;
-    }
-    .ai-card { background:#1F2937; color:#fff; }
-    .ai-card h3 { margin-bottom:20px; font-size:1.4rem; font-weight:600; }
-    .ai-section {
-      margin-bottom:20px;
-      padding:15px;
-      border-radius:12px;
-      background: rgba(255,255,255,0.05);
-    }
-    .ai-section h4 { margin-bottom:10px; font-size:1.1rem; color:#FFD700; font-weight:600; }
-    .ai-section ul { margin:0; padding-left:20px; }
-    .ai-card button { background:#FFD700; color:#1F2937; font-weight:bold; border:none; border-radius:8px; padding:10px 15px; cursor:pointer; }
-
-    /* タイムライン */
-    .timeline-item { background:white; border-radius:12px; padding:18px; margin-bottom:18px; box-shadow:0 5px 12px rgba(0,0,0,0.15); transition:transform 0.3s, box-shadow 0.3s; }
-    .timeline-item:hover { transform: translateY(-5px); box-shadow:0 10px 18px rgba(0,0,0,0.25); }
-    .timeline-date { font-weight:bold; color:#636e72; margin-bottom:10px; }
-    .progress { background:#dcdde1; border-radius:5px; overflow:hidden; height:20px; margin-top:10px; }
-    .progress-bar { background:#0984e3; height:100%; width:0%; transition: width 1s; }
-
-    /* ボタン */
-    .btn { padding:5px 10px; border-radius:5px; text-decoration:none; margin-right:5px; }
-    .btn-sm { padding:3px 6px; font-size:0.8em; }
-    .actions .btn { margin-right:10px; margin-top:10px; }
-  </style>
-
-    <div class="dashboard-banner">
-    <span class="icon">📌</span>
-    <span>${employee.name} さんの最新ステータス</span>
-    </div>
-
-  <main class="content">
-    <!-- KPIカード -->
-    <div id="overview" class="summary-grid">
-    ${[
-      {label:'総目標数', value:summary.all, color:'#6C5CE7', icon:'🎯', aiMsg:'NOKORIのおすすめ: 全目標を確認しましょう'},
-      {label:'進行中', value:summary.inProgress, color:'#00B894', icon:'⚡', aiMsg:'NOKORIのおすすめ: 優先度の高い目標から着手'},
-      {label:'承認待ち', value:summary.pendingApproval, color:'#FD79A8', icon:'⏳', aiMsg:'NOKORIのおすすめ: 承認依頼を早めに処理'},
-      {label:'完了', value:summary.completed, color:'#E17055', icon:'✅', aiMsg:'NOKORIのおすすめ: 素晴らしい！'}
-    ].map(kpi=>`
-      <div class="summary-card" style="background:linear-gradient(135deg, ${kpi.color}cc, ${kpi.color}99);">
-        <div class="kpi-icon">${kpi.icon}</div>
-        <div class="kpi-value" data-target="${kpi.value}">0</div>
-        <div class="kpi-label">${kpi.label}</div>
-        <div class="kpi-ai">${kpi.aiMsg}</div>
-      </div>
-    `).join('')}
-    </div>
-
-    <!-- チャート＋AIカード -->
-<!-- チャート＋AIカード -->
-<div class="chart-ai-grid">
-  <!-- 左側：グラフ＋インサイト -->
-  <div class="chart-card">
-    <h3>📊 ステータス別の割合</h3>
-    <div style="position:relative; width:100%; max-width:400px; height:400px; margin:0 auto;">
-        <canvas id="goalChart"></canvas>
-    </div>
-    <div class="insight-card">
-    <h4>AIインサイト</h4>
-    <p>進行中の目標が多めです。優先度を見直すと効率アップが期待できます。</p>
-
-    <ul style="margin-top:10px; padding-left:18px; font-size:0.95rem; color:#333;">
-    <li>⚡ <strong>進行中が全体の${summary.inProgress}件</strong>を占めています</li>
-    <li>✅ 完了済みは <strong>${summary.completed}件</strong>、全体の${Math.round(summary.completed/summary.all*100)}%</li>
-    <li>⏳ 承認待ちは <strong>${summary.pendingApproval}件</strong>あり、停滞のリスクあり</li>
-    </ul>
-
-    <div style="margin-top:12px; padding:10px; border-radius:8px; background:#f1f8ff; font-size:0.9rem; color:#0d6efd;">
-    💡 <em>提案:</em> 「承認待ち」を今週中に処理すれば、全体進捗がスムーズに向上します。
-    </div>
-    </div>
-  </div>
-
-  <!-- 右側：AI支援（2分割） -->
-    <div class="ai-side">
-        <div class="ai-card">
-        <h3>🤖 AI目標支援</h3>
-        <div class="ai-section">
-            <h4>おすすめ目標</h4>
-            <ul id="aiRecommended">まだ生成されていません</ul>
-        </div>
-        <div class="ai-section">
-            <h4>達成戦略</h4>
-            <ul id="aiStrategy">AIが提案します</ul>
-        </div>
-        <div class="ai-section">
-            <h4>優先度評価</h4>
-            <ul id="aiPriority">AIが分析中</ul>
-        </div>
-        <button id="aiSuggestBtn">AIで提案生成</button>
-        </div>
-
-        <div class="ai-card" style="margin-top:20px;">
-        <h3>💡 スマートTips</h3>
-        <ul>
-            <li>週の始まりに未承認タスクを処理しましょう</li>
-            <li>達成率50%以上の目標は早期完了を狙えます</li>
-            <li>進捗が止まっている目標を優先的に再確認</li>
-        </ul>
-        </div>
-    </div>
-    </div>
-
-    <!-- アクションボタン -->
-    <div class="actions">
-      <a href="/goals/add" class="btn btn-success">＋ 新規目標を作成</a>
-      <a href="/goals/approval" class="btn btn-primary">承認待ち一覧</a>
-      <a href="/goals/report" class="btn btn-primary">レポート出力</a>
-    </div><br><br>
-
-    <!-- タイムライン -->
-    <div id="myGoals" class="timeline">
-      ${goals.map(g => `
-        <div class="timeline-item">
-          <div class="timeline-date">${g.deadline ? g.deadline.toISOString().substring(0,10) : '-'}</div>
-          <div class="timeline-content">
-            <h4>${g.title}</h4>
-            <span class="badge bg-info">${statusLabels[g.status]}</span>
-            <p>承認者: ${g.currentApprover ? g.currentApprover.name : '-'}</p>
-            <div class="progress">
-              <div class="progress-bar" data-progress="${g.progress||0}">${g.progress||0}%</div>
+        <div class="container">
+            <div class="header">
+                <div>
+                    <div class="title">目標管理</div>
+                    <div class="subtitle">個人目標を管理するエンタープライズビュー</div>
+                </div>
+                <div class="actions">
+                    <div class="search-bar">
+                            <input id="search" class="search-input" placeholder="検索: タイトル / 担当者 / キーワード">
+                            <select id="goals-status" class="btn">
+                                <option value="">全ての状態</option>
+                                ${Object.keys(statusLabels).map(k => `<option value="${k}">${statusLabels[k]}</option>`).join('')}
+                            </select>
+                        </div>
+                    <button id="export" class="btn">CSV 出力</button>
+                    <button id="to-approval" class="btn">承認一覧 (${approverPendingCount})</button>
+                    <button id="new" class="btn btn-primary">新規目標</button>
+                </div>
             </div>
-            <a href="/goals/detail/${g._id}" class="btn btn-outline-primary btn-sm mt-2">詳細</a>
-          </div>
+
+            <div class="kpi-row">
+                <div class="kpi"><div class="num">${summary.all}</div><div class="label">総目標数</div></div>
+                <div class="kpi"><div class="num">${summary.inProgress}</div><div class="label">進行中</div></div>
+                <div class="kpi"><div class="num">${summary.completed}</div><div class="label">完了</div></div>
+                <div class="kpi"><div class="num">${summary.pendingApproval}</div><div class="label">承認待ち</div></div>
+            </div>
+
+            <div class="panel">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:160px">タイトル</th>
+                            <th style="width:190px">作成者</th>
+                            <th style="width:190px">承認者</th>
+                            <th style="width:100px">進捗</th>
+                            <th style="width:200px">状態</th>
+                            <th style="width:260px">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="goal-rows">
+            ${goals.map(g => {
+                            const status = g.status || '';
+                            const badgeClass = status.startsWith('pending') ? 'badge-pending' : status==='approved1' ? 'badge-approved' : status==='completed' ? 'badge-completed' : 'badge-draft';
+        const creatorName = (g.createdBy && g.createdBy.name) || g.createdByName || '-';
+        const approverName = g.ownerName || (g.currentApprover && g.currentApprover.name) || '-';
+                return `
+                                <tr data-status="${status}">
+                                    <td style="vertical-align:middle">${g.title}</td>
+                    <td style="vertical-align:middle"><div class="owner"><span class="avatar">${(creatorName||'').split(' ').map(s=>s[0]).slice(0,2).join('')}</span><div>${creatorName}</div></div></td>
+                                    <td style="vertical-align:middle"><div class="owner"><span class="avatar">${(approverName||'').split(' ').map(s=>s[0]).slice(0,2).join('')}</span><div>${approverName}</div></div></td>
+                                    <td style="vertical-align:middle"><div class="progress-wrap"><div class="progress"><i style="width:${g.progress||0}%"></i></div><div style="margin-top:6px;color:var(--muted-2);font-size:12px">${g.progress||0}%</div></div></td>
+                                    <td style="vertical-align:middle"><span class="badge ${badgeClass}">${statusLabels[g.status] || g.status}</span></td>
+                    <td class="table-actions" style="vertical-align:middle">
+                                        <button class="btn" onclick="location.href='/goals/detail/${g._id}'">表示</button>
+                                        ${g.status !== 'completed' ? `<button class="btn" onclick="location.href='/goals/edit/${g._id}'">編集</button>` : ''}
+                                        ${g.status==='approved1' ? `<button class="btn" onclick="location.href='/goals/evaluate/${g._id}'">評価入力</button>` : ''}
+                                        ${((req.session.isAdmin || req.session.user?.isAdmin) || (((g.currentApprover && g.currentApprover._id ? g.currentApprover._id.toString() : (g.currentApprover ? g.currentApprover.toString() : '')) === employee._id.toString())))
+                                            ? `${g.status === 'pending1' 
+                                                ? `<button class="btn" onclick="location.href='/goals/approve1/${g._id}'">承認</button>` 
+                                                : g.status === 'pending2' 
+                                                    ? `<button class="btn" onclick="location.href='/goals/approve2/${g._id}'">承認</button>` 
+                                                    : ''}`
+                                            : ''}
+                                        ${(((req.session.isAdmin || req.session.user?.isAdmin) || (((g.currentApprover && (g.currentApprover._id ? g.currentApprover._id.toString() : (g.currentApprover ? g.currentApprover.toString() : '')))) === employee._id.toString())) && g.status === 'draft')
+                                            ? `<button class=\"btn\" onclick=\"location.href='/goals/submit1/${g._id}'\">一次依頼</button>`
+                                            : ''}
+                                    </td>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="panel" style="margin-top:18px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <div style="font-weight:700;">承認が必要な目標</div>
+                    <div style="color:#64748b;">${approverPendingCount} 件</div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>タイトル</th>
+                            <th>作成者</th>
+                            <th style="width:160px">状態</th>
+                            <th style="width:260px">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${approverTasks.map(t => {
+                            const st = t.status || '';
+                            const badge = st.startsWith('pending') ? 'badge-pending' : st==='approved1' ? 'badge-approved' : st==='completed' ? 'badge-completed' : 'badge-draft';
+                            return `
+                            <tr>
+                                <td>${t.title}</td>
+                                <td>${t.createdBy && t.createdBy.name ? t.createdBy.name : (t.createdByName || '-')}</td>
+                                <td><span class="badge ${badge}">${statusLabels[t.status] || t.status}</span></td>
+                                <td>
+                                    <button class="btn" onclick="location.href='/goals/detail/${t._id}'">詳細</button>
+                                    ${t.status==='pending1' ? `<button class=\"btn\" onclick=\"location.href='/goals/approve1/${t._id}'\">承認</button>` : ''}
+                                    ${t.status==='pending2' ? `<button class=\"btn\" onclick=\"location.href='/goals/approve2/${t._id}'\">承認</button>` : ''}
+                                    ${t.status==='pending1' ? `<button class=\"btn\" onclick=\"location.href='/goals/reject1/${t._id}'\">差し戻し</button>` : ''}
+                                    ${t.status==='pending2' ? `<button class=\"btn\" onclick=\"location.href='/goals/reject2/${t._id}'\">差し戻し</button>` : ''}
+                                </td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
         </div>
-      `).join('')}
-    </div>
-  </main>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script>
-    // KPIアニメーション
-    document.querySelectorAll('.kpi-value').forEach(el=>{
-        let target=+el.getAttribute('data-target'),count=0,step=Math.ceil(target/50);
-        let interval=setInterval(()=>{count+=step;if(count>=target){count=target;clearInterval(interval);}el.textContent=count;},20);
-    });
+        <script>
+            document.getElementById('new').addEventListener('click', ()=> location.href='/goals/add');
+            document.getElementById('export').addEventListener('click', ()=> location.href='/goals/report');
+            document.getElementById('to-approval').addEventListener('click', ()=> location.href='/goals/approval');
+            document.getElementById('search').addEventListener('input', (e)=>{
+                const q = e.target.value.toLowerCase();
+                document.querySelectorAll('#goal-rows tr').forEach(tr=>{
+                    const text = tr.textContent.toLowerCase();
+                    tr.style.display = text.includes(q) ? '' : 'none';
+                });
+            });
+            // ステータスによるフィルタ（data-status 属性と完全一致で比較）
+            const statusSelect = document.getElementById('goals-status');
+            if (statusSelect) {
+                statusSelect.addEventListener('change', (e)=>{
+                    const s = e.target.value;
+                    document.querySelectorAll('#goal-rows tr').forEach(tr=>{
+                        const st = tr.getAttribute('data-status') || '';
+                        if (!s) {
+                            tr.style.display = '';
+                        } else {
+                            tr.style.display = (st === s) ? '' : 'none';
+                        }
+                    });
+                });
+            }
+        </script>
+        `;
 
-    // 進捗バーアニメーション
-    document.querySelectorAll('.progress-bar').forEach(bar=>{
-      let progress = bar.getAttribute('data-progress');
-      setTimeout(()=>{ bar.style.width = progress+'%'; },100);
-    });
-
-    document.addEventListener("DOMContentLoaded", () => {
-        const aiMsgs = document.querySelectorAll('.kpi-ai');
-        aiMsgs.forEach((msg, idx) => {
-        setTimeout(() => {
-            msg.classList.add('show');
-        }, idx * 500); // 0.5秒間隔で順番に
-        });
-    });
-
-    // チャート
-    const ctx = document.getElementById('goalChart').getContext('2d');
-    new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-        labels: ['完了','進行中','承認待ち'],
-        datasets: [{
-        data: [${summary.completed},${summary.inProgress},${summary.pendingApproval}],
-        backgroundColor: ['#28a745','#ffc107','#17a2b8'],
-        borderWidth: 2,
-        borderColor: '#fff'
-        }]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: true,   // ← 正円にする
-        animation: {
-        animateScale: true,
-        animateRotate: true
-        }
-    }
-    });
-
-    // AI提案ボタン
-    document.getElementById('aiSuggestBtn').addEventListener('click', async () => {
-    const rec = document.getElementById('aiRecommended');
-    const strat = document.getElementById('aiStrategy');
-    const prio = document.getElementById('aiPriority');
-
-    // ローディング演出
-    rec.innerHTML = '<li>🤖 AIが分析中...</li>';
-    strat.innerHTML = '<li>🤖 AIが戦略を考えています...</li>';
-    prio.innerHTML = '<li>🤖 AIが優先度を評価中...</li>';
-
-    try {
-        const res = await fetch('/api/ai/goal-suggestions');
-        const data = await res.json();
-
-        // ステップごとに順番に出す
-        function gradualInsert(targetEl, items) {
-        targetEl.innerHTML = '';
-        items.forEach((item, idx) => {
-            setTimeout(() => {
-            const li = document.createElement('li');
-            li.textContent = item;
-            targetEl.appendChild(li);
-            }, 800 * idx); // 0.8秒間隔で表示
-        });
-        }
-
-        gradualInsert(rec, data.recommended);
-        gradualInsert(strat, data.strategy);
-        gradualInsert(prio, data.priority);
-
-    } catch (e) {
-        rec.innerHTML = '<li>⚠️ 提案の取得に失敗しました</li>';
-        strat.innerHTML = '';
-        prio.innerHTML = '';
-    }
-    });
-  </script>
-  `;
-
-  renderPage(req,res,'目標設定管理','目標管理ダッシュボード',html);
+        renderPage(req,res,'目標設定管理','目標管理ダッシュボード',html);
 });
 
 // 疑似AIレスポンス
@@ -4315,117 +4807,148 @@ app.get('/api/ai/goal-suggestions', (req, res) => {
 // 目標作成フォーム
 app.get('/goals/add', requireLogin, async (req, res) => {
   const employees = await Employee.find(); // 承認者選択用
+                                                                                                const html = `
+                                                                                                <style>
+                                                                                                    :root{--bg:#f3f6f5;--card:#ffffff;--accent:#5b8cfe;--muted:#68707a}
+                                                                                                    body{margin:0;background:var(--bg);font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans JP', 'Hiragino Kaku Gothic ProN',sans-serif;color:#042827}
+                                                                                                    /* wider canvas so form can stretch */
+                                                                                                    .container{max-width:1600px;margin:28px auto;padding:20px}
+                                                                                                    .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+                                                                                                    .breadcrumb{color:var(--muted);font-size:13px}
+                                                                                                    .title{font-size:25px;font-weight:700}
 
-  const html = `
-  <style>
-    body { font-family:"Segoe UI", sans-serif; background:#f5f6fa; margin:0; padding:0; }
-    .content { max-width:700px; margin:40px auto; background:white; padding:30px; border-radius:15px; box-shadow:0 12px 30px rgba(0,0,0,0.15); }
+                                                                                                    /* single column layout so form uses available width */
+                                                                                                    .layout{display:block}
+                                                                                                    @media(max-width:900px){.layout{display:block}}
 
-    h3 { text-align:center; margin-bottom:30px; font-size:1.6rem; font-weight:600; }
+                                                                                                    .card{background:linear-gradient(180deg, rgba(255,255,255,0.9), #fff);padding:22px;border-radius:14px;box-shadow:0 20px 40px rgba(19,40,40,0.06)}
+                                                                                                    .card h2{margin:0 0 8px}
+                                                                                                    .lead{color:var(--muted);font-size:13px;margin-bottom:14px}
 
-    form label { display:block; margin-bottom:15px; font-weight:500; color:#333; }
-    form input[type="text"],
-    form input[type="date"],
-    form select,
-    form textarea {
-      width:100%;
-      padding:10px 12px;
-      border:1px solid #dcdde1;
-      border-radius:8px;
-      font-size:1rem;
-      margin-top:5px;
-      box-sizing:border-box;
-      transition: all 0.2s;
-    }
-    form input:focus,
-    form select:focus,
-    form textarea:focus { border-color:#6c5ce7; outline:none; box-shadow:0 0 8px rgba(108,92,231,0.3); }
+                                                                                                    form .field{margin-bottom:14px}
+                                                                                                    label{display:block;font-weight:700;margin-bottom:8px}
+                                                                                                    input,select,textarea{width:100%;padding:12px;border-radius:10px;border:1px solid #e6eef2;background:#fff;font-size:14px}
+                                                                                                    input:focus,select:focus,textarea:focus{box-shadow:0 10px 30px rgba(91,140,254,0.08);outline:none;border-color:rgba(91,140,254,0.16)}
+                                                                                                    textarea{min-height:120px}
 
-    form textarea { min-height:80px; resize:vertical; }
+                                                                                                    .row{display:flex;gap:12px}
+                                                                                                    .row .col{flex:1}
 
-    .btn {
-      display:inline-block;
-      background:#6c5ce7;
-      color:white;
-      padding:10px 20px;
-      border:none;
-      border-radius:8px;
-      font-weight:bold;
-      cursor:pointer;
-      transition: background 0.3s, transform 0.2s;
-    }
-    .btn:hover { background:#341f97; transform:translateY(-2px); }
+                                                                                                    .side{position:sticky;top:28px}
+                                                                                                    .preview{background:linear-gradient(180deg,#fff,#fbfdff);padding:18px;border-radius:12px;border:1px solid rgba(8,24,24,0.02)}
+                                                                                                    .preview h4{margin:0 0 8px}
+                                                                                                    .meta{color:var(--muted);font-size:13px}
+                                                                                                    .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:linear-gradient(90deg,#eef4ff,#f0fbff);color:#2748b3;font-weight:700;font-size:13px}
 
-    .form-group { margin-bottom:20px; }
-  </style>
+                                                                                                    .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+                                                                                                    .btn{padding:10px 14px;border-radius:10px;border:0;cursor:pointer;font-weight:700}
+                                                                                                    .btn.ghost{background:transparent;border:1px solid rgba(6,22,22,0.06)}
+                                                                                                    .btn.primary{background:var(--accent);color:#fff}
 
-  <div class="content">
-    <h3>新規目標の作成</h3>
-    <form method="POST" action="/goals/add">
-      <div class="form-group">
-        <label>目標名</label>
-        <input type="text" name="title" required placeholder="目標名を入力">
-      </div>
+                                                                                                    .note{margin-top:12px;color:var(--muted);font-size:13px}
+                                                                                                </style>
 
-      <div class="form-group">
-        <label>説明</label>
-        <textarea name="description" placeholder="目標の詳細を入力"></textarea>
-      </div>
+                                                                                                <div class="container">
+                                                                                                    <div class="header">
+                                                                                                        <div>
+                                                                                                            <div class="breadcrumb">目標管理 / 新規作成</div>
+                                                                                                            <div class="title">新しい目標を作成</div>
+                                                                                                        </div>
+                                                                                                        <div class="pill">最初のステータスは、「下書き」 です。</div>
+                                                                                                    </div>
 
-      <div class="form-group">
-        <label>目標レベル</label>
-        <select name="goalLevel">
-          <option value="低">低</option>
-          <option value="中" selected>中</option>
-          <option value="高">高</option>
-        </select>
-      </div>
+                                                                                                    <div class="layout">
+                                                                                                        <div class="card">
+                                                                                                            <h2>目標の基本情報</h2>
+                                                                                                            <div class="lead">短く端的なタイトルと達成指標を記入してください。</div>
 
-      <div class="form-group">
-        <label>アクションプラン</label>
-        <textarea name="actionPlan" placeholder="目標達成のための行動計画"></textarea>
-      </div>
+                                                                                                            <form method="POST" action="/goals/add">
+                                                                                                                <div class="field">
+                                                                                                                    <label for="title">目標名</label>
+                                                                                                                    <input id="title" name="title" type="text" placeholder="例: 月次売上レポートの自動化" required>
+                                                                                                                </div>
 
-      <div class="form-group">
-        <label>期限</label>
-        <input type="date" name="deadline">
-      </div>
+                                                                                                                <div class="field">
+                                                                                                                    <label for="description">概要 / 達成基準</label>
+                                                                                                                    <textarea id="description" name="description" placeholder="背景・数値目標を明記"></textarea>
+                                                                                                                </div>
 
-      <div class="form-group">
-        <label>承認者</label>
-        <select name="approverId">
-          ${employees.map(e => `<option value="${e._id}">${e.name} (${e.position || '-'})</option>`).join('')}
-        </select>
-      </div>
+                                                                                                                <div class="row field">
+                                                                                                                    <div class="col">
+                                                                                                                        <label for="goalLevel">目標レベル</label>
+                                                                                                                        <select id="goalLevel" name="goalLevel">
+                                                                                                                            <option value="低">低</option>
+                                                                                                                            <option value="中" selected>中</option>
+                                                                                                                            <option value="高">高</option>
+                                                                                                                        </select>
+                                                                                                                    </div>
+                                                                                                                    <div style="width:200px">
+                                                                                                                        <label for="deadline">期限</label>
+                                                                                                                        <input id="deadline" name="deadline" type="date">
+                                                                                                                    </div>
+                                                                                                                </div>
 
-      <div style="text-align:center; margin-top:30px;">
-        <button type="submit" class="btn">作成</button>
-        <a href="/goals" class="btn" style="background:#0984e3;">目標一覧に戻る</a>
-      </div>
-    </form>
-  </div>
-  `;
+                                                                                                                <div class="field">
+                                                                                                                    <label for="actionPlan">アクションプラン</label>
+                                                                                                                    <textarea id="actionPlan" name="actionPlan" placeholder="主要タスク・担当・期日"></textarea>
+                                                                                                                </div>
 
-  renderPage(req, res, '目標追加', '目標追加', html);
+                                                                                                                <div class="field">
+                                                                                                                    <label for="approverId">承認者</label>
+                                                                                                                    <select id="approverId" name="approverId">
+                                                                                                                        <option value="">--- 選択 ---</option>
+                                                                                                                        ${employees.map(e => `<option value="${e._id}" data-name="${e.name}" data-position="${e.position||''}">${e.name}${e.position? ' - '+e.position : ''}</option>`).join('')}
+                                                                                                                    </select>
+                                                                                                                </div>
+
+                                                                                                                <div class="actions">
+                                                                                                                    <a href="/goals" class="btn ghost">キャンセル</a>
+                                                                                                                    <button type="submit" class="btn primary">下書きとして保存</button>
+                                                                                                                </div>
+                                                                                                            </form>
+
+                                                                                                            <div class="note">下書き保存後、編集・申請が可能です。</div>
+                                                                                                        </div>
+
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                                `;
+
+                                        renderPage(req, res, '目標追加', '目標追加', html);
 });
 
 app.post('/goals/add', requireLogin, async (req, res) => {
     try {
         const { title, description, deadline, approverId, goalLevel, actionPlan } = req.body;
-        const employee = await Employee.findOne({ userId: req.session.user._id });
-        if (!employee) return res.status(404).send('Employee not found');
+        const employee = await Employee.findOne({ userId: req.session.userId });
+        if (!employee) return res.status(404).send('社員情報が見つかりません');
+
+        // 承認者の存在チェック（Employee）
+        const approverEmp = await Employee.findById(approverId);
+        if (!approverEmp) {
+            console.warn('[goals/add] 指定された approverId に一致する承認者(Employee)が見つかりません:', approverId);
+            return res.status(400).send('承認者が不正です');
+        }
 
         const goal = new Goal({
             title,
             description,
-            ownerId: employee._id,
-            ownerName: employee.name,
+            // オーナーは承認者（依頼先）
+            ownerId: approverEmp._id,
+            ownerName: approverEmp.name,
+            // 作成者を分離
+            createdBy: employee._id,
+            createdByName: employee.name,
+            currentApprover: approverEmp._id,
             deadline,
             goalLevel,
             actionPlan,
-            currentApprover: new mongoose.Types.ObjectId(approverId)
+            // 新規作成時はまず下書きにする
+            status: 'draft',
+            history: [{ action: 'create', by: employee._id, date: new Date() }]
         });
         await goal.save();
+        console.log('[goals/add] 目標作成 draft:', { goalId: goal._id.toString(), creator: employee._id.toString(), approver: approverEmp._id.toString() });
         res.redirect('/goals');
     } catch (error) {
         console.error('Error creating goal:', error);
@@ -4433,23 +4956,118 @@ app.post('/goals/add', requireLogin, async (req, res) => {
     }
 });
 
+// Helper: Ensure ownerName is present before saving (for legacy data)
+async function ensureOwnerName(goal) {
+    if (!goal.ownerName && goal.ownerId) {
+        try {
+            const emp = await Employee.findById(goal.ownerId);
+            if (emp) {
+                goal.ownerName = emp.name;
+                return true;
+            }
+        } catch (_) {}
+    }
+    return false;
+}
+
+// Helper: determine if given employee is the creator of a goal
+function isCreatorOfGoal(goal, employee) {
+    if (!employee || !goal) return false;
+    // direct createdBy match
+    if (goal.createdBy && employee && goal.createdBy.toString() === employee._id.toString()) return true;
+    // fallback: check history first submit entry; handle legacy string userId or ObjectId or populated document
+    if (Array.isArray(goal.history)) {
+        const firstSubmit = goal.history.find(h => h.action === 'submit1' && h.by);
+        if (firstSubmit && firstSubmit.by) {
+            // populated document with name/_id
+            if (typeof firstSubmit.by === 'object') {
+                if (firstSubmit.by._id && firstSubmit.by._id.toString && firstSubmit.by._id.toString() === employee._id.toString()) return true;
+                if (firstSubmit.by.toString && firstSubmit.by.toString() === employee._id.toString()) return true;
+            }
+            // string stored in older records could be userId
+            if (typeof firstSubmit.by === 'string') {
+                if (firstSubmit.by === employee.userId) return true;
+                // maybe stored as ObjectId string
+                if (firstSubmit.by === employee._id.toString()) return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Helper: escape HTML in templates
+function escapeHtml(str) {
+    if (!str && str !== 0) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// Markdown -> sanitized HTML helper with safe fallback if modules are not installed
+function renderMarkdownToHtml(md) {
+    if (!md) return '';
+    try {
+        const marked = require('marked');
+        const sanitizeHtml = require('sanitize-html');
+        const raw = marked.parse(md || '');
+        return sanitizeHtml(raw, {
+            allowedTags: sanitizeHtml.defaults.allowedTags.concat(['h1','h2','img','pre','code']),
+            allowedAttributes: {
+                a: ['href','target','rel'],
+                img: ['src','alt']
+            },
+            transformTags: {
+                'a': function(tagName, attribs) {
+                    attribs.target = '_blank'; attribs.rel = 'noopener noreferrer';
+                    return { tagName: 'a', attribs };
+                }
+            }
+        });
+    } catch (e) {
+        // fallback: basic plaintext -> paragraphs
+        return escapeHtml(md).replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>');
+    }
+}
+
+function stripHtmlTags(html) {
+    try {
+        const sanitizeHtml = require('sanitize-html');
+        return sanitizeHtml(html || '', { allowedTags: [], allowedAttributes: {} });
+    } catch (e) {
+        return String(html || '').replace(/<[^>]*>/g, '');
+    }
+}
+
 // 1次承認依頼
 app.get('/goals/submit1/:id', requireLogin, async (req, res) => {
-    const employee = await Employee.findOne({ userId: req.session.user._id });
+    const employee = await Employee.findOne({ userId: req.session.userId });
+    if (!employee) return res.status(404).send('社員情報が見つかりません');
     const goal = await Goal.findById(req.params.id);
+    if (!goal) return res.status(404).send('目標が見つかりません');
+
+    const isAdmin = req.session.isAdmin || req.session.user?.isAdmin;
+    // 作成者判定 using helper to support legacy history formats
+    if (!isAdmin && !isCreatorOfGoal(goal, employee)) return res.status(403).send('権限なし');
+
     goal.status = 'pending1';
-    goal.history.push({ action: 'submit1', by: employee._id });
+    goal.history.push({ action: 'submit1', by: employee._id, date: new Date() });
+    await ensureOwnerName(goal);
     await goal.save();
     res.redirect('/goals');
 });
 
 // 上司承認/差し戻し
 app.get('/goals/approve1/:id', requireLogin, async (req, res) => {
-    const employee = await Employee.findOne({ userId: req.session.user._id });
+    const employee = await Employee.findOne({ userId: req.session.userId });
     const goal = await Goal.findById(req.params.id);
-    if(goal.currentApprover.toString() !== employee._id.toString()) return res.status(403).send('権限なし');
+    const isAdmin = req.session.isAdmin || req.session.user?.isAdmin;
+    if(!isAdmin && goal.currentApprover.toString() !== employee._id.toString()) return res.status(403).send('権限なし');
     goal.status = 'approved1';
-    goal.history.push({ action:'approve1', by:req.session.user._id });
+    goal.history.push({ action:'approve1', by: employee?._id || req.session.userId });
+    await ensureOwnerName(goal);
     await goal.save();
     res.redirect('/goals');
 });
@@ -4458,6 +5076,10 @@ app.get('/goals/approve1/:id', requireLogin, async (req, res) => {
 app.get('/goals/reject1/:id', requireLogin, async (req, res) => {
     const goal = await Goal.findById(req.params.id);
     if (!goal) return res.status(404).send("目標が見つかりません");
+
+    // 判定: 既に一次申請(submit1)が履歴にあるか
+    const hasSubmit1 = Array.isArray(goal.history) && goal.history.find(h => h.action === 'submit1');
+    const submitLabel = hasSubmit1 ? '再申請' : '一次依頼';
 
     const html = `
       <form method="POST" action="/goals/reject1/${goal._id}">
@@ -4474,11 +5096,12 @@ app.get('/goals/reject1/:id', requireLogin, async (req, res) => {
 // 一次差し戻し処理
 app.post('/goals/reject1/:id', requireLogin, async (req, res) => {
     const { comment } = req.body;
-    const employee = await Employee.findOne({ userId: req.session.user._id });
+    const employee = await Employee.findOne({ userId: req.session.userId });
     const goal = await Goal.findById(req.params.id);
 
     if (!goal) return res.status(404).send("目標が見つかりません");
-    if (goal.currentApprover.toString() !== employee._id.toString()) 
+    const isAdmin_rej1 = req.session.isAdmin || req.session.user?.isAdmin;
+    if (!isAdmin_rej1 && goal.currentApprover.toString() !== employee._id.toString()) 
         return res.status(403).send("権限なし");
 
     goal.status = 'rejected';
@@ -4488,6 +5111,7 @@ app.post('/goals/reject1/:id', requireLogin, async (req, res) => {
         comment,
         date: new Date()
     });
+    await ensureOwnerName(goal);
     await goal.save();
 
     res.redirect('/goals/approval');
@@ -4496,7 +5120,15 @@ app.post('/goals/reject1/:id', requireLogin, async (req, res) => {
 // 評価入力
 app.get('/goals/evaluate/:id', requireLogin, async (req,res)=>{
     const goal = await Goal.findById(req.params.id);
+    if(!goal) return res.status(404).send('目標が見つかりません');
     if(goal.status!=='approved1') return res.send('評価入力不可');
+
+    // 作成者のみ（互換のため createdBy が無い場合は ownerId）
+    const viewerEmp = await Employee.findOne({ userId: req.session.userId });
+    const isCreator = (goal.createdBy && viewerEmp && goal.createdBy.toString() === viewerEmp._id.toString())
+                   || (!goal.createdBy && viewerEmp && goal.ownerId && goal.ownerId.toString() === viewerEmp._id.toString());
+    const isAdmin = req.session.isAdmin || req.session.user?.isAdmin;
+    if (!isCreator && !isAdmin) return res.status(403).send('権限なし');
 
     // 社員一覧を取得して2次承認者選択肢に
     const employees = await Employee.find();
@@ -4525,65 +5157,85 @@ app.post('/goals/evaluate/:id', requireLogin, async (req,res)=>{
     const { progress, grade, approverId } = req.body;
     const goal = await Goal.findById(req.params.id);
     if (!goal) return res.status(404).send("目標が見つかりません");
+    if (goal.status !== 'approved1') return res.status(403).send('評価入力不可');
+    const viewerEmp = await Employee.findOne({ userId: req.session.userId });
+    const isCreator = (goal.createdBy && viewerEmp && goal.createdBy.toString() === viewerEmp._id.toString())
+                   || (!goal.createdBy && viewerEmp && goal.ownerId && goal.ownerId.toString() === viewerEmp._id.toString());
+    const isAdmin = req.session.isAdmin || req.session.user?.isAdmin;
+    if (!isCreator && !isAdmin) return res.status(403).send('権限なし');
+    const approverEmp = await Employee.findById(approverId);
+    if (!approverEmp) return res.status(400).send('承認者が不正です');
 
     goal.progress = progress;
     goal.grade = grade;
     goal.status = 'pending2';
-    goal.currentApprover = new mongoose.Types.ObjectId(approverId); 
-    goal.history.push({ action:'submit2', by:req.session.user._id, date: new Date() });
+    goal.currentApprover = approverEmp._id; 
+    // 履歴は社員 ObjectId を記録しておく（表示のために populate されることを期待）
+    const employee = viewerEmp || await Employee.findOne({ userId: req.session.userId });
+    goal.history.push({ action:'submit2', by: employee?._id || req.session.userId, date: new Date() });
 
+    await ensureOwnerName(goal);
     await goal.save();
     res.redirect('/goals');
 });
 
 // 2次承認
+// 二次差し戻し入力フォーム
 app.get('/goals/reject2/:id', requireLogin, async (req, res) => {
-    const goal = await Goal.findById(req.params.id);
-    if (!goal) return res.status(404).send("目標が見つかりません");
+        const goal = await Goal.findById(req.params.id);
+        if (!goal) return res.status(404).send("目標が見つかりません");
+        const employee = await Employee.findOne({ userId: req.session.userId });
+        const isAdmin = req.session.isAdmin || req.session.user?.isAdmin;
+        if (!employee || (!isAdmin && goal.currentApprover.toString() !== employee._id.toString())) return res.status(403).send('権限なし');
 
-    const html = `
-      <form method="POST" action="/goals/reject2/${goal._id}">
-        <label>差し戻し理由:<br>
-          <textarea name="comment" required></textarea>
-        </label><br>
-        <button type="submit" class="btn">差し戻し送信</button>
-        <a href="/goals" class="btn" style="background:#0984e3;">目標一覧に戻る</a>
-      </form>
-    `;
-    renderPage(req, res, '二次差し戻し', '二次差し戻し理由入力', html);
+        const html = `
+            <form method="POST" action="/goals/reject2/${goal._id}">
+                <label>差し戻し理由:<br>
+                    <textarea name="comment" required></textarea>
+                </label><br>
+                <button type="submit" class="btn">差し戻し送信</button>
+                <a href="/goals" class="btn" style="background:#0984e3;">目標一覧に戻る</a>
+            </form>
+        `;
+        renderPage(req, res, '二次差し戻し', '二次差し戻し理由入力', html);
 });
 
+// 二次差し戻し処理
 app.post('/goals/reject2/:id', requireLogin, async (req, res) => {
-    const { comment } = req.body;
-    const employee = await Employee.findOne({ userId: req.session.user._id });
-    const goal = await Goal.findById(req.params.id);
+        const { comment } = req.body;
+        const employee = await Employee.findOne({ userId: req.session.userId });
+        const goal = await Goal.findById(req.params.id);
 
-    if (!goal) return res.status(404).send("目標が見つかりません");
-    if (goal.currentApprover.toString() !== employee._id.toString()) 
-        return res.status(403).send("権限なし");
+        if (!goal) return res.status(404).send("目標が見つかりません");
+        const isAdmin_rej2 = req.session.isAdmin || req.session.user?.isAdmin;
+        if (!isAdmin_rej2 && goal.currentApprover.toString() !== employee._id.toString()) 
+                return res.status(403).send("権限なし");
 
-    goal.status = 'approved1'; // 一次承認済みに戻す
-    goal.history.push({
-        action: 'reject2',
-        by: employee._id,
-        comment,
-        date: new Date()
-    });
-    await goal.save();
+    // 二次差し戻しは表示上は差し戻しにするが作成者が編集できるように許可する
+    goal.status = 'rejected';
+        goal.history.push({
+                action: 'reject2',
+                by: employee._id,
+                comment,
+                date: new Date()
+        });
+        await ensureOwnerName(goal);
+        await goal.save();
 
-    res.redirect('/goals/approval');
+        res.redirect('/goals/approval');
 });
 
 // 二次承認
 app.get('/goals/approve2/:id', requireLogin, async (req, res) => {
-    const employee = await Employee.findOne({ userId: req.session.user._id });
+    const employee = await Employee.findOne({ userId: req.session.userId });
     if (!employee) return res.status(404).send('社員情報が見つかりません');
 
     const goal = await Goal.findById(req.params.id);
     if (!goal) return res.status(404).send('目標が見つかりません');
 
     // 承認権限チェック
-    if (goal.currentApprover.toString() !== employee._id.toString()) {
+    const isAdmin_ap2 = req.session.isAdmin || req.session.user?.isAdmin;
+    if (!isAdmin_ap2 && goal.currentApprover.toString() !== employee._id.toString()) {
         return res.status(403).send('権限なし');
     }
 
@@ -4594,31 +5246,24 @@ app.get('/goals/approve2/:id', requireLogin, async (req, res) => {
         by: employee._id,
         date: new Date()
     });
-
+    await ensureOwnerName(goal);
     await goal.save();
     res.redirect('/goals/approval');
 });
-
-app.get('/goals/reject2/:id', requireLogin, async (req,res)=>{
-    const goal = await Goal.findById(req.params.id);
-    if(goal.currentApprover.toString()!==req.session.user._id.toString()) return res.status(403).send('権限なし');
-    goal.status='approved1';
-    goal.history.push({action:'reject2', by:req.session.user._id});
-    await goal.save();
-    res.redirect('/goals');
-});
-
 // 目標編集フォーム
 app.get('/goals/edit/:id', requireLogin, async (req, res) => {
     const goal = await Goal.findById(req.params.id);
     if (!goal) return res.status(404).send('目標が見つかりません');
 
-    const employee = await Employee.findOne({ userId: req.session.user._id });
+    // viewer employee
+    const employee = await Employee.findOne({ userId: req.session.userId });
     if (!employee) return res.status(404).send('社員情報が見つかりません');
 
-    if (goal.ownerId.toString() !== employee._id.toString()) {
-        return res.status(403).send('権限なし');
-    }
+    await ensureOwnerName(goal);
+    await goal.save();
+
+    // 作成者判定 using helper
+    if (!isCreatorOfGoal(goal, employee)) return res.status(403).send('権限なし');
 
     if (!(goal.status === 'draft' || goal.status === 'approved1' || goal.status === 'rejected')) {
         return res.status(403).send('権限なし');
@@ -4626,38 +5271,105 @@ app.get('/goals/edit/:id', requireLogin, async (req, res) => {
     // 承認者一覧
     const employees = await Employee.find();
 
-    const html = `
-    <form method="POST" action="/goals/edit/${goal._id}">
-        <label>目標名: <input type="text" name="title" value="${goal.title}" required></label><br>
-        <label>説明: <textarea name="description">${goal.description}</textarea></label><br>
-        <label>目標レベル:
-            <select name="goalLevel">
-                <option value="低" ${goal.goalLevel==='低'?'selected':''}>低</option>
-                <option value="中" ${goal.goalLevel==='中'?'selected':''}>中</option>
-                <option value="高" ${goal.goalLevel==='高'?'selected':''}>高</option>
-            </select>
-        </label><br>
-        <label>アクションプラン: <textarea name="actionPlan">${goal.actionPlan||''}</textarea></label><br>        
-        <label>期限: <input type="date" name="deadline" value="${goal.deadline ? goal.deadline.toISOString().substring(0,10) : ''}"></label><br>
-        <label>承認者:
-            <select name="approverId">
-                ${employees.map(e => `<option value="${e._id}" ${goal.currentApprover.toString() === e._id.toString() ? 'selected' : ''}>${e.name} (${e.position})</option>`).join('')}
-            </select>
-        </label><br>
-        <button type="submit" class="btn">更新</button>
-        <a href="/goals" class="btn" style="background:#0984e3;">目標一覧に戻る</a>
-    </form>
-    `;
-    renderPage(req, res, '目標編集', '目標編集画面', html);
+    // 判定: 既に一次申請(submit1)が履歴にあるか
+    const hasSubmit1 = Array.isArray(goal.history) && goal.history.find(h => h.action === 'submit1');
+    const submitLabel = hasSubmit1 ? '再申請' : '一次依頼';
+
+        const html = `
+        <style>
+            :root{--bg:#f3f6f5;--card:#fff;--accent:#5b8cfe;--muted:#68707a}
+            body{margin:0;background:var(--bg);font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif;color:#042827}
+            .container{max-width:1400px;margin:28px auto;padding:20px}
+            .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+            .title{font-size:20px;font-weight:700}
+            .lead{color:var(--muted);font-size:13px}
+
+            .card{background:linear-gradient(180deg,rgba(255,255,255,0.95),#fff);padding:22px;border-radius:12px;box-shadow:0 16px 40px rgba(10,30,30,0.06)}
+            form .field{margin-bottom:14px}
+            label{display:block;font-weight:700;margin-bottom:8px}
+            input,select,textarea{width:100%;padding:12px;border-radius:10px;border:1px solid #e6eef2;background:#fff;font-size:14px}
+            textarea{min-height:120px}
+            .row{display:flex;gap:12px}
+            .col{flex:1}
+
+            .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+            .btn{padding:10px 14px;border-radius:10px;border:0;cursor:pointer;font-weight:700}
+            .btn.ghost{background:transparent;border:1px solid rgba(6,22,22,0.06)}
+            .btn.primary{background:var(--accent);color:#fff}
+            .note{margin-top:12px;color:var(--muted);font-size:13px}
+            @media(max-width:900px){.row{flex-direction:column}}
+        </style>
+
+        <div class="container">
+            <div class="header">
+                <div>
+                    <div class="title">目標を編集</div>
+                    <div class="lead">編集後、下書き保存または再申請できます。</div>
+                </div>
+                <div class="note">ステータス: ${goal.status}</div>
+            </div>
+
+            <div class="card">
+                <form method="POST" action="/goals/edit/${goal._id}">
+                    <div class="field">
+                        <label for="title">目標名</label>
+                        <input id="title" name="title" type="text" value="${escapeHtml(goal.title||'')}" required>
+                    </div>
+
+                    <div class="field">
+                        <label for="description">概要 / 達成基準</label>
+                        <textarea id="description" name="description">${escapeHtml(goal.description||'')}</textarea>
+                    </div>
+
+                    <div class="row">
+                        <div class="col">
+                            <label for="goalLevel">目標レベル</label>
+                            <select id="goalLevel" name="goalLevel">
+                                <option value="低" ${goal.goalLevel==='低'?'selected':''}>低</option>
+                                <option value="中" ${goal.goalLevel==='中'?'selected':''}>中</option>
+                                <option value="高" ${goal.goalLevel==='高'?'selected':''}>高</option>
+                            </select>
+                        </div>
+                        <div style="width:220px">
+                            <label for="deadline">期限</label>
+                            <input id="deadline" name="deadline" type="date" value="${goal.deadline ? moment.tz(goal.deadline, 'Asia/Tokyo').format('YYYY-MM-DD') : ''}">
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label for="actionPlan">アクションプラン</label>
+                        <textarea id="actionPlan" name="actionPlan">${escapeHtml(goal.actionPlan||'')}</textarea>
+                    </div>
+
+                    <div class="field">
+                        <label for="approverId">承認者</label>
+                        <select id="approverId" name="approverId">
+                            ${employees.map(e => `<option value="${e._id}" ${goal.currentApprover.toString() === e._id.toString() ? 'selected' : ''}>${escapeHtml(e.name)}${e.position? ' - '+escapeHtml(e.position) : ''}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="actions">
+                        <a href="/goals" class="btn ghost">目標一覧に戻る</a>
+                        <button type="submit" name="action" value="save" class="btn primary">更新</button>
+                        ${ (goal.status === 'draft' || goal.status === 'rejected') ? `<button type="submit" name="resubmit" value="1" class="btn" style="background:#16a085;color:#fff;">${submitLabel}</button>` : '' }
+                    </div>
+                </form>
+                <div class="note">編集後に「更新」を押すと保存されます。差し戻しからの再申請は「${submitLabel}」を使用してください。</div>
+            </div>
+        </div>
+        `;
+        renderPage(req, res, '目標編集', '目標編集画面', html);
 });
 
 app.get('/goals/detail/:id', requireLogin, async (req, res) => {
     const goal = await Goal.findById(req.params.id)
         .populate('ownerId')
         .populate('currentApprover')
+        .populate('createdBy')
         .populate('history.by');
 
     if (!goal) return res.status(404).send("目標が見つかりません");
+    const viewerEmp = await Employee.findOne({ userId: req.session.userId });
     
     const statusLabels = {
         draft: "下書き",
@@ -4682,38 +5394,86 @@ app.get('/goals/detail/:id', requireLogin, async (req, res) => {
         evaluate: "評価入力"
     };
 
-    const html = `
-      <h3>${goal.title}</h3>
-      <p><strong>状態:</strong> ${statusLabels[goal.status] || goal.status}</p>
-      <p><strong>申請者:</strong> ${goal.ownerId ? goal.ownerId.name : '-'}</p>
-      <p><strong>目標レベル:</strong> ${goal.goalLevel || '-'}</p>
-      <p><strong>アクションプラン:</strong> ${goal.actionPlan || '-'}</p>
-      <p><strong>説明:</strong> ${goal.description || '-'}</p>
-      <p><strong>期限:</strong> ${goal.deadline ? goal.deadline.toISOString().substring(0,10) : '-'}</p>
-      <p><strong>承認者:</strong> ${goal.currentApprover ? goal.currentApprover.name : '-'}</p>
-      <p><strong>進捗:</strong> ${goal.progress || 0}%</p>
-      <p><strong>評価グレード:</strong> ${goal.grade || '-'}</p>
+                const html = `
+        <style>
+            :root{--bg:#f3f6f5;--card:#fff;--accent:#5b8cfe;--muted:#6b7280}
+            body{margin:0;background:var(--bg);font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif;color:#042827}
+            .container{max-width:1400px;margin:28px auto;padding:20px}
+            .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+            .title{font-size:20px;font-weight:700}
+            .meta{color:var(--muted);font-size:13px}
 
-      <h4>履歴</h4>
-      <table border="1" cellpadding="5" cellspacing="0">
-        <thead>
-          <tr><th>日時</th><th>操作</th><th>担当者</th><th>コメント</th></tr>
-        </thead>
-        <tbody>
-          ${goal.history.map(h => `
-            <tr>
-              <td>${h.date ? h.date.toISOString().substring(0,16).replace('T',' ') : '-'}</td>
-              <td>${actionLabels[h.action] || h.action}</td>
-              <td>${h.by && h.by.name ? h.by.name : h.by}</td>
-              <td>${h.comment || ''}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-      <a href="/goals" class="btn btn-primary" style="margin-top:20px;">目標一覧に戻る</a>
-    `;
+            .card{background:linear-gradient(180deg,rgba(255,255,255,0.95),#fff);padding:22px;border-radius:12px;box-shadow:0 16px 40px rgba(10,30,30,0.06)}
+            .grid{display:grid;grid-template-columns:1fr 360px;gap:20px}
+            @media(max-width:900px){.grid{grid-template-columns:1fr}}
 
-    renderPage(req, res, '目標詳細', '目標詳細画面', html);
+            .details dl{display:grid;grid-template-columns:140px 1fr;gap:8px 16px;margin:0}
+            .details dt{color:var(--muted);font-weight:700}
+            .details dd{margin:0}
+
+            .history{margin-top:16px}
+            table.history{width:100%;border-collapse:collapse}
+            table.history th, table.history td{padding:8px;border-bottom:1px solid #eef2f5;text-align:left}
+
+            .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:12px}
+            .btn{padding:8px 12px;border-radius:8px;border:0;cursor:pointer;font-weight:700}
+            .btn.primary{background:var(--accent);color:#fff}
+            .btn.ghost{background:transparent;border:1px solid rgba(6,22,22,0.06)}
+        </style>
+
+        <div class="container">
+            <div class="header">
+                <div class="title">${escapeHtml(goal.title || '目標')}</div>
+                <div class="meta">状態: <strong>${escapeHtml(statusLabels[goal.status] || goal.status)}</strong></div>
+            </div>
+
+            <div class="grid">
+                <div class="card details">
+                    <dl>
+                        <dt>作成者</dt><dd>${escapeHtml(goal.createdBy && goal.createdBy.name ? goal.createdBy.name : (goal.createdByName || '-'))}</dd>
+                        <dt>承認者</dt><dd>${escapeHtml(goal.ownerId && goal.ownerId.name ? goal.ownerId.name : (goal.ownerName || (goal.currentApprover && goal.currentApprover.name) || '-'))}</dd>
+                        <dt>目標レベル</dt><dd>${escapeHtml(goal.goalLevel || '-')}</dd>
+                        <dt>期限</dt><dd>${goal.deadline ? escapeHtml(moment.tz(goal.deadline, 'Asia/Tokyo').format('YYYY-MM-DD')) : '-'}</dd>
+                        <dt>進捗</dt><dd>${escapeHtml(String(goal.progress || 0))}%</dd>
+                        <dt>評価グレード</dt><dd>${escapeHtml(goal.grade || '-')}</dd>
+                        <dt>アクションプラン</dt><dd>${escapeHtml(goal.actionPlan || '-')}</dd>
+                        <dt>説明</dt><dd>${escapeHtml(goal.description || '-')}</dd>
+                    </dl>
+
+                    <div class="actions">
+                        <a href="/goals" class="btn ghost">目標一覧に戻る</a>
+                        ${goal.status === 'approved1' && viewerEmp && ((goal.createdBy && goal.createdBy.toString() === viewerEmp._id.toString()) || (goal.ownerId && goal.ownerId._id && goal.ownerId._id.toString() === viewerEmp._id.toString()))
+                            ? `<a href="/goals/evaluate/${goal._id}" class="btn primary">評価入力</a>` : ''}
+                        ${ (goal.status === 'draft' || goal.status === 'rejected') && viewerEmp && ((goal.createdBy && goal.createdBy.toString() === viewerEmp._id.toString()) || (Array.isArray(goal.history) && goal.history.find(h=>h.action==='submit1' && h.by && h.by.toString()===viewerEmp._id.toString())))
+                            ? (() => { const hasSubmit1Detail = Array.isArray(goal.history) && goal.history.find(h=>h.action==='submit1'); const submitLabelDetail = hasSubmit1Detail ? '再申請' : '一次依頼'; return `<a href="/goals/submit1/${goal._id}" class="btn" style="background:#16a085;color:#fff;">${submitLabelDetail}</a>` })() : '' }
+                    </div>
+
+                    <div class="history">
+                        <h4>履歴</h4>
+                        <table class="history">
+                            <thead><tr><th>日時</th><th>操作</th><th>担当者</th><th>コメント</th></tr></thead>
+                            <tbody>
+                                ${goal.history.map(h => `
+                                    <tr>
+                                        <td>${h.date ? escapeHtml(moment.tz(h.date, 'Asia/Tokyo').format('YYYY-MM-DD HH:mm')) : '-'}</td>
+                                        <td>${escapeHtml(actionLabels[h.action] || h.action)}</td>
+                                        <td>${escapeHtml(h.by && h.by.name ? h.by.name : (h.by || '-'))}</td>
+                                        <td>${escapeHtml(h.comment || '')}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div>
+                    <!-- right column intentionally left minimal for wide layout -->
+                </div>
+            </div>
+        </div>
+        `;
+
+        renderPage(req, res, '目標詳細', '目標詳細画面', html);
 });
 
 // 目標編集 POST
@@ -4722,11 +5482,17 @@ app.post('/goals/edit/:id', requireLogin, async (req, res) => {
     if (!goal) return res.status(404).send('目標が見つかりません');
 
     // セッションの User から Employee を取得
-    const employee = await Employee.findOne({ userId: req.session.user._id });
+    const employee = await Employee.findOne({ userId: req.session.userId });
     if (!employee) return res.status(404).send('社員情報が見つかりません');
 
-    // オーナーIDと Employee._id を比較
-    if (goal.ownerId.toString() !== employee._id.toString()) {
+    // POST（保存）でも同様に作成者であることを確認
+    let postCreatorId = null;
+    if (goal.createdBy) postCreatorId = goal.createdBy.toString();
+    else if (Array.isArray(goal.history)) {
+        const firstSubmit = goal.history.find(h => h.action === 'submit1' && h.by);
+        if (firstSubmit) postCreatorId = firstSubmit.by.toString();
+    }
+    if (!(postCreatorId && postCreatorId === employee._id.toString())) {
         return res.status(403).send('権限なし');
     }
 
@@ -4739,8 +5505,34 @@ app.post('/goals/edit/:id', requireLogin, async (req, res) => {
     goal.deadline = deadline;
     goal.goalLevel = goalLevel;
     goal.actionPlan = actionPlan;
-    if (approverId) goal.currentApprover = new mongoose.Types.ObjectId(approverId);
+    if (approverId) {
+        const approverEmp = await Employee.findById(approverId);
+        if (!approverEmp) return res.status(400).send('承認者が不正です');
+        goal.currentApprover = approverEmp._id;
+    }
+    await ensureOwnerName(goal);
     await goal.save();
+
+    // If the user clicked the resubmit button, move to pending1 and record history
+    if (req.body.resubmit) {
+        // Determine if this is a resubmit after a second-level reject
+        const lastAction = Array.isArray(goal.history) && goal.history.length ? goal.history[goal.history.length-1].action : null;
+        if (lastAction === 'reject2') {
+            // Re-submit to 2次承認者
+            goal.status = 'pending2';
+            // keep goal.currentApprover as-is (should point to 2次承認者)
+            goal.history.push({ action: 'submit2', by: employee._id, date: new Date() });
+        } else {
+            // Normal first-level submission
+            goal.status = 'pending1';
+            // Ensure currentApprover is set to ownerId (the primary approver)
+            if (goal.ownerId) goal.currentApprover = goal.ownerId;
+            goal.history.push({ action: 'submit1', by: employee._id, date: new Date() });
+        }
+        await ensureOwnerName(goal);
+        await goal.save();
+    }
+
     res.redirect('/goals');
     });
 
@@ -4751,10 +5543,17 @@ app.get('/goals/delete/:id', requireLogin, async (req, res) => {
         if (!goal) return res.status(404).send('目標が見つかりません');
 
         // ログインユーザーがオーナーであることを確認
-        const employee = await Employee.findOne({ userId: req.session.user._id });
+    const employee = await Employee.findOne({ userId: req.session.userId });
         if (!employee) return res.status(404).send('社員情報が見つかりません');
 
-        if (goal.ownerId.toString() !== employee._id.toString()) {
+    // 削除も作成者判定を用いる
+    let delCreatorId = null;
+    if (goal.createdBy) delCreatorId = goal.createdBy.toString();
+    else if (Array.isArray(goal.history)) {
+        const firstSubmit = goal.history.find(h => h.action === 'submit1' && h.by);
+        if (firstSubmit) delCreatorId = firstSubmit.by.toString();
+    }
+    if (!(delCreatorId && delCreatorId === employee._id.toString())) {
             return res.status(403).send('権限なし');
         }
 
@@ -4767,13 +5566,96 @@ app.get('/goals/delete/:id', requireLogin, async (req, res) => {
     }
 });
 
+// 管理者向け: 既存データの整合性修正（ownerId/ownerName を承認者に揃え、draft を pending1 へ）
+app.get('/goals/admin-fix/:id', requireLogin, isAdmin, async (req, res) => {
+    try {
+        const goal = await Goal.findById(req.params.id);
+        if (!goal) return res.status(404).send('目標が見つかりません');
+        if (!goal.currentApprover) return res.status(400).send('currentApprover が未設定です');
+        const approverEmp = await Employee.findById(goal.currentApprover);
+        if (!approverEmp) return res.status(400).send('承認者(Employee)が見つかりません');
+
+        const originalOwner = goal.ownerId;
+        // owner を承認者へ
+        goal.ownerId = approverEmp._id;
+        goal.ownerName = approverEmp.name;
+
+        if (goal.status === 'draft') {
+            goal.status = 'pending1';
+            goal.history.push({ action: 'submit1', by: originalOwner || req.session.userId, date: new Date(), comment: 'admin-fix' });
+        }
+
+        await goal.save();
+        console.log('[admin-fix] fixed goal', goal._id.toString());
+        res.send('fixed');
+    } catch (e) {
+        console.error('[admin-fix] error', e);
+        res.status(500).send('Internal server error');
+    }
+});
+
+// 管理者向け: draft の一括修正
+app.get('/goals/admin-fix-drafts', requireLogin, isAdmin, async (req, res) => {
+    try {
+        const drafts = await Goal.find({ status: 'draft', currentApprover: { $ne: null } });
+        let count = 0;
+        for (const g of drafts) {
+            const approverEmp = await Employee.findById(g.currentApprover);
+            if (!approverEmp) continue;
+            const originalOwner = g.ownerId;
+            g.ownerId = approverEmp._id;
+            g.ownerName = approverEmp.name;
+            g.status = 'pending1';
+            g.history.push({ action: 'submit1', by: originalOwner, date: new Date(), comment: 'admin-fix-batch' });
+            await g.save();
+            count++;
+        }
+        res.send(`fixed ${count}`);
+    } catch (e) {
+        console.error('[admin-fix-drafts] error', e);
+        res.status(500).send('Internal server error');
+    }
+});
+
+// 管理者向け: createdBy が欠落しているデータの補完
+app.get('/goals/admin-backfill-createdBy', requireLogin, isAdmin, async (req, res) => {
+    try {
+        const targets = await Goal.find({ $or: [ { createdBy: { $exists: false } }, { createdBy: null } ] });
+        let fixed = 0;
+        for (const g of targets) {
+            let creatorEmpId = null;
+            // 履歴から submit1 の by を優先
+            if (Array.isArray(g.history)) {
+                const firstSubmit = g.history.find(h => h.action === 'submit1' && h.by);
+                if (firstSubmit) creatorEmpId = firstSubmit.by;
+            }
+            // なければ、オーナーが作成者だった時代のデータを仮定
+            if (!creatorEmpId && g.ownerId) creatorEmpId = g.ownerId;
+            if (creatorEmpId) {
+                const emp = await Employee.findById(creatorEmpId);
+                g.createdBy = creatorEmpId;
+                g.createdByName = emp ? emp.name : (g.createdByName || '');
+                await g.save();
+                fixed++;
+            }
+        }
+        res.send(`backfilled ${fixed}`);
+    } catch (e) {
+        console.error('[admin-backfill-createdBy] error', e);
+        res.status(500).send('Internal server error');
+    }
+});
+
 // 承認者向け目標一覧
 app.get('/goals/approval', requireLogin, async (req, res) => {
-  const employee = await Employee.findOne({ userId: req.session.user._id });
-  const goals = await Goal.find({
-    currentApprover: employee._id,
-    status: { $in: ['pending1', 'pending2'] }
-  }).populate('ownerId');
+        const employee = await Employee.findOne({ userId: req.session.userId });
+        if (!employee) return res.status(404).send('承認者の社員情報が見つかりません');
+        const isAdmin = req.session.isAdmin || req.session.user?.isAdmin;
+        const query = isAdmin
+            ? { status: { $in: ['pending1', 'pending2'] } }
+            : { currentApprover: employee._id, status: { $in: ['pending1', 'pending2'] } };
+    const goals = await Goal.find(query).populate('ownerId').populate('createdBy');
+        console.log('[goals/approval] approver', employee._id.toString(), 'isAdmin', !!isAdmin, 'pending count', goals.length);
 
   const statusLabels = {
     draft: "下書き",
@@ -4821,7 +5703,8 @@ app.get('/goals/approval', requireLogin, async (req, res) => {
     .progress { background:#dcdde1; border-radius:10px; overflow:hidden; height:15px; }
     .progress-bar { background:#6c5ce7; height:100%; width:0%; transition: width 1s; }
 
-    .approval-actions { text-align:right; }
+    .approval-actions { display:flex; gap:8px; justify-content:flex-end; align-items:center; flex-wrap:nowrap; }
+    .approval-actions .btn { white-space:nowrap; }
     .btn { text-decoration:none; padding:6px 12px; border-radius:8px; font-weight:bold; margin-left:5px; font-size:0.9rem; }
     .btn-detail { background:#00b894; color:#fff; }
     .btn-approve { background:#0984e3; color:#fff; }
@@ -4837,10 +5720,11 @@ app.get('/goals/approval', requireLogin, async (req, res) => {
             <h4>${g.title}</h4>
             <span class="status ${g.status}">${statusLabels[g.status]}</span>
           </div>
-          <div class="approval-content">
-            <p><strong>社員名:</strong> ${g.ownerId ? g.ownerId.name : 'Unknown'}</p>
+                    <div class="approval-content">
+                        <p><strong>作成者:</strong> ${g.createdBy && g.createdBy.name ? g.createdBy.name : (g.createdByName || '-')}</p>
+                        <p><strong>承認者:</strong> ${g.ownerId ? g.ownerId.name : 'Unknown'}</p>
             <p><strong>アクションプラン:</strong> ${g.actionPlan || '-'}</p>
-            <p><strong>期限:</strong> ${g.deadline ? g.deadline.toISOString().substring(0,10) : '-'}</p>
+            <p><strong>期限:</strong> ${g.deadline ? moment.tz(g.deadline, 'Asia/Tokyo').format('YYYY-MM-DD') : '-'}</p>
           </div>
           <div class="progress-container">
             <div class="progress">
@@ -4849,14 +5733,14 @@ app.get('/goals/approval', requireLogin, async (req, res) => {
           </div>
           <div class="approval-actions">
             <a href="/goals/detail/${g._id}" class="btn btn-detail">詳細</a>
-            ${g.status === 'pending1' ? `
-              <a href="/goals/approve1/${g._id}" class="btn btn-approve">承認</a>
-              <a href="/goals/reject1/${g._id}" class="btn btn-reject">差し戻し</a>
-            ` : ''}
-            ${g.status === 'pending2' ? `
-              <a href="/goals/approve2/${g._id}" class="btn btn-approve">承認</a>
-              <a href="/goals/reject2/${g._id}" class="btn btn-reject">差し戻し</a>
-            ` : ''}
+                        ${(((g.currentApprover && (g.currentApprover._id ? g.currentApprover._id.toString() : g.currentApprover.toString()) ) === employee._id.toString()) || (req.session.isAdmin || req.session.user?.isAdmin)) && g.status === 'pending1' ? `
+                            <a href="/goals/approve1/${g._id}" class="btn btn-approve">承認</a>
+                            <a href="/goals/reject1/${g._id}" class="btn btn-reject">差し戻し</a>
+                        ` : ''}
+                        ${(((g.currentApprover && (g.currentApprover._id ? g.currentApprover._id.toString() : g.currentApprover.toString()) ) === employee._id.toString()) || (req.session.isAdmin || req.session.user?.isAdmin)) && g.status === 'pending2' ? `
+                            <a href="/goals/approve2/${g._id}" class="btn btn-approve">承認</a>
+                            <a href="/goals/reject2/${g._id}" class="btn btn-reject">差し戻し</a>
+                        ` : ''}
           </div>
         </div>
       `).join('')}
@@ -4879,15 +5763,15 @@ app.get('/goals/approval', requireLogin, async (req, res) => {
 });
 
 app.get('/goals/report', requireLogin, async (req, res) => {
-  const employee = await Employee.findOne({ userId: req.session.user._id });
+    const employee = await Employee.findOne({ userId: req.session.userId });
   if (!employee) return res.status(404).send("社員情報が見つかりません");
 
-  const goals = await Goal.find({ ownerId: employee._id }).populate('currentApprover');
+    const goals = await Goal.find({ createdBy: employee._id }).populate('currentApprover');
 
   // CSVヘッダー
   let csv = '目標名,説明,目標レベル,アクションプラン,期限,承認者,状態,進捗\n';
   goals.forEach(g => {
-    csv += `"${g.title}","${g.description || ''}","${g.goalLevel || ''}","${g.actionPlan || ''}","${g.deadline ? g.deadline.toISOString().substring(0,10) : ''}","${g.currentApprover ? g.currentApprover.name : ''}","${g.status}","${g.progress || 0}"\n`;
+    csv += `"${g.title}","${g.description || ''}","${g.goalLevel || ''}","${g.actionPlan || ''}","${g.deadline ? moment.tz(g.deadline, 'Asia/Tokyo').format('YYYY-MM-DD') : ''}","${g.currentApprover ? g.currentApprover.name : ''}","${g.status}","${g.progress || 0}"\n`;
   });
 
   res.setHeader('Content-Disposition', 'attachment; filename="goal_report.csv"');
@@ -4900,20 +5784,121 @@ app.get('/goals/report', requireLogin, async (req, res) => {
 // --- 掲示板新規投稿フォーム ---
 app.get('/board/new', requireLogin, (req, res) => {
     renderPage(req, res, "新規投稿", "掲示板への投稿", `
-        <div class="container mt-4">
-            <form action="/board" method="post">
-                <div class="mb-3">
-                    <label class="form-label">タイトル</label>
-                    <input type="text" name="title" class="form-control" required>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">本文</label>
-                    <textarea name="content" class="form-control" rows="5" required></textarea>
-                </div>
-                <button type="submit" class="btn btn-success">投稿する</button>
-            </form>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        <style>
+            body{font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif}
+            .wrap{max-width:1000px;margin:28px auto}
+            .card{background:#fff;padding:22px;border-radius:12px;box-shadow:0 12px 30px rgba(10,20,40,0.06)}
+            .thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+            .thumbs img{width:120px;height:80px;object-fit:cover;border-radius:8px;border:1px solid #e6eef2}
+            .inline-note{color:#6b7280;font-size:13px}
+        </style>
+
+        <div class="wrap">
+            <div class="card">
+                <h3>掲示板に投稿する</h3>
+                <p class="inline-note">画像やファイルを添付できます。Markdown記法も利用可能です。</p>
+
+                <form action="/board" method="post" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label class="form-label">タイトル</label>
+                        <input type="text" name="title" class="form-control" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">本文 (Markdown可)</label>
+                        <textarea name="content" class="form-control" rows="8" placeholder="例: ## お知らせ\n詳細..." required></textarea>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">添付ファイル (複数可)</label>
+                            <input type="file" name="attachments" class="form-control" multiple accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+                            <div class="inline-note">推奨: 画像は 5MB 以下。PDF/Office は 10MB 以下。</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">タグ (カンマ区切り)</label>
+                            <input type="text" name="tags" class="form-control" placeholder="例: お知らせ,全社,重要">
+                        </div>
+                    </div>
+
+                    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+                        <a href="/board" class="btn btn-outline-secondary">キャンセル</a>
+                        <button type="submit" class="btn btn-primary">投稿する</button>
+                    </div>
+                </form>
+            </div>
         </div>
     `);
+});
+
+app.get('/links', requireLogin, (req, res) => {
+    const links = [
+        { title: 'DXPRO SOLUTIONS Top', url: 'https://dxpro-sol.com/' },
+        { title: 'DXPRO SOLUTIONS 教育コンテンツ', url: 'https://dxpro-edu.web.app/' },
+        { title: 'DXPRO SOLUTIONS 採用ページ', url: 'https://dxpro-recruit-c76b3f4df6d9.herokuapp.com/login.html' },
+        { title: 'DXPRO SOLUTIONS 開発用のGPT', url: 'https://2024073118010411766192.onamaeweb.jp/' },
+    ];
+
+    const html = `
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+        <style>
+            :root{--card-bg:#ffffff;--muted:#6b7280;--accent:#0b69ff}
+            .wrap{max-width:1100px;margin:28px auto;padding:18px}
+            .page-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+            .title{font-size:22px;font-weight:800;margin:0}
+            .subtitle{color:var(--muted);font-size:13px}
+
+            .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:18px}
+            .link-card{background:linear-gradient(180deg,var(--card-bg),#fbfdff);padding:16px;border-radius:12px;border:1px solid rgba(11,105,255,0.06);box-shadow:0 10px 24px rgba(8,24,40,0.04);display:flex;flex-direction:column;justify-content:space-between;min-height:140px}
+            .link-top{display:flex;gap:12px;align-items:center}
+            .icon{flex:0 0 56px;width:56px;height:56px;border-radius:10px;background:linear-gradient(90deg,#eef4ff,#f0fbff);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--accent)}
+            .link-top > div{min-width:0}
+            .link-title{font-weight:800;font-size:16px;color:#0b2430;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+            .link-desc{color:var(--muted);font-size:13px;margin-top:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+            .link-url{font-family:monospace;font-size:12px;color:var(--muted);margin-top:6px;overflow-wrap:anywhere}
+            .link-actions{display:flex;justify-content:flex-end;align-items:center;margin-top:12px}
+            .btn-open{background:var(--accent);color:#fff;padding:8px 12px;border-radius:10px;text-decoration:none;font-weight:700;box-shadow:0 8px 18px rgba(11,95,255,0.08)}
+            .btn-local{background:transparent;border:1px solid #e6eef2;padding:8px 12px;border-radius:10px;color:var(--muted);text-decoration:none}
+
+            /* ensure text can shrink inside grid columns */
+            .grid .link-card { min-width:0 }
+
+            @media(max-width:700px){ .wrap{padding:12px} .link-title{white-space:normal} .link-desc{white-space:normal} }
+        </style>
+
+        <div class="wrap">
+            <div class="page-head">
+                <div>
+                    <h2 class="title">リンク集</h2>
+                    <div class="subtitle">よく使う外部・社内リンクをまとめています。</div>
+                </div>
+            </div>
+
+            <div class="grid">
+                ${links.map(l => `
+                    <div class="link-card">
+                        <div>
+                            <div class="link-top">
+                                <div class="icon">${ l.url.includes('edu') ? '🎓' : l.url.includes('recruit') ? '💼' : l.url.includes('onamaeweb') ? '🤖' : '🌐' }</div>
+                                <div>
+                                    <div class="link-title">${escapeHtml(l.title)}</div>
+                                    <div class="link-desc">${escapeHtml(l.url)}</div>
+                                </div>
+                            </div>
+                            <div class="link-desc">${ l.title.includes('教育') ? '社内向け教育コンテンツへ移動します。' : l.title.includes('採用') ? '採用ページ（ログインあり）' : l.title.includes('開発用のGPT') ? '開発用ツール（社内向け）' : '公式サイト' }</div>
+                        </div>
+                        <div class="link-actions">
+                            <div></div>
+                            <a class="btn-open" href="${l.url}" ${l.url.startsWith('http') ? 'target="_blank" rel="noopener noreferrer"' : ''}>開く</a>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    renderPage(req, res, 'リンク集', 'リンク集', html);
 });
 
 // --- 掲示板詳細 ---
@@ -4931,30 +5916,56 @@ app.get('/board/:id', requireLogin, async (req, res) => {
         .populate('authorId')
         .sort({ createdAt: -1 });
 
+    const contentHtml = renderMarkdownToHtml(post.content || '');
     renderPage(req, res, post.title, "投稿詳細", `
-        <div class="container mt-4">
-            <h4>${post.title}</h4>
-            <p>${post.content}</p>
-            <p><small class="text-muted">
-                投稿者: ${post.authorId?.username || "不明"} | 閲覧数: ${post.views} | いいね: ${post.likes}
-            </small></p>
-            <form action="/board/${post._id}/like" method="post">
-                <button class="btn btn-sm btn-outline-danger">いいね</button>
-            </form>
-            <hr>
-            <h5>コメント</h5>
-            <ul class="list-group">
-                ${comments.map(c => `
-                    <li class="list-group-item">
-                        ${c.content} - <small>${c.authorId?.username || "不明"}</small>
-                    </li>
-                `).join('')}
-            </ul>
-            <form action="/board/${post._id}/comment" method="post" class="mt-3">
-                <textarea name="content" class="form-control mb-2" required></textarea>
-                <button class="btn btn-primary">コメントする</button>
-            </form>
-            <a href="/board" class="btn btn-primary mt-3">戻る</a>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        <style>
+            body{font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif}
+            .wrap{max-width:900px;margin:28px auto}
+            .post-card{background:#fff;padding:20px;border-radius:12px;box-shadow:0 12px 30px rgba(10,20,40,0.06)}
+            .meta{color:#6b7280;font-size:13px}
+            .comment{background:#fbfdff;border-radius:8px;padding:10px;margin-bottom:8px}
+        </style>
+
+        <div class="wrap">
+            <div class="post-card">
+                <h3>${escapeHtml(post.title)}</h3>
+                <div class="meta mb-2">投稿者: ${escapeHtml(post.authorId?.username || '不明')} • 閲覧: ${escapeHtml(String(post.views))} • いいね: ${escapeHtml(String(post.likes))}</div>
+                <div class="mb-3">${contentHtml}</div>
+
+                ${ post.attachments && post.attachments.length ? `
+                    <div style="margin-bottom:12px">
+                        <div style="display:flex;gap:8px;flex-wrap:wrap">
+                            ${post.attachments.map(a => `
+                                <div>
+                                    ${a.url && a.url.match(/\.(jpg|jpeg|png|gif)$/i) ? `<a href="${a.url}" target="_blank"><img src="${a.url}" style="max-width:800px;max-height:500px;object-fit:cover;border-radius:8px;border:1px solid #eee"></a>` : `<a href="${a.url}" target="_blank">${escapeHtml(a.name)}</a>`}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : '' }
+
+                <form action="/board/${post._id}/like" method="post" style="display:inline-block;margin-bottom:12px">
+                    <button class="btn btn-sm btn-outline-danger">❤️ いいね</button>
+                </form>
+
+                <hr>
+                <h5>コメント</h5>
+                <div>
+                    ${comments.length ? comments.map(c => `
+                        <div class="comment">
+                            <div style="font-weight:600">${escapeHtml(c.authorId?.username || '名無し')}</div>
+                            <div style="font-size:14px;margin-top:6px">${renderMarkdownToHtml(c.content)}</div>
+                            <div class="meta" style="margin-top:6px">${escapeHtml(moment.tz(c.createdAt,'Asia/Tokyo').format('YYYY-MM-DD HH:mm'))}</div>
+                        </div>
+                    `).join('') : '<p class="text-muted">コメントはまだありません</p>' }
+                </div>
+
+                <form action="/board/${post._id}/comment" method="post" class="mt-3">
+                    <textarea name="content" class="form-control mb-2" rows="3" required></textarea>
+                    <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary">コメントする</button><a href="/board" class="btn btn-outline-secondary">戻る</a></div>
+                </form>
+            </div>
         </div>
     `);
 });
@@ -4976,12 +5987,9 @@ app.post('/board/:id/like', requireLogin, async (req, res) => {
 // --- コメント投稿 ---
 app.post('/board/:id/comment', requireLogin, async (req, res) => {
     try {
-        const { content } = req.body;
-        const newComment = new BoardComment({
-            postId: req.params.id,
-            authorId: req.session.user._id,
-            content
-        });
+    const { content } = req.body;
+    const safe = stripHtmlTags(content);
+    const newComment = new BoardComment({ postId: req.params.id, authorId: req.session.user._id, content: safe });
         await newComment.save();
         res.redirect(`/board/${req.params.id}`);
     } catch (err) {
@@ -4991,21 +5999,28 @@ app.post('/board/:id/comment', requireLogin, async (req, res) => {
 });
 
 // --- 掲示板投稿作成 ---
-app.post('/board', requireLogin, async (req, res) => {
+// handle file uploads for board posts
+app.post('/board', requireLogin, upload.array('attachments', 6), async (req, res) => {
     try {
-        const { title, content } = req.body;
+        const { title, content, tags } = req.body;
         const employee = await Employee.findOne({ userId: req.session.user._id });
         if (!employee) return res.status(400).send("社員情報が見つかりません");
 
-        const newPost = new BoardPost({
-            title,
-            content,
-            authorId: employee._id, // ユーザーIDを保存
-            views: 0,
-            likes: 0,
-            pinned: false
-        });
+        const safeTitle = stripHtmlTags(title);
+        const safeContent = content; // markdown/plain
 
+        // process uploaded files
+        const attachments = [];
+        if (Array.isArray(req.files)) {
+            for (const f of req.files) {
+                // preserve original filename and accessible url
+                attachments.push({ name: f.originalname, url: `/uploads/${f.filename}` });
+            }
+        }
+
+        const tagList = (tags || '').split(',').map(t=>t.trim()).filter(Boolean);
+
+        const newPost = new BoardPost({ title: safeTitle, content: safeContent, tags: tagList, attachments, authorId: employee._id, views: 0, likes: 0, pinned: false });
         await newPost.save();
         res.redirect('/board');
     } catch (err) {
@@ -5032,7 +6047,11 @@ app.get('/board', requireLogin, async (req, res) => {
     else if(sort === 'likes') postsQuery = postsQuery.sort({ likes: -1 });
     else postsQuery = postsQuery.sort({ pinned: -1, createdAt: -1 });
 
-    const posts = await postsQuery.exec();
+    // pagination
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const perPage = Math.min(20, Number(req.query.perPage) || 10);
+    const total = await BoardPost.countDocuments(postsQuery.getQuery());
+    const posts = await postsQuery.skip((page-1)*perPage).limit(perPage).exec();
 
     // コメント数取得
     const commentCounts = {};
@@ -5042,68 +6061,90 @@ app.get('/board', requireLogin, async (req, res) => {
     comments.forEach(c => commentCounts[c._id] = c.count);
 
     renderPage(req, res, "社内掲示板", "最新のお知らせ", `
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
         <style>
-            body { font-family: "Segoe UI", sans-serif; background:#f4f6f8; }
-            .board-container { max-width:900px; margin:auto; }
-            .board-card { background:#fff; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.1); padding:16px; margin-bottom:16px; position:relative; }
-            .board-card.pinned { border-left:6px solid #f1c40f; }
-            .board-title { font-size:1.2em; font-weight:600; color:#333; text-decoration:none; }
-            .board-title:hover { text-decoration:underline; }
-            .board-tags { margin-left:8px; font-size:0.85em; }
-            .board-meta { font-size:0.85em; color:#777; margin-top:8px; }
-            .board-actions { margin-top:12px; display:flex; gap:6px; flex-wrap:wrap; }
-            .board-btn { border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:0.85em; }
-            .board-btn.like { background:#ff6b6b; color:#fff; }
-            .board-btn.edit { background:#4a90e2; color:#fff; }
-            .board-btn.delete { background:#e74c3c; color:#fff; }
-            .board-btn.pin { background:#f1c40f; color:#333; }
-            .search-form { display:flex; gap:8px; margin-bottom:16px; }
-            .search-input, .search-select { padding:6px 10px; font-size:0.9em; border-radius:4px; border:1px solid #ccc; }
-            .search-btn { padding:6px 12px; border:none; border-radius:4px; background:#4a90e2; color:#fff; cursor:pointer; }
+            body{font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif;background:#f5f7fb}
+            .wrap{max-width:1100px;margin:28px auto;padding:12px}
+            .hero{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+            .search-bar{display:flex;gap:8px;align-items:center}
+            .search-input{padding:12px 16px;border-radius:10px;border:1px solid rgba(15,35,60,0.06);min-width:320px;font-size:15px}
+            .search-bar .form-select{padding:10px 12px;border-radius:10px;font-size:15px}
+            .search-button{font-size:15px;border-radius:10px;box-shadow:0 8px 22px rgba(11,105,255,0.10);width:220px}
+            @media(max-width:900px){
+                .search-button{width:100%}
+            }
+            .btn-ghost{background:transparent;border:1px solid rgba(15,35,60,0.06);color:#0b69ff;padding:8px 12px;border-radius:8px}
+            .pinned-banner{background:linear-gradient(90deg,#fff9e6,#fff4d6);padding:12px;border-radius:10px;border:1px solid rgba(0,0,0,0.03);margin-bottom:12px}
+            .card-board{background:#fff;border-radius:12px;padding:18px;box-shadow:0 12px 30px rgba(12,32,56,0.06);border:1px solid rgba(10,20,40,0.03);margin-bottom:12px}
+            .meta{color:#6b7280;font-size:13px}
+            .tag{background:#eef2ff;color:#0b69ff;padding:4px 8px;border-radius:999px;font-size:12px;margin-left:8px}
         </style>
 
-        <div class="board-container">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                <h2>社内掲示板</h2>
-                <a href="/board/new" class="board-btn edit">新規投稿</a>
+        <div class="wrap">
+            <div class="hero">
+                <div>
+                    <h2>社内掲示板</h2>
+                    <div class="small-muted">最新のお知らせと社内共有</div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <form method="get" action="/board" class="search-bar" style="margin:0">
+                        <input type="text" name="q" value="${escapeHtml(q)}" placeholder="タイトル・内容で検索" class="search-input">
+                        <select name="sort" class="form-select" style="max-width:160px">
+                            <option value="date" ${sort==='date'?'selected':''}>新着順</option>
+                            <option value="views" ${sort==='views'?'selected':''}>閲覧数順</option>
+                            <option value="likes" ${sort==='likes'?'selected':''}>いいね順</option>
+                        </select>
+                        <button type="submit" class="btn btn-primary search-button">検索</button>
+                    </form>
+                    <a href="/board/new" class="btn btn-outline-primary">新規投稿</a>
+                </div>
             </div>
 
-            <form class="search-form" method="get" action="/board">
-                <input type="text" name="q" value="${q}" placeholder="タイトル・内容で検索" class="search-input">
-                <select name="sort" class="search-select">
-                    <option value="date" ${sort==='date'?'selected':''}>新着順</option>
-                    <option value="views" ${sort==='views'?'selected':''}>閲覧数順</option>
-                    <option value="likes" ${sort==='likes'?'selected':''}>いいね順</option>
-                </select>
-                <button class="search-btn">検索</button>
-            </form>
+            ${ posts.filter(p=>p.pinned).length ? `<div class="pinned-banner"><strong>ピン留め</strong> — 管理者のお知らせを優先表示しています</div>` : '' }
 
             ${posts.map(p => `
-                <div class="board-card ${p.pinned ? 'pinned' : ''}">
-                    <a class="board-title" href="/board/${p._id}">${p.title}</a>
-                    ${p.pinned ? '<span class="board-tags">PIN</span>' : ''}
-                    ${p.tags?.map(tag => `<span class="board-tags">${tag}</span>`).join('') || ''}
-                    <div class="board-meta">
-                        投稿者: ${p.authorId?.username || '不明'} | ${new Date(p.createdAt).toLocaleString()} | 閲覧: ${p.views} | いいね: ${p.likes} | コメント: ${commentCounts[p._id] || 0}
+                <div class="card-board ${p.pinned ? 'border-start' : ''}">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                        <div style="max-width:74%">
+                            <a href="/board/${p._id}" style="font-weight:700;font-size:16px;color:#0b2430;text-decoration:none">${escapeHtml(p.title)}</a>
+                            <div class="meta">投稿者: ${escapeHtml(p.authorId?.username || '不明')} • ${new Date(p.createdAt).toLocaleString()}</div>
+                            <div style="margin-top:8px;color:#334e56">${escapeHtml(stripHtmlTags(p.content).slice(0,300))}${(p.content||'').length>300? '...' : ''}</div>
+                        </div>
+                        <div style="text-align:right">
+                            ${ (p.tags || []).map(tag => `<div class="tag">${escapeHtml(tag)}</div>`).join('') }
+                        </div>
                     </div>
-                    <div class="board-actions">
-                        <form action="/board/${p._id}/like" method="post" style="display:inline;">
-                            <button class="board-btn like">❤️ いいね</button>
-                        </form>
-                        ${(req.session.user.isAdmin || req.session.user._id == p.authorId?._id) ? `
-                            <a href="/board/${p._id}/edit" class="board-btn edit">✏️ 編集</a>
-                            <form action="/board/${p._id}/delete" method="post" style="display:inline;">
-                                <button class="board-btn delete">🗑️ 削除</button>
+
+                    <div class="meta" style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+                        <div>閲覧: ${escapeHtml(String(p.views))} • いいね: ${escapeHtml(String(p.likes))} • コメント: ${escapeHtml(String(commentCounts[p._id] || 0))}</div>
+                        <div style="display:flex;gap:8px">
+                            <form action="/board/${p._id}/like" method="post" style="display:inline;">
+                                <button class="btn btn-sm btn-outline-danger">❤️ いいね</button>
                             </form>
-                        ` : ''}
-                        ${req.session.user.isAdmin ? `
-                            <form action="/board/${p._id}/pin" method="post" style="display:inline;">
-                                <button class="board-btn pin">${p.pinned ? '📌 ピン解除' : '📌 ピン留め'}</button>
-                            </form>
-                        ` : ''}
+                            ${ (req.session.user.isAdmin || req.session.user._id == (p.authorId?._id || '').toString()) ? `
+                                <a href="/board/${p._id}/edit" class="btn btn-sm btn-outline-primary">✏️ 編集</a>
+                                <form action="/board/${p._id}/delete" method="post" style="display:inline;">
+                                    <button class="btn btn-sm btn-outline-danger">🗑️ 削除</button>
+                                </form>
+                            ` : '' }
+                            ${ req.session.user.isAdmin ? `
+                                <form action="/board/${p._id}/pin" method="post" style="display:inline;">
+                                    <button class="btn btn-sm btn-outline-warning">${p.pinned ? '📌 ピン解除' : '📌 ピン留め'}</button>
+                                </form>
+                            ` : '' }
+                        </div>
                     </div>
                 </div>
             `).join('')}
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
+                <div class="small-muted">表示 ${escapeHtml(String((page-1)*perPage + 1))} - ${escapeHtml(String(Math.min(page*perPage, total)))} / ${escapeHtml(String(total))}</div>
+                <div style="display:flex;gap:8px">
+                    ${ page > 1 ? `<a href="?page=${page-1}&perPage=${perPage}&q=${escapeHtml(q)}&sort=${escapeHtml(sort)}" class="btn btn-sm btn-ghost">前へ</a>` : '' }
+                    ${ (page * perPage) < total ? `<a href="?page=${page+1}&perPage=${perPage}&q=${escapeHtml(q)}&sort=${escapeHtml(sort)}" class="btn btn-sm btn-ghost">次へ</a>` : '' }
+                </div>
+            </div>
         </div>
     `);
 });
@@ -5190,131 +6231,151 @@ app.get('/hr', requireLogin, async (req, res) => {
         req.session.user = user;
         req.session.employee = employee;
 
-        // サンプルデータ
-        const pendingLeaves = 2;
-        const teamSize = 8;
-        const tasksIncomplete = 5;
-        const overtimeHours = 12;
-        const payrollPending = 3;
+        // DB-driven KPI values
+        const pendingLeaves = await LeaveRequest.countDocuments({ status: 'pending' });
+        const teamSize = await Employee.countDocuments();
+        const tasksIncomplete = await Goal.countDocuments({ status: { $ne: 'completed' } });
+        const payrollPending = await PayrollRun.countDocuments({ locked: false });
+
+        // 今月の残業時間合計（Asia/Tokyo）
+        const nowMoment = moment().tz('Asia/Tokyo');
+        const startOfMonth = nowMoment.clone().startOf('month').toDate();
+        const endOfMonth = nowMoment.clone().endOf('month').toDate();
+        const overtimeAgg = await PayrollSlip.aggregate([
+            { $match: { createdAt: { $gte: startOfMonth, $lte: endOfMonth } } },
+            { $group: { _id: null, total: { $sum: '$overtimeHours' } } }
+        ]);
+        const overtimeHours = (overtimeAgg && overtimeAgg[0] && overtimeAgg[0].total) ? Math.round(overtimeAgg[0].total) : 0;
 
         renderPage(req, res, '人事管理画面', `${employee.name} さん、こんにちは`, `
             <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
             <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
-            <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
             <style>
-                body { font-family: 'Roboto', sans-serif; background:#f5f6fa; }
-                .card { border-radius: 15px; transition: transform 0.2s; }
-                .card:hover { transform: translateY(-5px); }
-                .card-icon { font-size: 2.5rem; }
-                .table thead { background:#f0f0f0; }
-                .gradient-primary { background: linear-gradient(135deg, #6a11cb, #2575fc); color:white; }
-                .gradient-success { background: linear-gradient(135deg, #43e97b, #38f9d7); color:white; }
-                .gradient-warning { background: linear-gradient(135deg, #f7971e, #ffd200); color:white; }
-                .gradient-info { background: linear-gradient(135deg, #36d1dc, #5b86e5); color:white; }
-                .gradient-secondary { background: linear-gradient(135deg, #bdc3c7, #2c3e50); color:white; }
+                :root{--bg:#f6f7fb;--card:#ffffff;--muted:#6b7280;--accent:#0b69ff}
+                body{font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif;background:var(--bg);color:#0b2430}
+                .enterprise-container{max-width:1200px;margin:28px auto;padding:20px}
+                .hero{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+                .hero .brand{display:flex;align-items:center;gap:12px}
+                .brand img{height:44px}
+                .hero .welcome{color:var(--muted);font-size:14px}
+
+                .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-top:14px}
+                .kpi{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 10px 28px rgba(11,36,48,0.06);display:flex;align-items:center;gap:12px}
+                .kpi .icon{font-size:26px;color:var(--accent);width:46px;height:46px;border-radius:10px;background:linear-gradient(180deg,rgba(11,105,255,0.1),rgba(11,105,255,0.03));display:flex;align-items:center;justify-content:center}
+                .kpi .value{font-weight:700;font-size:18px}
+                .kpi .label{color:var(--muted);font-size:13px}
+
+                .main-grid{display:grid;grid-template-columns:1fr 320px;gap:20px;margin-top:20px}
+                .panel{background:var(--card);border-radius:12px;padding:18px;box-shadow:0 12px 30px rgba(11,36,48,0.05)}
+
+                .table thead th{background:#fafbfd;border-bottom:1px solid #eef2f5}
+                .avatar{width:36px;height:36px;border-radius:50%;background:#e6eefc;color:#0b69ff;display:inline-flex;align-items:center;justify-content:center;font-weight:700}
+
+                .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+                .search{display:flex;gap:8px}
+
+                .actions{display:flex;gap:8px;justify-content:flex-end}
+
+                @media(max-width:1000px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.main-grid{grid-template-columns:1fr}}
             </style>
 
-            <div class="container mt-4">
-                <p>従業員ID: ${employee.employeeId} ｜ 部署: ${employee.department}</p>
-
-                <!-- 上段サマリー -->
-                <div class="row g-3 mt-3">
-                    <div class="col-md-2">
-                        <div class="card gradient-primary text-center shadow-sm p-3">
-                            <i class="fa-solid fa-clock card-icon"></i>
-                            <h6 class="mt-2">今月残業</h6>
-                            <p>${overtimeHours}時間</p>
+            <div class="enterprise-container">
+                <div class="hero">
+                    <div class="brand">
+                        <div>
+                            <div style="font-size:30px;font-weight:700">人事管理</div>
+                            <div class="welcome">${escapeHtml(employee.name)} さん、ようこそ</div>
                         </div>
                     </div>
-                    <div class="col-md-2">
-                        <div class="card gradient-warning text-center shadow-sm p-3">
-                            <i class="fa-solid fa-plane-departure card-icon"></i>
-                            <h6 class="mt-2">未承認休暇</h6>
-                            <p>${pendingLeaves}件</p>
-                        </div>
-                    </div>
-                    <div class="col-md-2">
-                        <div class="card gradient-info text-center shadow-sm p-3">
-                            <i class="fa-solid fa-users card-icon"></i>
-                            <h6 class="mt-2">チーム人数</h6>
-                            <p>${teamSize}名</p>
-                        </div>
-                    </div>
-                    <div class="col-md-2">
-                        <div class="card gradient-success text-center shadow-sm p-3">
-                            <i class="fa-solid fa-tasks card-icon"></i>
-                            <h6 class="mt-2">未完了タスク</h6>
-                            <p>${tasksIncomplete}件</p>
-                        </div>
-                    </div>
-                    <div class="col-md-2">
-                        <div class="card gradient-secondary text-center shadow-sm p-3">
-                            <i class="fa-solid fa-yen-sign card-icon"></i>
-                            <h6 class="mt-2">未処理給与</h6>
-                            <p>${payrollPending}件</p>
-                        </div>
+                    <div class="actions">
+                        ${ req.session.user && req.session.user.isAdmin ? `
+                        <a href="/hr/add" class="btn btn-outline-primary">社員を追加</a>
+                        <a href="/hr/statistics" class="btn btn-primary">統計を見る</a>
+                        ` : `` }
                     </div>
                 </div>
 
-                <!-- 中段: 機能カード -->
-                <div class="row g-3 mt-4">
-                    ${[
-                        { title: '勤怠管理', icon: 'fa-business-time', color: 'primary', link: '/attendance-main' },
-                        { title: '目標設定管理', icon: 'fa-bullseye', color: 'success', link: '/goals' },
-                        { title: '人事管理', icon: 'fa-users', color: 'info', link: '/hr' },
-                        { title: '休暇管理', icon: 'fa-plane-departure', color: 'warning', link: '/leave/apply' },
-                        { title: '給与管理', icon: 'fa-yen-sign', color: 'secondary', link: '/hr/payroll' },
-                        { title: '社内掲示板', icon: 'fa-comments', color: 'dark', link: '/board' },
-                        { title: '社員写真管理', icon: 'fa-image', color: 'secondary', link: '/hr/photo' },
-                        { title: '設備予約', icon: 'fa-door-closed', color: 'info', link: '/facility' }
-                    ].map(c => `
-                        <div class="col-md-3">
-                            <div class="card shadow-sm text-center h-100 p-3">
-                                <i class="fa-solid ${c.icon} card-icon text-${c.color}"></i>
-                                <h5 class="mt-2">${c.title}</h5>
-                                <a href="${c.link}" class="btn btn-${c.color} mt-2">確認</a>
-                            </div>
-                        </div>
-                    `).join('')}
+                <div class="kpi-grid">
+                    <div class="kpi"><div class="icon"><i class="fa-solid fa-clock"></i></div><div><div class="value">${escapeHtml(String(overtimeHours))}h</div><div class="label">今月残業</div></div></div>
+                    <div class="kpi"><div class="icon"><i class="fa-solid fa-plane-departure"></i></div><div><div class="value">${escapeHtml(String(pendingLeaves))}</div><div class="label">未承認休暇</div></div></div>
+                    <div class="kpi"><div class="icon"><i class="fa-solid fa-users"></i></div><div><div class="value">${escapeHtml(String(teamSize))}名</div><div class="label">チーム人数</div></div></div>
+                    <div class="kpi"><div class="icon"><i class="fa-solid fa-tasks"></i></div><div><div class="value">${escapeHtml(String(tasksIncomplete))}</div><div class="label">未完了タスク</div></div></div>
+                    <div class="kpi"><div class="icon"><i class="fa-solid fa-yen-sign"></i></div><div><div class="value">${escapeHtml(String(payrollPending))}</div><div class="label">未処理給与</div></div></div>
                 </div>
 
-                <!-- 下段: 最新情報＋グラフ -->
-                <div class="row mt-4">
-                    <div class="col-md-6">
-                        <h5>最新休暇申請</h5>
-                        <table class="table table-striped shadow-sm">
-                            <thead>
-                                <tr><th>社員名</th><th>休暇日</th><th>状態</th></tr>
-                            </thead>
-                            <tbody>
-                                <tr><td>山田 太郎</td><td>2025-09-05</td><td>申請中</td></tr>
-                                <tr><td>鈴木 花子</td><td>2025-09-10</td><td>承認済</td></tr>
-                                <tr><td>佐藤 次郎</td><td>2025-09-12</td><td>申請中</td></tr>
-                            </tbody>
-                        </table>
+                <div class="main-grid">
+                    <div class="panel">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="mb-0">社員一覧</h5>
+                            <div class="text-muted small">従業員ID: ${escapeHtml(employee.employeeId)} ｜ 部署: ${escapeHtml(employee.department || '-')}</div>
+                        </div>
+
+                        ${ req.session.user && req.session.user.isAdmin ? `
+                        <div class="filters">
+                        <div style="overflow:auto;max-height:560px">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr><th></th><th>名前</th><th>社員ID</th><th>部署</th><th>役職</th><th>入社日</th><th>有給</th><th>操作</th></tr>
+                                </thead>
+                                <tbody id="hrTableBody">
+                                    ${ (await Employee.find().limit(50)).map(e=>`
+                                        <tr>
+                                            <td><div class="avatar">${escapeHtml((e.name||'').slice(0,2))}</div></td>
+                                            <td>${escapeHtml(e.name)}</td>
+                                            <td>${escapeHtml(e.employeeId || '')}</td>
+                                            <td>${escapeHtml(e.department || '')}</td>
+                                            <td>${escapeHtml(e.position || '')}</td>
+                                            <td>${e.joinDate ? escapeHtml(moment.tz(e.joinDate,'Asia/Tokyo').format('YYYY-MM-DD')) : '-'}</td>
+                                            <td>${escapeHtml(String(e.paidLeave || 0))}</td>
+                                            <td><a href="/hr/edit/${e._id}" class="btn btn-sm btn-outline-primary">編集</a> <a href="/hr/delete/${e._id}" class="btn btn-sm btn-outline-danger">削除</a></td>
+                                        </tr>
+                                    `).join('') }
+                                </tbody>
+                            </table>
+                        </div>
+                        ` : `
+                        <div class="alert alert-info">社員一覧は管理者のみ閲覧できます。</div>
+                        <div style="margin-top:10px;padding:10px;border:1px solid rgba(0,0,0,0.04);border-radius:8px;background:#fbfdff">
+                            <div style="font-weight:700">あなたの情報</div>
+                            <div class="small-muted">${escapeHtml(employee.name)} ｜ ${escapeHtml(employee.employeeId || '-') } ｜ ${escapeHtml(employee.department || '-')}</div>
+                        </div>
+                        ` }
                     </div>
-                    <div class="col-md-6">
-                        <h5>残業時間推移</h5>
-                        <canvas id="overtimeChart"></canvas>
+
+                    ${ req.session.user && req.session.user.isAdmin ? `
+                    <div class="panel">
+                        <h6>クイックアクション</h6>
+                        <div class="mt-3 d-grid gap-2">
+                            <a href="/hr/add" class="btn btn-primary">新規社員登録</a>
+                            <a href="/hr/statistics" class="btn btn-outline-secondary">部署統計を見る</a>
+                            <a href="/leave/apply" class="btn btn-outline-secondary">休暇申請確認</a>
+                        </div>
+
+                        <h6 class="mt-4">最近の休暇申請</h6>
+                        <ul class="list-group list-group-flush mt-2">
+                            <li class="list-group-item">山田 太郎 — 2025-09-05 <span class="badge bg-warning float-end">申請中</span></li>
+                            <li class="list-group-item">鈴木 花子 — 2025-09-10 <span class="badge bg-success float-end">承認済</span></li>
+                            <li class="list-group-item">佐藤 次郎 — 2025-09-12 <span class="badge bg-warning float-end">申請中</span></li>
+                        </ul>
+
+                        <h6 class="mt-4">残業時間推移</h6>
+                        <canvas id="overtimeChart" style="max-width:100%;margin-top:8px"></canvas>
                         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
                         <script>
                             const ctx = document.getElementById('overtimeChart').getContext('2d');
                             new Chart(ctx, {
                                 type: 'line',
-                                data: {
-                                    labels: ['1日','2日','3日','4日','5日','6日','7日'],
-                                    datasets: [{
-                                        label: '残業時間',
-                                        data: [1,2,1.5,2,1,3,2],
-                                        borderColor: '#007bff',
-                                        backgroundColor: 'rgba(0,123,255,0.2)',
-                                        tension: 0.3
-                                    }]
-                                },
-                                options: { responsive:true, plugins:{ legend:{ display:false } } }
+                                data: { labels:['1日','2日','3日','4日','5日','6日','7日'], datasets:[{ label:'残業時間', data:[1,2,1.5,2,1,3,2], borderColor:'#0b69ff', backgroundColor:'rgba(11,105,255,0.08)', tension:0.3 }]},
+                                options:{responsive:true,plugins:{legend:{display:false}}}
                             });
                         </script>
                     </div>
+                    ` : `
+                    <div class="panel">
+                        <div class="alert alert-info">クイックアクション、最近の休暇申請、残業時間推移は管理者のみ閲覧できます。</div>
+                    </div>
+                    ` }
                 </div>
             </div>
         `);
@@ -5717,105 +6778,129 @@ app.get('/hr/payroll', requireLogin, async (req, res) => {
     }
 
     const html = `
-        <div class="container mt-4">
-            <p>${employee.name} さん、お疲れ様です👋</p>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+        <style>
+            body{font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif}
+            .container{max-width:1100px;margin:28px auto}
+            .hero{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+            .hero h2{margin:0;font-weight:700}
+            .kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}
+            .kpi{background:#fff;border-radius:10px;padding:12px;box-shadow:0 10px 30px rgba(10,20,40,0.06);border:1px solid rgba(0,0,0,0.04);display:flex;justify-content:space-between;align-items:center}
+            .kpi .meta{color:#6b7280;font-size:13px}
+            .kpi .value{font-weight:700;font-size:18px}
+            .main-grid{display:grid;grid-template-columns:1fr 360px;gap:18px}
+            .panel{background:#fff;padding:14px;border-radius:10px;box-shadow:0 10px 24px rgba(10,20,40,0.05)}
+            .small-muted{color:#6b7280;font-size:13px}
+            @media(max-width:1000px){.main-grid{grid-template-columns:1fr}}
+        </style>
 
-            <div class="row">
-                <!-- 自分の最新給与 -->
-                <div class="col-md-6">
-                    <div class="card shadow-sm mb-4">
-                        <div class="card-header bg-primary text-white">最新の給与明細</div>
-                        <div class="card-body">
-                            ${slips.length ? `
-                                <h6>${slips[0].runId.periodFrom.getFullYear()}年${slips[0].runId.periodFrom.getMonth()+1}月分</h6>
-                                <p>基本給: ¥${slips[0].baseSalary.toLocaleString()}</p>
-                                <p>総支給: ¥${slips[0].gross.toLocaleString()}</p>
-                                <p>差引支給: <strong class="text-success">¥${slips[0].net.toLocaleString()}</strong></p>
-                                <a href="/hr/payroll/${employee._id}" class="btn btn-outline-primary btn-sm">詳細を見る</a>
-                            ` : `<p class="text-muted">まだ給与明細が登録されていません。</p>`}
-                        </div>
-                    </div>
+        <div class="container">
+            <div class="hero">
+                <div>
+                    <h2>給与管理</h2>
+                    <div class="small-muted">${escapeHtml(employee.name)} さんの給与ダッシュボード</div>
                 </div>
-
-                <!-- 最近の給与履歴 -->
-                <div class="col-md-6">
-                    <div class="card shadow-sm mb-4">
-                        <div class="card-header bg-secondary text-white">最近の給与履歴</div>
-                        <div class="card-body">
-                            ${slips.length ? `
-                                <ul class="list-group list-group-flush">
-                                    ${slips.map(s => `
-                                        <li class="list-group-item d-flex justify-content-between">
-                                            ${s.runId.periodFrom.getFullYear()}年${s.runId.periodFrom.getMonth()+1}月
-                                            <span>¥${s.net.toLocaleString()}</span>
-                                        </li>
-                                    `).join('')}
-                                </ul>
-                            ` : `<p class="text-muted">履歴はありません</p>`}
-                        </div>
-                    </div>
+                <div>
+                    ${ isAdmin ? `<a href="/hr/payroll/admin" class="btn btn-warning me-2">管理者メニュー</a>` : '' }
+                    <a href="/hr" class="btn btn-outline-secondary">人事一覧へ戻る</a>
                 </div>
             </div>
 
-            <!-- 給与推移グラフ -->
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-info text-white">給与推移（手取り）</div>
-                <div class="card-body">
-                    <canvas id="salaryChart"></canvas>
+            <div class="kpi-grid">
+                <div class="kpi">
+                    <div>
+                        <div class="meta">最新の差引支給</div>
+                        <div class="value">${slips.length ? '¥' + slips[0].net.toLocaleString() : '—'}</div>
+                    </div>
+                    <div class="small-muted">${slips.length ? `${slips[0].runId.periodFrom.getFullYear()}年${slips[0].runId.periodFrom.getMonth()+1}月` : ''}</div>
+                </div>
+
+                <div class="kpi">
+                    <div>
+                        <div class="meta">直近明細数</div>
+                        <div class="value">${slips.length}</div>
+                    </div>
+                    <div class="small-muted">最新6件を表示</div>
+                </div>
+
+                <div class="kpi">
+                    <div>
+                        <div class="meta">あなたの累計手取り</div>
+                        <div class="value">¥${(slips.reduce((s,x)=>s+(x.net||0),0)).toLocaleString()}</div>
+                    </div>
+                    <div class="small-muted">期間内合計</div>
                 </div>
             </div>
 
-            ${isAdmin && summary ? `
-                <!-- 管理者向け情報 -->
-                <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-warning fw-bold">管理者サマリ</div>
-                    <div class="card-body">
-                        <p>今月の発行済み給与明細数: ${summary.count} 件</p>
-                        <p>総支給額合計: ¥${summary.totalGross.toLocaleString()}</p>
-                        <p>手取り合計: <strong>¥${summary.totalNet.toLocaleString()}</strong></p>
-                        <a href="/hr/payroll/admin" class="btn btn-warning">管理者メニューへ</a>
+            <div class="main-grid">
+                <div>
+                    <div class="panel mb-3">
+                        <h5 class="mb-2">最新の給与明細</h5>
+                        ${slips.length ? `
+                            <div style="display:flex;gap:14px;align-items:center">
+                                <div style="width:64px;height:64px;border-radius:8px;background:linear-gradient(180deg,#eef6ff,#e8f1ff);display:flex;align-items:center;justify-content:center;font-weight:700">${escapeHtml((employee.name||'').slice(0,2))}</div>
+                                <div>
+                                    <div style="font-weight:700">${slips[0].runId.periodFrom.getFullYear()}年${slips[0].runId.periodFrom.getMonth()+1}月分</div>
+                                    <div class="small-muted">基本給: ¥${slips[0].baseSalary.toLocaleString()} / 総支給: ¥${slips[0].gross.toLocaleString()}</div>
+                                    <div style="margin-top:8px;font-size:18px;color:#0b853a">差引支給: ¥${slips[0].net.toLocaleString()}</div>
+                                </div>
+                            </div>
+                            <div style="margin-top:12px"><a href="/hr/payroll/${employee._id}" class="btn btn-outline-primary btn-sm">詳細を見る</a></div>
+                        ` : `<p class="text-muted">まだ給与明細が登録されていません。</p>`}
+                    </div>
+
+                    <div class="panel">
+                        <h5 class="mb-2">最近の給与履歴</h5>
+                        ${slips.length ? `
+                            <ul class="list-group list-group-flush">
+                                ${slips.map(s => `
+                                    <li class="list-group-item d-flex justify-content-between">
+                                        <div>${s.runId.periodFrom.getFullYear()}年${s.runId.periodFrom.getMonth()+1}月</div>
+                                        <div>¥${s.net.toLocaleString()}</div>
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        ` : `<p class="text-muted">履歴はありません</p>`}
                     </div>
                 </div>
-            ` : ''}
 
-        </div>
+                <div>
+                    <div class="panel mb-3">
+                        <h6 class="mb-2">給与推移（手取り）</h6>
+                        <canvas id="salaryChart" style="width:100%;height:200px"></canvas>
+                    </div>
 
-        <!-- Chart.js -->
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-        <script>
-            const ctx = document.getElementById('salaryChart').getContext('2d');
-            new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: ${JSON.stringify(chartLabels)},
-                    datasets: [{
-                        label: '差引支給額 (¥)',
-                        data: ${JSON.stringify(chartData)},
-                        backgroundColor: 'rgba(54, 162, 235, 0.6)'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    return '¥' + context.parsed.y.toLocaleString();
-                                }
-                            }
-                        }
+                    ${isAdmin && summary ? `
+                        <div class="panel">
+                            <h6 class="mb-2">管理者サマリ</h6>
+                            <div class="small-muted">今月の発行済み給与明細数: <strong>${summary.count}</strong></div>
+                            <div class="small-muted">総支給額合計: <strong>¥${summary.totalGross.toLocaleString()}</strong></div>
+                            <div class="small-muted">手取り合計: <strong>¥${summary.totalNet.toLocaleString()}</strong></div>
+                            <div style="margin-top:10px"><a href="/hr/payroll/admin" class="btn btn-warning btn-sm">管理者メニューへ</a></div>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+
+            <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+            <script>
+                const ctx = document.getElementById('salaryChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ${JSON.stringify(chartLabels)},
+                        datasets: [{ label: '差引支給額 (¥)', data: ${JSON.stringify(chartData)}, backgroundColor: 'linear-gradient(180deg, #36a2eb, #2b8bd6)'.replace(/linear-gradient\([^)]*\)/,'rgba(54,162,235,0.6)') }]
                     },
-                    scales: {
-                        y: {
-                            ticks: {
-                                callback: value => '¥' + value.toLocaleString()
-                            }
-                        }
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { display: false } },
+                        scales: { y: { ticks: { callback: value => '¥' + value.toLocaleString() } } }
                     }
-                }
-            });
-        </script>
+                });
+            </script>
+        </div>
     `;
 
     renderPage(req, res, "給与管理", "給与管理ダッシュボード", html);
