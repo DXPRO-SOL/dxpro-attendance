@@ -1518,9 +1518,401 @@ app.get('/links', requireLogin, (req, res) => {
                         <a class="btn" href="/pretest/swift" style="background:#ef4444;color:#fff;border-radius:999px;padding:8px 12px;font-weight:700">Swift</a>
                     </div>
 
-                    <div style="margin-top:12px;display:flex;justify-content:flex-end"><a class="btn btn-primary" href="/pretest">共通テストを実施</a></div>
+                    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+                        <a class="btn btn-primary" href="/pretest">共通テストを実施</a>
+                        <a class="btn" href="/pretest/answers" style="background:#f3f4f6;color:#0b2540;border-radius:999px;padding:8px 12px;font-weight:700">模範解答（共通）</a>
+                    </div>
                 </div>
             </div>
+        </div>
+    `);
+});
+
+// 共通テスト（Q1-Q40） 模範解答ページ
+app.get('/pretest/answers', requireLogin, (req, res) => {
+    const langs = ['common','java','javascript','python','php','csharp','android','swift'];
+    const links = langs.map(l=>`<a class="btn" href="/pretest/answers/${l}" style="margin-right:8px;border-radius:999px;padding:8px 12px;font-weight:700">${l.toUpperCase()}</a>`).join('');
+
+    renderPage(req, res, '入社前テスト 模範解答（言語別）', '模範解答（言語別）', `
+        <div class="card-enterprise">
+            <h5 style="margin-bottom:12px">入社前テスト - 模範解答（言語別）</h5>
+            <p style="color:var(--muted)">以下から言語を選んで、Q1〜Q40 の簡潔な模範解答を表示します。</p>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">${links}</div>
+            <div style="margin-top:12px;display:flex;justify-content:flex-end"><a class="btn btn-primary" href="/pretest">共通テストに戻る</a></div>
+        </div>
+    `);
+});
+
+// 言語別模範解答ルート
+app.get('/pretest/answers/:lang', requireLogin, (req, res) => {
+    const lang = (req.params.lang||'').toLowerCase();
+    const langs = ['java','javascript','python','php','csharp','android','swift'];
+    if (!langs.includes(lang)) return res.status(404).send('Not found');
+
+    // minimal per-language concise answers (20 interview + 20 scripts)
+    const per = {
+        java: [
+            'JVMのヒープとメタスペースを理解し、参照スコープを管理する。',
+            'GCは不要オブジェクトを回収する。世代別収集が一般的。',
+            'checkedは宣言/捕捉必須、uncheckedはRuntimeException系で任意。',
+            'マルチスレッドでの同期・競合回避を意識する。',
+            'finalやimmutable設計で副作用を減らす。',
+            'Spring Bootは自動設定と簡単な起動が利点。',
+            'DIでテストと疎結合を実現する。',
+            'REST設計（ステータス/URIの設計）に注力する。',
+            'GETは安全/冪等、POSTは副作用あり。',
+            '隔離レベルで一貫性と並行性を調整する。',
+            'インデックスは検索高速化だが更新コスト増。',
+            '出力時にHTML/XMLをエスケープする。',
+            '例外をログと共に適切にハンドリングする。',
+            'UTF-8で統一しバイナリ/文字列の境界を明確にする。',
+            'マイクロサービスは分割と独立デプロイが利点。',
+            '不変性でスレッド安全を確保する。',
+            '依存解決はlockfileやCIで固定化する。',
+            'CIで自動テストと静的解析を組み込む。',
+            '構造化ログで検索性を高める。',
+            'レスポンス時間とGC/スレッドの利用を監視する。',
+
+            'public static int safeLen(String s){ return s==null?0:s.length(); }',
+            'List<Integer>の合計はストリームで逐次計算する。',
+            'ConcurrentHashMapや同期化でスレッド安全を確保する。',
+            'usersリストはコンストラクタで初期化してNPE回避。',
+            'PreparedStatementでプレースホルダを利用する。',
+            'Files.newBufferedReaderで逐次読み込みメモリ節約。',
+            'BlockingQueueを使った生産者/消費者モデル。',
+            'バルク挿入はバッチとトランザクションで処理する。',
+            'Transactionで全部成功を保証し失敗でロールバック。',
+            'Jackson/GsonでJSONパースしフィールド取得。',
+            'ヒープダンプやプロファイラでメモリリークを検出する。',
+            '非同期I/O（NIO/Asynchronous）で高並列処理を行う。',
+            'TTLやLRUでキャッシュの有効期限管理を設計する。',
+            'StringBuilderで大量連結を効率化する。',
+            '簡易ベンチはJMHや単純なループで計測する。'
+        ],
+        javascript: [
+            'コードスタイルはESLint等でルール化しCIで自動チェックする。',
+            '非同期はエラーハンドリングとキャンセルを設計する。',
+            '重要度と影響範囲でバグ優先度を決める。',
+            '具体的で再現手順を含む指摘が良い。',
+            'API仕様はOpenAPI等で契約を明確にする。',
+            'ロールバック手順はデータ整合性を考慮する。',
+            'ステートは単一責任で最小化する。',
+            '入力サニタイズと出力時のエスケープを行う。',
+            '依存脆弱性は定期スキャンとアップデートで対応。',
+            'Chrome DevToolsやプロファイラで改善点を探す。',
+
+            'イベントループはスタック→マイクロタスク→マクロタスクの流れ。',
+            'thisは呼び出し形態やbind/arrowで変わる。',
+            'Promiseは抽象、async/awaitは構文糖で可読性向上。',
+            'クロージャは状態保持に便利だがメモリに注意。',
+            '未解除のタイマーやDOM参照がリーク原因。',
+            'ESモジュールは静的解析が可能、CommonJSは動的ロード中心。',
+            'CORSはサーバ側でAccess-Control-Allow-*を設定する。',
+            '頻繁なDOM更新はバッチ化や仮想DOMで最適化する。',
+            'デバッガはブレークポイントとウォッチで使い分ける。',
+            'ストリームはメモリ効率が良くI/Oで有効。',
+
+            'function debounce(fn,ms){ let t; return function(...a){ clearTimeout(t); t=setTimeout(()=>fn.apply(this,a),ms); } }',
+            '一度のループでmap+filterをreduceにまとめると効率化可能。',
+            'Promise.allは一部失敗で全体が失敗するため個別ハンドリングを加える。',
+            'ストリームで大ファイルを逐次処理することでメモリ保護。',
+            'クロージャの解放やWeakRefでメモリリーク対策。',
+            '逐次処理用の非同期キュー（Promiseチェーン）を実装する。',
+            'JWTは署名とexp検証を行いペイロードを使用する。',
+            'ページネーションはlimit/offsetまたはcursor方式を使う。',
+            '入力はエスケープして表示時に安全化する。',
+            'サーバサイドはキャッシュ(HTTP/Redis)で応答高速化する。'
+        ],
+        python: [
+            'コード整合性はLint/フォーマッタとレビューで保つ。',
+            'データパイプラインはメモリとI/Oを意識する。',
+            '例外時はコンテキストを含めてログ出力する。',
+            '大規模データはチャンク処理やストリームを使う。',
+            'テスト自動化はCIで定期実行する。',
+            'プロファイラでボトルネックを特定する。',
+            '外部API障害はリトライとフォールバックを用意する。',
+            'レビューで重い処理やN+1をチェックする。',
+            '依存はlockファイルで固定し脆弱性を監視する。',
+            'デプロイ前に環境差異を確認する。',
+
+            'リストは可変、タプルは不変。',
+            'GILは同時実行を制約するがI/Oバウンドでは有効。',
+            'デコレータは横断的関心事（ログ/認証）に有用。',
+            'withでリソース自動解放を行う。',
+            '例外は具体的に捕捉してロギングと再送出を使い分ける。',
+            'ジェネレータは遅延評価でメモリを節約する。',
+            'コンテキストマネージャはwithで実装する。',
+            '型ヒントは可読性と静的解析を助ける。',
+            'venvで隔離された仮想環境を作る。',
+            'ファイルI/Oはエンコーディングと例外処理に注意。',
+
+            'def read_lines(path):\n    with open(path) as f:\n        for l in f:\n            yield l.strip()',
+            'ijson等のストリーミングパーサで大きなJSONを処理する。',
+            'ThreadPoolExecutorでI/Oバウンドを並列化する。',
+            'DBはチャンクで取得してメモリを節約する。',
+            'psutilでプロセスのメモリ使用を計測する。',
+            '再帰は深さに注意しループで代替できる。',
+            'asyncioで多数I/Oを効率処理するがイベントループ設計に注意。',
+            'read(size)でチャンク処理してメモリ節約。',
+            'コネクションプールで接続確立コストを削減する。',
+            '構成されたロギングでstacktraceを残す。'
+        ],
+        php: [
+            'コード品質はコードレビューと静的解析で担保する。',
+            '脆弱性は即時パッチとテストで対応する。',
+            'セッションはSecure/HttpOnly属性を設定する。',
+            'プロファイラでボトルネックを特定する。',
+            '環境ごとに設定ファイルを分ける。',
+            'デプロイ前チェックにDBマイグレーション確認を含める。',
+            'フェイルオーバーは冗長構成とタイムアウトで制御する。',
+            'マイグレーションはロールフォワード/ロールバックを用意する。',
+            'エラートラッキングで問題検出を自動化する。',
+            'タスク分担は所有権とレビュー体制で効率化する。',
+
+            'trim等で文字列を扱う際にエンコーディングに注意。',
+            'PDOはプリペアドステートメントでSQL注入対策になる。',
+            'XSSは出力時のエスケープが基本。',
+            'セッション固定はID再生成で対処する。',
+            'Composerで依存を管理しautoloadを利用する。',
+            'Namespaceは衝突を避け構造化する。',
+            '例外はキャッチしてログとユーザ向けメッセージを分ける。',
+            'アップロードはMIME/typeとサイズを検査する。',
+            'UTF-8を標準にしてバイト/文字列を明確に扱う。',
+            '簡易ルーティングはパスとメソッドで制御する。',
+
+            'function safe_trim($s){ return $s===null? \'\':trim($s); }',
+            'fgetcsvで逐次読み込みしメモリ節約する。',
+            'セッションはcookie属性と再生成で保護する。',
+            'PDOのプリペアでSQLインジェクションを回避する。',
+            'アップロードはMIME/サイズ/拡張子で検証する。',
+            'ログローテーションでディスク使用を制御する。',
+            'レスポンスキャッシュで負荷を軽減する。',
+            'マイグレーションはバージョン管理して実行する。',
+            'LOAD DATA等でバルクインサートを高速化する。',
+            'JWT検証は署名と期限をチェックする。'
+        ],
+        csharp: [
+            '設計レビューは仕様と影響範囲を明確にして進める。',
+            'async/awaitでデッドロックや例外伝播に注意する。',
+            '例外は適切にハンドルしログとユーザ通知を分ける。',
+            'DIは疎結合とテスト容易性を高める。',
+            'ユニットテストは小さい単位で頻繁に実行する。',
+            'APIのバージョンは互換性と移行戦略で管理する。',
+            'ログレベルは運用で使いやすく設計する。',
+            'DB変更はマイグレーションとバックアップ計画を伴う。',
+            'プロファイリングでボトルネックを特定する。',
+            'リファクタは安全性とカバレッジを確認して実施する。',
+
+            '値型はスタック、参照型はヒープに配置される点に注意。',
+            'async/awaitは非同期フローを簡潔に記述する。',
+            'LINQでクエリ風の集計が簡潔になる。',
+            'GCは不要オブジェクトを回収する（世代別）。',
+            'インターフェースは契約、抽象クラスは共通実装向け。',
+            'デリゲートはコールバックやイベントに有用。',
+            '例外は狭い範囲で捕捉する。',
+            'Jsonやバイナリでシリアライズを行う。',
+            'Concurrentコレクションやlockでスレッド安全を保つ。',
+            'DIでモジュール性とテスト性を向上する。',
+
+            'public static int Len(string s)=> s==null?0:s.Length;',
+            'async I/Oの例ではConfigureAwaitやキャンセルを検討する。',
+            'DIコンテナでサービス登録と解決を行う。',
+            'ストリーミング処理で大データを逐次処理する。',
+            'TransactionScopeやDBトランザクションで整合性を保つ。',
+            'Concurrentコレクションやlockで競合を回避する。',
+            '構造化ログで検索可能なログを残す。',
+            'プロファイラでヒープ増加を解析する。',
+            'キャッシュやSQL最適化でAPI性能を改善する。',
+            '循環参照はカスタムシリアライズで対処する。'
+        ],
+        android: [
+            'ライフサイクルの適切な処理とビュー参照の解放に注意する。',
+            '大きなオブジェクトはActivityに保持せず参照を解放する。',
+            'Async処理はUIスレッドでの更新を意識して行う。',
+            'リソース削減とProguard/R8でAPKを最適化する。',
+            '依存のバージョンは互換性とCIで検証する。',
+            '自動化テストは重要なフローを優先する。',
+            '署名鍵は安全に保管しCIで扱う際は秘匿する。',
+            'WorkManager等で適切にバックグラウンド処理を行う。',
+            'Gradleでビルド時間短縮とキャッシュを利用する。',
+            '起動時間やレンダリング時間を監視指標にする。',
+
+            'onCreate/onResumeなど主要ライフサイクルを理解する。',
+            'ViewModelはUIデータの保持と回転耐性に利点がある。',
+            'strings/dimensでリソースを分離し再利用性を高める。',
+            'UIスレッドで重い処理を行わない。',
+            'Hilt等でDIを導入し依存性を管理する。',
+            '永続化はRoomやSharedPreferencesを使い分ける。',
+            '描画負荷はRecyclerViewとDiffUtilで低減する。',
+            'LeakCanary等でメモリリークを検出する。',
+            'ビルドタイプ/フレーバーで設定を分ける。',
+            '画像のダウンサンプリングやキャッシュで表示負荷を下げる。',
+
+            '大きなBitmapは適切にリサイズして解放する。',
+            '非同期で取得しLiveData/FlowでUIに反映する。',
+            'Glide等で画像をリサイズ・キャッシュする。',
+            'RoomのマイグレーションはSQLで移行処理を書く。',
+            'WorkManagerでバッテリー効率を考慮した同期を行う。',
+            'ジョブ合算やバックオフでバッテリー消費を抑える。',
+            'DiffUtil/RecyclerViewの最適化でリスト表示を高速化する。',
+            '同期には同期化/atomic操作で競合を防ぐ。',
+            '指数バックオフでリトライ戦略を実装する。',
+            'ページングライブラリで大データを分割して処理する。'
+        ],
+        swift: [
+            'Optionalは存在しない値を明示的に扱える。安全なアンラップを行う。',
+            'ARCは参照カウントでメモリを管理する。循環参照に注意。',
+            'クロージャキャプチャでweak/unownedを用いて循環参照を避ける。',
+            '値型と参照型の振る舞いを設計で使い分ける。',
+            'do/try/catchでエラーを適切に扱う。',
+            'CocoaPods/SwiftPMは用途により使い分ける。',
+            'プロファイラでメモリとCPUを監視する。',
+            'JSONパースでは型安全性と例外処理を行う。',
+            'バックグラウンド処理は適切なAPIで実装する。',
+            '署名やプロビジョニングに注意してリリースする。',
+
+            'Optionalのアンラップはif let, guard let, ?? を使い分ける。',
+            'ARCは参照カウントで自動解放するが循環参照に注意。',
+            '構造体は値渡し、クラスは参照渡しを意識する。',
+            'do/try/catchでエラーを処理する。',
+            'クロージャはcapture listで循環参照を避ける。',
+            '型推論は可読性と明示性のバランスで使う。',
+            'async/awaitやCombineで非同期処理を扱う。',
+            'SwiftPM等で依存管理を行う。',
+            'UI更新はMain Threadで行う。',
+            'クラッシュログはCrashlytics等で収集する。',
+
+            'func safeAppend(_ arr: inout [String]?, _ v: String){ if arr==nil{ arr=[] } arr?.append(v) }',
+            'async/awaitでネットワークリクエストを行いエラーをハンドリングする。',
+            '大画像はダウンサンプリングして表示負荷を下げる。',
+            'Codableは小さなJSON、CoreDataは複雑な永続化に利用する。',
+            'バックグラウンドで取得して通知でUIを更新する。',
+            '遅延評価やストリーミングでメモリを節約する。',
+            'AsyncSequenceで逐次処理を行う。',
+            'ログにカテゴリやレベルを付けてフィルタ可能にする。',
+            '指数バックオフでリトライ戦略を組む。',
+            '描画負荷を減らしスクロール性能を改善する。'
+        ]
+    };
+
+    const answers = per[lang] || [];
+    // ensure exactly 40 items
+    while (answers.length < 40) answers.push('追加の模範解答（例示）');
+
+    const qaHtml = answers.map((a, i) => {
+        const qNum = i+1;
+        const qText = `Q${qNum}.`;
+        return `<div style="background:#fff;border-radius:8px;padding:12px;margin-top:8px"><div style="font-weight:700;margin-bottom:8px">${qText}</div><pre style="white-space:pre-wrap;margin:0">${escapeHtml(a)}</pre></div>`;
+    }).join('\n');
+
+    renderPage(req, res, `入社前テスト 模範解答（${lang.toUpperCase()}）`, `${lang.toUpperCase()} 模範解答`, `
+        <div class="card-enterprise">
+            <h5 style="margin-bottom:12px">入社前テスト 模範解答（${lang.toUpperCase()}）</h5>
+            <p style="color:var(--muted)">${lang.toUpperCase()} 向けの Q1〜Q40 の簡潔な模範解答です。</p>
+            ${qaHtml}
+            <div style="margin-top:12px;display:flex;justify-content:flex-end"><a class="btn btn-primary" href="/pretest/answers">言語一覧に戻る</a></div>
+        </div>
+    `);
+});
+
+// 共通問答: 質問と模範解答を順に表示（Q1-Q40）
+app.get('/pretest/answers/common', requireLogin, (req, res) => {
+    const questions = [
+        'Javaでメモリ管理はどのように行われますか？',
+        'Javaのガベージコレクションとは何ですか？',
+        'Javaの例外（checked/unchecked）の違いを説明してください',
+        'JavaScriptのイベントループを簡潔に説明してください',
+        'this の挙動（JavaScript）について説明してください',
+        'Spring Bootの主な利点を2つ挙げてください',
+        'DI（依存性注入）とは何ですか？',
+        'RESTとSOAPの主な違いを説明してください',
+        'GETとPOSTの使い分けを説明してください',
+        'トランザクションの隔離レベルとは何ですか？簡単に',
+        'SQLインデックスの利点と欠点を1つずつ述べてください',
+        'XSS攻撃を防ぐ一般的な対策を述べてください',
+        '非同期処理を行う際の注意点を1つ挙げてください',
+        'クロスプラットフォームでの文字コード問題の対処法を挙げてください',
+        'マイクロサービスの利点を2つ挙げてください',
+        'オブジェクトの不変性（immutable）の利点を説明してください',
+        '依存関係のバージョン衝突（dependency hell）にどう対処しますか？',
+        'CI/CDで必須だと思うチェックを1つ挙げてください',
+        'ロギングで重要なポイントは何ですか？',
+        'パフォーマンスチューニングで最初に見る指標は何ですか？',
+        'NullPointerExceptionを回避する修正（簡単なJavaメソッド）',
+        '配列の重複を取り除くJavaScript関数（短め）',
+        '簡単なRESTエンドポイントの雛形（Spring Boot）',
+        'PreparedStatementを使ったSELECT例（Java）',
+        '非同期にAPIを取得してconsole.logするfetch例（JS）',
+        'リストをソートして返すJavaメソッド',
+        'フォーム入力のサニタイズ簡易例（JS）',
+        '例外処理を追加したファイル読み込み例（Java）',
+        'JSONを解析してフィールドを取得するJSの例',
+        '簡単なクエリを実行して結果を処理する擬似コード（任意言語）',
+        '小さなアルゴリズム: 配列の最大値を返す関数（JS）',
+        '文字列を逆順にするメソッド（Java）',
+        '認証用のJWTを検証する擬似コード（任意言語）',
+        '再帰を使った階乗実装（JS）',
+        'スレッドセーフなカウンタの実装（Java、概念で可）',
+        'バルク挿入を行う擬似コード（SQL/Java）',
+        'APIから取得したデータをページネートするロジック（JS）',
+        '簡単な例外ログの書き方（Java）',
+        '同じ処理を同期→非同期に切り替える例（JS、概念可）',
+        'ユーティリティ関数の実装例'
+    ];
+
+    const answers = [
+        'JVMがヒープ管理を行い、ガベージコレクタが不要なオブジェクトを回収する。参照と寿命を意識してメモリ使用を抑える。',
+        '不要になったオブジェクトを自動検出してメモリを解放する仕組み。世代別収集やマーク&スイープ等がある。',
+        'checkedはコンパイル時に捕捉/宣言が必要（例: IOException）、uncheckedはRuntimeException系で宣言不要。',
+        '実行スタックとタスクキューで非同期イベントを処理する仕組み。マクロ/マイクロタスクの順序に注意。',
+        '呼び出し方法で決まる（グローバル、メソッド、コンストラクタ、call/apply/bind）。arrow関数はレキシカル束縛。',
+        '自動設定で起動が速い。組み込みサーバやパッケージ化が容易でプロダクション化しやすい。',
+        '依存オブジェクトを外部から注入して疎結合・テスト容易性を高めるパターン。',
+        'RESTは軽量でHTTP/JSON中心、SOAPはXMLベースで標準仕様や拡張が豊富。',
+        'GETは取得（冪等）、POSTは作成/副作用あり（ペイロード送信）。',
+        '同時実行時のデータ整合性を制御する設定（例: READ COMMITTED, SERIALIZABLE 等）。',
+        '利点: 検索高速化。欠点: INSERT/UPDATEでのオーバーヘッドやディスク消費。',
+        '出力時のHTMLエスケープ、入力サニタイズ、Content-Security-Policyの導入。',
+        'レースコンディションやエラーハンドリング（タイムアウト・再試行）を設計する。',
+        'UTF-8を全体で統一し、API/DB/ファイルでエンコーディングを明示する。',
+        '独立デプロイやスケーリングの柔軟性、チーム分離で開発速度向上。',
+        'スレッドセーフ性が向上し、バグの局所化と予測可能性が高まる。',
+        'lockfileや依存の固定、互換性テスト、アップグレード計画で管理。',
+        '自動テスト（ユニット＋統合）の実行が必須。',
+        '構造化ログと適切なログレベル、機密情報はマスクすること。',
+        'レイテンシ（応答時間）とスループット、CPU/メモリの利用状況を確認する。',
+        'public static int safeLen(String s) { return s == null ? 0 : s.length(); }',
+        'function unique(arr){ return Array.from(new Set(arr)); }',
+        '@RestController\\n@RequestMapping("/api")\\npublic class DemoController {\\n  @GetMapping("/hello")\\n  public String hello(){ return "ok"; }\\n}',
+        'String sql = "SELECT id,name FROM users WHERE id = ?"; try (PreparedStatement ps = conn.prepareStatement(sql)) { ps.setInt(1, userId); try (ResultSet rs = ps.executeQuery()) { if (rs.next()) { /* process */ } } }',
+        'async function fetchAndLog(url){ try { const r = await fetch(url); const j = await r.json(); console.log(j); } catch(e){ console.error(e); } }',
+        'public List<Integer> sortList(List<Integer> a){ List<Integer> b = new ArrayList<>(a); Collections.sort(b); return b; }',
+        'function escapeHtml(s){ return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }',
+        'try (BufferedReader r = Files.newBufferedReader(Paths.get(path))) { String line; while ((line = r.readLine()) != null){ /* process */ } } catch (IOException e){ logger.error("file read error", e); }',
+        'const obj = JSON.parse(jsonStr); const name = obj.name;',
+        'PreparedStatement ps = conn.prepareStatement("SELECT * FROM t WHERE x=?"); ps.setString(1, val); ResultSet rs = ps.executeQuery(); while(rs.next()){ /* map fields */ }',
+        'function max(arr){ return arr.length? arr.reduce((m,x)=> x>m?x:m, arr[0]) : undefined; }',
+        'public String reverse(String s){ return new StringBuilder(s).reverse().toString(); }',
+        'トークン分解→署名検証→exp等クレーム検証→ユーザID取得。ライブラリで署名を検証する。',
+        'function fact(n){ return n<=1?1:n*fact(n-1); } // 大きいnはループやBigIntを検討',
+        'AtomicInteger cnt = new AtomicInteger(0); cnt.incrementAndGet();',
+        'トランザクションとバッチサイズを使い、autoCommitを切って一定件数ごとにexecuteBatch/commitする。',
+        'function paginate(items, page, size){ const from=(page-1)*size; return items.slice(from, from+size); }',
+        'try { /* ... */ } catch(Exception e){ logger.error("処理失敗", e); }',
+        'for (const id of ids) { await processAsync(id); } // 並列はPromise.all等を検討',
+        'function safeLen(s){ return s == null ? 0 : s.length; }'
+    ];
+
+    const qa = questions.map((q,i)=>{
+        return `<div style="background:#fff;border-radius:8px;padding:12px;margin-top:8px"><div style="font-weight:700">Q${i+1}. ${escapeHtml(q)}</div><div style="margin-top:8px"><pre style="white-space:pre-wrap">${escapeHtml(answers[i]||'')}</pre></div></div>`;
+    }).join('\n');
+
+    renderPage(req, res, '入社前テスト 模範解答（共通）', 'Q1〜Q40 質問と模範解答', `
+        <div class="card-enterprise">
+            <h5 style="margin-bottom:12px">入社前テスト - 質問と模範解答（共通）</h5>
+            <p style="color:var(--muted)">各設問に対する簡潔な模範解答を質問→解答の順で表示します。</p>
+            ${qa}
+            <div style="margin-top:12px;display:flex;justify-content:flex-end"><a class="btn btn-primary" href="/pretest/answers">言語一覧に戻る</a></div>
         </div>
     `);
 });
@@ -1963,6 +2355,31 @@ app.get('/pretest/:lang', requireLogin, (req, res) => {
     }).join('');
 
     renderPage(req, res, conf.title, conf.title, `
+        <style>
+            .pretest-block { -webkit-user-select: none; user-select: none; }
+            .pretest-block input, .pretest-block textarea, .pretest-block button { -webkit-user-select: text; user-select: text; }
+        </style>
+        <script>
+            (function(){
+                function prevent(e){ try{ e.preventDefault(); }catch(_){} }
+                function isEditableTarget(t){ return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable); }
+                // contextmenu: allow on editable controls only
+                document.addEventListener('contextmenu', function(e){ if (!isEditableTarget(e.target)) prevent(e); });
+                // copy/cut: allow if selection inside an editable control; otherwise prevent
+                document.addEventListener('copy', function(e){ if (!isEditableTarget(e.target)) prevent(e); });
+                document.addEventListener('cut', function(e){ if (!isEditableTarget(e.target)) prevent(e); });
+                // selectionchange: allow selection if inside an input/textarea, otherwise clear selection
+                document.addEventListener('selectionchange', function(){ try{ const s = document.getSelection(); if(!s) return; const el = document.activeElement; if (!isEditableTarget(el)) { if(s && s.rangeCount) s.removeAllRanges(); } }catch(_){} });
+                // paste: allow into inputs/textareas, block elsewhere (but allow paste when target is editable)
+                document.addEventListener('paste', function(e){ if (!isEditableTarget(e.target)) { prevent(e); } });
+                document.addEventListener('dragstart', function(e){ if (!isEditableTarget(e.target)) prevent(e); });
+                document.addEventListener('keydown', function(e){ const blocked = ['c','v','x','a','s','p','u']; if ((e.ctrlKey || e.metaKey) && blocked.includes(e.key.toLowerCase())) { // allow if focused inside editable
+                        if (!isEditableTarget(e.target)) prevent(e); }
+                    if (e.key === 'PrintScreen') { prevent(e); } });
+                window.addEventListener('keyup', function(e){ if (e.key === 'PrintScreen') { try{ navigator.clipboard && navigator.clipboard.writeText(''); }catch(_){}} });
+                try{ document.addEventListener('DOMContentLoaded', function(){ const c = document.querySelector('.card-enterprise'); if(c) c.classList.add('pretest-block'); }); }catch(_){ }
+            })();
+        </script>
         <div class="card-enterprise">
             <h5 style="margin-bottom:12px">${escapeHtml(conf.title)}</h5>
             <p style="color:var(--muted)">${escapeHtml(conf.intro)}</p>
@@ -4211,7 +4628,7 @@ app.get('/admin/monthly-attendance', requireLogin, isAdmin, async (req, res) => 
             <body>
                 <div class="container">
                     <div id="current-time" class="clock"></div>
-                    <h2>月別勤怠照会 (${year}年${month}月入社者)</h2>
+                    <h2>月別勤怠照会 (${year}年${month}月)</h2>
                     
                     <form action="/admin/monthly-attendance" method="GET" class="month-selector">
                         <div class="form-row">
@@ -5906,6 +6323,48 @@ app.get('/goals/add', requireLogin, async (req, res) => {
 
                                         // Render the created goal form page
                                         renderPage(req, res, '目標作成', '新規作成', html);
+});
+
+// 目標作成（POST）
+app.post('/goals/add', requireLogin, async (req, res) => {
+    try {
+        const userId = req.session && req.session.userId;
+        if (!userId) return res.status(401).send('Unauthorized');
+        const employee = await Employee.findOne({ userId });
+        if (!employee) return res.status(400).send('Employee not found');
+
+        const { title, description, goalLevel, deadline, actionPlan, approverId } = req.body || {};
+        if (!title) return res.status(400).send('Title required');
+
+        const doc = new Goal({
+            title,
+            description,
+            ownerId: employee._id,
+            ownerName: employee.name || '（未設定）',
+            createdBy: employee._id,
+            createdByName: employee.name || '',
+            progress: 0,
+            deadline: deadline ? new Date(deadline) : undefined,
+            status: 'draft',
+            currentApprover: approverId || undefined,
+            goalLevel: ['低','中','高'].includes(goalLevel) ? goalLevel : '中',
+            actionPlan: actionPlan || ''
+        });
+
+        // 初期履歴
+        doc.history = doc.history || [];
+        doc.history.push({ action: 'create', by: employee._id, date: new Date(), comment: '作成' });
+
+        const saved = await doc.save();
+        const isJson = String(req.headers['content-type'] || '').includes('application/json');
+        if (isJson) return res.json({ ok: true, id: saved._id.toString() });
+        return res.redirect('/goals');
+    } catch (e) {
+        console.error('POST /goals/add error', e && (e.stack || e));
+        const isJson = String(req.headers['content-type'] || '').includes('application/json');
+        if (isJson) return res.status(500).json({ ok: false, error: 'save_failed' });
+        return res.status(500).send('Error');
+    }
 });
 
 // Helper: determine if given employee is the creator of a goal
