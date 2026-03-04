@@ -3019,8 +3019,9 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
             <h3 style="margin:0">本日の勤怠</h3>
             <div style="color:var(--muted);font-size:13px">迅速に打刻・編集できます</div>
           </div>
-          <div style="display:flex;gap:8px;align-items:center">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <a href="/add-attendance" class="btn btn--ghost"><i class="fa-solid fa-plus"></i> 打刻追加</a>
+            <a href="/attendance/bulk-register?year=${moment().tz('Asia/Tokyo').year()}&month=${moment().tz('Asia/Tokyo').month()+1}" class="btn btn--ghost"><i class="fa-solid fa-calendar-check"></i> 一括登録</a>
             ${req.session.isAdmin ? `<a href="/admin/monthly-attendance" class="btn btn--ghost">管理メニュー</a>` : ''}
           </div>
         </div>
@@ -4196,6 +4197,429 @@ app.post('/delete-attendance/:id', requireLogin, async (req, res) => {
     } catch (error) {
         console.error('勤怠削除エラー:', error);
         res.status(500).send('削除中にエラーが発生しました');
+    }
+});
+
+// ========== 勤怠一括登録 ==========
+// 一括登録ページ（GET）
+app.get('/attendance/bulk-register', requireLogin, async (req, res) => {
+    try {
+        const user = await User.findById(req.session.userId);
+        const employee = await Employee.findOne({ userId: user._id });
+        if (!employee) return res.status(400).send('社員情報がありません');
+
+        const now = moment().tz('Asia/Tokyo');
+        const year  = parseInt(req.query.year)  || now.year();
+        const month = parseInt(req.query.month) || now.month() + 1;
+
+        // 対象月の日数
+        const daysInMonth = moment.tz(`${year}-${String(month).padStart(2,'0')}-01`, 'Asia/Tokyo').daysInMonth();
+
+        // 既存の勤怠データを取得
+        const startDate = moment.tz(`${year}-${month}-01`, 'Asia/Tokyo').startOf('month').toDate();
+        const endDate   = moment.tz(`${year}-${month}-01`, 'Asia/Tokyo').endOf('month').toDate();
+        const existingAttendances = await Attendance.find({
+            userId: user._id,
+            date: { $gte: startDate, $lte: endDate }
+        });
+
+        // 既存データをdateキーのMapに変換
+        const existingMap = {};
+        existingAttendances.forEach(a => {
+            const key = moment(a.date).tz('Asia/Tokyo').format('YYYY-MM-DD');
+            existingMap[key] = a;
+        });
+
+        // 承認リクエスト中チェック
+        const approvalRequest = await ApprovalRequest.findOne({
+            userId: user._id,
+            year,
+            month,
+            status: 'pending'
+        });
+
+        if (approvalRequest) {
+            return res.send(`
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>勤怠一括登録</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body style="font-family:Inter,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f4f7fb">
+<div style="text-align:center;padding:40px;background:#fff;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,0.08)">
+    <div style="font-size:48px;margin-bottom:16px">⏳</div>
+    <h3 style="color:#0b1220">承認リクエスト中のため編集できません</h3>
+    <p style="color:#6b7280">${year}年${month}月は承認リクエスト中です。管理者の処理をお待ちください。</p>
+    <a href="/attendance-main" style="display:inline-block;margin-top:16px;padding:10px 24px;background:#0b5fff;color:#fff;border-radius:9px;text-decoration:none;font-weight:600">勤怠管理に戻る</a>
+</div>
+</body></html>
+            `);
+        }
+
+        // 日別行データ生成
+        const rows = [];
+        for (let d = 1; d <= daysInMonth; d++) {
+            const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            const dm = moment.tz(dateStr, 'Asia/Tokyo');
+            const weekday = dm.day();
+            const isWeekend = weekday === 0 || weekday === 6;
+            const weekdayLabel = ['日','月','火','水','木','金','土'][weekday];
+            const existing = existingMap[dateStr];
+
+            rows.push({
+                dateStr,
+                day: d,
+                weekdayLabel,
+                isWeekend,
+                isConfirmed: existing ? existing.isConfirmed : false,
+                existingId: existing ? existing._id.toString() : '',
+                checkIn:    existing && existing.checkIn    ? moment(existing.checkIn).tz('Asia/Tokyo').format('HH:mm')    : '',
+                checkOut:   existing && existing.checkOut   ? moment(existing.checkOut).tz('Asia/Tokyo').format('HH:mm')   : '',
+                lunchStart: existing && existing.lunchStart ? moment(existing.lunchStart).tz('Asia/Tokyo').format('HH:mm') : '',
+                lunchEnd:   existing && existing.lunchEnd   ? moment(existing.lunchEnd).tz('Asia/Tokyo').format('HH:mm')   : '',
+                status: existing ? existing.status : (isWeekend ? '欠勤' : '正常'),
+                notes:  existing ? (existing.notes || '') : ''
+            });
+        }
+
+        const yearOptions = [now.year()-1, now.year(), now.year()+1]
+            .map(y => `<option value="${y}" ${y === year ? 'selected' : ''}>${y}年</option>`).join('');
+        const monthOptions = Array.from({length:12}, (_,i) => i+1)
+            .map(m => `<option value="${m}" ${m === month ? 'selected' : ''}>${m}月</option>`).join('');
+
+        res.send(`<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>勤怠一括登録 - ${year}年${month}月</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+<style>
+:root{--bg:#f4f7fb;--card:#fff;--accent:#0b5fff;--muted:#6b7280;--success:#16a34a;--danger:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:#0f172a;font-size:14px}
+.header{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;background:var(--card);box-shadow:0 4px 12px rgba(12,20,40,0.06);position:sticky;top:0;z-index:20}
+.brand{font-weight:700;font-size:18px;color:var(--accent)}
+.container{max-width:1200px;margin:24px auto;padding:0 16px}
+.panel{background:var(--card);border-radius:12px;padding:20px;box-shadow:0 8px 24px rgba(12,20,40,0.05);margin-bottom:16px}
+.month-selector{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.month-selector select{padding:8px 12px;border-radius:8px;border:1px solid #dbe7ff;font-size:14px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:9px;border:none;cursor:pointer;font-weight:600;font-size:14px;text-decoration:none;transition:opacity .15s}
+.btn:hover{opacity:.85}
+.btn-primary{background:linear-gradient(90deg,#0b5fff,#184df2);color:#fff}
+.btn-ghost{background:transparent;border:1px solid #e6eefb;color:var(--accent)}
+.btn-success{background:var(--success);color:#fff}
+.btn-sm{padding:6px 10px;font-size:13px}
+.bulk-table{width:100%;border-collapse:collapse}
+.bulk-table thead th{background:#0b1220;color:#fff;padding:10px 8px;text-align:center;font-size:13px;white-space:nowrap}
+.bulk-table tbody td{padding:6px 8px;border-bottom:1px solid rgba(12,20,40,0.05);text-align:center;vertical-align:middle}
+.bulk-table tbody tr:hover td{background:#f6fbff}
+.bulk-table tbody tr.weekend td{background:#fafafa}
+.bulk-table tbody tr.confirmed td{opacity:.75}
+.time-input{width:78px;padding:5px 7px;border-radius:6px;border:1px solid #dbe7ff;text-align:center;font-size:13px}
+.time-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(11,95,255,.1)}
+.time-input:disabled{background:#f1f5f9;color:#94a3b8;cursor:not-allowed}
+.notes-input{width:140px;padding:5px 8px;border-radius:6px;border:1px solid #dbe7ff;font-size:12px}
+.notes-input:disabled{background:#f1f5f9;color:#94a3b8;cursor:not-allowed}
+.status-select{padding:5px 6px;border-radius:6px;border:1px solid #dbe7ff;font-size:12px;min-width:68px}
+.status-select:disabled{background:#f1f5f9;color:#94a3b8;cursor:not-allowed}
+.day-label{font-weight:700}
+.sun{color:#ef4444}
+.sat{color:#3b82f6}
+.confirmed-badge{font-size:11px;padding:3px 7px;background:#dcfce7;color:#166534;border-radius:4px;white-space:nowrap}
+.table-wrap{overflow:auto;border-radius:8px;max-height:520px}
+.summary-bar{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.summary-item{background:#f8fafc;padding:8px 14px;border-radius:8px;font-size:13px}
+.summary-item strong{color:#0b1220}
+.sticky-footer{position:sticky;bottom:0;background:var(--card);padding:12px 20px;box-shadow:0 -4px 12px rgba(12,20,40,.08);display:flex;gap:10px;justify-content:flex-end;z-index:10}
+.tmpl-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px;background:#f8fafc;border-radius:8px;margin-bottom:14px;border:1px solid #e6eefb}
+.tmpl-row label{font-size:12px;color:var(--muted)}
+.tmpl-row input{width:76px;padding:5px 7px;border-radius:6px;border:1px solid #dbe7ff;font-size:13px;text-align:center}
+</style>
+</head>
+<body>
+<header class="header">
+    <div class="brand"><i class="fa-solid fa-calendar-check"></i> 勤怠一括登録</div>
+    <a href="/attendance-main" class="btn btn-ghost btn-sm"><i class="fa-solid fa-arrow-left"></i> 戻る</a>
+</header>
+
+<div class="container">
+<div class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:18px">
+        <div>
+            <h3 style="margin:0 0 4px">${escapeHtml(employee.name)} さん ／ ${year}年${month}月</h3>
+            <div style="color:var(--muted);font-size:13px">対象月の勤怠をまとめて入力・更新できます。確定済みの行は編集できません。</div>
+        </div>
+        <form method="get" action="/attendance/bulk-register" class="month-selector">
+            <select name="year">${yearOptions}</select>
+            <select name="month">${monthOptions}</select>
+            <button type="submit" class="btn btn-primary btn-sm"><i class="fa-solid fa-rotate"></i> 切替</button>
+        </form>
+    </div>
+
+    <!-- 平日一括入力テンプレート -->
+    <div class="tmpl-row">
+        <span style="font-weight:600;font-size:13px"><i class="fa-solid fa-magic" style="color:var(--accent)"></i> 平日一括入力</span>
+        <label>出勤 <input type="text" id="tmpl-ci" value="09:00"></label>
+        <label>退勤 <input type="text" id="tmpl-co" value="18:00"></label>
+        <label>昼開始 <input type="text" id="tmpl-ls" value="12:00"></label>
+        <label>昼終了 <input type="text" id="tmpl-le" value="13:00"></label>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="applyTemplate()"><i class="fa-solid fa-fill-drip"></i> 平日に適用</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="clearAll()"><i class="fa-solid fa-eraser"></i> 全クリア</button>
+    </div>
+
+    <!-- サマリー -->
+    <div class="summary-bar">
+        <div class="summary-item">出勤日: <strong id="cnt-work">0</strong></div>
+        <div class="summary-item" style="color:#f59e0b">遅刻: <strong id="cnt-late">0</strong></div>
+        <div class="summary-item" style="color:#f97316">早退: <strong id="cnt-early">0</strong></div>
+        <div class="summary-item" style="color:var(--danger)">欠勤: <strong id="cnt-absent">0</strong></div>
+    </div>
+
+    <form method="post" action="/attendance/bulk-register" id="bulk-form">
+        <input type="hidden" name="year" value="${year}">
+        <input type="hidden" name="month" value="${month}">
+
+        <div class="table-wrap">
+        <table class="bulk-table">
+            <thead>
+                <tr>
+                    <th style="width:38px">日</th>
+                    <th style="width:28px">曜</th>
+                    <th style="width:84px">出勤</th>
+                    <th style="width:84px">退勤</th>
+                    <th style="width:84px">昼開始</th>
+                    <th style="width:84px">昼終了</th>
+                    <th style="width:90px">状態</th>
+                    <th>備考</th>
+                    <th style="width:68px">状況</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rows.map((row, idx) => `
+                <tr class="${row.isWeekend ? 'weekend' : ''}${row.isConfirmed ? ' confirmed' : ''}"
+                    data-date="${row.dateStr}" data-weekend="${row.isWeekend ? '1' : '0'}">
+                    <td><span class="day-label ${row.weekdayLabel==='日'?'sun':row.weekdayLabel==='土'?'sat':''}">${row.day}</span></td>
+                    <td><span class="${row.weekdayLabel==='日'?'sun':row.weekdayLabel==='土'?'sat':''}">${row.weekdayLabel}</span></td>
+                    <td><input type="text" class="time-input ci-input" name="rows[${idx}][checkIn]"
+                        value="${escapeHtml(row.checkIn)}" placeholder="09:00" ${row.isConfirmed?'disabled':''}></td>
+                    <td><input type="text" class="time-input co-input" name="rows[${idx}][checkOut]"
+                        value="${escapeHtml(row.checkOut)}" placeholder="18:00" ${row.isConfirmed?'disabled':''}></td>
+                    <td><input type="text" class="time-input ls-input" name="rows[${idx}][lunchStart]"
+                        value="${escapeHtml(row.lunchStart)}" placeholder="12:00" ${row.isConfirmed?'disabled':''}></td>
+                    <td><input type="text" class="time-input le-input" name="rows[${idx}][lunchEnd]"
+                        value="${escapeHtml(row.lunchEnd)}" placeholder="13:00" ${row.isConfirmed?'disabled':''}></td>
+                    <td>
+                        <select class="status-select st-select" name="rows[${idx}][status]" ${row.isConfirmed?'disabled':''}>
+                            <option value="正常"  ${row.status==='正常' ?'selected':''}>正常</option>
+                            <option value="遅刻"  ${row.status==='遅刻' ?'selected':''}>遅刻</option>
+                            <option value="早退"  ${row.status==='早退' ?'selected':''}>早退</option>
+                            <option value="欠勤"  ${row.status==='欠勤' ?'selected':''}>欠勤</option>
+                        </select>
+                    </td>
+                    <td><input type="text" class="notes-input" name="rows[${idx}][notes]"
+                        value="${escapeHtml(row.notes)}" placeholder="備考" ${row.isConfirmed?'disabled':''}></td>
+                    <td>
+                        <input type="hidden" name="rows[${idx}][date]"       value="${row.dateStr}">
+                        <input type="hidden" name="rows[${idx}][existingId]" value="${row.existingId}">
+                        ${row.isConfirmed
+                            ? '<span class="confirmed-badge">確定済</span>'
+                            : '<span style="color:#94a3b8;font-size:12px">未確定</span>'}
+                    </td>
+                </tr>`).join('')}
+            </tbody>
+        </table>
+        </div>
+
+        <div class="sticky-footer">
+            <a href="/attendance-main" class="btn btn-ghost"><i class="fa-solid fa-times"></i> キャンセル</a>
+            <button type="submit" class="btn btn-success"><i class="fa-solid fa-save"></i> 一括保存</button>
+        </div>
+    </form>
+</div>
+</div>
+
+<script>
+function updateSummary() {
+    let work = 0, absent = 0, late = 0, early = 0;
+    document.querySelectorAll('#bulk-form tbody tr').forEach(tr => {
+        const ci = tr.querySelector('.ci-input');
+        const st = tr.querySelector('.st-select');
+        if (!ci || !st || ci.disabled) return;
+        if (ci.value.trim()) {
+            const s = st.value;
+            if (s === '欠勤') absent++;
+            else if (s === '遅刻') { work++; late++; }
+            else if (s === '早退') { work++; early++; }
+            else work++;
+        }
+    });
+    document.getElementById('cnt-work').textContent   = work;
+    document.getElementById('cnt-absent').textContent = absent;
+    document.getElementById('cnt-late').textContent   = late;
+    document.getElementById('cnt-early').textContent  = early;
+}
+
+function applyTemplate() {
+    const ci = document.getElementById('tmpl-ci').value.trim();
+    const co = document.getElementById('tmpl-co').value.trim();
+    const ls = document.getElementById('tmpl-ls').value.trim();
+    const le = document.getElementById('tmpl-le').value.trim();
+    document.querySelectorAll('#bulk-form tbody tr').forEach(tr => {
+        if (tr.dataset.weekend === '1') return;
+        const ciEl = tr.querySelector('.ci-input');
+        if (!ciEl || ciEl.disabled) return;
+        ciEl.value = ci;
+        const coEl = tr.querySelector('.co-input'); if (coEl) coEl.value = co;
+        const lsEl = tr.querySelector('.ls-input'); if (lsEl) lsEl.value = ls;
+        const leEl = tr.querySelector('.le-input'); if (leEl) leEl.value = le;
+        const stEl = tr.querySelector('.st-select'); if (stEl) stEl.value = '正常';
+    });
+    updateSummary();
+}
+
+function clearAll() {
+    if (!confirm('未確定の入力内容をすべてクリアしますか？')) return;
+    document.querySelectorAll('#bulk-form tbody tr').forEach(tr => {
+        const ciEl = tr.querySelector('.ci-input');
+        if (!ciEl || ciEl.disabled) return;
+        ['.ci-input','.co-input','.ls-input','.le-input'].forEach(sel => {
+            const el = tr.querySelector(sel); if (el) el.value = '';
+        });
+        const stEl = tr.querySelector('.st-select');
+        if (stEl) stEl.value = tr.dataset.weekend === '1' ? '欠勤' : '正常';
+        const notesEl = tr.querySelector('.notes-input'); if (notesEl) notesEl.value = '';
+    });
+    updateSummary();
+}
+
+document.getElementById('bulk-form').addEventListener('submit', function(e) {
+    const timeRe = /^([01]?\\d|2[0-3]):[0-5]\\d$/;
+    for (const tr of this.querySelectorAll('tbody tr')) {
+        const ci = tr.querySelector('.ci-input');
+        if (!ci || ci.disabled) continue;
+        const co = tr.querySelector('.co-input');
+        const ls = tr.querySelector('.ls-input');
+        const le = tr.querySelector('.le-input');
+        const date = tr.dataset.date;
+        if (ci.value && !timeRe.test(ci.value))  { alert(date + ' 出勤時間の形式が正しくありません: ' + ci.value); e.preventDefault(); ci.focus(); return; }
+        if (co.value && !timeRe.test(co.value))  { alert(date + ' 退勤時間の形式が正しくありません: ' + co.value); e.preventDefault(); co.focus(); return; }
+        if (ls.value && !timeRe.test(ls.value))  { alert(date + ' 昼休み開始の形式が正しくありません: ' + ls.value); e.preventDefault(); ls.focus(); return; }
+        if (le.value && !timeRe.test(le.value))  { alert(date + ' 昼休み終了の形式が正しくありません: ' + le.value); e.preventDefault(); le.focus(); return; }
+        if (ci.value && co.value && co.value <= ci.value) { alert(date + ' 退勤時間は出勤時間より後にしてください'); e.preventDefault(); co.focus(); return; }
+        if ((ls.value && !le.value) || (!ls.value && le.value)) { alert(date + ' 昼休み開始と終了は両方入力してください'); e.preventDefault(); return; }
+    }
+});
+
+document.querySelectorAll('.ci-input, .st-select').forEach(el => el.addEventListener('change', updateSummary));
+updateSummary();
+</script>
+</body>
+</html>`);
+    } catch (error) {
+        console.error('一括登録ページエラー:', error);
+        res.status(500).send('サーバーエラーが発生しました');
+    }
+});
+
+// 一括登録処理（POST）
+app.post('/attendance/bulk-register', requireLogin, async (req, res) => {
+    try {
+        const user = await User.findById(req.session.userId);
+        const { year, month, rows } = req.body;
+
+        if (!rows || !Array.isArray(rows)) {
+            return res.redirect(`/attendance/bulk-register?year=${year}&month=${month}`);
+        }
+
+        // 承認リクエスト中チェック
+        const approvalRequest = await ApprovalRequest.findOne({
+            userId: user._id,
+            year: parseInt(year),
+            month: parseInt(month),
+            status: 'pending'
+        });
+        if (approvalRequest) {
+            return res.status(403).send('この月は承認リクエスト中のため編集できません');
+        }
+
+        let savedCount = 0;
+        let skippedCount = 0;
+
+        for (const row of rows) {
+            const { date, checkIn, checkOut, lunchStart, lunchEnd, status, notes, existingId } = row;
+            if (!date) continue;
+
+            // 確定済みはスキップ
+            if (existingId) {
+                const existing = await Attendance.findById(existingId);
+                if (existing && existing.isConfirmed) { skippedCount++; continue; }
+            }
+
+            // 出勤時間が空の場合はスキップ
+            if (!checkIn || !checkIn.trim()) {
+                skippedCount++;
+                continue;
+            }
+
+            const parseTimeAsJST = (dateStr, timeStr) => {
+                if (!dateStr || !timeStr || !timeStr.trim()) return null;
+                return moment.tz(`${dateStr} ${timeStr.trim()}`, 'YYYY-MM-DD HH:mm', 'Asia/Tokyo').toDate();
+            };
+
+            const checkInDate    = parseTimeAsJST(date, checkIn);
+            const checkOutDate   = parseTimeAsJST(date, checkOut);
+            const lunchStartDate = parseTimeAsJST(date, lunchStart);
+            const lunchEndDate   = parseTimeAsJST(date, lunchEnd);
+
+            // 勤務時間計算
+            let workingHours = null;
+            let totalHours   = null;
+            if (checkInDate && checkOutDate) {
+                const totalMs = checkOutDate - checkInDate;
+                const lunchMs = (lunchStartDate && lunchEndDate) ? (lunchEndDate - lunchStartDate) : 0;
+                workingHours = parseFloat(((totalMs - lunchMs) / 3600000).toFixed(1));
+                totalHours   = parseFloat((totalMs / 3600000).toFixed(1));
+            }
+
+            const dateObj = moment.tz(date, 'Asia/Tokyo').startOf('day').toDate();
+            const attData = {
+                userId: user._id,
+                date: dateObj,
+                checkIn: checkInDate,
+                checkOut: checkOutDate   || null,
+                lunchStart: lunchStartDate || null,
+                lunchEnd: lunchEndDate   || null,
+                workingHours,
+                totalHours,
+                status: status || '正常',
+                notes: notes   || null
+            };
+
+            if (existingId) {
+                // 既存レコードを更新
+                await Attendance.findByIdAndUpdate(existingId, { $set: attData });
+            } else {
+                // 同日重複チェック → 上書き or 新規作成
+                const dayStart = moment.tz(date, 'Asia/Tokyo').startOf('day').toDate();
+                const dayEnd   = moment.tz(date, 'Asia/Tokyo').endOf('day').toDate();
+                const dup = await Attendance.findOne({ userId: user._id, date: { $gte: dayStart, $lte: dayEnd } });
+                if (dup) {
+                    await Attendance.findByIdAndUpdate(dup._id, { $set: attData });
+                } else {
+                    await new Attendance(attData).save();
+                }
+            }
+            savedCount++;
+        }
+
+        console.log(`一括登録完了: userId=${user._id} year=${year} month=${month} saved=${savedCount} skipped=${skippedCount}`);
+        res.redirect(`/my-monthly-attendance?year=${year}&month=${month}`);
+    } catch (error) {
+        console.error('一括登録処理エラー:', error);
+        res.status(500).send('一括登録中にエラーが発生しました: ' + error.message);
     }
 });
 
