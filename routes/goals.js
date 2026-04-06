@@ -5,7 +5,7 @@ const router = require('express').Router();
 const mongoose = require('mongoose');
 const { Employee, Goal } = require('../models');
 const { requireLogin, isAdmin } = require('../middleware/auth');
-const { escapeHtml } = require('../lib/helpers');
+const { escapeHtml, stripHtmlTags, renderMarkdownToHtml } = require('../lib/helpers');
 const { renderPage } = require('../lib/renderPage');
 
 
@@ -423,41 +423,6 @@ function isCreatorOfGoal(goal, employee) {
         }
     }
     return false;
-}
-
-// Markdown -> sanitized HTML helper with safe fallback if modules are not installed
-function renderMarkdownToHtml(md) {
-    if (!md) return '';
-    try {
-        const marked = require('marked');
-        const sanitizeHtml = require('sanitize-html');
-        const raw = marked.parse(md || '');
-        return sanitizeHtml(raw, {
-            allowedTags: sanitizeHtml.defaults.allowedTags.concat(['h1','h2','img','pre','code']),
-            allowedAttributes: {
-                a: ['href','target','rel'],
-                img: ['src','alt']
-            },
-            transformTags: {
-                'a': function(tagName, attribs) {
-                    attribs.target = '_blank'; attribs.rel = 'noopener noreferrer';
-                    return { tagName: 'a', attribs };
-                }
-            }
-        });
-    } catch (e) {
-        // fallback: basic plaintext -> paragraphs
-        return escapeHtml(md).replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>');
-    }
-}
-
-function stripHtmlTags(html) {
-    try {
-        const sanitizeHtml = require('sanitize-html');
-        return sanitizeHtml(html || '', { allowedTags: [], allowedAttributes: {} });
-    } catch (e) {
-        return String(html || '').replace(/<[^>]*>/g, '');
-    }
 }
 
 // 1次承認依頼

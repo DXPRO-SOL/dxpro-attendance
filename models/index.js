@@ -190,6 +190,55 @@ const PretestSubmissionSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 
+// 休暇残日数スキーマ
+const LeaveBalanceSchema = new mongoose.Schema({
+    employeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee', required: true, unique: true },
+    paid:    { type: Number, default: 0 },   // 有給
+    sick:    { type: Number, default: 0 },   // 病欠
+    special: { type: Number, default: 0 },   // 慶弔
+    other:   { type: Number, default: 0 },   // その他
+    updatedAt: { type: Date, default: Date.now },
+    history: [{
+        grantedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        leaveType: { type: String },
+        delta: { type: Number },
+        note: { type: String },
+        at: { type: Date, default: Date.now }
+    }]
+});
+
+// 会社規定スキーマ
+const CompanyRuleSchema = new mongoose.Schema({
+    category:    { type: String, required: true },   // 例: '就業規則', '休暇規定' など
+    title:       { type: String, required: true },
+    content:     { type: String, default: '' },
+    order:       { type: Number, default: 0 },
+    updatedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    attachments: [{
+        originalName: { type: String },   // 元のファイル名
+        filename:     { type: String },   // サーバー上のファイル名
+        mimetype:     { type: String },
+        size:         { type: Number }
+    }]
+}, { timestamps: true });
+
+// 日報スキーマ
+const DailyReportSchema = new mongoose.Schema({
+    employeeId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Employee', required: true },
+    userId:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    reportDate:  { type: Date, required: true },
+    content:     { type: String, required: true },
+    achievements:{ type: String },
+    issues:      { type: String },
+    tomorrow:    { type: String },
+    comments: [{
+        authorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        authorName: { type: String },
+        text: { type: String },
+        at: { type: Date, default: Date.now }
+    }]
+}, { timestamps: true });
+
 // 従業員スキーマ
 const EmployeeSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
@@ -215,6 +264,9 @@ const Goal            = mongoose.model('Goal', goalSchema);
 const LeaveRequest    = mongoose.model('LeaveRequest', LeaveRequestSchema);
 const SemiAnnualFeedback  = mongoose.model('SemiAnnualFeedback', SemiAnnualFeedbackSchema);
 const PretestSubmission   = mongoose.model('PretestSubmission', PretestSubmissionSchema);
+const LeaveBalance    = mongoose.model('LeaveBalance', LeaveBalanceSchema);
+const CompanyRule     = mongoose.model('CompanyRule', CompanyRuleSchema);
+const DailyReport     = mongoose.model('DailyReport', DailyReportSchema);
 
 module.exports = {
     User,
@@ -228,5 +280,8 @@ module.exports = {
     Goal,
     LeaveRequest,
     SemiAnnualFeedback,
-    PretestSubmission
+    PretestSubmission,
+    LeaveBalance,
+    CompanyRule,
+    DailyReport
 };
