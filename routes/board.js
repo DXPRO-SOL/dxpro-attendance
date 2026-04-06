@@ -22,49 +22,60 @@ const upload = multer({ storage });
 
 router.get('/board/new', requireLogin, (req, res) => {
     renderPage(req, res, "新規投稿", "掲示板への投稿", `
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
         <style>
-            body{font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif}
-            .wrap{max-width:1000px;margin:28px auto}
-            .card{background:#fff;padding:22px;border-radius:12px;box-shadow:0 12px 30px rgba(10,20,40,0.06)}
-            .thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-            .thumbs img{width:120px;height:80px;object-fit:cover;border-radius:8px;border:1px solid #e6eef2}
-            .inline-note{color:#6b7280;font-size:13px}
+            .bn-wrap{max-width:760px;margin:0 auto}
+            .bn-card{background:#fff;border-radius:20px;box-shadow:0 8px 40px rgba(11,36,64,.10);overflow:hidden}
+            .bn-card-head{background:linear-gradient(120deg,#0b2540,#0b5fff);padding:28px 32px;color:#fff}
+            .bn-card-head h2{margin:0;font-size:20px;font-weight:800}
+            .bn-card-head p{margin:6px 0 0;opacity:.75;font-size:13px}
+            .bn-card-body{padding:32px}
+            .bn-field{margin-bottom:22px}
+            .bn-label{display:block;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#6b7280;margin-bottom:8px}
+            .bn-input,.bn-textarea,.bn-select{width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:inherit;background:#fafafa;transition:border .15s,box-shadow .15s;box-sizing:border-box}
+            .bn-input:focus,.bn-textarea:focus,.bn-select:focus{border-color:#0b5fff;box-shadow:0 0 0 3px rgba(11,95,255,.1);outline:none;background:#fff}
+            .bn-textarea{resize:vertical;min-height:180px;line-height:1.7}
+            .bn-row{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+            .bn-foot{display:flex;justify-content:flex-end;gap:10px;padding-top:12px;border-top:1px solid #f1f5f9}
+            .bn-btn{display:inline-flex;align-items:center;gap:7px;padding:10px 22px;border-radius:10px;font-size:14px;font-weight:700;border:none;cursor:pointer;text-decoration:none;transition:opacity .15s}
+            .bn-btn-primary{background:linear-gradient(90deg,#0b5fff,#184df2);color:#fff;box-shadow:0 6px 18px rgba(11,95,255,.25)}
+            .bn-btn-primary:hover{opacity:.9}
+            .bn-btn-ghost{background:#f1f5f9;color:#374151}
+            .bn-btn-ghost:hover{background:#e5e7eb}
+            .bn-file-hint{font-size:12px;color:#9ca3af;margin-top:5px}
         </style>
-
-        <div class="wrap">
-            <div class="card">
-                <h3>掲示板に投稿する</h3>
-                <p class="inline-note">画像やファイルを添付できます。Markdown記法も利用可能です。</p>
-
-                <form action="/board" method="post" enctype="multipart/form-data">
-                    <div class="mb-3">
-                        <label class="form-label">タイトル</label>
-                        <input type="text" name="title" class="form-control" required>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">本文 (Markdown可)</label>
-                        <textarea name="content" class="form-control" rows="8" placeholder="例: ## お知らせ\n詳細..." required></textarea>
-                    </div>
-
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">添付ファイル (複数可)</label>
-                            <input type="file" name="attachments" class="form-control" multiple accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
-                            <div class="inline-note">推奨: 画像は 5MB 以下。PDF/Office は 10MB 以下。</div>
+        <div class="bn-wrap">
+            <div class="bn-card">
+                <div class="bn-card-head">
+                    <h2>📝 新規投稿</h2>
+                    <p>画像・ファイルを添付できます。Markdown記法も利用可能です。</p>
+                </div>
+                <div class="bn-card-body">
+                    <form action="/board" method="post" enctype="multipart/form-data">
+                        <div class="bn-field">
+                            <label class="bn-label">タイトル</label>
+                            <input type="text" name="title" class="bn-input" required placeholder="投稿のタイトルを入力">
                         </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">タグ (カンマ区切り)</label>
-                            <input type="text" name="tags" class="form-control" placeholder="例: お知らせ,全社,重要">
+                        <div class="bn-field">
+                            <label class="bn-label">本文 (Markdown可)</label>
+                            <textarea name="content" class="bn-textarea" required placeholder="## 見出し&#10;本文を入力してください..."></textarea>
                         </div>
-                    </div>
-
-                    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
-                        <a href="/board" class="btn btn-outline-secondary">キャンセル</a>
-                        <button type="submit" class="btn btn-primary">投稿する</button>
-                    </div>
-                </form>
+                        <div class="bn-row">
+                            <div class="bn-field">
+                                <label class="bn-label">添付ファイル（複数可）</label>
+                                <input type="file" name="attachments" class="bn-input" multiple accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+                                <div class="bn-file-hint">画像 5MB以下 / PDF・Officeは10MB以下</div>
+                            </div>
+                            <div class="bn-field">
+                                <label class="bn-label">タグ（カンマ区切り）</label>
+                                <input type="text" name="tags" class="bn-input" placeholder="例: お知らせ, 全社, 重要">
+                            </div>
+                        </div>
+                        <div class="bn-foot">
+                            <a href="/board" class="bn-btn bn-btn-ghost">キャンセル</a>
+                            <button type="submit" class="bn-btn bn-btn-primary">🚀 投稿する</button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
     `);
@@ -182,53 +193,137 @@ router.get('/board/:id', requireLogin, async (req, res) => {
 
     const contentHtml = renderMarkdownToHtml(post.content || '');
     renderPage(req, res, post.title, "投稿詳細", `
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
         <style>
-            body{font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif}
-            .wrap{max-width:900px;margin:28px auto}
-            .post-card{background:#fff;padding:20px;border-radius:12px;box-shadow:0 12px 30px rgba(10,20,40,0.06)}
-            .meta{color:#6b7280;font-size:13px}
-            .comment{background:#fbfdff;border-radius:8px;padding:10px;margin-bottom:8px}
+            .bd-detail{max-width:800px;margin:0 auto}
+
+            /* 投稿カード */
+            .bd-post-card{background:#fff;border-radius:20px;box-shadow:0 4px 32px rgba(11,36,64,.09);overflow:hidden;margin-bottom:20px}
+            .bd-post-head{padding:28px 32px 20px;border-bottom:1px solid #f1f5f9}
+            .bd-post-back{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#9ca3af;text-decoration:none;margin-bottom:14px;font-weight:600}
+            .bd-post-back:hover{color:#0b5fff}
+            .bd-post-title{font-size:22px;font-weight:800;color:#0b2540;line-height:1.4;margin:0 0 12px}
+            .bd-post-meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px;color:#9ca3af}
+            .bd-author-avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#0b5fff,#7c3aed);color:#fff;font-size:12px;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
+            .bd-post-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+            .bd-post-tag{padding:3px 12px;background:#eff6ff;color:#0b5fff;border-radius:999px;font-size:12px;font-weight:700}
+
+            /* 本文 */
+            .bd-post-body{padding:28px 32px}
+            .bd-post-content{font-size:15px;line-height:1.85;color:#374151}
+            .bd-post-content h1,.bd-post-content h2,.bd-post-content h3{color:#0b2540;margin-top:1.5em}
+            .bd-post-content code{background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:13px}
+            .bd-post-content pre{background:#0b2540;color:#e2e8f0;padding:16px;border-radius:10px;overflow-x:auto}
+            .bd-post-content blockquote{border-left:4px solid #0b5fff;margin:0;padding:8px 16px;background:#f0f5ff;border-radius:0 8px 8px 0;color:#374151}
+            .bd-post-content img{max-width:100%;border-radius:10px;margin:8px 0}
+
+            /* 添付 */
+            .bd-attachments{padding:16px 32px;background:#f8fafc;border-top:1px solid #f1f5f9;display:flex;gap:10px;flex-wrap:wrap}
+            .bd-attach-img{width:140px;height:100px;object-fit:cover;border-radius:10px;border:1px solid #e5e7eb;transition:transform .15s}
+            .bd-attach-img:hover{transform:scale(1.03)}
+            .bd-attach-file{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;background:#fff;border:1.5px solid #e5e7eb;border-radius:10px;font-size:13px;color:#374151;text-decoration:none;font-weight:600}
+            .bd-attach-file:hover{border-color:#0b5fff;color:#0b5fff}
+
+            /* アクション */
+            .bd-post-foot{display:flex;justify-content:space-between;align-items:center;padding:14px 32px;border-top:1px solid #f1f5f9;flex-wrap:wrap;gap:8px}
+            .bd-foot-stats{display:flex;gap:16px;font-size:13px;color:#9ca3af}
+            .bd-foot-actions{display:flex;gap:8px;flex-wrap:wrap}
+            .bd-btn{display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border-radius:9px;font-size:13px;font-weight:700;text-decoration:none;border:none;cursor:pointer;transition:background .15s}
+            .bd-btn-like{background:#fee2e2;color:#ef4444}.bd-btn-like:hover{background:#fecaca}
+            .bd-btn-edit{background:#eff6ff;color:#0b5fff}.bd-btn-edit:hover{background:#dbeafe}
+            .bd-btn-del{background:#fee2e2;color:#ef4444}.bd-btn-del:hover{background:#fecaca}
+            .bd-btn-back{background:#f1f5f9;color:#374151}.bd-btn-back:hover{background:#e5e7eb}
+
+            /* コメントセクション */
+            .bd-comments{background:#fff;border-radius:20px;box-shadow:0 4px 32px rgba(11,36,64,.09);overflow:hidden}
+            .bd-comments-head{padding:20px 28px;border-bottom:1px solid #f1f5f9;font-size:16px;font-weight:800;color:#0b2540}
+            .bd-comment{padding:16px 28px;border-bottom:1px solid #f8fafc;display:flex;gap:12px}
+            .bd-comment:last-of-type{border-bottom:none}
+            .bd-comment-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#0b5fff,#7c3aed);color:#fff;font-size:14px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+            .bd-comment-bubble{flex:1}
+            .bd-comment-name{font-size:13px;font-weight:700;color:#0b2540;margin-bottom:4px}
+            .bd-comment-date{font-size:11px;color:#9ca3af;margin-left:8px;font-weight:400}
+            .bd-comment-text{font-size:14px;color:#374151;line-height:1.7}
+            .bd-comment-empty{padding:32px 28px;text-align:center;color:#9ca3af;font-size:14px}
+
+            /* コメント入力 */
+            .bd-comment-form{padding:20px 28px;background:#f8fafc;border-top:1px solid #f1f5f9}
+            .bd-comment-label{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#6b7280;margin-bottom:8px;display:block}
+            .bd-comment-textarea{width:100%;padding:12px 16px;border:1.5px solid #e5e7eb;border-radius:12px;font-size:14px;font-family:inherit;resize:vertical;min-height:90px;background:#fff;transition:border .15s,box-shadow .15s;box-sizing:border-box}
+            .bd-comment-textarea:focus{border-color:#0b5fff;box-shadow:0 0 0 3px rgba(11,95,255,.1);outline:none}
+            .bd-comment-submit{display:inline-flex;align-items:center;gap:7px;margin-top:10px;padding:10px 22px;background:linear-gradient(90deg,#0b5fff,#184df2);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(11,95,255,.25)}
+            .bd-comment-submit:hover{opacity:.9}
         </style>
 
-        <div class="wrap">
-            <div class="post-card">
-                <h3>${escapeHtml(post.title)}</h3>
-                <div class="meta mb-2">投稿者: ${escapeHtml(post.authorId?.username || '不明')} • 閲覧: ${escapeHtml(String(post.views))} • いいね: ${escapeHtml(String(post.likes))}</div>
-                <div class="mb-3">${contentHtml}</div>
-
-                ${ post.attachments && post.attachments.length ? `
-                    <div style="margin-bottom:12px">
-                        <div style="display:flex;gap:8px;flex-wrap:wrap">
-                            ${post.attachments.map(a => `
-                                <div>
-                                    ${a.url && a.url.match(/\.(jpg|jpeg|png|gif)$/i) ? `<a href="${a.url}" target="_blank"><img src="${a.url}" style="max-width:800px;max-height:500px;object-fit:cover;border-radius:8px;border:1px solid #eee"></a>` : `<a href="${a.url}" target="_blank">${escapeHtml(a.name)}</a>`}
-                                </div>
-                            `).join('')}
-                        </div>
+        <div class="bd-detail">
+            <!-- 投稿カード -->
+            <div class="bd-post-card">
+                <div class="bd-post-head">
+                    <a href="/board" class="bd-post-back">← 掲示板に戻る</a>
+                    <div class="bd-post-title">${escapeHtml(post.title)}</div>
+                    <div class="bd-post-meta">
+                        <span class="bd-author-avatar">${(post.authorId?.username||'?').charAt(0).toUpperCase()}</span>
+                        <span style="font-weight:700;color:#374151">${escapeHtml(post.authorId?.username || '不明')}</span>
+                        <span>·</span>
+                        <span>${moment.tz(post.createdAt,'Asia/Tokyo').format('YYYY/MM/DD HH:mm')}</span>
                     </div>
-                ` : '' }
-
-                <form action="/board/${post._id}/like" method="post" style="display:inline-block;margin-bottom:12px">
-                    <button class="btn btn-sm btn-outline-danger">❤️ いいね</button>
-                </form>
-
-                <hr>
-                <h5>コメント</h5>
-                <div>
-                    ${comments.length ? comments.map(c => `
-                        <div class="comment">
-                            <div style="font-weight:600">${escapeHtml(c.authorId?.username || '名無し')}</div>
-                            <div style="font-size:14px;margin-top:6px">${renderMarkdownToHtml(c.content)}</div>
-                            <div class="meta" style="margin-top:6px">${escapeHtml(moment.tz(c.createdAt,'Asia/Tokyo').format('YYYY-MM-DD HH:mm'))}</div>
-                        </div>
-                    `).join('') : '<p class="text-muted">コメントはまだありません</p>' }
+                    ${(post.tags||[]).length ? `<div class="bd-post-tags">${(post.tags||[]).map(t=>`<span class="bd-post-tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
                 </div>
 
-                <form action="/board/${post._id}/comment" method="post" class="mt-3">
-                    <textarea name="content" class="form-control mb-2" rows="3" required></textarea>
-                    <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary">コメントする</button><a href="/board" class="btn btn-outline-secondary">戻る</a></div>
-                </form>
+                <div class="bd-post-body">
+                    <div class="bd-post-content">${contentHtml}</div>
+                </div>
+
+                ${ post.attachments && post.attachments.length ? `
+                <div class="bd-attachments">
+                    ${post.attachments.map(a => a.url && a.url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+                        ? `<a href="${a.url}" target="_blank"><img src="${a.url}" class="bd-attach-img" alt="${escapeHtml(a.name||'')}"></a>`
+                        : `<a href="${a.url}" target="_blank" class="bd-attach-file">📎 ${escapeHtml(a.name||'ファイル')}</a>`
+                    ).join('')}
+                </div>` : '' }
+
+                <div class="bd-post-foot">
+                    <div class="bd-foot-stats">
+                        <span>👁 ${post.views || 0} 閲覧</span>
+                        <span>❤️ ${post.likes || 0} いいね</span>
+                        <span>💬 ${comments.length} コメント</span>
+                    </div>
+                    <div class="bd-foot-actions">
+                        <form action="/board/${post._id}/like" method="post" style="display:inline">
+                            <button class="bd-btn bd-btn-like">❤️ いいね</button>
+                        </form>
+                        ${ (req.session.user?.isAdmin || String(req.session.user?._id) === String(post.authorId?._id)) ? `
+                            <a href="/board/${post._id}/edit" class="bd-btn bd-btn-edit">✏️ 編集</a>
+                            <form action="/board/${post._id}/delete" method="post" style="display:inline">
+                                <button class="bd-btn bd-btn-del" onclick="return confirm('削除しますか？')">🗑 削除</button>
+                            </form>
+                        ` : '' }
+                        <a href="/board" class="bd-btn bd-btn-back">← 戻る</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- コメント -->
+            <div class="bd-comments">
+                <div class="bd-comments-head">💬 コメント（${comments.length}件）</div>
+                ${ comments.length ? comments.map(c => `
+                <div class="bd-comment">
+                    <div class="bd-comment-avatar">${(c.authorId?.username||'?').charAt(0).toUpperCase()}</div>
+                    <div class="bd-comment-bubble">
+                        <div class="bd-comment-name">
+                            ${escapeHtml(c.authorId?.username || '名無し')}
+                            <span class="bd-comment-date">${moment.tz(c.createdAt,'Asia/Tokyo').format('YYYY/MM/DD HH:mm')}</span>
+                        </div>
+                        <div class="bd-comment-text">${renderMarkdownToHtml(c.content)}</div>
+                    </div>
+                </div>`) .join('') : `<div class="bd-comment-empty">まだコメントはありません。最初のコメントを投稿しましょう！</div>` }
+
+                <div class="bd-comment-form">
+                    <label class="bd-comment-label">コメントを追加</label>
+                    <form action="/board/${post._id}/comment" method="post">
+                        <textarea name="content" class="bd-comment-textarea" placeholder="コメントを入力..." required></textarea>
+                        <button type="submit" class="bd-comment-submit">💬 コメントする</button>
+                    </form>
+                </div>
             </div>
         </div>
     `);
@@ -324,89 +419,188 @@ router.get('/board', requireLogin, async (req, res) => {
     ]);
     comments.forEach(c => commentCounts[c._id] = c.count);
 
-    renderPage(req, res, "社内掲示板", "最新のお知らせ", `
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    renderPage(req, res, "社内掲示板", "社内掲示板", `
         <style>
-            body{font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif;background:#f5f7fb}
-            .wrap{max-width:1100px;margin:28px auto;padding:12px}
-            .hero{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
-            .search-bar{display:flex;gap:8px;align-items:center}
-            .search-input{padding:12px 16px;border-radius:10px;border:1px solid rgba(15,35,60,0.06);min-width:320px;font-size:15px}
-            .search-bar .form-select{padding:10px 12px;border-radius:10px;font-size:15px}
-            .search-button{font-size:15px;border-radius:10px;box-shadow:0 8px 22px rgba(11,105,255,0.10);width:220px}
-            @media(max-width:900px){
-                .search-button{width:100%}
+            /* ===== 掲示板 共通 ===== */
+            .bd-page{max-width:900px;margin:0 auto}
+
+            /* ヘッダー */
+            .bd-hero{background:linear-gradient(120deg,#0b2540 0%,#0b5fff 100%);border-radius:20px;padding:28px 32px;color:#fff;display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:24px;flex-wrap:wrap}
+            .bd-hero-title{font-size:22px;font-weight:800;margin:0 0 4px}
+            .bd-hero-sub{font-size:13px;opacity:.75;margin:0}
+            .bd-new-btn{display:inline-flex;align-items:center;gap:7px;padding:11px 22px;background:#fff;color:#0b5fff;border-radius:12px;font-weight:800;font-size:14px;text-decoration:none;box-shadow:0 4px 16px rgba(0,0,0,.15);white-space:nowrap;flex-shrink:0}
+            .bd-new-btn:hover{background:#f0f4ff}
+
+            /* 検索バー */
+            .bd-search-bar{display:flex;gap:10px;align-items:center;margin-bottom:20px;flex-wrap:wrap}
+            .bd-search-input{flex:1;min-width:200px;padding:11px 16px;border:1.5px solid #e5e7eb;border-radius:12px;font-size:14px;background:#fff;outline:none;transition:border .15s,box-shadow .15s}
+            .bd-search-input:focus{border-color:#0b5fff;box-shadow:0 0 0 3px rgba(11,95,255,.1)}
+            .bd-sort-select{padding:10px 14px;border:1.5px solid #e5e7eb;border-radius:12px;font-size:13px;background:#fff;outline:none;cursor:pointer}
+            .bd-sort-select:focus{border-color:#0b5fff}
+            .bd-search-btn{padding:11px 20px;background:#0b5fff;color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap}
+            .bd-search-btn:hover{background:#0040d0}
+
+            /* ピン留めバナー */
+            .bd-pin-banner{display:flex;align-items:center;gap:10px;background:linear-gradient(90deg,#fffbeb,#fef3c7);border:1px solid #fde68a;border-radius:12px;padding:12px 18px;margin-bottom:16px;font-size:13px;font-weight:700;color:#92400e}
+
+            /* 投稿カード */
+            .bd-card{background:#fff;border-radius:16px;box-shadow:0 2px 16px rgba(11,36,64,.07);border:1px solid #f1f5f9;margin-bottom:14px;overflow:hidden;transition:box-shadow .2s,transform .15s}
+            .bd-card:hover{box-shadow:0 8px 32px rgba(11,36,64,.13);transform:translateY(-2px)}
+            .bd-card.pinned{border-left:4px solid #f59e0b}
+            .bd-card-body{padding:20px 24px}
+            .bd-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+            .bd-card-left{flex:1;min-width:0}
+            .bd-card-title{font-size:16px;font-weight:800;color:#0b2540;text-decoration:none;display:block;margin-bottom:6px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+            .bd-card-title:hover{color:#0b5fff}
+            .bd-card-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:#9ca3af;margin-bottom:10px}
+            .bd-meta-avatar{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#0b5fff,#7c3aed);color:#fff;font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+            .bd-card-excerpt{font-size:13.5px;color:#4b5563;line-height:1.7;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+            .bd-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+            .bd-tag{display:inline-flex;align-items:center;padding:3px 10px;background:#eff6ff;color:#0b5fff;border-radius:999px;font-size:11px;font-weight:700}
+            .bd-card-right{flex-shrink:0;text-align:right}
+
+            /* 一覧サムネイル */
+            .bd-card-thumb{width:110px;height:80px;object-fit:cover;border-radius:10px;border:1px solid #f1f5f9;flex-shrink:0;transition:transform .15s}
+            .bd-card-thumb:hover{transform:scale(1.04)}
+            .bd-card-thumbs-row{display:flex;gap:6px;flex-wrap:nowrap;overflow:hidden;margin-top:10px}
+            .bd-card-thumb-sm{width:72px;height:52px;object-fit:cover;border-radius:7px;border:1px solid #f1f5f9;flex-shrink:0}
+            .bd-thumb-more{width:72px;height:52px;border-radius:7px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#9ca3af;flex-shrink:0}
+
+            /* フッター（統計＋アクション） */
+            .bd-card-foot{display:flex;justify-content:space-between;align-items:center;padding:10px 24px;background:#f8fafc;border-top:1px solid #f1f5f9;flex-wrap:wrap;gap:8px}
+            .bd-stats{display:flex;gap:14px;font-size:12px;color:#9ca3af}
+            .bd-stat{display:flex;align-items:center;gap:4px}
+            .bd-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+            .bd-btn{display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:700;text-decoration:none;border:none;cursor:pointer;transition:background .15s}
+            .bd-btn-like{background:#fee2e2;color:#ef4444}.bd-btn-like:hover{background:#fecaca}
+            .bd-btn-edit{background:#eff6ff;color:#0b5fff}.bd-btn-edit:hover{background:#dbeafe}
+            .bd-btn-del{background:#fee2e2;color:#ef4444}.bd-btn-del:hover{background:#fecaca}
+            .bd-btn-pin{background:#fef9c3;color:#ca8a04}.bd-btn-pin:hover{background:#fef08a}
+
+            /* ページネーション */
+            .bd-pager{display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding:14px 0}
+            .bd-pager-info{font-size:13px;color:#9ca3af}
+            .bd-pager-btns{display:flex;gap:8px}
+            .bd-pager-btn{display:inline-flex;align-items:center;gap:5px;padding:8px 18px;background:#fff;border:1.5px solid #e5e7eb;border-radius:10px;font-size:13px;font-weight:700;color:#374151;text-decoration:none;transition:border .15s,background .15s}
+            .bd-pager-btn:hover{border-color:#0b5fff;color:#0b5fff;background:#f0f5ff}
+
+            /* 空状態 */
+            .bd-empty{text-align:center;padding:60px 20px;color:#9ca3af}
+            .bd-empty-icon{font-size:48px;margin-bottom:16px}
+            .bd-empty-text{font-size:15px;font-weight:600}
+
+            @media(max-width:640px){
+                .bd-hero{padding:20px}.bd-card-body{padding:16px}.bd-card-foot{padding:8px 16px}
+                .bd-card-top{flex-direction:column}
             }
-            .btn-ghost{background:transparent;border:1px solid rgba(15,35,60,0.06);color:#0b69ff;padding:8px 12px;border-radius:8px}
-            .pinned-banner{background:linear-gradient(90deg,#fff9e6,#fff4d6);padding:12px;border-radius:10px;border:1px solid rgba(0,0,0,0.03);margin-bottom:12px}
-            .card-board{background:#fff;border-radius:12px;padding:18px;box-shadow:0 12px 30px rgba(12,32,56,0.06);border:1px solid rgba(10,20,40,0.03);margin-bottom:12px}
-            .meta{color:#6b7280;font-size:13px}
-            .tag{background:#eef2ff;color:#0b69ff;padding:4px 8px;border-radius:999px;font-size:12px;margin-left:8px}
         </style>
 
-        <div class="wrap">
-            <div class="hero">
+        <div class="bd-page">
+
+            <!-- ヘッダー -->
+            <div class="bd-hero">
                 <div>
-                    <h2>社内掲示板</h2>
-                    <div class="small-muted">最新のお知らせと社内共有</div>
+                    <div class="bd-hero-title">💬 社内掲示板</div>
+                    <div class="bd-hero-sub">全${total}件の投稿 ・ 最新のお知らせや情報を共有しましょう</div>
                 </div>
-                <div style="display:flex;gap:8px;align-items:center">
-                    <form method="get" action="/board" class="search-bar" style="margin:0">
-                        <input type="text" name="q" value="${escapeHtml(q)}" placeholder="タイトル・内容で検索" class="search-input">
-                        <select name="sort" class="form-select" style="max-width:160px">
-                            <option value="date" ${sort==='date'?'selected':''}>新着順</option>
-                            <option value="views" ${sort==='views'?'selected':''}>閲覧数順</option>
-                            <option value="likes" ${sort==='likes'?'selected':''}>いいね順</option>
-                        </select>
-                        <button type="submit" class="btn btn-primary search-button">検索</button>
-                    </form>
-                    <a href="/board/new" class="btn btn-outline-primary">新規投稿</a>
-                </div>
+                <a href="/board/new" class="bd-new-btn">✏️ 新規投稿</a>
             </div>
 
-            ${ posts.filter(p=>p.pinned).length ? `<div class="pinned-banner"><strong>ピン留め</strong> — 管理者のお知らせを優先表示しています</div>` : '' }
+            <!-- 検索バー -->
+            <form method="get" action="/board" class="bd-search-bar">
+                <input type="text" name="q" value="${escapeHtml(q)}" placeholder="🔍 タイトル・内容で検索..." class="bd-search-input">
+                <select name="sort" class="bd-sort-select">
+                    <option value="date"  ${sort==='date' ?'selected':''}>🕐 新着順</option>
+                    <option value="views" ${sort==='views'?'selected':''}>👁 閲覧数順</option>
+                    <option value="likes" ${sort==='likes'?'selected':''}>❤️ いいね順</option>
+                </select>
+                <button type="submit" class="bd-search-btn">検索</button>
+            </form>
 
-            ${posts.map(p => `
-                <div class="card-board ${p.pinned ? 'border-start' : ''}">
-                    <div style="display:flex;justify-content:space-between;align-items:flex-start">
-                        <div style="max-width:74%">
-                            <a href="/board/${p._id}" style="font-weight:700;font-size:16px;color:#0b2430;text-decoration:none">${escapeHtml(p.title)}</a>
-                            <div class="meta">投稿者: ${escapeHtml(p.authorId?.username || '不明')} • ${new Date(p.createdAt).toLocaleString()}</div>
-                            <div style="margin-top:8px;color:#334e56">${escapeHtml(stripHtmlTags(p.content).slice(0,300))}${(p.content||'').length>300? '...' : ''}</div>
-                        </div>
-                        <div style="text-align:right">
-                            ${ (p.tags || []).map(tag => `<div class="tag">${escapeHtml(tag)}</div>`).join('') }
+            ${ posts.filter(p=>p.pinned).length ? `
+            <div class="bd-pin-banner">
+                📌 ピン留め投稿があります — 重要なお知らせをご確認ください
+            </div>` : '' }
+
+            <!-- 投稿一覧 -->
+            ${ posts.length === 0 ? `
+            <div class="bd-empty">
+                <div class="bd-empty-icon">📭</div>
+                <div class="bd-empty-text">${q ? `「${escapeHtml(q)}」の検索結果は0件です` : '投稿がまだありません'}</div>
+            </div>
+            ` : posts.map(p => {
+                const authorName = p.authorId?.username || '不明';
+                const excerpt = stripHtmlTags(p.content || '').slice(0, 120) + ((p.content||'').length > 120 ? '…' : '');
+                const dateStr = moment.tz(p.createdAt, 'Asia/Tokyo').format('YYYY/MM/DD HH:mm');
+                const commentCount = commentCounts[p._id] || 0;
+
+                // 画像添付を抽出
+                const imgAttachments = (p.attachments || []).filter(a => a.url && /\.(jpg|jpeg|png|gif|webp)$/i.test(a.url));
+                const firstImg = imgAttachments[0];
+                const extraImgs = imgAttachments.slice(1, 4);
+                const moreCount = imgAttachments.length - 4;
+
+                return `
+                <div class="bd-card${p.pinned ? ' pinned' : ''}">
+                    <div class="bd-card-body">
+                        <div class="bd-card-top">
+                            <div class="bd-card-left" style="flex:1;min-width:0">
+                                <a href="/board/${p._id}" class="bd-card-title">${escapeHtml(p.title)}</a>
+                                <div class="bd-card-meta">
+                                    <span class="bd-meta-avatar">${authorName.charAt(0).toUpperCase()}</span>
+                                    <span>${escapeHtml(authorName)}</span>
+                                    <span>·</span>
+                                    <span>${dateStr}</span>
+                                    ${p.pinned ? '<span style="color:#f59e0b;font-weight:700">📌 ピン留め</span>' : ''}
+                                </div>
+                                <div class="bd-card-excerpt">${escapeHtml(excerpt)}</div>
+                                ${(p.tags||[]).length ? `<div class="bd-tags">${(p.tags||[]).map(t=>`<span class="bd-tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+                                ${ extraImgs.length ? `
+                                <div class="bd-card-thumbs-row">
+                                    ${extraImgs.map(a=>`<a href="/board/${p._id}"><img src="${a.url}" class="bd-card-thumb-sm" alt="添付画像"></a>`).join('')}
+                                    ${moreCount > 0 ? `<a href="/board/${p._id}" class="bd-thumb-more">+${moreCount}</a>` : ''}
+                                </div>` : '' }
+                            </div>
+                            ${ firstImg ? `
+                            <a href="/board/${p._id}" style="flex-shrink:0">
+                                <img src="${firstImg.url}" class="bd-card-thumb" alt="添付画像">
+                            </a>` : '' }
                         </div>
                     </div>
-
-                    <div class="meta" style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
-                        <div>閲覧: ${escapeHtml(String(p.views))} • いいね: ${escapeHtml(String(p.likes))} • コメント: ${escapeHtml(String(commentCounts[p._id] || 0))}</div>
-                        <div style="display:flex;gap:8px">
-                            <form action="/board/${p._id}/like" method="post" style="display:inline;">
-                                <button class="btn btn-sm btn-outline-danger">❤️ いいね</button>
+                    <div class="bd-card-foot">
+                        <div class="bd-stats">
+                            <span class="bd-stat">👁 ${p.views || 0}</span>
+                            <span class="bd-stat">❤️ ${p.likes || 0}</span>
+                            <span class="bd-stat">💬 ${commentCount}</span>
+                            ${ imgAttachments.length ? `<span class="bd-stat">🖼 ${imgAttachments.length}枚</span>` : '' }
+                        </div>
+                        <div class="bd-actions">
+                            <form action="/board/${p._id}/like" method="post" style="display:inline">
+                                <button class="bd-btn bd-btn-like">❤️ いいね</button>
                             </form>
-                            ${ (req.session.user.isAdmin || req.session.user._id == (p.authorId?._id || '').toString()) ? `
-                                <a href="/board/${p._id}/edit" class="btn btn-sm btn-outline-primary">✏️ 編集</a>
-                                <form action="/board/${p._id}/delete" method="post" style="display:inline;">
-                                    <button class="btn btn-sm btn-outline-danger">🗑️ 削除</button>
+                            <a href="/board/${p._id}" class="bd-btn bd-btn-edit" style="background:#f0fdf4;color:#16a34a">💬 詳細・コメント</a>
+                            ${ (req.session.user?.isAdmin || String(req.session.user?._id) === String(p.authorId?._id)) ? `
+                                <a href="/board/${p._id}/edit" class="bd-btn bd-btn-edit">✏️ 編集</a>
+                                <form action="/board/${p._id}/delete" method="post" style="display:inline">
+                                    <button class="bd-btn bd-btn-del" onclick="return confirm('削除しますか？')">🗑</button>
                                 </form>
                             ` : '' }
-                            ${ req.session.user.isAdmin ? `
-                                <form action="/board/${p._id}/pin" method="post" style="display:inline;">
-                                    <button class="btn btn-sm btn-outline-warning">${p.pinned ? '📌 ピン解除' : '📌 ピン留め'}</button>
+                            ${ req.session.user?.isAdmin ? `
+                                <form action="/board/${p._id}/pin" method="post" style="display:inline">
+                                    <button class="bd-btn bd-btn-pin">${p.pinned ? '📌 解除' : '📌 ピン'}</button>
                                 </form>
                             ` : '' }
                         </div>
                     </div>
-                </div>
-            `).join('')}
+                </div>`;
+            }).join('') }
 
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
-                <div class="small-muted">表示 ${escapeHtml(String((page-1)*perPage + 1))} - ${escapeHtml(String(Math.min(page*perPage, total)))} / ${escapeHtml(String(total))}</div>
-                <div style="display:flex;gap:8px">
-                    ${ page > 1 ? `<a href="?page=${page-1}&perPage=${perPage}&q=${escapeHtml(q)}&sort=${escapeHtml(sort)}" class="btn btn-sm btn-ghost">前へ</a>` : '' }
-                    ${ (page * perPage) < total ? `<a href="?page=${page+1}&perPage=${perPage}&q=${escapeHtml(q)}&sort=${escapeHtml(sort)}" class="btn btn-sm btn-ghost">次へ</a>` : '' }
+            <!-- ページネーション -->
+            <div class="bd-pager">
+                <div class="bd-pager-info">${(page-1)*perPage+1}〜${Math.min(page*perPage,total)} 件表示 / 全 ${total} 件</div>
+                <div class="bd-pager-btns">
+                    ${ page > 1 ? `<a href="?page=${page-1}&perPage=${perPage}&q=${encodeURIComponent(q)}&sort=${encodeURIComponent(sort)}" class="bd-pager-btn">← 前へ</a>` : '' }
+                    ${ page*perPage < total ? `<a href="?page=${page+1}&perPage=${perPage}&q=${encodeURIComponent(q)}&sort=${encodeURIComponent(sort)}" class="bd-pager-btn">次へ →</a>` : '' }
                 </div>
             </div>
         </div>
@@ -423,19 +617,48 @@ router.get('/board/:id/edit', requireLogin, async (req, res) => {
     }
 
     renderPage(req, res, "投稿編集", "掲示板編集", `
-        <div class="container mt-4">
-            <form action="/board/${post._id}/edit" method="post">
-                <div class="mb-3">
-                    <label>タイトル</label>
-                    <input type="text" name="title" class="form-control" value="${post.title}" required>
+        <style>
+            .bn-wrap{max-width:760px;margin:0 auto}
+            .bn-card{background:#fff;border-radius:20px;box-shadow:0 8px 40px rgba(11,36,64,.10);overflow:hidden}
+            .bn-card-head{background:linear-gradient(120deg,#0b2540,#0b5fff);padding:28px 32px;color:#fff}
+            .bn-card-head h2{margin:0;font-size:20px;font-weight:800}
+            .bn-card-head p{margin:6px 0 0;opacity:.75;font-size:13px}
+            .bn-card-body{padding:32px}
+            .bn-field{margin-bottom:22px}
+            .bn-label{display:block;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#6b7280;margin-bottom:8px}
+            .bn-input,.bn-textarea{width:100%;padding:11px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:inherit;background:#fafafa;transition:border .15s,box-shadow .15s;box-sizing:border-box}
+            .bn-input:focus,.bn-textarea:focus{border-color:#0b5fff;box-shadow:0 0 0 3px rgba(11,95,255,.1);outline:none;background:#fff}
+            .bn-textarea{resize:vertical;min-height:200px;line-height:1.7}
+            .bn-foot{display:flex;justify-content:flex-end;gap:10px;padding-top:12px;border-top:1px solid #f1f5f9}
+            .bn-btn{display:inline-flex;align-items:center;gap:7px;padding:10px 22px;border-radius:10px;font-size:14px;font-weight:700;border:none;cursor:pointer;text-decoration:none;transition:opacity .15s}
+            .bn-btn-primary{background:linear-gradient(90deg,#16a34a,#15803d);color:#fff;box-shadow:0 6px 18px rgba(22,163,74,.25)}
+            .bn-btn-primary:hover{opacity:.9}
+            .bn-btn-ghost{background:#f1f5f9;color:#374151}
+            .bn-btn-ghost:hover{background:#e5e7eb}
+        </style>
+        <div class="bn-wrap">
+            <div class="bn-card">
+                <div class="bn-card-head">
+                    <h2>✏️ 投稿を編集</h2>
+                    <p>内容を修正して「更新する」を押してください。</p>
                 </div>
-                <div class="mb-3">
-                    <label>本文</label>
-                    <textarea name="content" class="form-control" rows="5" required>${post.content}</textarea>
+                <div class="bn-card-body">
+                    <form action="/board/${post._id}/edit" method="post">
+                        <div class="bn-field">
+                            <label class="bn-label">タイトル</label>
+                            <input type="text" name="title" class="bn-input" value="${escapeHtml(post.title)}" required>
+                        </div>
+                        <div class="bn-field">
+                            <label class="bn-label">本文</label>
+                            <textarea name="content" class="bn-textarea" required>${escapeHtml(post.content)}</textarea>
+                        </div>
+                        <div class="bn-foot">
+                            <a href="/board/${post._id}" class="bn-btn bn-btn-ghost">キャンセル</a>
+                            <button type="submit" class="bn-btn bn-btn-primary">✅ 更新する</button>
+                        </div>
+                    </form>
                 </div>
-                <button class="btn btn-success">更新</button>
-                <a href="/board/${post._id}" class="btn btn-secondary">キャンセル</a>
-            </form>
+            </div>
         </div>
     `);
 });
