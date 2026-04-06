@@ -115,12 +115,6 @@ router.get('/dashboard', requireLogin, async (req, res) => {
             monthCalendar.push({ date: dateStr, ...(attendanceByDate[dateStr] ? { type: attendanceByDate[dateStr].status || 'work', overtime: attendanceByDate[dateStr].overtimeHours || 0 } : {}) });
         }
 
-        // AIレコメンデーション
-        const aiRecommendations = computeAIRecommendations({ attendanceSummary, goalSummary, leaveSummary, payrollSummary, monthlyAttendance: monthCalendar });
-
-        // 半期評価（予測）を計算
-        const semi = await computeSemiAnnualGrade(user._id, employee);
-
         // 過去6か月の出勤推移（各月の出勤日数）
         const attendanceTrend = [];
         for (let i = 5; i >= 0; i--) {
@@ -130,6 +124,18 @@ router.get('/dashboard', requireLogin, async (req, res) => {
             const count = await Attendance.countDocuments({ userId: user._id, date: { $gte: mStart, $lte: mEnd }, status: { $ne: '欠勤' } });
             attendanceTrend.push({ label, count });
         }
+
+        // AIレコメンデーション（トレンド・予測・異常検知付き）
+        const aiRecommendations = computeAIRecommendations({
+            attendanceSummary, goalSummary, leaveSummary, payrollSummary,
+            monthlyAttendance: monthCalendar,
+            attendanceTrend,
+            goalsDetail: goals,
+            now: now.toDate()
+        });
+
+        // 半期評価（予測）を計算
+        const semi = await computeSemiAnnualGrade(user._id, employee);
 
         // ユーザーの過去フィードバック履歴（表示用）
         const feedbackHistory = await SemiAnnualFeedback.find({ userId: user._id }).sort({ createdAt: -1 }).limit(6).lean();
@@ -310,11 +316,11 @@ router.get('/dashboard', requireLogin, async (req, res) => {
         .semi-bd-item .bd-val { font-size: 15px; font-weight: 800; color: var(--c-primary); }
         .semi-bd-item .bd-key { font-size: 10px; color: var(--c-muted); margin-top: 2px; }
         .semi-feedback-form { margin-top: 14px; padding: 14px; background: #f8faff; border-radius: 10px; border: 1px solid #e0e8ff; }
-        .semi-feedback-form label { font-size: 12px; font-weight: 600; }
+        .semi-feedback-form > label { font-size: 12px; font-weight: 600; display: block; }
         .semi-feedback-form textarea { width: 100%; min-height: 60px; border: 1px solid var(--c-border); border-radius: 8px; padding: 8px; font-size: 13px; resize: vertical; margin-top: 8px; }
         .semi-feedback-form textarea:focus { outline: none; border-color: var(--c-primary); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
-        .semi-radio-group { display: flex; gap: 14px; margin: 8px 0; }
-        .semi-radio-group label { display: flex; align-items: center; gap: 5px; font-size: 13px; cursor: pointer; }
+        .semi-radio-group { display: flex; flex-direction: row; flex-wrap: nowrap; gap: 14px; margin: 8px 0; }
+        .semi-radio-group label { display: flex !important; flex-direction: row; align-items: center; gap: 5px; font-size: 13px; font-weight: 400; cursor: pointer; white-space: nowrap; }
         .btn-semi-submit { background: var(--c-primary); color: #fff; border: none; padding: 7px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s; }
         .btn-semi-submit:hover { background: #1d4ed8; }
         .btn-semi-submit:disabled { background: #93c5fd; cursor: not-allowed; }
@@ -445,59 +451,247 @@ router.get('/dashboard', requireLogin, async (req, res) => {
             <!-- AI Recommendations -->
             <div class="card">
                 <div class="card-head">
-                    <h3><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--c-purple);margin-right:7px"></i>AIレコメンデーション</h3>
-                    <span style="font-size:11px;background:var(--c-purple-light);color:var(--c-purple);padding:2px 9px;border-radius:999px;font-weight:700">AI ASSIST</span>
+                    <h3><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--c-purple);margin-right:7px"></i>AIインサイト＆予測分析</h3>
+                    <span style="font-size:11px;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;padding:3px 10px;border-radius:999px;font-weight:700;letter-spacing:.3px">✦ AI ENGINE</span>
+                </div>
+                <div style="padding:10px 20px 6px;background:#faf8ff;border-bottom:1px solid #ede9fe">
+                    <div style="font-size:12px;color:#6d28d9;font-weight:600"><i class="fa-solid fa-circle-info" style="margin-right:5px"></i>あなたの勤怠・目標・休暇・給与データをリアルタイム分析し、パターン検知・将来予測・改善提案を行っています</div>
                 </div>
                 <div>
-                    ${aiRecommendations.map((r,i) => {
-                        const icons = ['fa-arrow-trend-up','fa-flag','fa-circle-check','fa-lightbulb','fa-chart-line'];
-                        const colors = ['blue','purple','green','warn','blue'];
+                    ${aiRecommendations.length === 0 ? `
+                    <div style="padding:28px 20px;text-align:center;color:var(--c-muted)">
+                        <i class="fa-solid fa-circle-check" style="font-size:28px;color:var(--c-success);margin-bottom:10px;display:block"></i>
+                        <div style="font-weight:600;font-size:14px">現在の状況は良好です</div>
+                        <div style="font-size:12px;margin-top:4px">AIが検知した改善ポイントはありません。引き続き頑張りましょう！</div>
+                    </div>` :
+                    aiRecommendations.map((r, i) => {
+                        const tagStyles = {
+                            danger: { bg: '#fef2f2', border: '#fecaca', iconBg: '#fef2f2', iconColor: '#dc2626', badgeBg: '#dc2626', badgeText: '要対応' },
+                            warn:   { bg: '#fffbeb', border: '#fde68a', iconBg: '#fffbeb', iconColor: '#d97706', badgeBg: '#d97706', badgeText: '注意' },
+                            success:{ bg: '#f0fdf4', border: '#bbf7d0', iconBg: '#f0fdf4', iconColor: '#16a34a', badgeBg: '#16a34a', badgeText: '良好' },
+                            purple: { bg: '#faf5ff', border: '#e9d5ff', iconBg: '#faf5ff', iconColor: '#7c3aed', badgeBg: '#7c3aed', badgeText: 'AI提案' },
+                            info:   { bg: '#eff6ff', border: '#bfdbfe', iconBg: '#eff6ff', iconColor: '#2563eb', badgeBg: '#2563eb', badgeText: '情報' }
+                        };
+                        const tag = tagStyles[r.tag] || tagStyles.info;
+                        const iconClass = r.icon || 'fa-lightbulb';
                         return `
-                        <div class="ai-item">
-                            <div class="ai-icon-wrap ${colors[i%colors.length] === 'blue' ? 'style="background:var(--c-primary-light);color:var(--c-primary)"' : colors[i%colors.length] === 'purple' ? 'style="background:var(--c-purple-light);color:var(--c-purple)"' : colors[i%colors.length] === 'green' ? 'style="background:var(--c-success-light);color:var(--c-success)"' : 'style="background:var(--c-warn-light);color:var(--c-warn)"'}">
-                                <i class="fa-solid ${icons[i % icons.length]}"></i>
+                        <div class="ai-item" style="background:${tag.bg};border-left:3px solid ${tag.badgeBg};margin:0;border-radius:0${i===0?';border-top-left-radius:0;border-top-right-radius:0':''}">
+                            <div class="ai-icon-wrap" style="background:white;border:1.5px solid ${tag.border};color:${tag.iconColor}">
+                                <i class="fa-solid ${iconClass}"></i>
                             </div>
                             <div class="ai-content">
-                                <div class="ai-title">${escapeHtml(r.title)}</div>
+                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+                                    <div class="ai-title">${escapeHtml(r.title)}</div>
+                                    <span style="font-size:10px;font-weight:700;background:${tag.badgeBg};color:#fff;padding:1px 7px;border-radius:999px;flex-shrink:0">${tag.badgeText}</span>
+                                </div>
                                 <div class="ai-desc">${escapeHtml(r.description)}</div>
                                 <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
-                                    <a href="${escapeHtml(r.link)}" class="ai-btn">実行する</a>
-                                    <span class="ai-conf">信頼度 ${r.confidence}%</span>
+                                    <a href="${escapeHtml(r.link)}" class="ai-btn" style="background:${tag.badgeBg}">確認する</a>
+                                    <span class="ai-conf"><i class="fa-solid fa-brain" style="font-size:9px;margin-right:3px"></i>AI信頼度 ${r.confidence}%</span>
                                 </div>
                             </div>
                         </div>`;
                     }).join('')}
+                </div>
+                <div style="padding:10px 20px;border-top:1px solid var(--c-border);background:#f9f9ff;display:flex;align-items:center;justify-content:space-between">
+                    <span style="font-size:11px;color:var(--c-muted)"><i class="fa-solid fa-rotate" style="margin-right:4px"></i>リアルタイム分析 — ページ読み込み時に更新</span>
+                    <span style="font-size:11px;color:var(--c-primary);font-weight:600">${aiRecommendations.length} 件のインサイト</span>
                 </div>
             </div>
 
             <!-- Attendance Trend -->
             <div class="card trend-card">
                 <div class="card-head">
-                    <h3><i class="fa-solid fa-chart-area" style="color:var(--c-primary);margin-right:7px"></i>過去6ヶ月の出勤推移</h3>
+                    <h3><i class="fa-solid fa-chart-area" style="color:var(--c-primary);margin-right:7px"></i>過去6ヶ月の出勤推移 <span style="font-size:10px;font-weight:700;background:#eff6ff;color:#2563eb;padding:2px 7px;border-radius:999px;margin-left:6px">AIトレンド分析</span></h3>
                     <a href="/attendance-main" class="see-all">詳細を見る →</a>
                 </div>
                 <div class="card-body">
                     <canvas id="trendChart" height="90"></canvas>
+                    ${(()=>{
+                        const counts = attendanceTrend.map(t => t.count);
+                        if (counts.length < 2) return '';
+                        const last = counts[counts.length - 1];
+                        const prev = counts[counts.length - 2];
+                        const diff = last - prev;
+                        const avg = Math.round(counts.reduce((s,v)=>s+v,0) / counts.length * 10) / 10;
+                        const max = Math.max(...counts);
+                        const min = Math.min(...counts);
+                        const trendLabel = diff > 2 ? '📈 上昇傾向' : diff < -2 ? '📉 下降傾向' : '→ 横ばい';
+                        const trendColor = diff > 2 ? '#16a34a' : diff < -2 ? '#dc2626' : '#d97706';
+                        return `<div style="margin-top:10px;padding:10px 12px;background:#f8faff;border-radius:8px;border:1px solid #e0e8ff">
+                            <div style="display:flex;gap:20px;flex-wrap:wrap">
+                                <div style="font-size:12px"><span style="color:var(--c-muted)">AIトレンド判定：</span> <strong style="color:${trendColor}">${trendLabel}</strong></div>
+                                <div style="font-size:12px"><span style="color:var(--c-muted)">6か月平均：</span> <strong>${avg}日/月</strong></div>
+                                <div style="font-size:12px"><span style="color:var(--c-muted)">最高：</span> <strong style="color:#16a34a">${max}日</strong></div>
+                                <div style="font-size:12px"><span style="color:var(--c-muted)">最低：</span> <strong style="color:#dc2626">${min}日</strong></div>
+                            </div>
+                        </div>`;
+                    })()}
                 </div>
             </div>
 
             <!-- Semi-Annual Evaluation -->
             <div class="card semi-card">
                 <div class="card-head">
-                    <h3><i class="fa-solid fa-star" style="color:#d97706;margin-right:7px"></i>半期評価予測</h3>
-                    <span class="semi-grade-badge">GRADE ${escapeHtml(semi.grade)} &nbsp; ${semi.score}点</span>
+                    <h3><i class="fa-solid fa-robot" style="color:var(--c-purple);margin-right:7px"></i>AI 半期評価予測</h3>
+                    <span class="semi-grade-badge"><i class="fa-solid fa-star" style="font-size:11px"></i> GRADE ${escapeHtml(semi.grade)} &nbsp; ${semi.score}点</span>
                 </div>
                 <div class="card-body">
-                    <div style="font-size:13px;color:var(--c-muted);margin-bottom:10px">${escapeHtml(semi.explanation)}</div>
-                    <div class="semi-score-bar"><div class="semi-score-fill" style="width:${Math.min(100, semi.score)}%"></div></div>
-                    <div class="semi-breakdown">
-                        <div class="semi-bd-item"><div class="bd-val">${semi.breakdown.attendanceScore||0}</div><div class="bd-key">出勤</div></div>
-                        <div class="semi-bd-item"><div class="bd-val">${semi.breakdown.goalScore||0}</div><div class="bd-key">目標</div></div>
-                        <div class="semi-bd-item"><div class="bd-val">${semi.breakdown.leaveScore||0}</div><div class="bd-key">休暇</div></div>
-                        <div class="semi-bd-item"><div class="bd-val">${semi.breakdown.overtimeScore||0}</div><div class="bd-key">残業</div></div>
-                        <div class="semi-bd-item"><div class="bd-val">${semi.breakdown.payrollScore||0}</div><div class="bd-key">給与</div></div>
+
+                    <!-- AI分析コメント -->
+                    <div style="background:#faf8ff;border:1px solid #ede9fe;border-radius:10px;padding:12px 14px;margin-bottom:16px">
+                        <div style="font-size:11px;font-weight:700;color:#7c3aed;margin-bottom:5px"><i class="fa-solid fa-brain" style="margin-right:4px"></i>AI分析コメント</div>
+                        <div style="font-size:12.5px;color:var(--c-text);line-height:1.7">${escapeHtml(semi.explanation)}</div>
                     </div>
-                    <div class="semi-feedback-form">
+
+                    <!-- 総合スコアバー -->
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+                        <span style="font-size:12px;color:var(--c-muted);font-weight:600">総合スコア</span>
+                        <span style="font-size:14px;font-weight:800;color:${semi.score>=88?'#7c3aed':semi.score>=75?'#16a34a':semi.score>=60?'#2563eb':semi.score>=45?'#d97706':'#dc2626'}">${semi.score} <span style="font-size:11px;font-weight:500;color:var(--c-muted)">/ 100点</span></span>
+                    </div>
+                    <div class="semi-score-bar"><div class="semi-score-fill" style="width:${Math.min(100, semi.score)}%"></div></div>
+                    <div style="display:grid;grid-template-columns:repeat(5,1fr);text-align:center;font-size:10px;color:var(--c-muted);margin-top:3px;margin-bottom:18px">
+                        <span>D<br><span style="color:#9ca3af">〜44</span></span>
+                        <span>C<br><span style="color:#9ca3af">45〜</span></span>
+                        <span>B<br><span style="color:#9ca3af">60〜</span></span>
+                        <span>A<br><span style="color:#9ca3af">75〜</span></span>
+                        <span>S<br><span style="color:#9ca3af">88〜</span></span>
+                    </div>
+
+                    <!-- ── 5カテゴリ 詳細ブレークダウン ── -->
+                    <div style="font-size:12px;font-weight:700;color:var(--c-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">評価カテゴリ詳細</div>
+
+                    ${(()=>{
+                        const sub = semi.breakdown.sub || {};
+                        const raw = semi.raw || {};
+                        const categories = [
+                            {
+                                key: 'attendance', label: '出勤・勤怠', icon: 'fa-calendar-check', color: '#2563eb', bg: '#eff6ff',
+                                score: semi.breakdown.attendanceScore || 0, max: 30,
+                                items: [
+                                    { label: '時間厳守', val: (sub.attendance||{}).punctuality||0, max: 10, tip: `遅刻${raw.lateCount||0}件・早退${raw.earlyCount||0}件` },
+                                    { label: '出勤安定性', val: (sub.attendance||{}).stability||0, max: 10, tip: `欠勤${raw.absentCount||0}日` },
+                                    { label: '月次一貫性', val: (sub.attendance||{}).consistency||0, max: 10, tip: '月ごとの出勤日数のばらつき' }
+                                ]
+                            },
+                            {
+                                key: 'goal', label: '目標管理', icon: 'fa-bullseye', color: '#16a34a', bg: '#f0fdf4',
+                                score: semi.breakdown.goalScore || 0, max: 30,
+                                items: [
+                                    { label: '進捗率', val: (sub.goal||{}).progress||0, max: 12, tip: `平均進捗${raw.goalAvg||0}%` },
+                                    { label: '完了率', val: (sub.goal||{}).completion||0, max: 12, tip: `${raw.goalsCompleted||0}/${raw.goalsTotal||0}件完了` },
+                                    { label: '計画性', val: (sub.goal||{}).planning||0, max: 6, tip: `期限超過${raw.goalsOverdue||0}件` }
+                                ]
+                            },
+                            {
+                                key: 'leave', label: '休暇管理', icon: 'fa-umbrella-beach', color: '#d97706', bg: '#fffbeb',
+                                score: semi.breakdown.leaveScore || 0, max: 10,
+                                items: [
+                                    { label: '承認管理', val: (sub.leave||{}).management||0, max: 5, tip: `承認待ち${raw.leavePending||0}件` },
+                                    { label: '計画的取得', val: (sub.leave||{}).planning||0, max: 5, tip: `承認済${raw.leaveApproved||0}件` }
+                                ]
+                            },
+                            {
+                                key: 'overtime', label: '残業管理', icon: 'fa-moon', color: '#7c3aed', bg: '#faf5ff',
+                                score: semi.breakdown.overtimeScore || 0, max: 10,
+                                items: [
+                                    { label: '残業時間制御', val: (sub.overtime||{}).control||0, max: 5, tip: `月平均${raw.monthlyOT||0}h` },
+                                    { label: 'ワークバランス', val: (sub.overtime||{}).balance||0, max: 5, tip: '日次残業のばらつき' }
+                                ]
+                            },
+                            {
+                                key: 'payroll', label: '給与・データ', icon: 'fa-yen-sign', color: '#0891b2', bg: '#ecfeff',
+                                score: semi.breakdown.payrollScore || 0, max: 20,
+                                items: [
+                                    { label: '打刻正確性', val: (sub.payroll||{}).accuracy||0, max: 10, tip: `正常打刻${raw.normalCount||0}日` },
+                                    { label: '入力適時性', val: (sub.payroll||{}).timeliness||0, max: 10, tip: 'データ入力の遅れなし' }
+                                ]
+                            }
+                        ];
+
+                        return categories.map(cat => {
+                            const pct = Math.round((cat.score / cat.max) * 100);
+                            const barColor = pct >= 80 ? '#16a34a' : pct >= 60 ? '#2563eb' : pct >= 40 ? '#d97706' : '#dc2626';
+                            const subItems = cat.items.map(item => {
+                                const itemPct = Math.round((item.val / item.max) * 100);
+                                const dotColor = itemPct >= 80 ? '#16a34a' : itemPct >= 60 ? '#2563eb' : itemPct >= 40 ? '#d97706' : '#dc2626';
+                                return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px dashed #f3f4f6">
+                                    <span style="width:8px;height:8px;border-radius:50%;background:${dotColor};flex-shrink:0;display:inline-block"></span>
+                                    <span style="flex:1;font-size:12px;color:var(--c-text)">${escapeHtml(item.label)}</span>
+                                    <span style="font-size:11px;color:var(--c-muted)">${escapeHtml(item.tip)}</span>
+                                    <span style="font-size:12px;font-weight:700;color:${dotColor};min-width:38px;text-align:right">${item.val}<span style="font-size:10px;color:#9ca3af">/${item.max}</span></span>
+                                </div>`;
+                            }).join('');
+
+                            return `<div style="border:1px solid ${cat.color}22;border-radius:10px;overflow:hidden;margin-bottom:10px">
+                                <div style="background:${cat.bg};padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid ${cat.color}22">
+                                    <div style="display:flex;align-items:center;gap:8px">
+                                        <div style="width:28px;height:28px;border-radius:7px;background:white;border:1.5px solid ${cat.color}44;display:flex;align-items:center;justify-content:center;color:${cat.color};font-size:13px">
+                                            <i class="fa-solid ${cat.icon}"></i>
+                                        </div>
+                                        <span style="font-size:13px;font-weight:700;color:${cat.color}">${escapeHtml(cat.label)}</span>
+                                    </div>
+                                    <div style="display:flex;align-items:center;gap:10px">
+                                        <div style="width:80px;height:5px;background:#e5e7eb;border-radius:999px;overflow:hidden">
+                                            <div style="height:100%;width:${pct}%;background:${barColor};border-radius:999px"></div>
+                                        </div>
+                                        <span style="font-size:13px;font-weight:800;color:${barColor}">${cat.score}<span style="font-size:10px;font-weight:500;color:#9ca3af">/${cat.max}</span></span>
+                                    </div>
+                                </div>
+                                <div style="padding:6px 14px 2px">${subItems}</div>
+                            </div>`;
+                        }).join('');
+                    })()}
+
+                    <!-- ── 改善アクション ── -->
+                    ${semi.actions && semi.actions.length > 0 ? `
+                    <div style="margin-top:16px">
+                        <div style="font-size:12px;font-weight:700;color:var(--c-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">
+                            <i class="fa-solid fa-list-check" style="margin-right:5px;color:var(--c-primary)"></i>あなたへのアクションプラン（${semi.actions.length}件）
+                        </div>
+                        ${semi.actions.map((action, idx) => {
+                            const priStyle = action.priority === 'high'
+                                ? { border: '#fecaca', bg: '#fef2f2', badge: '#dc2626', label: '優先度：高' }
+                                : action.priority === 'medium'
+                                ? { border: '#fde68a', bg: '#fffbeb', badge: '#d97706', label: '優先度：中' }
+                                : { border: '#bfdbfe', bg: '#eff6ff', badge: '#2563eb', label: '優先度：低' };
+                            return `<div style="border:1px solid ${priStyle.border};border-radius:10px;background:${priStyle.bg};padding:12px 14px;margin-bottom:8px">
+                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                                    <div style="width:26px;height:26px;border-radius:7px;background:white;border:1px solid ${priStyle.border};display:flex;align-items:center;justify-content:center;color:${priStyle.badge};font-size:12px;flex-shrink:0">
+                                        <i class="fa-solid ${escapeHtml(action.icon)}"></i>
+                                    </div>
+                                    <span style="font-size:13px;font-weight:700;color:var(--c-text);flex:1">${escapeHtml(action.title)}</span>
+                                    <span style="font-size:10px;font-weight:700;background:${priStyle.badge};color:#fff;padding:2px 8px;border-radius:999px;flex-shrink:0">${priStyle.label}</span>
+                                </div>
+                                <div style="font-size:12px;color:var(--c-muted);margin-bottom:5px">${escapeHtml(action.detail)}</div>
+                                <div style="font-size:12px;color:var(--c-text);background:white;border-radius:7px;padding:8px 10px;border:1px solid ${priStyle.border}">
+                                    <strong>💡 具体的な行動：</strong> ${escapeHtml(action.howto)}
+                                </div>
+                                <div style="font-size:11px;color:${priStyle.badge};font-weight:600;margin-top:6px">
+                                    <i class="fa-solid fa-arrow-up" style="font-size:9px"></i> ${escapeHtml(action.impact)}
+                                </div>
+                            </div>`;
+                        }).join('')}
+                    </div>` : `
+                    <div style="margin-top:16px;padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;text-align:center">
+                        <i class="fa-solid fa-trophy" style="color:#16a34a;font-size:20px;margin-bottom:6px;display:block"></i>
+                        <div style="font-size:13px;font-weight:700;color:#15803d">現在の評価は良好です</div>
+                        <div style="font-size:12px;color:#16a34a;margin-top:3px">AIが検知した改善ポイントはありません。この状態を維持しましょう！</div>
+                    </div>`}
+
+                    <!-- ── グレードアップヒント ── -->
+                    <div style="margin-top:14px;padding:11px 14px;background:linear-gradient(135deg,#f0f9ff,#faf5ff);border:1px solid #c7d2fe;border-radius:10px;font-size:12px;color:#1e40af">
+                        <i class="fa-solid fa-wand-magic-sparkles" style="margin-right:5px;color:#7c3aed"></i>
+                        <strong>次のグレードまで：</strong>
+                        ${semi.score >= 88 ? '🏆 最高グレード S 達成中！この状態を維持してください。' :
+                          semi.score >= 75 ? `あと <strong>${88 - semi.score}点</strong> でグレード <strong>S</strong> に到達。出勤の安定と目標完了が最短ルートです。` :
+                          semi.score >= 60 ? `あと <strong>${75 - semi.score}点</strong> でグレード <strong>A</strong> に到達。遅刻削減と目標進捗更新を優先してください。` :
+                          semi.score >= 45 ? `あと <strong>${60 - semi.score}点</strong> でグレード <strong>B</strong> に到達。目標登録と欠勤削減が最も効果的です。` :
+                          `あと <strong>${45 - semi.score}点</strong> でグレード <strong>C</strong> に到達。まず目標を1件登録するだけで大きく改善できます。`}
+                    </div>
+
+                    <!-- ── フィードバックフォーム ── -->
+                    <div class="semi-feedback-form" style="margin-top:14px">
                         <label>この評価についてフィードバックをお寄せください</label>
                         <div class="semi-radio-group">
                             <label><input type="radio" name="sfAgree" value="true"> 妥当だと思う</label>
