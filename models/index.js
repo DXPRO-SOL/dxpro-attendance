@@ -93,7 +93,7 @@ const PayrollSlipSchema = new mongoose.Schema({
     baseSalary: { type: Number, default: 0 },
     gross: { type: Number, default: 0 },
     net: { type: Number, default: 0 },
-    status: { type: String, enum: ['draft', 'issued', 'paid'], default: 'draft' },
+    status: { type: String, enum: ['draft', 'issued', 'locked', 'paid'], default: 'draft' },
     notes: String,
 }, { timestamps: true });
 

@@ -28,159 +28,287 @@ router.get('/hr', requireLogin, async (req, res) => {
         req.session.user = user;
         req.session.employee = employee;
 
-        // DB-driven KPI values
-        const pendingLeaves = await LeaveRequest.countDocuments({ status: 'pending' });
-        const teamSize = await Employee.countDocuments();
-        const tasksIncomplete = await Goal.countDocuments({ status: { $ne: 'completed' } });
-        const payrollPending = await PayrollRun.countDocuments({ locked: false });
+        const isAdminUser = req.session.isAdmin;
 
-        // 全社員の有給残日数を LeaveBalance から取得してマップ化
         const { LeaveBalance } = require('../models');
-        const allBals = await LeaveBalance.find();
+
+        // ===== 本人データ =====
+        // 有給残日数（本人）
+        const myBalance = await LeaveBalance.findOne({ employeeId: employee._id });
+        const myPaidLeave = myBalance?.paid ?? 0;
+
+        // 今月の出勤日数（本人）
+        const nowMoment = moment().tz('Asia/Tokyo');
+        const startOfMonth = nowMoment.clone().startOf('month').toDate();
+        const endOfMonth   = nowMoment.clone().endOf('month').toDate();
+        const myAttendanceCount = await Attendance.countDocuments({
+            userId: user._id,
+            date: { $gte: startOfMonth, $lte: endOfMonth }
+        });
+
+        // 今月の残業時間（本人の最新PayrollSlip）
+        const myLatestSlip = await PayrollSlip.findOne({ employeeId: employee._id })
+            .populate('runId').sort({ createdAt: -1 });
+        const myOvertimeHours = myLatestSlip?.overtimeHours ?? 0;
+
+        // 本人の未完了目標数
+        const myGoalsIncomplete = await Goal.countDocuments({
+            ownerId: employee._id,
+            status: { $nin: ['completed', 'rejected'] }
+        });
+
+        // 本人の休暇申請（申請中のもの）
+        const myPendingLeaves = await LeaveRequest.countDocuments({
+            userId: user._id,
+            status: 'pending'
+        });
+
+        // ===== 管理者用データ =====
+        const teamSize = await Employee.countDocuments();
+        const allPendingLeaves = isAdminUser
+            ? await LeaveRequest.countDocuments({ status: 'pending' }) : 0;
+
+        // 有給残日数マップ（管理者の社員一覧用）
+        const allBals = isAdminUser ? await LeaveBalance.find() : [];
         const balMap = {};
         allBals.forEach(b => { balMap[b.employeeId.toString()] = b.paid || 0; });
 
-        // 今月の残業時間合計（Asia/Tokyo）
-        const nowMoment = moment().tz('Asia/Tokyo');
-        const startOfMonth = nowMoment.clone().startOf('month').toDate();
-        const endOfMonth = nowMoment.clone().endOf('month').toDate();
-        const overtimeAgg = await PayrollSlip.aggregate([
-            { $match: { createdAt: { $gte: startOfMonth, $lte: endOfMonth } } },
-            { $group: { _id: null, total: { $sum: '$overtimeHours' } } }
-        ]);
-        const overtimeHours = (overtimeAgg && overtimeAgg[0] && overtimeAgg[0].total) ? Math.round(overtimeAgg[0].total) : 0;
+        // 直近の休暇申請（管理者：全体5件、一般：本人5件）
+        const recentLeaveQuery = isAdminUser ? {} : { userId: user._id };
+        const recentLeaves = await LeaveRequest.find(recentLeaveQuery)
+            .sort({ createdAt: -1 }).limit(5);
 
-        renderPage(req, res, '人事管理画面', `${employee.name} さん、こんにちは`, `
-            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-            <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+        // 社員一覧（管理者のみ）
+        const allEmployees = isAdminUser ? await Employee.find().sort({ name: 1 }) : [];
+
+        const leaveStatusLabel = { pending:'申請中', approved:'承認済み', rejected:'却下', canceled:'取消' };
+        const leaveStatusColor = { pending:'#ca8a04', approved:'#16a34a', rejected:'#ef4444', canceled:'#9ca3af' };
+        const leaveStatusBg    = { pending:'#fef9c3', approved:'#dcfce7', rejected:'#fee2e2', canceled:'#f3f4f6' };
+
+        renderPage(req, res, '人事管理', `${escapeHtml(employee.name)} さん、こんにちは`, `
             <style>
-                :root{--bg:#f6f7fb;--card:#ffffff;--muted:#6b7280;--accent:#0b69ff}
-                body{font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif;background:var(--bg);color:#0b2430}
-                .enterprise-container{max-width:1200px;margin:28px auto;padding:20px}
-                .hero{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
-                .hero .brand{display:flex;align-items:center;gap:12px}
-                .brand img{height:44px}
-                .hero .welcome{color:var(--muted);font-size:14px}
+                .hr-page{max-width:1140px;margin:0 auto}
 
-                .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-top:14px}
-                .kpi{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 10px 28px rgba(11,36,48,0.06);display:flex;align-items:center;gap:12px}
-                .kpi .icon{font-size:26px;color:var(--accent);width:46px;height:46px;border-radius:10px;background:linear-gradient(180deg,rgba(11,105,255,0.1),rgba(11,105,255,0.03));display:flex;align-items:center;justify-content:center}
-                .kpi .value{font-weight:700;font-size:18px}
-                .kpi .label{color:var(--muted);font-size:13px}
+                .hr-welcome{background:linear-gradient(120deg,#0b2540 0%,#0b5fff 100%);border-radius:16px;padding:28px 32px;color:#fff;display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:16px}
+                .hr-welcome-title{font-size:22px;font-weight:800;margin:0 0 4px}
+                .hr-welcome-sub{font-size:13px;opacity:.8;margin:0}
+                .hr-welcome-meta{display:flex;gap:24px;flex-wrap:wrap}
+                .hr-welcome-item{text-align:center}
+                .hr-welcome-item-val{font-size:22px;font-weight:800}
+                .hr-welcome-item-lbl{font-size:11px;opacity:.7;text-transform:uppercase;letter-spacing:.05em}
 
-                .main-grid{display:grid;grid-template-columns:1fr 320px;gap:20px;margin-top:20px}
-                .panel{background:var(--card);border-radius:12px;padding:18px;box-shadow:0 12px 30px rgba(11,36,48,0.05)}
+                .hr-kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+                .hr-kpi{background:#fff;border-radius:14px;padding:18px 16px;box-shadow:0 4px 16px rgba(11,36,48,.06);display:flex;align-items:center;gap:14px}
+                .hr-kpi-icon{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+                .hr-kpi-val{font-size:22px;font-weight:800;color:#0b2540;line-height:1}
+                .hr-kpi-lbl{font-size:12px;color:#9ca3af;margin-top:3px}
 
-                .table thead th{background:#fafbfd;border-bottom:1px solid #eef2f5}
-                .avatar{width:36px;height:36px;border-radius:50%;background:#e6eefc;color:#0b69ff;display:inline-flex;align-items:center;justify-content:center;font-weight:700}
+                .hr-grid{display:grid;grid-template-columns:1fr 300px;gap:20px}
+                .hr-card{background:#fff;border-radius:14px;box-shadow:0 4px 16px rgba(11,36,48,.06);overflow:hidden;margin-bottom:20px}
+                .hr-card-head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #f1f5f9}
+                .hr-card-title{font-size:15px;font-weight:800;color:#0b2540;margin:0}
 
-                .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
-                .search{display:flex;gap:8px}
+                .hr-table{width:100%;border-collapse:collapse;font-size:13px}
+                .hr-table th{background:#f8fafc;color:#6b7280;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:left;white-space:nowrap}
+                .hr-table td{padding:11px 14px;border-bottom:1px solid #f8fafc;color:#1f2937;vertical-align:middle}
+                .hr-table tr:last-child td{border-bottom:none}
+                .hr-table tr:hover td{background:#f8faff}
+                .hr-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#0b5fff,#7c3aed);color:#fff;font-size:13px;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
+                .hr-table-search{padding:12px 20px;border-bottom:1px solid #f1f5f9;display:flex;gap:8px;align-items:center}
+                .hr-table-search input{flex:1;border:1px solid #e5e7eb;border-radius:8px;padding:7px 12px;font-size:13px;outline:none}
+                .hr-table-search input:focus{border-color:#0b5fff}
+                .hr-tbl-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none;border:none;cursor:pointer}
+                .hr-tbl-btn-edit{background:#eff6ff;color:#0b5fff}
+                .hr-tbl-btn-del{background:#fee2e2;color:#ef4444}
 
-                .actions{display:flex;gap:8px;justify-content:flex-end}
+                .hr-side-card{background:#fff;border-radius:14px;box-shadow:0 4px 16px rgba(11,36,48,.06);margin-bottom:16px;overflow:hidden}
+                .hr-side-head{padding:14px 18px;border-bottom:1px solid #f1f5f9;font-size:14px;font-weight:800;color:#0b2540}
+                .hr-side-body{padding:10px 12px}
+                .hr-action-btn{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;text-decoration:none;color:#374151;font-size:13px;font-weight:600;transition:background .15s;margin-bottom:4px}
+                .hr-action-btn:hover{background:#f0f4ff;color:#0b5fff}
+                .hr-action-btn-icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
 
-                @media(max-width:1000px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.main-grid{grid-template-columns:1fr}}
+                .hr-leave-item{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #f8fafc;font-size:13px}
+                .hr-leave-item:last-child{border-bottom:none}
+                .hr-badge{padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700}
+
+                .hr-myinfo{padding:18px}
+                .hr-myinfo-row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f8fafc;font-size:13px}
+                .hr-myinfo-row:last-child{border-bottom:none}
+                .hr-myinfo-label{color:#9ca3af;font-weight:600}
+                .hr-myinfo-val{color:#1f2937;font-weight:700}
+
+                @media(max-width:900px){.hr-kpi-row{grid-template-columns:repeat(2,1fr)}.hr-grid{grid-template-columns:1fr}}
             </style>
 
-            <div class="enterprise-container">
-                <div class="hero">
-                    <div class="brand">
-                        <div>
-                            <div style="font-size:30px;font-weight:700">人事管理</div>
-                            <div class="welcome">${escapeHtml(employee.name)} さん、ようこそ</div>
-                        </div>
+            <div class="hr-page">
+
+                <!-- ウェルカムバナー（本人データ） -->
+                <div class="hr-welcome">
+                    <div>
+                        <div class="hr-welcome-title">👋 ${escapeHtml(employee.name)} さん、こんにちは</div>
+                        <div class="hr-welcome-sub">${escapeHtml(employee.department||'—')} / ${escapeHtml(employee.position||'—')} ｜ 社員ID: ${escapeHtml(employee.employeeId||'—')}</div>
                     </div>
-                    <div class="actions">
-                        ${ req.session.user && req.session.user.isAdmin ? `
-                        <a href="/hr/add" class="btn btn-outline-primary">社員を追加</a>
-                        <a href="/hr/statistics" class="btn btn-primary">統計を見る</a>
-                        ` : `` }
+                    <div class="hr-welcome-meta">
+                        <div class="hr-welcome-item">
+                            <div class="hr-welcome-item-val">${myPaidLeave}日</div>
+                            <div class="hr-welcome-item-lbl">有給残</div>
+                        </div>
+                        <div class="hr-welcome-item">
+                            <div class="hr-welcome-item-val">${myAttendanceCount}日</div>
+                            <div class="hr-welcome-item-lbl">今月出勤</div>
+                        </div>
+                        <div class="hr-welcome-item">
+                            <div class="hr-welcome-item-val">${myOvertimeHours}h</div>
+                            <div class="hr-welcome-item-lbl">直近残業</div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="kpi-grid">
-                    <div class="kpi"><div class="icon"><i class="fa-solid fa-clock"></i></div><div><div class="value">${escapeHtml(String(overtimeHours))}h</div><div class="label">今月残業</div></div></div>
-                    <div class="kpi"><div class="icon"><i class="fa-solid fa-plane-departure"></i></div><div><div class="value">${escapeHtml(String(pendingLeaves))}</div><div class="label">未承認休暇</div></div></div>
-                    <div class="kpi"><div class="icon"><i class="fa-solid fa-users"></i></div><div><div class="value">${escapeHtml(String(teamSize))}名</div><div class="label">チーム人数</div></div></div>
-                    <div class="kpi"><div class="icon"><i class="fa-solid fa-tasks"></i></div><div><div class="value">${escapeHtml(String(tasksIncomplete))}</div><div class="label">未完了タスク</div></div></div>
-                    <div class="kpi"><div class="icon"><i class="fa-solid fa-yen-sign"></i></div><div><div class="value">${escapeHtml(String(payrollPending))}</div><div class="label">未処理給与</div></div></div>
+                <!-- KPI（本人の実数値） -->
+                <div class="hr-kpi-row">
+                    <div class="hr-kpi">
+                        <div class="hr-kpi-icon" style="background:#f0fdf4;color:#16a34a">📅</div>
+                        <div><div class="hr-kpi-val">${myAttendanceCount}日</div><div class="hr-kpi-lbl">今月出勤日数</div></div>
+                    </div>
+                    <div class="hr-kpi">
+                        <div class="hr-kpi-icon" style="background:#eff6ff;color:#0b5fff">💴</div>
+                        <div><div class="hr-kpi-val">¥${(myLatestSlip?.net||0).toLocaleString()}</div><div class="hr-kpi-lbl">直近差引支給</div></div>
+                    </div>
+                    <div class="hr-kpi">
+                        <div class="hr-kpi-icon" style="background:#fef9c3;color:#ca8a04">✈️</div>
+                        <div><div class="hr-kpi-val">${myPaidLeave}日</div><div class="hr-kpi-lbl">有給残日数</div></div>
+                    </div>
+                    <div class="hr-kpi">
+                        <div class="hr-kpi-icon" style="background:#fdf4ff;color:#9333ea">🎯</div>
+                        <div><div class="hr-kpi-val">${myGoalsIncomplete}</div><div class="hr-kpi-lbl">進行中の目標</div></div>
+                    </div>
                 </div>
 
-                <div class="main-grid">
-                    <div class="panel">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h5 class="mb-0">社員一覧</h5>
-                            <div class="text-muted small">従業員ID: ${escapeHtml(employee.employeeId)} ｜ 部署: ${escapeHtml(employee.department || '-')}</div>
-                        </div>
+                ${isAdminUser ? `
+                <!-- 管理者向け追加KPI -->
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px">
+                    <div class="hr-kpi">
+                        <div class="hr-kpi-icon" style="background:#f0f4ff;color:#4f46e5">�</div>
+                        <div><div class="hr-kpi-val">${teamSize}名</div><div class="hr-kpi-lbl">在籍社員数</div></div>
+                    </div>
+                    <div class="hr-kpi">
+                        <div class="hr-kpi-icon" style="background:#fee2e2;color:#ef4444">⚠️</div>
+                        <div><div class="hr-kpi-val">${allPendingLeaves}</div><div class="hr-kpi-lbl">未承認休暇（全体）</div></div>
+                    </div>
+                    <div class="hr-kpi">
+                        <div class="hr-kpi-icon" style="background:#f0fdf4;color:#16a34a">💰</div>
+                        <div><div class="hr-kpi-val">${await PayrollRun.countDocuments({ locked: false })}</div><div class="hr-kpi-lbl">未確定給与ラン</div></div>
+                    </div>
+                </div>
+                ` : ''}
 
-                        ${ req.session.user && req.session.user.isAdmin ? `
-                        <div class="filters">
-                        <div style="overflow:auto;max-height:560px">
-                            <table class="table table-hover">
-                                <thead>
-                                    <tr><th></th><th>名前</th><th>社員ID</th><th>部署</th><th>役職</th><th>入社日</th><th>有給</th><th>操作</th></tr>
-                                </thead>
-                                <tbody id="hrTableBody">
-                                    ${ (await Employee.find().limit(50)).map(e=>`
+                <!-- メインエリア -->
+                <div class="hr-grid">
+                    <div>
+                        ${isAdminUser ? `
+                        <div class="hr-card">
+                            <div class="hr-card-head">
+                                <span class="hr-card-title">👤 社員一覧</span>
+                                <a href="/hr/add" style="display:inline-flex;align-items:center;gap:5px;padding:7px 14px;background:#0b5fff;color:#fff;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none">＋ 社員追加</a>
+                            </div>
+                            <div class="hr-table-search">
+                                <span style="color:#9ca3af">🔍</span>
+                                <input type="text" id="hrSearch" placeholder="名前・部署・役職で絞り込み..." oninput="filterHrTable(this.value)">
+                            </div>
+                            <div style="overflow-x:auto;max-height:520px;overflow-y:auto">
+                                <table class="hr-table" id="hrTable">
+                                    <thead>
                                         <tr>
-                                            <td><div class="avatar">${escapeHtml((e.name||'').slice(0,2))}</div></td>
-                                            <td>${escapeHtml(e.name)}</td>
-                                            <td>${escapeHtml(e.employeeId || '')}</td>
-                                            <td>${escapeHtml(e.department || '')}</td>
-                                            <td>${escapeHtml(e.position || '')}</td>
-                                            <td>${e.joinDate ? escapeHtml(moment.tz(e.joinDate,'Asia/Tokyo').format('YYYY-MM-DD')) : '-'}</td>
-                                            <td>${balMap[e._id.toString()] ?? 0}</td>
-                                            <td><a href="/hr/edit/${e._id}" class="btn btn-sm btn-outline-primary">編集</a> <a href="/hr/delete/${e._id}" class="btn btn-sm btn-outline-danger">削除</a></td>
+                                            <th></th><th>氏名</th><th>社員ID</th><th>部署</th><th>役職</th><th>入社日</th><th>有給残</th><th>操作</th>
                                         </tr>
-                                    `).join('') }
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody>
+                                        ${allEmployees.map(e => `
+                                        <tr data-search="${escapeHtml(e.name)} ${escapeHtml(e.department||'')} ${escapeHtml(e.position||'')}">
+                                            <td><div class="hr-avatar">${escapeHtml((e.name||'?').charAt(0))}</div></td>
+                                            <td style="font-weight:700">${escapeHtml(e.name)}</td>
+                                            <td style="color:#9ca3af">${escapeHtml(e.employeeId||'—')}</td>
+                                            <td>${escapeHtml(e.department||'—')}</td>
+                                            <td>${escapeHtml(e.position||'—')}</td>
+                                            <td style="color:#9ca3af">${e.joinDate ? moment.tz(e.joinDate,'Asia/Tokyo').format('YYYY/MM/DD') : '—'}</td>
+                                            <td><span style="font-weight:700;color:#0b5fff">${balMap[e._id.toString()] ?? 0}日</span></td>
+                                            <td>
+                                                <a href="/hr/edit/${e._id}" class="hr-tbl-btn hr-tbl-btn-edit">✏️ 編集</a>
+                                                <a href="/hr/delete/${e._id}" class="hr-tbl-btn hr-tbl-btn-del" onclick="return confirm('削除しますか？')">🗑</a>
+                                            </td>
+                                        </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                         ` : `
-                        <div class="alert alert-info">社員一覧は管理者のみ閲覧できます。</div>
-                        <div style="margin-top:10px;padding:10px;border:1px solid rgba(0,0,0,0.04);border-radius:8px;background:#fbfdff">
-                            <div style="font-weight:700">あなたの情報</div>
-                            <div class="small-muted">${escapeHtml(employee.name)} ｜ ${escapeHtml(employee.employeeId || '-') } ｜ ${escapeHtml(employee.department || '-')}</div>
+                        <div class="hr-card">
+                            <div class="hr-card-head">
+                                <span class="hr-card-title">👤 あなたの情報</span>
+                            </div>
+                            <div class="hr-myinfo">
+                                <div class="hr-myinfo-row"><span class="hr-myinfo-label">氏名</span><span class="hr-myinfo-val">${escapeHtml(employee.name)}</span></div>
+                                <div class="hr-myinfo-row"><span class="hr-myinfo-label">社員ID</span><span class="hr-myinfo-val">${escapeHtml(employee.employeeId||'—')}</span></div>
+                                <div class="hr-myinfo-row"><span class="hr-myinfo-label">部署</span><span class="hr-myinfo-val">${escapeHtml(employee.department||'—')}</span></div>
+                                <div class="hr-myinfo-row"><span class="hr-myinfo-label">役職</span><span class="hr-myinfo-val">${escapeHtml(employee.position||'—')}</span></div>
+                                <div class="hr-myinfo-row"><span class="hr-myinfo-label">入社日</span><span class="hr-myinfo-val">${employee.joinDate ? moment.tz(employee.joinDate,'Asia/Tokyo').format('YYYY年MM月DD日') : '—'}</span></div>
+                                <div class="hr-myinfo-row"><span class="hr-myinfo-label">有給残日数</span><span class="hr-myinfo-val" style="color:#0b5fff">${myPaidLeave} 日</span></div>
+                                <div class="hr-myinfo-row"><span class="hr-myinfo-label">申請中休暇</span><span class="hr-myinfo-val" style="color:#ca8a04">${myPendingLeaves} 件</span></div>
+                            </div>
                         </div>
-                        ` }
+                        `}
                     </div>
 
-                    ${ req.session.user && req.session.user.isAdmin ? `
-                    <div class="panel">
-                        <h6>クイックアクション</h6>
-                        <div class="mt-3 d-grid gap-2">
-                            <a href="/hr/add" class="btn btn-primary">新規社員登録</a>
-                            <a href="/hr/statistics" class="btn btn-outline-secondary">部署統計を見る</a>
-                            <a href="/leave/apply" class="btn btn-outline-secondary">休暇申請確認</a>
+                    <!-- 右サイドパネル -->
+                    <div>
+                        <!-- クイックアクション（実在するルートのみ） -->
+                        <div class="hr-side-card">
+                            <div class="hr-side-head">⚡ クイックアクション</div>
+                            <div class="hr-side-body">
+                                ${isAdminUser ? `
+                                <a href="/hr/add" class="hr-action-btn"><div class="hr-action-btn-icon" style="background:#eff6ff;color:#0b5fff">➕</div>社員を追加する</a>
+                                <a href="/hr/payroll/admin" class="hr-action-btn"><div class="hr-action-btn-icon" style="background:#f0fdf4;color:#16a34a">💴</div>給与管理メニュー</a>
+                                <a href="/admin/leave-requests" class="hr-action-btn"><div class="hr-action-btn-icon" style="background:#fee2e2;color:#ef4444">📋</div>休暇申請を承認する</a>
+                                <a href="/admin/leave-balance" class="hr-action-btn"><div class="hr-action-btn-icon" style="background:#fdf4ff;color:#9333ea">🎁</div>有給を付与する</a>
+                                <a href="/hr/daily-report" class="hr-action-btn"><div class="hr-action-btn-icon" style="background:#f0f4ff;color:#4f46e5">�</div>日報を確認する</a>
+                                ` : ''}
+                                <a href="/hr/payroll" class="hr-action-btn"><div class="hr-action-btn-icon" style="background:#fffbeb;color:#d97706">📊</div>給与明細を見る</a>
+                                <a href="/leave/apply" class="hr-action-btn"><div class="hr-action-btn-icon" style="background:#fef9c3;color:#ca8a04">✈️</div>休暇を申請する</a>
+                                <a href="/leave/my-requests" class="hr-action-btn"><div class="hr-action-btn-icon" style="background:#f0fdf4;color:#16a34a">📋</div>自分の休暇申請</a>
+                                <a href="/goals" class="hr-action-btn"><div class="hr-action-btn-icon" style="background:#fdf4ff;color:#9333ea">🎯</div>目標設定を見る</a>
+                            </div>
                         </div>
 
-                        <h6 class="mt-4">最近の休暇申請</h6>
-                        <ul class="list-group list-group-flush mt-2">
-                            <li class="list-group-item">山田 太郎 — 2025-09-05 <span class="badge bg-warning float-end">申請中</span></li>
-                            <li class="list-group-item">鈴木 花子 — 2025-09-10 <span class="badge bg-success float-end">承認済</span></li>
-                            <li class="list-group-item">佐藤 次郎 — 2025-09-12 <span class="badge bg-warning float-end">申請中</span></li>
-                        </ul>
-
-                        <h6 class="mt-4">残業時間推移</h6>
-                        <canvas id="overtimeChart" style="max-width:100%;margin-top:8px"></canvas>
-                        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-                        <script>
-                            const ctx = document.getElementById('overtimeChart').getContext('2d');
-                            new Chart(ctx, {
-                                type: 'line',
-                                data: { labels:['1日','2日','3日','4日','5日','6日','7日'], datasets:[{ label:'残業時間', data:[1,2,1.5,2,1,3,2], borderColor:'#0b69ff', backgroundColor:'rgba(11,105,255,0.08)', tension:0.3 }]},
-                                options:{responsive:true,plugins:{legend:{display:false}}}
-                            });
-                        </script>
+                        <!-- 直近の休暇申請（本人 or 全体） -->
+                        <div class="hr-side-card">
+                            <div class="hr-side-head">✈️ ${isAdminUser ? '直近の休暇申請（全体）' : '自分の休暇申請'}</div>
+                            <div style="padding:14px 18px">
+                                ${recentLeaves.length ? recentLeaves.map(l => `
+                                <div class="hr-leave-item">
+                                    <div>
+                                        <div style="font-weight:700;font-size:13px">${isAdminUser ? escapeHtml(l.name||'—') : escapeHtml(l.leaveType||'—')}</div>
+                                        <div style="font-size:11px;color:#9ca3af">${l.startDate ? moment(l.startDate).format('MM/DD') : '—'} 〜 ${l.endDate ? moment(l.endDate).format('MM/DD') : '—'} (${l.days||'?'}日)</div>
+                                    </div>
+                                    <span class="hr-badge" style="background:${leaveStatusBg[l.status]||'#f3f4f6'};color:${leaveStatusColor[l.status]||'#6b7280'}">${leaveStatusLabel[l.status]||l.status}</span>
+                                </div>
+                                `).join('') : `<div style="color:#9ca3af;font-size:13px;text-align:center;padding:12px">申請はありません</div>`}
+                                <a href="${isAdminUser ? '/admin/leave-requests' : '/leave/my-requests'}" style="display:block;text-align:center;margin-top:10px;font-size:12px;color:#0b5fff;font-weight:700;text-decoration:none">すべて見る →</a>
+                            </div>
+                        </div>
                     </div>
-                    ` : `
-                    <div class="panel">
-                        <div class="alert alert-info">クイックアクション、最近の休暇申請、残業時間推移は管理者のみ閲覧できます。</div>
-                    </div>
-                    ` }
                 </div>
             </div>
+
+            <script>
+            function filterHrTable(q) {
+                const kw = q.toLowerCase();
+                document.querySelectorAll('#hrTable tbody tr').forEach(row => {
+                    row.style.display = (row.dataset.search||'').toLowerCase().includes(kw) ? '' : 'none';
+                });
+            }
+            </script>
         `);
 
     } catch (error) {
@@ -334,35 +462,164 @@ router.post('/hr/photo/:id', requireLogin, upload.single('photo'), async (req, r
 
 // 給与管理メイン（管理者用）
 router.get('/hr/payroll/admin', requireLogin, async (req, res) => {
-    if (!req.session.user?.isAdmin) return res.redirect('/hr/payroll');
+    if (!req.session.isAdmin) return res.redirect('/hr/payroll');
 
-    const employees = await Employee.find();
+    const employees = await Employee.find().sort({ name: 1 });
 
-    const html = `
-        <div class="container mt-4">
-            <h4>管理者用給与管理</h4>
+    // 各社員の直近給与明細を取得
+    const slipMap = {};
+    for (const emp of employees) {
+        const latest = await PayrollSlip.findOne({ employeeId: emp._id })
+            .populate('runId')
+            .sort({ createdAt: -1 });
+        slipMap[emp._id.toString()] = latest;
+    }
 
-            <a href="/hr/payroll/admin/new" class="btn btn-success mb-3">新しい給与を登録</a>
+    // 全体サマリ
+    const allSlips = await PayrollSlip.find({});
+    const totalGross = allSlips.reduce((s, x) => s + (x.gross || 0), 0);
+    const totalNet   = allSlips.reduce((s, x) => s + (x.net   || 0), 0);
+    const issuedCount = allSlips.filter(s => s.status === 'issued' || s.status === 'locked' || s.status === 'paid').length;
+
+    const statusLabel = { draft:'下書き', issued:'発行済み', locked:'確定', paid:'支払済み' };
+    const statusColor = { draft:'#ca8a04', issued:'#16a34a', locked:'#4f46e5', paid:'#0b5fff' };
+    const statusBg    = { draft:'#fef9c3', issued:'#dcfce7', locked:'#e0e7ff', paid:'#dbeafe' };
+
+    renderPage(req, res, '給与管理', '給与管理 — 管理者メニュー', `
+        <style>
+            .pa-page{max-width:1100px;margin:0 auto}
+            .pa-topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+            .pa-title{font-size:22px;font-weight:800;color:#0b2540;margin:0}
+            .pa-btn{display:inline-flex;align-items:center;gap:6px;padding:10px 20px;border-radius:9px;font-weight:700;font-size:13px;text-decoration:none;cursor:pointer;border:none;transition:opacity .15s}
+            .pa-btn:hover{opacity:.85}
+            .pa-btn-primary{background:#0b5fff;color:#fff}
+            .pa-btn-ghost{background:#f3f4f6;color:#374151}
+
+            /* KPI */
+            .pa-kpi-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:28px}
+            .pa-kpi{background:#fff;border-radius:14px;padding:20px 22px;box-shadow:0 4px 14px rgba(11,36,48,.07);border-left:4px solid #0b5fff}
+            .pa-kpi.green{border-left-color:#16a34a}
+            .pa-kpi.purple{border-left-color:#7c3aed}
+            .pa-kpi-label{font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+            .pa-kpi-value{font-size:24px;font-weight:800;color:#0b2540}
+            .pa-kpi-sub{font-size:12px;color:#9ca3af;margin-top:3px}
+
+            /* 検索バー */
+            .pa-search-bar{background:#fff;border-radius:12px;padding:14px 18px;box-shadow:0 2px 8px rgba(11,36,48,.05);margin-bottom:22px;display:flex;align-items:center;gap:10px}
+            .pa-search-bar input{flex:1;border:1px solid #e5e7eb;border-radius:8px;padding:8px 14px;font-size:13px;outline:none}
+            .pa-search-bar input:focus{border-color:#0b5fff}
+
+            /* 社員カード */
+            .pa-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+            .pa-card{background:#fff;border-radius:14px;box-shadow:0 4px 14px rgba(11,36,48,.06);overflow:hidden;transition:box-shadow .15s,transform .15s}
+            .pa-card:hover{box-shadow:0 8px 28px rgba(11,36,48,.12);transform:translateY(-2px)}
+            .pa-card-head{padding:18px 20px 14px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:14px}
+            .pa-avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#0b5fff,#7c3aed);color:#fff;font-size:17px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+            .pa-name{font-size:15px;font-weight:800;color:#0b2540;margin:0 0 2px}
+            .pa-dept{font-size:12px;color:#9ca3af}
+            .pa-card-body{padding:14px 20px}
+            .pa-info-row{display:flex;justify-content:space-between;font-size:12px;color:#6b7280;padding:4px 0}
+            .pa-info-row span:last-child{font-weight:700;color:#1f2937}
+            .pa-net{font-size:20px;font-weight:800;color:#0b5fff;margin:10px 0 6px}
+            .pa-card-foot{padding:12px 20px;background:#f8fafc;display:flex;gap:8px}
+            .pa-card-btn{flex:1;text-align:center;padding:8px 0;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;border:none;cursor:pointer;transition:opacity .15s}
+            .pa-card-btn:hover{opacity:.85}
+            .pa-card-btn-view{background:#eff6ff;color:#0b5fff}
+            .pa-card-btn-new{background:#0b5fff;color:#fff}
+            .pa-empty{text-align:center;color:#9ca3af;font-size:13px;padding:8px 0}
+
+            @media(max-width:640px){.pa-kpi-row{grid-template-columns:1fr 1fr}.pa-grid{grid-template-columns:1fr}}
+        </style>
+
+        <div class="pa-page">
+            <!-- トップバー -->
+            <div class="pa-topbar">
+                <div>
+                    <div class="pa-title">⚙️ 給与管理 — 管理者メニュー</div>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <a href="/hr/payroll/admin/new" class="pa-btn pa-btn-primary">＋ 給与を登録</a>
+                    <a href="/hr/payroll" class="pa-btn pa-btn-ghost">← ダッシュボード</a>
+                </div>
+            </div>
+
+            <!-- KPI -->
+            <div class="pa-kpi-row">
+                <div class="pa-kpi">
+                    <div class="pa-kpi-label">社員数</div>
+                    <div class="pa-kpi-value">${employees.length} 名</div>
+                    <div class="pa-kpi-sub">登録済み社員</div>
+                </div>
+                <div class="pa-kpi green">
+                    <div class="pa-kpi-label">累計総支給</div>
+                    <div class="pa-kpi-value">¥${totalGross.toLocaleString()}</div>
+                    <div class="pa-kpi-sub">全期間・全社員</div>
+                </div>
+                <div class="pa-kpi purple">
+                    <div class="pa-kpi-label">累計差引支給</div>
+                    <div class="pa-kpi-value">¥${totalNet.toLocaleString()}</div>
+                    <div class="pa-kpi-sub">発行済み ${issuedCount} 件</div>
+                </div>
+            </div>
+
+            <!-- 検索 -->
+            <div class="pa-search-bar">
+                <span style="color:#9ca3af;font-size:16px">🔍</span>
+                <input type="text" id="empSearch" placeholder="社員名・部署・役職で絞り込み..." oninput="filterCards(this.value)">
+            </div>
 
             <!-- 社員カード一覧 -->
-            <div class="row g-3 mt-3">
-                ${employees.map(emp => `
-                    <div class="col-md-3">
-                        <div class="card shadow-sm text-center p-3">
-                            <h5>${emp.name}</h5>
-                            <p>${emp.department} / ${emp.position}</p>
-                            <a href="/hr/payroll/${emp._id}" class="btn btn-primary mt-2">給与明細</a>
+            <div class="pa-grid" id="empGrid">
+                ${employees.map(emp => {
+                    const s = slipMap[emp._id.toString()];
+                    const st = s?.status || null;
+                    const mo = s?.runId?.periodFrom
+                        ? `${s.runId.periodFrom.getFullYear()}年${s.runId.periodFrom.getMonth()+1}月`
+                        : null;
+                    const initial = emp.name ? emp.name.charAt(0) : '?';
+                    return `
+                    <div class="pa-card" data-name="${escapeHtml(emp.name)}" data-dept="${escapeHtml(emp.department||'')} ${escapeHtml(emp.position||'')}">
+                        <div class="pa-card-head">
+                            <div class="pa-avatar">${escapeHtml(initial)}</div>
+                            <div>
+                                <div class="pa-name">${escapeHtml(emp.name)}</div>
+                                <div class="pa-dept">${escapeHtml(emp.department||'—')} / ${escapeHtml(emp.position||'—')}</div>
+                            </div>
+                        </div>
+                        <div class="pa-card-body">
+                            ${s ? `
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                                    <span style="font-size:12px;color:#9ca3af">${mo} 最新明細</span>
+                                    <span style="background:${statusBg[st]};color:${statusColor[st]};padding:2px 10px;border-radius:999px;font-size:11px;font-weight:700">${statusLabel[st]||st}</span>
+                                </div>
+                                <div class="pa-net">¥${(s.net||0).toLocaleString()}</div>
+                                <div class="pa-info-row"><span>総支給</span><span>¥${(s.gross||0).toLocaleString()}</span></div>
+                                <div class="pa-info-row"><span>基本給</span><span>¥${(s.baseSalary||0).toLocaleString()}</span></div>
+                            ` : `<div class="pa-empty" style="padding:18px 0">📭 明細未登録</div>`}
+                        </div>
+                        <div class="pa-card-foot">
+                            <a href="/hr/payroll/${emp._id}" class="pa-card-btn pa-card-btn-view">📋 明細を見る</a>
+                            <a href="/hr/payroll/admin/new?employeeId=${emp._id}" class="pa-card-btn pa-card-btn-new">＋ 登録</a>
                         </div>
                     </div>
-                `).join('')}
+                `}).join('')}
             </div>
         </div>
-    `;
-    renderPage(req, res, "給与管理", "管理者メニュー", html);
+
+        <script>
+        function filterCards(q) {
+            const kw = q.toLowerCase();
+            document.querySelectorAll('#empGrid .pa-card').forEach(card => {
+                const text = (card.dataset.name + ' ' + card.dataset.dept).toLowerCase();
+                card.style.display = text.includes(kw) ? '' : 'none';
+            });
+        }
+        </script>
+    `);
 });
 
 router.post('/hr/payroll/admin/add', requireLogin, async (req, res) => {
-    if (!req.session.user?.isAdmin) return res.status(403).send('アクセス権限がありません');
+    if (!req.session.isAdmin) return res.status(403).send('アクセス権限がありません');
 
     const { employeeId, payMonth } = req.body;
 
@@ -391,7 +648,7 @@ router.post('/hr/payroll/admin/add', requireLogin, async (req, res) => {
         periodFrom,
         periodTo,
         fiscalYear,
-        createdBy: req.session.user._id, // session.employee ではなく user._id
+        createdBy: req.session.userId, // session.employee ではなく user._id
     });
 
     // PayrollSlip 作成
@@ -418,10 +675,10 @@ router.post('/hr/payroll/admin/add', requireLogin, async (req, res) => {
         })),
 
         // 控除
-        deductions: Object.entries(req.body.deductions || {}).map(([name, amount]) => ({
-            name,
-            amount: Number(amount)
-        })),
+        deductions: Object.entries(req.body.deductions || {}).map(([name, amount]) => {
+            const nameMap = { '健康保険': '健康保険料', '厚生年金': '厚生年金保険料', '雇用保険': '雇用保険料', 'その他社会保険': 'その他社会保険料' };
+            return { name: nameMap[name] || name, amount: Number(amount) };
+        }),
 
         // 所得税
         incomeTax: Number(req.body.incomeTax || 0),
@@ -437,9 +694,10 @@ router.post('/hr/payroll/admin/add', requireLogin, async (req, res) => {
 });
 
 router.get('/hr/payroll/admin/new', requireLogin, async (req, res) => {
-    if (!req.session.user?.isAdmin) return res.redirect('/hr/payroll');
+    if (!req.session.isAdmin) return res.redirect('/hr/payroll');
 
     const employees = await Employee.find();
+    const preselect = req.query.employeeId || '';
 
     const html = `
         <div class="container mt-4">
@@ -452,7 +710,7 @@ router.get('/hr/payroll/admin/new', requireLogin, async (req, res) => {
 
                 <label>社員:
                     <select name="employeeId" required>
-                        ${employees.map(emp => `<option value="${emp._id}">${emp.name}</option>`).join('')}
+                        ${employees.map(emp => `<option value="${emp._id}" ${emp._id.toString()===preselect?'selected':''}>${emp.name}</option>`).join('')}
                     </select>
                 </label><br><br>
 
@@ -468,15 +726,28 @@ router.get('/hr/payroll/admin/new', requireLogin, async (req, res) => {
                 <h5>手当</h5>
                 <label>役職手当: <input type="number" name="allowances[役職手当]" value="0"></label>
                 <label>家族手当: <input type="number" name="allowances[家族手当]" value="0"></label>
-                <label>手当-1: <input type="number" name="allowances[手当-1]" value="0"></label>
+                <label>現場手当: <input type="number" name="allowances[現場手当]" value="0"></label>
                 <label>手当-2: <input type="number" name="allowances[手当-2]" value="0"></label>
-                <!-- 必要に応じて手当-10まで -->
+                <label>手当-3: <input type="number" name="allowances[手当-3]" value="0"></label>
+                <label>手当-4: <input type="number" name="allowances[手当-4]" value="0"></label>
+                <label>手当-5: <input type="number" name="allowances[手当-5]" value="0"></label>
+                <label>手当-6: <input type="number" name="allowances[手当-6]" value="0"></label>
+                <label>手当-7: <input type="number" name="allowances[手当-7]" value="0"></label>
+                <label>手当-8: <input type="number" name="allowances[手当-8]" value="0"></label>
+                <label>手当-9: <input type="number" name="allowances[手当-9]" value="0"></label>
+                <label>手当-10: <input type="number" name="allowances[手当-10]" value="0"></label>
 
                 <h5>控除</h5>
-                <label>健康保険: <input type="number" name="deductions[健康保険]" value="0"></label>
-                <label>厚生年金: <input type="number" name="deductions[厚生年金]" value="0"></label>
-                <label>雇用保険: <input type="number" name="deductions[雇用保険]" value="0"></label>
-                <!-- 必要に応じて控除-10まで -->
+                <label>健康保険料: <input type="number" name="deductions[健康保険料]" value="0"></label>
+                <label>厚生年金保険料: <input type="number" name="deductions[厚生年金保険料]" value="0"></label>
+                <label>その他社会保険料: <input type="number" name="deductions[その他社会保険料]" value="0"></label>
+                <label>雇用保険料: <input type="number" name="deductions[雇用保険料]" value="0"></label>
+                <label>住民税: <input type="number" name="deductions[住民税]" value="0"></label>
+                <label>控除-1: <input type="number" name="deductions[控除-1]" value="0"></label>
+                <label>控除-2: <input type="number" name="deductions[控除-2]" value="0"></label>
+                <label>控除-3: <input type="number" name="deductions[控除-3]" value="0"></label>
+                <label>控除-4: <input type="number" name="deductions[控除-4]" value="0"></label>
+                <label>控除-5: <input type="number" name="deductions[控除-5]" value="0"></label>
                 <label>所得税: <input type="number" name="incomeTax" required></label><br>
 
                 <h5>通勤費</h5>
@@ -505,7 +776,7 @@ router.get('/hr/payroll/admin/new', requireLogin, async (req, res) => {
 
 // 管理者用 給与明細編集画面
 router.get('/hr/payroll/admin/edit/:slipId', requireLogin, async (req, res) => {
-    if (!req.session.user?.isAdmin) return res.status(403).send('アクセス権限がありません');
+    if (!req.session.isAdmin) return res.status(403).send('アクセス権限がありません');
 
     const slip = await PayrollSlip.findById(req.params.slipId).populate('employeeId runId');
     if (!slip) return res.status(404).send('給与明細が見つかりません');
@@ -520,14 +791,24 @@ router.get('/hr/payroll/admin/edit/:slipId', requireLogin, async (req, res) => {
                 <label>差引支給: <input type="number" name="net" value="${slip.net}" required></label><br><br>
 
                 <h5>手当</h5>
-                ${slip.allowances.map(a => `
-                    <label>${a.name}: <input type="number" name="allowances[${a.name}]" value="${a.amount}"></label><br>
-                `).join('')}
+                ${(() => {
+                    // 既存allowancesをマップ化（手当-1→現場手当 の旧データも吸収）
+                    const aMap = {};
+                    (slip.allowances||[]).forEach(a => {
+                        const key = a.name === '手当-1' ? '現場手当' : a.name;
+                        aMap[key] = a.amount;
+                    });
+                    const fields = ['役職手当','家族手当','現場手当','手当-2','手当-3','手当-4','手当-5','手当-6','手当-7','手当-8','手当-9','手当-10'];
+                    return fields.map(n => `<label>${n}: <input type="number" name="allowances[${n}]" value="${aMap[n]||0}"></label><br>`).join('');
+                })()}
 
                 <h5>控除</h5>
-                ${slip.deductions.map(d => `
-                    <label>${d.name}: <input type="number" name="deductions[${d.name}]" value="${d.amount}"></label><br>
-                `).join('')}
+                ${(() => {
+                    const dMap = {};
+                    (slip.deductions||[]).forEach(d => { dMap[d.name] = d.amount; });
+                    const fields = ['健康保険料','厚生年金保険料','その他社会保険料','雇用保険料','住民税','控除-1','控除-2','控除-3','控除-4','控除-5','控除-6','控除-7','控除-8','控除-9','控除-10'];
+                    return fields.map(n => `<label>${n}: <input type="number" name="deductions[${n}]" value="${dMap[n]||0}"></label><br>`).join('');
+                })()}
                 <label>所得税: <input type="number" name="incomeTax" value="${slip.incomeTax}"></label><br><br>
 
                 <h5>通勤費</h5>
@@ -552,7 +833,7 @@ router.get('/hr/payroll/admin/edit/:slipId', requireLogin, async (req, res) => {
 
 // 管理者用 給与明細更新
 router.post('/hr/payroll/admin/edit/:slipId', requireLogin, async (req, res) => {
-    if (!req.session.user?.isAdmin) return res.status(403).send('アクセス権限がありません');
+    if (!req.session.isAdmin) return res.status(403).send('アクセス権限がありません');
 
     const slip = await PayrollSlip.findById(req.params.slipId).populate('employeeId');
     if (!slip) return res.status(404).send('給与明細が見つかりません');
@@ -568,10 +849,11 @@ router.post('/hr/payroll/admin/edit/:slipId', requireLogin, async (req, res) => 
         amount: Number(amount)
     }));
 
-    slip.deductions = Object.entries(req.body.deductions || {}).map(([name, amount]) => ({
-        name,
-        amount: Number(amount)
-    }));
+    slip.deductions = Object.entries(req.body.deductions || {}).map(([name, amount]) => {
+        // キー名の揺れを正規化（「料」なし → 「料」付き）
+        const nameMap = { '健康保険': '健康保険料', '厚生年金': '厚生年金保険料', '雇用保険': '雇用保険料', 'その他社会保険': 'その他社会保険料' };
+        return { name: nameMap[name] || name, amount: Number(amount) };
+    });
 
     slip.incomeTax = Number(req.body.incomeTax || 0);
     slip.commute = {
@@ -584,318 +866,546 @@ router.post('/hr/payroll/admin/edit/:slipId', requireLogin, async (req, res) => 
 });
 
 router.get('/hr/payroll', requireLogin, async (req, res) => {
-    const employee = await Employee.findOne({ userId: req.session.user._id });
+    const employee = await Employee.findOne({ userId: req.session.userId });
     req.session.employee = employee;
 
-    const isAdmin = req.session.user?.isAdmin;
+    const isAdmin = req.session.isAdmin;
 
-    // 直近6件の給与明細を取得
+    // 直近12件の給与明細を取得
     const slips = await PayrollSlip.find({ employeeId: employee._id })
         .populate('runId')
-        .sort({ 'runId.periodFrom': -1 })
-        .limit(6);
+        .sort({ createdAt: -1 })
+        .limit(12);
 
-    // グラフ用データ（降順で出るので reverse）
-    const chartLabels = slips.map(s => 
-        `${s.runId.periodFrom.getFullYear()}/${s.runId.periodFrom.getMonth() + 1}`
-    ).reverse();
-    const chartData = slips.map(s => s.net || 0).reverse();
+    // グラフ用データ（昇順）
+    const chartSlips = [...slips].reverse();
+    const chartLabels = chartSlips.map(s => s.runId?.periodFrom
+        ? `${s.runId.periodFrom.getFullYear()}/${s.runId.periodFrom.getMonth()+1}月`
+        : '');
+    const chartGross = chartSlips.map(s => s.gross || 0);
+    const chartNet   = chartSlips.map(s => s.net   || 0);
 
     // 管理者用サマリ
     let summary = null;
     if (isAdmin) {
         const now = new Date();
         const from = new Date(now.getFullYear(), now.getMonth(), 1);
-        const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-        const runs = await PayrollRun.find({
-            periodFrom: { $gte: from, $lte: to }
-        }).distinct('_id');
-        const allSlips = await PayrollSlip.find({ runId: { $in: runs } });
-        const totalGross = allSlips.reduce((sum, s) => sum + (s.gross || 0), 0);
-        const totalNet = allSlips.reduce((sum, s) => sum + (s.net || 0), 0);
+        const to   = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        const runIds = await PayrollRun.find({ periodFrom: { $gte: from, $lte: to } }).distinct('_id');
+        const allSlips = await PayrollSlip.find({ runId: { $in: runIds } });
+        const totalGross = allSlips.reduce((s, x) => s + (x.gross || 0), 0);
+        const totalNet   = allSlips.reduce((s, x) => s + (x.net   || 0), 0);
         summary = { totalGross, totalNet, count: allSlips.length };
     }
 
-    const html = `
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    const latestSlip = slips[0];
+    const totalNet6  = slips.reduce((s, x) => s + (x.net || 0), 0);
+    const avgNet     = slips.length ? Math.round(totalNet6 / slips.length) : 0;
+
+    const statusLabel = { draft:'下書き', issued:'発行済み', locked:'確定', paid:'支払済み' };
+
+    renderPage(req, res, '給与管理', '給与明細', `
         <style>
-            body{font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif}
-            .container{max-width:1100px;margin:28px auto}
-            .hero{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
-            .hero h2{margin:0;font-weight:700}
-            .kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}
-            .kpi{background:#fff;border-radius:10px;padding:12px;box-shadow:0 10px 30px rgba(10,20,40,0.06);border:1px solid rgba(0,0,0,0.04);display:flex;justify-content:space-between;align-items:center}
-            .kpi .meta{color:#6b7280;font-size:13px}
-            .kpi .value{font-weight:700;font-size:18px}
-            .main-grid{display:grid;grid-template-columns:1fr 360px;gap:18px}
-            .panel{background:#fff;padding:14px;border-radius:10px;box-shadow:0 10px 24px rgba(10,20,40,0.05)}
-            .small-muted{color:#6b7280;font-size:13px}
-            @media(max-width:1000px){.main-grid{grid-template-columns:1fr}}
+            .py-page{max-width:1000px;margin:0 auto}
+            .py-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;flex-wrap:wrap;gap:12px}
+            .py-title{font-size:22px;font-weight:800;color:#0b2540;margin:0}
+            .py-sub{color:#6b7280;font-size:13px;margin-top:3px}
+            .py-kpi-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px}
+            .py-kpi{background:#fff;border-radius:14px;padding:18px 20px;box-shadow:0 4px 14px rgba(11,36,48,.06)}
+            .py-kpi-label{font-size:12px;color:#6b7280;font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em}
+            .py-kpi-value{font-size:22px;font-weight:800;color:#0b2540}
+            .py-kpi-sub{font-size:12px;color:#9ca3af;margin-top:3px}
+            .py-grid{display:grid;grid-template-columns:1fr 320px;gap:18px}
+            .py-card{background:#fff;border-radius:14px;padding:22px;box-shadow:0 4px 14px rgba(11,36,48,.06);margin-bottom:16px}
+            .py-card-title{font-weight:700;font-size:15px;color:#0b2540;margin-bottom:14px;display:flex;align-items:center;gap:7px}
+            .py-slip-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f1f5f9;cursor:pointer;text-decoration:none;color:inherit}
+            .py-slip-row:last-child{border-bottom:none}
+            .py-slip-row:hover{background:#f8fafc;border-radius:8px;padding-left:8px}
+            .py-slip-month{font-weight:700;font-size:14px;color:#0b2540}
+            .py-slip-net{font-weight:700;font-size:15px;color:#0b5fff}
+            .py-slip-gross{font-size:12px;color:#9ca3af}
+            .py-badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+            .badge-issued{background:#dcfce7;color:#16a34a}
+            .badge-draft{background:#fef9c3;color:#ca8a04}
+            .badge-locked,.badge-paid{background:#e0e7ff;color:#4f46e5}
+            .py-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;cursor:pointer;border:none}
+            .py-btn-primary{background:#0b5fff;color:#fff}
+            .py-btn-primary:hover{background:#0047d4;color:#fff}
+            .py-btn-ghost{background:#f3f4f6;color:#374151}
+            .py-btn-ghost:hover{background:#e5e7eb}
+            .py-btn-warn{background:#fef3c7;color:#92400e}
+            @media(max-width:800px){.py-grid{grid-template-columns:1fr}.py-kpi-row{grid-template-columns:repeat(2,1fr)}}
         </style>
 
-        <div class="container">
-            <div class="hero">
+        <div class="py-page">
+            <div class="py-header">
                 <div>
-                    <h2>給与管理</h2>
-                    <div class="small-muted">${escapeHtml(employee.name)} さんの給与ダッシュボード</div>
+                    <div class="py-title">💴 給与管理</div>
+                    <div class="py-sub">${escapeHtml(employee.name)} さんの給与ダッシュボード</div>
                 </div>
-                <div>
-                    ${ isAdmin ? `<a href="/hr/payroll/admin" class="btn btn-warning me-2">管理者メニュー</a>` : '' }
-                    <a href="/hr" class="btn btn-outline-secondary">人事一覧へ戻る</a>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    ${isAdmin ? `<a href="/hr/payroll/admin" class="py-btn py-btn-warn">⚙️ 管理者メニュー</a>` : ''}
+                    <a href="/hr/payroll/${employee._id}" class="py-btn py-btn-primary">📋 明細一覧</a>
+                    <a href="/hr" class="py-btn py-btn-ghost">← 人事一覧</a>
                 </div>
             </div>
 
-            <div class="kpi-grid">
-                <div class="kpi">
-                    <div>
-                        <div class="meta">最新の差引支給</div>
-                        <div class="value">${slips.length ? '¥' + slips[0].net.toLocaleString() : '—'}</div>
-                    </div>
-                    <div class="small-muted">${slips.length ? `${slips[0].runId.periodFrom.getFullYear()}年${slips[0].runId.periodFrom.getMonth()+1}月` : ''}</div>
+            <!-- KPIカード -->
+            <div class="py-kpi-row">
+                <div class="py-kpi">
+                    <div class="py-kpi-label">💰 最新 差引支給</div>
+                    <div class="py-kpi-value">${latestSlip ? '¥'+latestSlip.net.toLocaleString() : '—'}</div>
+                    <div class="py-kpi-sub">${latestSlip && latestSlip.runId?.periodFrom ? latestSlip.runId.periodFrom.getFullYear()+'年'+( latestSlip.runId.periodFrom.getMonth()+1)+'月分' : '明細なし'}</div>
                 </div>
-
-                <div class="kpi">
-                    <div>
-                        <div class="meta">直近明細数</div>
-                        <div class="value">${slips.length}</div>
-                    </div>
-                    <div class="small-muted">最新6件を表示</div>
+                <div class="py-kpi">
+                    <div class="py-kpi-label">📊 平均手取り</div>
+                    <div class="py-kpi-value">${slips.length ? '¥'+avgNet.toLocaleString() : '—'}</div>
+                    <div class="py-kpi-sub">直近${slips.length}件の平均</div>
                 </div>
-
-                <div class="kpi">
-                    <div>
-                        <div class="meta">あなたの累計手取り</div>
-                        <div class="value">¥${(slips.reduce((s,x)=>s+(x.net||0),0)).toLocaleString()}</div>
-                    </div>
-                    <div class="small-muted">期間内合計</div>
+                <div class="py-kpi">
+                    <div class="py-kpi-label">📈 累計手取り</div>
+                    <div class="py-kpi-value">¥${totalNet6.toLocaleString()}</div>
+                    <div class="py-kpi-sub">直近${slips.length}件の合計</div>
                 </div>
             </div>
 
-            <div class="main-grid">
+            <div class="py-grid">
                 <div>
-                    <div class="panel mb-3">
-                        <h5 class="mb-2">最新の給与明細</h5>
-                        ${slips.length ? `
-                            <div style="display:flex;gap:14px;align-items:center">
-                                <div style="width:64px;height:64px;border-radius:8px;background:linear-gradient(180deg,#eef6ff,#e8f1ff);display:flex;align-items:center;justify-content:center;font-weight:700">${escapeHtml((employee.name||'').slice(0,2))}</div>
-                                <div>
-                                    <div style="font-weight:700">${slips[0].runId.periodFrom.getFullYear()}年${slips[0].runId.periodFrom.getMonth()+1}月分</div>
-                                    <div class="small-muted">基本給: ¥${slips[0].baseSalary.toLocaleString()} / 総支給: ¥${slips[0].gross.toLocaleString()}</div>
-                                    <div style="margin-top:8px;font-size:18px;color:#0b853a">差引支給: ¥${slips[0].net.toLocaleString()}</div>
-                                </div>
-                            </div>
-                            <div style="margin-top:12px"><a href="/hr/payroll/${employee._id}" class="btn btn-outline-primary btn-sm">詳細を見る</a></div>
-                        ` : `<p class="text-muted">まだ給与明細が登録されていません。</p>`}
+                    <!-- 給与推移グラフ -->
+                    <div class="py-card">
+                        <div class="py-card-title">📉 給与推移</div>
+                        <canvas id="salaryChart" height="180"></canvas>
                     </div>
 
-                    <div class="panel">
-                        <h5 class="mb-2">最近の給与履歴</h5>
-                        ${slips.length ? `
-                            <ul class="list-group list-group-flush">
-                                ${slips.map(s => `
-                                    <li class="list-group-item d-flex justify-content-between">
-                                        <div>${s.runId.periodFrom.getFullYear()}年${s.runId.periodFrom.getMonth()+1}月</div>
-                                        <div>¥${s.net.toLocaleString()}</div>
-                                    </li>
-                                `).join('')}
-                            </ul>
-                        ` : `<p class="text-muted">履歴はありません</p>`}
-                    </div>
-                </div>
-
-                <div>
-                    <div class="panel mb-3">
-                        <h6 class="mb-2">給与推移（手取り）</h6>
-                        <canvas id="salaryChart" style="width:100%;height:200px"></canvas>
-                    </div>
-
-                    ${isAdmin && summary ? `
-                        <div class="panel">
-                            <h6 class="mb-2">管理者サマリ</h6>
-                            <div class="small-muted">今月の発行済み給与明細数: <strong>${summary.count}</strong></div>
-                            <div class="small-muted">総支給額合計: <strong>¥${summary.totalGross.toLocaleString()}</strong></div>
-                            <div class="small-muted">手取り合計: <strong>¥${summary.totalNet.toLocaleString()}</strong></div>
-                            <div style="margin-top:10px"><a href="/hr/payroll/admin" class="btn btn-warning btn-sm">管理者メニューへ</a></div>
+                    <!-- 最近の明細リスト -->
+                    <div class="py-card">
+                        <div class="py-card-title">🗂 給与明細一覧
+                            <a href="/hr/payroll/${employee._id}" style="margin-left:auto;font-size:12px;color:#0b5fff;text-decoration:none;font-weight:600">すべて見る →</a>
                         </div>
+                        ${slips.length ? slips.slice(0,6).map(s => `
+                            <a href="/hr/payroll/${employee._id}?payMonth=${s.runId?.periodFrom ? s.runId.periodFrom.getFullYear()+'-'+(s.runId.periodFrom.getMonth()+1).toString().padStart(2,'0') : ''}" class="py-slip-row">
+                                <div>
+                                    <div class="py-slip-month">${s.runId?.periodFrom ? s.runId.periodFrom.getFullYear()+'年'+(s.runId.periodFrom.getMonth()+1)+'月分' : '—'}</div>
+                                    <div class="py-slip-gross">総支給 ¥${(s.gross||0).toLocaleString()} / 基本給 ¥${(s.baseSalary||0).toLocaleString()}</div>
+                                </div>
+                                <div style="text-align:right">
+                                    <div class="py-slip-net">¥${(s.net||0).toLocaleString()}</div>
+                                    <span class="py-badge badge-${s.status||'draft'}">${statusLabel[s.status]||s.status}</span>
+                                </div>
+                            </a>
+                        `).join('') : `<div style="color:#9ca3af;text-align:center;padding:24px">給与明細がまだありません</div>`}
+                    </div>
+                </div>
+
+                <div>
+                    <!-- 最新明細サマリ -->
+                    ${latestSlip ? `
+                    <div class="py-card">
+                        <div class="py-card-title">📄 最新明細サマリ</div>
+                        <div style="font-size:13px;color:#6b7280;margin-bottom:10px">${latestSlip.runId?.periodFrom ? latestSlip.runId.periodFrom.getFullYear()+'年'+(latestSlip.runId.periodFrom.getMonth()+1)+'月分' : ''}</div>
+                        ${[
+                            ['基本給', latestSlip.baseSalary],
+                            ['総支給額', latestSlip.gross],
+                            ...( latestSlip.allowances||[]).map(a=>[a.name, a.amount]),
+                        ].map(([k,v])=>`
+                            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px">
+                                <span style="color:#374151">${escapeHtml(k)}</span>
+                                <span style="font-weight:600">¥${(v||0).toLocaleString()}</span>
+                            </div>
+                        `).join('')}
+                        <div style="margin:10px 0;padding:4px 0;border-top:2px solid #e5e7eb"></div>
+                        ${[
+                            ...(latestSlip.deductions||[]).map(d=>[d.name, d.amount]),
+                            latestSlip.incomeTax ? ['所得税', latestSlip.incomeTax] : null,
+                        ].filter(Boolean).map(([k,v])=>`
+                            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px">
+                                <span style="color:#ef4444">${escapeHtml(k)}</span>
+                                <span style="font-weight:600;color:#ef4444">-¥${(v||0).toLocaleString()}</span>
+                            </div>
+                        `).join('')}
+                        <div style="display:flex;justify-content:space-between;margin-top:12px;padding:10px 12px;background:#f0f4ff;border-radius:10px">
+                            <span style="font-weight:700;color:#0b2540">差引支給額</span>
+                            <span style="font-weight:800;font-size:18px;color:#0b5fff">¥${(latestSlip.net||0).toLocaleString()}</span>
+                        </div>
+                        <div style="margin-top:12px">
+                            <a href="/hr/payroll/${employee._id}" class="py-btn py-btn-primary" style="width:100%;justify-content:center">📋 明細一覧を開く</a>
+                        </div>
+                    </div>
+                    ` : `
+                    <div class="py-card" style="text-align:center;color:#9ca3af;padding:36px">
+                        <div style="font-size:32px;margin-bottom:10px">📭</div>
+                        <div style="font-weight:600">明細データがありません</div>
+                        ${isAdmin ? `<a href="/hr/payroll/admin/new" class="py-btn py-btn-primary" style="margin-top:14px">＋ 給与を登録する</a>` : ''}
+                    </div>
+                    `}
+
+                    <!-- 管理者サマリ -->
+                    ${isAdmin && summary ? `
+                    <div class="py-card" style="margin-top:16px">
+                        <div class="py-card-title">⚙️ 今月の管理者サマリ</div>
+                        <div style="font-size:13px;display:flex;flex-direction:column;gap:8px">
+                            <div style="display:flex;justify-content:space-between">
+                                <span style="color:#6b7280">発行明細数</span>
+                                <span style="font-weight:700">${summary.count} 件</span>
+                            </div>
+                            <div style="display:flex;justify-content:space-between">
+                                <span style="color:#6b7280">総支給額合計</span>
+                                <span style="font-weight:700">¥${summary.totalGross.toLocaleString()}</span>
+                            </div>
+                            <div style="display:flex;justify-content:space-between">
+                                <span style="color:#6b7280">手取り合計</span>
+                                <span style="font-weight:700;color:#0b5fff">¥${summary.totalNet.toLocaleString()}</span>
+                            </div>
+                        </div>
+                        <div style="margin-top:12px">
+                            <a href="/hr/payroll/admin" class="py-btn py-btn-warn" style="width:100%;justify-content:center">⚙️ 管理者メニューへ</a>
+                        </div>
+                    </div>
                     ` : ''}
                 </div>
             </div>
-
-            <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-            <script>
-                const ctx = document.getElementById('salaryChart').getContext('2d');
-                new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: ${JSON.stringify(chartLabels)},
-                        datasets: [{ label: '差引支給額 (¥)', data: ${JSON.stringify(chartData)}, backgroundColor: 'linear-gradient(180deg, #36a2eb, #2b8bd6)'.replace(/linear-gradient\([^)]*\)/,'rgba(54,162,235,0.6)') }]
-                    },
-                    options: {
-                        responsive: true,
-                        plugins: { legend: { display: false } },
-                        scales: { y: { ticks: { callback: value => '¥' + value.toLocaleString() } } }
-                    }
-                });
-            </script>
         </div>
-    `;
 
-    renderPage(req, res, "給与管理", "給与管理ダッシュボード", html);
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script>
+        new Chart(document.getElementById('salaryChart'), {
+            type: 'bar',
+            data: {
+                labels: ${JSON.stringify(chartLabels)},
+                datasets: [
+                    { label: '総支給', data: ${JSON.stringify(chartGross)}, backgroundColor: 'rgba(11,95,255,0.15)', borderColor: '#0b5fff', borderWidth: 2, borderRadius: 6 },
+                    { label: '差引支給', data: ${JSON.stringify(chartNet)}, backgroundColor: 'rgba(16,185,129,0.2)', borderColor: '#10b981', borderWidth: 2, borderRadius: 6 }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'bottom', labels: { font: { size: 12 } } } },
+                scales: { y: { ticks: { callback: v => '¥'+v.toLocaleString() }, grid: { color: '#f1f5f9' } } }
+            }
+        });
+        </script>
+    `);
 });
 
 router.get('/hr/payroll/:id', requireLogin, async (req, res) => {
     const employee = await Employee.findById(req.params.id);
     if (!employee) return res.redirect('/hr/payroll');
 
-    // 権限チェック
-    if (employee.userId.toString() !== req.session.user._id.toString() && !req.session.user?.isAdmin) {
+    if (employee.userId.toString() !== req.session.userId.toString() && !req.session.isAdmin) {
         return res.status(403).send('アクセス権限がありません');
     }
 
-    // 月別検索
-    const { payMonth } = req.query; // YYYY-MM
+    const { payMonth } = req.query;
     let runIds = [];
     if (payMonth) {
         const [year, month] = payMonth.split('-').map(Number);
-        const from = new Date(year, month - 1, 1); // その月の初日
-        const to = new Date(year, month, 0);       // その月の末日
-
-        // その月に開始した PayrollRun を取得
         runIds = await PayrollRun.find({
-            periodFrom: { $gte: from, $lte: to }
+            periodFrom: { $gte: new Date(year, month-1, 1), $lte: new Date(year, month, 0) }
         }).distinct('_id');
     }
 
-    // slip を取得（検索条件がある場合は runId を限定する）
     const slips = await PayrollSlip.find({
         employeeId: employee._id,
         ...(payMonth ? { runId: { $in: runIds } } : {})
-    }).populate('runId').sort({ 'runId.periodFrom': -1 });
+    }).populate('runId').sort({ createdAt: -1 });
 
-    const statusMap = {
-        draft: "下書き",
-        issued: "発行済み",
-        locked: "確定"
-    };
+    const isAdminUser = req.session.isAdmin;
+    const statusLabel = { draft:'下書き', issued:'発行済み', locked:'確定', paid:'支払済み' };
+    const statusColor = { draft:'#ca8a04', issued:'#16a34a', locked:'#4f46e5', paid:'#0b5fff' };
+    const statusBg    = { draft:'#fef9c3', issued:'#dcfce7', locked:'#e0e7ff', paid:'#dbeafe' };
 
-    // HTML 出力
-    const html = `
-        <div class="container py-4">
-            <h3 class="mb-4">${employee.name} の給与明細</h3>
+    renderPage(req, res, '給与管理', `${employee.name} の給与明細`, `
+        <style>
+            .sp-page{max-width:1000px;margin:0 auto}
+            .sp-topbar{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;flex-wrap:wrap;gap:10px}
+            .sp-title{font-size:20px;font-weight:800;color:#0b2540;margin:0}
+            .sp-sub{color:#6b7280;font-size:13px;margin-top:3px}
+            .sp-search{display:flex;gap:8px;align-items:center;background:#fff;border-radius:10px;padding:12px 16px;box-shadow:0 2px 8px rgba(11,36,48,.06);margin-bottom:18px;flex-wrap:wrap}
+            .sp-search label{font-size:13px;font-weight:600;color:#374151}
+            .sp-search input[type=month]{padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px}
+            .sp-btn{display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border-radius:7px;font-size:13px;font-weight:700;text-decoration:none;border:none;cursor:pointer}
+            .py-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;cursor:pointer;border:none}
+            .py-btn-ghost{background:#f3f4f6;color:#374151}
+
+            /* 給与明細書テーブルスタイル */
+            .meisai-wrap{background:#fff;border-radius:12px;box-shadow:0 4px 16px rgba(11,36,48,.08);margin-bottom:24px;overflow:hidden}
+            .meisai-topbar{display:flex;justify-content:space-between;align-items:center;padding:12px 18px;background:#f8fafc;border-bottom:2px solid #00b4b4}
+            .meisai-status{padding:3px 12px;border-radius:999px;font-size:12px;font-weight:700}
+            .meisai-actions{display:flex;gap:8px;flex-wrap:wrap;padding:12px 18px;background:#f8fafc;border-top:1px solid #e5e7eb;justify-content:flex-end}
+
+            .meisai{width:100%;border-collapse:collapse;font-size:12px;font-family:'Meiryo','Hiragino Kaku Gothic Pro',sans-serif}
+            .meisai th,.meisai td{border:1px solid #00b4b4;padding:4px 6px;text-align:center;vertical-align:middle;line-height:1.4}
+            .meisai th{background:#e0f7f7;font-weight:700;color:#005f5f;font-size:11px;white-space:nowrap}
+            .meisai td{background:#fff;color:#1a1a1a;min-width:80px}
+            .meisai td.amt{text-align:right;font-weight:600;padding-right:8px}
+            .meisai td.net-amt{text-align:right;font-weight:800;font-size:14px;color:#0b5fff;padding-right:8px}
+            .meisai td.total-amt{text-align:right;font-weight:800;color:#0b2540;padding-right:8px}
+            .meisai td.deduct-amt{text-align:right;font-weight:600;color:#b91c1c;padding-right:8px}
+            .meisai .section-label{writing-mode:vertical-rl;text-orientation:upright;letter-spacing:4px;font-weight:800;font-size:13px;background:#b2eded;color:#005f5f;padding:6px 4px;border:1px solid #00b4b4;white-space:nowrap}
+            .meisai .section-label.deduct-label{background:#fde8e8;color:#b91c1c}
+            .meisai .header-row td{background:#e0f7f7;font-weight:700;color:#005f5f;font-size:11px;white-space:nowrap;text-align:center}
+            .meisai .company-row td{background:#00b4b4;color:#fff;font-weight:800;font-size:13px;text-align:center;padding:8px}
+            .meisai .cumul-row td{background:#f0fffe;font-size:11px}
+            .meisai .cumul-row th{background:#c6efef;font-size:11px}
+            @media(max-width:700px){.meisai{font-size:10px}.meisai th,.meisai td{padding:3px 4px}}
+        </style>
+
+        <div class="sp-page">
+            <div class="sp-topbar">
+                <div>
+                    <div class="sp-title">📋 ${escapeHtml(employee.name)} の給与明細</div>
+                    <div class="sp-sub">${escapeHtml(employee.department||'')} / ${escapeHtml(employee.position||'')}</div>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <a href="/hr/payroll/${employee._id}/export${payMonth?'?payMonth='+payMonth:''}" class="py-btn" style="background:#f0fdf4;color:#16a34a">📥 CSV</a>
+                    <a href="/hr/payroll" class="py-btn py-btn-ghost">← ダッシュボード</a>
+                </div>
+            </div>
 
             <!-- 月別検索 -->
-            <form method="GET" action="/hr/payroll/${employee._id}" class="mb-4 row g-2 align-items-center">
-                <div class="col-auto">
-                    <label class="col-form-label">対象月</label>
-                </div>
-                <div class="col-auto">
-                    <input type="month" name="payMonth" value="${payMonth || ''}" class="form-control" placeholder="YYYY-MM">
-                </div>
-                <div class="col-auto">
-                    <button type="submit" class="btn btn-primary">検索</button>
-                    <a href="/hr/payroll/${employee._id}/export${payMonth ? '?payMonth=' + payMonth : ''}" class="btn btn-success mb-4">CSVダウンロード</a>
-                    <a href="/hr/payroll/${employee._id}" class="btn btn-primary">クリア</a>
-                </div>
-            </form><br>
+            <form method="GET" action="/hr/payroll/${employee._id}" class="sp-search">
+                <label>対象月:</label>
+                <input type="month" name="payMonth" value="${payMonth||''}">
+                <button type="submit" class="sp-btn" style="background:#0b5fff;color:#fff">🔍 検索</button>
+                ${payMonth ? `<a href="/hr/payroll/${employee._id}" class="sp-btn" style="background:#f3f4f6;color:#374151">✕ クリア</a>` : ''}
+                <span style="margin-left:auto;font-size:13px;color:#9ca3af">${slips.length} 件</span>
+            </form>
 
-            ${slips.length ? slips.map(s => `
-                <div class="card mb-4 shadow-sm border-0 rounded-3 overflow-hidden">
-                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                        <span><strong>
-                            ${s.runId?.periodFrom
-                                ? `${s.runId.periodFrom.getFullYear()}年${s.runId.periodFrom.getMonth() + 1}月分`
-                                : '-'}
-                        </strong></span>
-                        <span class="badge bg-light text-primary">${statusMap[s.status] || '-'}</span>
+            ${slips.length ? slips.map(s => {
+                const yr  = s.runId?.periodFrom ? s.runId.periodFrom.getFullYear() : '—';
+                const mo  = s.runId?.periodFrom ? s.runId.periodFrom.getMonth()+1 : '—';
+                const st  = s.status || 'draft';
+
+                // allowances ヘルパー
+                const getA = name => {
+                    const a = (s.allowances||[]).find(x=>x.name===name);
+                    return (a && a.amount) ? a.amount.toLocaleString() : '';
+                };
+                // deductions ヘルパー
+                const getD = name => {
+                    const d = (s.deductions||[]).find(x=>x.name===name);
+                    return (d && d.amount) ? d.amount.toLocaleString() : '';
+                };
+
+                // 時間外手当などを allowances から取得
+                const overtimePay  = getA('時間外手当');
+                const nightPay     = getA('深夜手当');
+                const holidayPay   = getA('休日手当');
+                const holidayNightPay = getA('休日深夜手当');
+                const dailySalaryFmt = (s.dailySalary && s.dailySalary>0) ? s.dailySalary.toLocaleString() : '';
+                const absentDeductFmt = (s.absentDeduction && s.absentDeduction>0) ? s.absentDeduction.toLocaleString() : '';
+                const lateDeductFmt   = (s.lateDeduction && s.lateDeduction>0) ? s.lateDeduction.toLocaleString() : '';
+                const earlyDeductFmt  = (s.earlyLeaveDeduction && s.earlyLeaveDeduction>0) ? s.earlyLeaveDeduction.toLocaleString() : '';
+                const overtimeUnitFmt = (s.overtimeUnit && s.overtimeUnit>0) ? s.overtimeUnit.toLocaleString() : '';
+                const nightUnitFmt    = (s.nightUnit && s.nightUnit>0) ? s.nightUnit.toLocaleString() : '';
+                const holidayUnitFmt  = (s.holidayUnit && s.holidayUnit>0) ? s.holidayUnit.toLocaleString() : '';
+                const commuteNonTax   = (s.commute?.nonTax && s.commute.nonTax>0) ? s.commute.nonTax.toLocaleString() : '';
+                const commuteTax      = (s.commute?.tax && s.commute.tax>0) ? s.commute.tax.toLocaleString() : '';
+
+                // deductions
+                // 「料」あり・なし両方に対応（DBのキー名の揺れを吸収）
+                const getD2 = (...names) => {
+                    for (const n of names) {
+                        const d = (s.deductions||[]).find(x=>x.name===n);
+                        if (d && d.amount) return d.amount.toLocaleString();
+                    }
+                    return '';
+                };
+                const kenpo    = getD2('健康保険料', '健康保険');
+                const kousei   = getD2('厚生年金保険料', '厚生年金');
+                const sonota   = getD2('その他社会保険料', 'その他社会保険');
+                const koyou    = getD2('雇用保険料', '雇用保険');
+                const shotokuFmt = (s.incomeTax && s.incomeTax>0) ? s.incomeTax.toLocaleString() : '';
+                const jumin    = getD2('住民税');
+                const suminoneFmt = getD2('既払い定期代');
+
+                const totalDeductAll = (s.deductions||[]).reduce((a,x)=>a+(x.amount||0),0) + (s.incomeTax||0);
+                const totalDeductFmt = totalDeductAll > 0 ? totalDeductAll.toLocaleString() : '';
+
+                // 控除1-10
+                const dItems = ['控除-1','控除-2','控除-3','控除-4','控除-5','控除-6','控除-7','控除-8','控除-9','控除-10'].map(n=>getD(n));
+                // 手当1-10
+                const aItems = ['現場手当','手当-2','手当-3','手当-4','手当-5','手当-6','手当-7','手当-8','手当-9','手当-10'].map(n=>getA(n));
+
+                // 勤怠数値フォーマット
+                const fmt0 = v => (v && v!==0) ? String(v) : '';
+
+                return `
+                <div class="meisai-wrap">
+                    <div class="meisai-topbar">
+                        <span style="font-weight:800;font-size:15px;color:#005f5f">給与明細書 — ${yr}年${mo}月分</span>
+                        <span class="meisai-status" style="background:${statusBg[st]};color:${statusColor[st]}">${statusLabel[st]||st}</span>
                     </div>
-                    <div class="card-body bg-white">
+                    <div style="overflow-x:auto;padding:12px 14px">
+                    <table class="meisai">
+                        <!-- ヘッダー行：会社名 -->
+                        <tr class="company-row">
+                            <td colspan="14">合同会社 DXPRO SOLUTIONS　　　給与明細書　　　${yr}年${mo}月分</td>
+                        </tr>
 
-                        <!-- メイン金額 -->
-                        <div class="row text-center mb-4">
-                            <div class="col">
-                                <div class="text-muted small">基本給</div>
-                                <div class="fs-5 fw-bold">¥${(s.baseSalary||0).toLocaleString()}</div>
-                            </div>
-                            <div class="col">
-                                <div class="text-muted small">総支給</div>
-                                <div class="fs-5 fw-bold">¥${(s.gross||0).toLocaleString()}</div>
-                            </div>
-                            <div class="col">
-                                <div class="text-muted small">差引支給</div>
-                                <div class="fs-5 fw-bold text-success">¥${(s.net||0).toLocaleString()}</div>
-                            </div>
-                        </div>
+                        <!-- 勤怠ラベル行 -->
+                        <tr class="header-row">
+                            <td>出勤日数</td><td>欠勤日数</td><td>遅刻回数</td><td>早退回数</td>
+                            <td>時間外時間</td><td>深夜時間</td><td>休日時間</td><td>休日深夜</td>
+                            <td colspan="3">日給単価</td><td colspan="3">欠勤単価</td>
+                        </tr>
+                        <!-- 勤怠数値行1 -->
+                        <tr>
+                            <td>${fmt0(s.workDays)}</td>
+                            <td>${fmt0(s.absentDays)}</td>
+                            <td>${fmt0(s.lateCount)}</td>
+                            <td>${fmt0(s.earlyLeaveCount)}</td>
+                            <td>${fmt0(s.overtimeHours)}</td>
+                            <td>${fmt0(s.nightHours)}</td>
+                            <td>${fmt0(s.holidayHours)}</td>
+                            <td>${fmt0(s.holidayNightHours)}</td>
+                            <td colspan="3" class="amt">${dailySalaryFmt}</td>
+                            <td colspan="3" class="amt">${absentDeductFmt}</td>
+                        </tr>
+                        <!-- 勤怠ラベル行2 -->
+                        <tr class="header-row">
+                            <td>時間外単価</td><td>深夜単価</td><td>休日単価</td><td>休日深夜単価</td>
+                            <td>遅刻単価</td><td>早退単価</td><td colspan="8">&nbsp;</td>
+                        </tr>
+                        <!-- 勤怠数値行2 -->
+                        <tr>
+                            <td class="amt">${overtimeUnitFmt}</td>
+                            <td class="amt">${nightUnitFmt}</td>
+                            <td class="amt">${holidayUnitFmt}</td>
+                            <td class="amt">${(s.holidayNightUnit && s.holidayNightUnit>0) ? s.holidayNightUnit.toLocaleString() : ''}</td>
+                            <td class="amt">${lateDeductFmt}</td>
+                            <td class="amt">${earlyDeductFmt}</td>
+                            <td colspan="8"></td>
+                        </tr>
 
-                        <hr>
+                        <!-- 社員情報行 -->
+                        <tr class="header-row">
+                            <td colspan="2">氏名</td>
+                            <td colspan="2">部署</td>
+                            <td colspan="2">役職</td>
+                            <td colspan="4">社員コード</td>
+                            <td colspan="4">対象期間</td>
+                        </tr>
+                        <tr>
+                            <td colspan="2" style="font-weight:700">${escapeHtml(employee.name)}</td>
+                            <td colspan="2">${escapeHtml(employee.department||'—')}</td>
+                            <td colspan="2">${escapeHtml(employee.position||'—')}</td>
+                            <td colspan="4">${escapeHtml(employee.employeeId||'—')}</td>
+                            <td colspan="4">${yr}年${mo}月</td>
+                        </tr>
 
-                        <!-- 手当・控除 -->
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <h6 class="fw-bold text-muted border-bottom pb-1">手当</h6>
-                                <table class="table table-sm table-borderless mb-0">
-                                    <tbody>
-                                        ${s.allowances.length ? s.allowances.map(a => `
-                                            <tr>
-                                                <td>${a.name}</td>
-                                                <td class="text-end">¥${(a.amount||0).toLocaleString()}</td>
-                                            </tr>
-                                        `).join('') : `<tr><td colspan="2" class="text-muted">―</td></tr>`}
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <h6 class="fw-bold text-muted border-bottom pb-1">控除</h6>
-                                <table class="table table-sm table-borderless mb-0">
-                                    <tbody>
-                                        ${s.deductions.length ? s.deductions.map(d => `
-                                            <tr>
-                                                <td>${d.name}</td>
-                                                <td class="text-end">¥${(d.amount||0).toLocaleString()}</td>
-                                            </tr>
-                                        `).join('') : `<tr><td colspan="2" class="text-muted">―</td></tr>`}
-                                        ${s.incomeTax ? `
-                                            <tr>
-                                                <td>所得税</td>
-                                                <td class="text-end">¥${s.incomeTax.toLocaleString()}</td>
-                                            </tr>` : ''}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
+                        <!-- ===== 支給セクション ===== -->
+                        <!-- 支給 行1ラベル -->
+                        <tr class="header-row">
+                            <td rowspan="2" class="section-label">支給</td>
+                            <td>本給</td><td>役職手当</td><td>家族手当</td>
+                            <td>現場手当</td><td>手当-2</td><td>手当-3</td>
+                            <td>手当-4</td><td>手当-5</td><td>手当-6</td>
+                            <td>手当-7</td><td>手当-8</td><td>手当-9</td><td>手当-10</td>
+                        </tr>
+                        <!-- 支給 行1数値 -->
+                        <tr>
+                            <td class="amt">${(s.baseSalary && s.baseSalary>0) ? s.baseSalary.toLocaleString() : ''}</td>
+                            <td class="amt">${getA('役職手当')}</td>
+                            <td class="amt">${getA('家族手当')}</td>
+                            <td class="amt">${aItems[0]}</td><td class="amt">${aItems[1]}</td>
+                            <td class="amt">${aItems[2]}</td><td class="amt">${aItems[3]}</td>
+                            <td class="amt">${aItems[4]}</td><td class="amt">${aItems[5]}</td>
+                            <td class="amt">${aItems[6]}</td><td class="amt">${aItems[7]}</td>
+                            <td class="amt">${aItems[8]}</td><td class="amt">${aItems[9]}</td>
+                        </tr>
+                        <!-- 支給 行2ラベル -->
+                        <tr class="header-row">
+                            <td rowspan="2" class="section-label">支給</td>
+                            <td>時間外手当</td><td>深夜手当</td><td>休日手当</td><td>休日深夜手当</td>
+                            <td>通勤費(非課税)</td><td>通勤費(課税)</td>
+                            <td>欠勤控除</td><td>遅刻控除</td><td>早退控除</td>
+                            <td colspan="4" style="background:#d0f5f5;font-weight:800;color:#005f5f">総支給額</td>
+                        </tr>
+                        <!-- 支給 行2数値 -->
+                        <tr>
+                            <td class="amt">${overtimePay}</td>
+                            <td class="amt">${nightPay}</td>
+                            <td class="amt">${holidayPay}</td>
+                            <td class="amt">${holidayNightPay}</td>
+                            <td class="amt">${commuteNonTax}</td>
+                            <td class="amt">${commuteTax}</td>
+                            <td class="amt">${absentDeductFmt}</td>
+                            <td class="amt">${lateDeductFmt}</td>
+                            <td class="amt">${earlyDeductFmt}</td>
+                            <td colspan="4" class="total-amt" style="font-size:14px">${(s.gross && s.gross>0) ? s.gross.toLocaleString() : ''}</td>
+                        </tr>
 
-                        <!-- 通勤費 -->
-                        <div class="row mt-3">
-                            <div class="col-md-6">
-                                <div class="fw-bold text-muted small">通勤費(非課税)</div>
-                                <div>¥${(s.commute?.nonTax||0).toLocaleString()}</div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="fw-bold text-muted small">通勤費(課税)</div>
-                                <div>¥${(s.commute?.tax||0).toLocaleString()}</div>
-                            </div>
-                        </div>
-                        ${req.session.user?.isAdmin ? `
-                            <div class="mt-3 text-end">
-                                <a href="/hr/payroll/admin/edit/${s._id}" class="btn btn-primary btn-sm">修正</a>
-                                <form action="/hr/payroll/admin/delete/${s._id}" method="POST" style="display:inline;" onsubmit="return confirm('本当に削除しますか？');">
-                                    <button type="submit" class="btn btn-danger btn-sm ms-2">削除</button>
-                                </form>
-                            </div>
+                        <!-- ===== 控除セクション ===== -->
+                        <!-- 控除 行1ラベル -->
+                        <tr class="header-row">
+                            <td rowspan="2" class="section-label deduct-label">控除</td>
+                            <td>健康保険料</td><td>厚生年金保険料</td><td>その他社会保険料</td><td>雇用保険料</td>
+                            <td>課税対象額</td><td>所得税</td><td>住民税</td>
+                            <td>既払い定期代</td>
+                            <td>控除-1</td><td>控除-2</td><td>控除-3</td><td>控除-4</td><td>控除-5</td>
+                        </tr>
+                        <!-- 控除 行1数値 -->
+                        <tr>
+                            <td class="deduct-amt">${kenpo}</td>
+                            <td class="deduct-amt">${kousei}</td>
+                            <td class="deduct-amt">${sonota}</td>
+                            <td class="deduct-amt">${koyou}</td>
+                            <td class="amt">${getD('課税対象額')}</td>
+                            <td class="deduct-amt">${shotokuFmt}</td>
+                            <td class="deduct-amt">${jumin}</td>
+                            <td class="deduct-amt">${suminoneFmt}</td>
+                            <td class="deduct-amt">${dItems[0]}</td><td class="deduct-amt">${dItems[1]}</td>
+                            <td class="deduct-amt">${dItems[2]}</td><td class="deduct-amt">${dItems[3]}</td>
+                            <td class="deduct-amt">${dItems[4]}</td>
+                        </tr>
+                        <!-- 控除 行2ラベル -->
+                        <tr class="header-row">
+                            <td rowspan="2" class="section-label deduct-label">控除</td>
+                            <td>控除-6</td><td>控除-7</td><td>控除-8</td><td>控除-9</td><td>控除-10</td>
+                            <td colspan="4">&nbsp;</td>
+                            <td colspan="2" style="background:#fde8e8;color:#b91c1c;font-weight:800">控除合計</td>
+                            <td colspan="2" style="background:#dbeafe;color:#0b5fff;font-weight:800">差引支給額</td>
+                        </tr>
+                        <!-- 控除 行2数値 -->
+                        <tr>
+                            <td class="deduct-amt">${dItems[5]}</td><td class="deduct-amt">${dItems[6]}</td>
+                            <td class="deduct-amt">${dItems[7]}</td><td class="deduct-amt">${dItems[8]}</td>
+                            <td class="deduct-amt">${dItems[9]}</td>
+                            <td colspan="4"></td>
+                            <td colspan="2" class="deduct-amt" style="font-size:14px">${totalDeductFmt}</td>
+                            <td colspan="2" class="net-amt" style="font-size:15px">${(s.net && s.net>0) ? s.net.toLocaleString() : ''}</td>
+                        </tr>
+
+                        <!-- 備考行 -->
+                        ${s.notes ? `
+                        <tr class="header-row"><td colspan="14">備考</td></tr>
+                        <tr><td colspan="14" style="text-align:left;padding:6px 10px">${escapeHtml(s.notes)}</td></tr>
                         ` : ''}
+                    </table>
                     </div>
-                </div>
-            `).join('') : `<div class="alert alert-info text-center">対象の給与明細はありません。</div>`}
 
-            <a href="/hr/payroll" class="btn btn-primary mt-3">戻る</a>
+                    ${isAdminUser ? `
+                    <div class="meisai-actions">
+                        <a href="/hr/payroll/admin/edit/${s._id}" class="sp-btn" style="background:#f0f4ff;color:#0b5fff">✏️ 修正</a>
+                        <form action="/hr/payroll/admin/delete/${s._id}" method="POST" onsubmit="return confirm('削除しますか？')" style="margin:0">
+                            <button type="submit" class="sp-btn" style="background:#fee2e2;color:#ef4444">🗑 削除</button>
+                        </form>
+                    </div>` : ''}
+                </div>
+            `}).join('') : `
+                <div style="background:#fff;border-radius:14px;padding:48px;text-align:center;color:#6b7280;box-shadow:0 4px 14px rgba(11,36,48,.06)">
+                    <div style="font-size:36px;margin-bottom:12px">📭</div>
+                    <div style="font-weight:600;font-size:16px">対象の給与明細はありません</div>
+                    ${payMonth ? `<div style="font-size:13px;margin-top:6px">${payMonth} の明細が見つかりません</div>` : ''}
+                </div>
+            `}
         </div>
-    `;
-    renderPage(req, res, "給与管理", `${employee.name} の給与明細`, html);
+    `);
 });
 
 router.post('/hr/payroll/admin/delete/:slipId', requireLogin, async (req, res) => {
-    if (!req.session.user?.isAdmin) {
+    if (!req.session.isAdmin) {
         return res.status(403).send('アクセス権限がありません');
     }
 
@@ -924,7 +1434,7 @@ router.get('/hr/payroll/:id/export', requireLogin, async (req, res) => {
     if (!employee) return res.redirect('/hr/payroll');
 
     // 自分か管理者しか見れない
-    if (employee.userId.toString() !== req.session.user._id.toString() && !req.session.user?.isAdmin) {
+    if (employee.userId.toString() !== req.session.userId.toString() && !req.session.isAdmin) {
         return res.status(403).send('アクセス権限がありません');
     }
 
