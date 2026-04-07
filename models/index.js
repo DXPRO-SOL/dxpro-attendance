@@ -147,8 +147,10 @@ const LeaveRequestSchema = new mongoose.Schema({
     leaveType: {
         type: String,
         required: true,
-        enum: ['有給', '病欠', '慶弔', 'その他']
+        enum: ['有給', '病欠', '慶弔', 'その他', '午前休', '午後休', '早退']
     },
+    halfDay: { type: String, enum: ['AM', 'PM', null], default: null }, // 午前休・午後休フラグ
+    earlyLeaveTime: { type: String, default: null }, // 早退時刻 "HH:MM"
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
     days: { type: Number, required: true },
