@@ -348,7 +348,7 @@ router.get('/dashboard', requireLogin, async (req, res) => {
         <!-- ── Header ── -->
         <div class="db-header">
             <div class="db-header-left">
-                <div class="greeting">おはようございます、${escapeHtml(employee.name)} さん 👋</div>
+                <div class="greeting">お疲れ様です、${escapeHtml(employee.name)} さん 👋</div>
                 <div class="sub">${escapeHtml(employee.position || 'スタッフ')} &nbsp;|&nbsp; ${escapeHtml(employee.department || '')} &nbsp;|&nbsp; 従業員ID: ${escapeHtml(employee.employeeId || '')}</div>
             </div>
             <div class="db-header-right">

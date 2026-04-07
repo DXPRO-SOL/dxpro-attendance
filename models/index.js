@@ -224,6 +224,51 @@ const CompanyRuleSchema = new mongoose.Schema({
     }]
 }, { timestamps: true });
 
+// スキルシートスキーマ
+const SkillSheetSchema = new mongoose.Schema({
+    employeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee', required: true, unique: true },
+    userId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    // 基本情報
+    nameKana:   { type: String, default: '' },          // 氏名（カナ）
+    birthDate:  { type: String, default: '' },          // 生年月日
+    age:        { type: Number },
+    gender:     { type: String, default: '' },
+    nearestStation: { type: String, default: '' },      // 最寄り駅
+    experience: { type: Number, default: 0 },           // IT経験年数
+    // 自己PR・資格
+    selfPR:     { type: String, default: '' },
+    certifications: [{ name: String, acquiredDate: String }],
+    // スキル評価 (各項目: 0〜5 ★)
+    skills: {
+        languages:   [{ name: String, level: Number }],  // プログラミング言語
+        frameworks:  [{ name: String, level: Number }],  // FW/ライブラリ
+        databases:   [{ name: String, level: Number }],  // DB
+        infra:       [{ name: String, level: Number }],  // インフラ/クラウド
+        tools:       [{ name: String, level: Number }],  // ツール
+    },
+    // 職務経歴
+    projects: [{
+        periodFrom:   String,      // YYYY/MM
+        periodTo:     String,      // YYYY/MM or '現在'
+        projectName:  String,
+        client:       String,
+        industry:     String,
+        team:         Number,      // チーム人数
+        role:         String,      // 担当役割
+        description:  String,      // 案件概要
+        techStack:    String,      // 使用技術
+        tasks: {
+            requirement:  { type: Boolean, default: false },
+            basicDesign:  { type: Boolean, default: false },
+            detailDesign: { type: Boolean, default: false },
+            development:  { type: Boolean, default: false },
+            testing:      { type: Boolean, default: false },
+            operation:    { type: Boolean, default: false },
+            management:   { type: Boolean, default: false },
+        }
+    }]
+}, { timestamps: true });
+
 // 日報スキーマ
 const DailyReportSchema = new mongoose.Schema({
     employeeId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Employee', required: true },
@@ -269,6 +314,7 @@ const PretestSubmission   = mongoose.model('PretestSubmission', PretestSubmissio
 const LeaveBalance    = mongoose.model('LeaveBalance', LeaveBalanceSchema);
 const CompanyRule     = mongoose.model('CompanyRule', CompanyRuleSchema);
 const DailyReport     = mongoose.model('DailyReport', DailyReportSchema);
+const SkillSheet      = mongoose.model('SkillSheet', SkillSheetSchema);
 
 module.exports = {
     User,
@@ -285,5 +331,6 @@ module.exports = {
     PretestSubmission,
     LeaveBalance,
     CompanyRule,
-    DailyReport
+    DailyReport,
+    SkillSheet
 };
