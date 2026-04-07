@@ -834,8 +834,184 @@ router.get('/goals/admin-fix/:id', requireLogin, isAdmin, async (req, res) => {
     }
 });
 
-// 管理者向け: draft の一括修正
-router.get('/goals/admin-fix-drafts', requireLogin, isAdmin, async (req, res) => {
+// 管理者向け: draft 一括修正 — プレビュー（確認画面）
+router.get('/goals/admin-fix-drafts/preview', requireLogin, isAdmin, async (req, res) => {
+    try {
+        const drafts = await Goal.find({ status: 'draft', currentApprover: { $ne: null } })
+            .populate('ownerId', 'name')
+            .populate('currentApprover', 'name')
+            .lean();
+
+        const rows = drafts.map(g => {
+            const ownerName   = g.ownerName || (g.ownerId && g.ownerId.name) || '（不明）';
+            const approver    = g.currentApprover && g.currentApprover.name ? g.currentApprover.name : '（不明）';
+            const title       = escapeHtml(g.title || '（タイトルなし）');
+            const createdDate = g.createdAt ? new Date(g.createdAt).toLocaleDateString('ja-JP') : '―';
+            return `
+            <tr>
+                <td>${escapeHtml(ownerName)}</td>
+                <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${title}</td>
+                <td><span class="badge badge-muted" style="font-size:11px;">下書き（未提出）</span></td>
+                <td><i class="fa-solid fa-arrow-right" style="color:#94a3b8;font-size:11px;margin:0 4px;"></i><span class="badge badge-info" style="font-size:11px;">上長への提出済み</span></td>
+                <td>${escapeHtml(approver)}</td>
+                <td style="color:#64748b;font-size:12px;">${createdDate}</td>
+            </tr>`;
+        }).join('');
+
+        const html = `
+        <div style="max-width:900px">
+
+            <!-- ページタイトル説明 -->
+            <div class="card" style="margin-bottom:16px;border-left:4px solid #3b82f6;background:#eff6ff;">
+                <div style="display:flex;gap:14px;align-items:flex-start;">
+                    <i class="fa-solid fa-circle-info" style="font-size:22px;color:#3b82f6;margin-top:2px;flex-shrink:0;"></i>
+                    <div>
+                        <div style="font-weight:700;font-size:15px;color:#1e3a8a;margin-bottom:6px;">このページは何をするところ？</div>
+                        <p style="margin:0 0 8px;color:#1e40af;line-height:1.7;">
+                            システムの不具合により、<strong>社員が上長に提出したはずの目標が「提出済み」として登録されていない</strong>ケースがあります。<br>
+                            このツールは、そのような「本来は提出済みなのに下書き扱いになっている目標」を一括で修正し、正しく承認フローに乗せます。
+                        </p>
+                        <div style="background:#dbeafe;border-radius:6px;padding:10px 14px;font-size:13px;color:#1e40af;">
+                            <strong>📌 いつ使う？</strong>　目標管理画面で「提出したのに上長に届いていない」という報告があったとき。<br>
+                            <strong>📌 誰が使う？</strong>　システム管理者のみ（通常業務では使用しません）。
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 警告バナー -->
+            <div class="alert alert-warning" style="display:flex;gap:12px;align-items:flex-start;margin-bottom:16px;">
+                <i class="fa-solid fa-triangle-exclamation" style="font-size:22px;margin-top:2px;flex-shrink:0;color:#d97706;"></i>
+                <div>
+                    <div style="font-weight:700;font-size:15px;margin-bottom:6px;color:#92400e;">⚠️ 実行すると元に戻せません — 必ず内容を確認してから実行してください</div>
+                    <p style="margin:0;color:#78350f;line-height:1.7;">
+                        このボタンを押すと、下の一覧に表示されている目標データが<strong>すべて自動で書き換えられます。</strong><br>
+                        間違って実行しても取り消しはできません。内容を十分確認してから操作してください。
+                    </p>
+                </div>
+            </div>
+
+            <!-- 操作内容の説明（業務言語） -->
+            <div class="card" style="margin-bottom:16px;">
+                <div class="card-title">実行すると何が変わる？</div>
+                <div style="display:flex;flex-direction:column;gap:12px;">
+                    <div style="display:flex;gap:14px;align-items:flex-start;padding:12px;background:#f8fafc;border-radius:7px;border:1px solid #e2e8f0;">
+                        <div style="width:28px;height:28px;border-radius:50%;background:#dbeafe;color:#2563eb;display:flex;align-items:center;justify-content:center;font-weight:800;flex-shrink:0;">1</div>
+                        <div>
+                            <div style="font-weight:600;margin-bottom:3px;">目標の「状態」が「上長への提出済み」に変わります</div>
+                            <div style="color:#64748b;font-size:13px;">下書きのままになっていた目標が、正しく上長の承認待ちに切り替わります。上長の画面に「承認待ち」として表示されるようになります。</div>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:14px;align-items:flex-start;padding:12px;background:#f8fafc;border-radius:7px;border:1px solid #e2e8f0;">
+                        <div style="width:28px;height:28px;border-radius:50%;background:#dbeafe;color:#2563eb;display:flex;align-items:center;justify-content:center;font-weight:800;flex-shrink:0;">2</div>
+                        <div>
+                            <div style="font-weight:600;margin-bottom:3px;">目標の「担当者」が承認者（上長）の名前に書き換わります</div>
+                            <div style="color:#64748b;font-size:13px;">これはシステム上の処理です。下の一覧で「承認者（上長）」列に表示されている人物が新しい担当者として設定されます。</div>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:14px;align-items:flex-start;padding:12px;background:#f8fafc;border-radius:7px;border:1px solid #e2e8f0;">
+                        <div style="width:28px;height:28px;border-radius:50%;background:#dcfce7;color:#16a34a;display:flex;align-items:center;justify-content:center;font-weight:800;flex-shrink:0;">3</div>
+                        <div>
+                            <div style="font-weight:600;margin-bottom:3px;">「管理者が修正した」という記録が自動で残ります</div>
+                            <div style="color:#64748b;font-size:13px;">操作ログとして保存されるため、後から「いつ・誰が修正したか」を確認できます。</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 対象データプレビュー -->
+            <div class="card" style="margin-bottom:16px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                    <div class="card-title" style="margin:0;border:none;padding:0;">修正される目標の一覧</div>
+                    ${drafts.length === 0 ? '<span class="badge badge-success">修正対象なし</span>' : `<span class="badge badge-warning">${drafts.length} 件が変更されます</span>`}
+                </div>
+                <p style="color:#64748b;font-size:13px;margin:0 0 14px;">以下の目標が修正の対象です。内容に見覚えがない場合は<strong>実行せず</strong>、担当者に確認してください。</p>
+                ${drafts.length === 0 ? `
+                <div style="text-align:center;padding:36px;color:#64748b;">
+                    <i class="fa-solid fa-circle-check" style="font-size:36px;color:#22c55e;margin-bottom:10px;display:block;"></i>
+                    <div style="font-weight:600;font-size:15px;margin-bottom:4px;">修正が必要なデータはありません</div>
+                    <div style="font-size:13px;">全員の目標は正しく提出済みの状態になっています。このツールを実行する必要はありません。</div>
+                </div>
+                ` : `
+                <div style="overflow-x:auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>社員名</th>
+                                <th>目標タイトル</th>
+                                <th>現在の状態</th>
+                                <th>修正後の状態</th>
+                                <th>承認者（上長）</th>
+                                <th>作成日</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+                `}
+            </div>
+
+            <!-- 実行フォーム -->
+            ${drafts.length > 0 ? `
+            <div class="card" style="border:1.5px solid #fde68a;background:#fffbeb;">
+                <div class="card-title" style="color:#92400e;border-color:#fde68a;">
+                    <i class="fa-solid fa-triangle-exclamation" style="margin-right:6px;"></i>実行前の最終確認
+                </div>
+                <p style="color:#78350f;font-size:13.5px;margin:0 0 14px;line-height:1.7;">
+                    下の3つすべてにチェックを入れると、実行ボタンが有効になります。<br>
+                    <strong>内容を理解した上でチェックしてください。</strong>
+                </p>
+                <form method="POST" action="/goals/admin-fix-drafts" id="fix-form">
+                    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px;">
+                        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;background:#fff;border:1px solid #fde68a;border-radius:7px;padding:12px 14px;">
+                            <input type="checkbox" name="confirm1" required style="width:17px;height:17px;margin-top:1px;flex-shrink:0;accent-color:#d97706;">
+                            <span style="font-size:13.5px;">上の一覧に表示されている <strong>${drafts.length} 件の目標</strong> が書き換わることを確認しました</span>
+                        </label>
+                        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;background:#fff;border:1px solid #fde68a;border-radius:7px;padding:12px 14px;">
+                            <input type="checkbox" name="confirm2" required style="width:17px;height:17px;margin-top:1px;flex-shrink:0;accent-color:#d97706;">
+                            <span style="font-size:13.5px;">この操作は <strong>元に戻せない</strong> ことを理解しています</span>
+                        </label>
+                        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;background:#fff;border:1px solid #fde68a;border-radius:7px;padding:12px 14px;">
+                            <input type="checkbox" name="confirm3" required style="width:17px;height:17px;margin-top:1px;flex-shrink:0;accent-color:#d97706;">
+                            <span style="font-size:13.5px;">「提出済みなのに上長に届いていない」という報告があり、<strong>修正が必要な状況</strong>であることを確認しました</span>
+                        </label>
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center;">
+                        <a href="/admin" class="btn btn-ghost"><i class="fa-solid fa-arrow-left"></i> キャンセル（管理者メニューに戻る）</a>
+                        <button type="submit" class="btn btn-danger" id="exec-btn" disabled>
+                            <i class="fa-solid fa-triangle-exclamation"></i> ${drafts.length} 件を修正実行
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <script>
+            (function(){
+                const checkboxes = document.querySelectorAll('#fix-form input[type=checkbox]');
+                const btn = document.getElementById('exec-btn');
+                function update(){ btn.disabled = ![...checkboxes].every(c => c.checked); }
+                checkboxes.forEach(c => c.addEventListener('change', update));
+            })();
+            </script>
+            ` : `
+            <div style="display:flex;gap:10px;">
+                <a href="/admin" class="btn btn-ghost"><i class="fa-solid fa-arrow-left"></i> 管理者メニューに戻る</a>
+            </div>
+            `}
+        </div>
+        `;
+        renderPage(req, res, '目標データ修正 — 確認', '目標データ修正 — 実行前確認', html);
+    } catch (e) {
+        console.error('[admin-fix-drafts/preview] error', e);
+        res.status(500).send('Internal server error');
+    }
+});
+
+// 管理者向け: draft の一括修正（POST — チェック済みの場合のみ実行）
+router.post('/goals/admin-fix-drafts', requireLogin, isAdmin, async (req, res) => {
+    // 全チェックボックスが送信されていなければ弾く
+    if (!req.body.confirm1 || !req.body.confirm2 || !req.body.confirm3) {
+        return res.redirect('/goals/admin-fix-drafts/preview?error=confirm');
+    }
     try {
         const drafts = await Goal.find({ status: 'draft', currentApprover: { $ne: null } });
         let count = 0;
@@ -850,11 +1026,35 @@ router.get('/goals/admin-fix-drafts', requireLogin, isAdmin, async (req, res) =>
             await g.save();
             count++;
         }
-        res.send(`fixed ${count}`);
+        const html = `
+        <div style="max-width:480px">
+            <div class="card" style="border:1.5px solid #bbf7d0;background:#f0fdf4;text-align:center;">
+                <div style="font-size:48px;margin-bottom:12px;">✅</div>
+                <h3 style="margin:0 0 8px;color:#15803d;">修正が完了しました</h3>
+                <p style="color:#64748b;margin-bottom:20px;">目標データの一括修正が正常に完了しました。</p>
+                <div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:18px;margin-bottom:20px;">
+                    <div style="font-size:40px;font-weight:800;color:#16a34a;">${count}</div>
+                    <div style="font-size:14px;color:#15803d;margin-top:4px;">件 修正しました</div>
+                </div>
+                <p style="font-size:12px;color:#94a3b8;margin-bottom:20px;">
+                    実行日時: ${new Date().toLocaleString('ja-JP')}<br>
+                    操作者: ${escapeHtml(req.session.username || '不明')}<br>
+                    記録: historyフィールドに admin-fix-batch として記録済み
+                </p>
+                <a href="/admin" class="btn btn-ghost"><i class="fa-solid fa-arrow-left"></i> 管理者メニューに戻る</a>
+            </div>
+        </div>
+        `;
+        renderPage(req, res, '目標データ修正 — 完了', '目標データ修正 — 完了', html);
     } catch (e) {
         console.error('[admin-fix-drafts] error', e);
         res.status(500).send('Internal server error');
     }
+});
+
+// 管理者向け: draft の一括修正（GET — 直接アクセスはプレビューにリダイレクト）
+router.get('/goals/admin-fix-drafts', requireLogin, isAdmin, async (req, res) => {
+    res.redirect('/goals/admin-fix-drafts/preview');
 });
 
 // 管理者向け: createdBy が欠落しているデータの補完

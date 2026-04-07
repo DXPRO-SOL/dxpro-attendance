@@ -56,9 +56,9 @@ router.get('/admin', requireLogin, isAdmin, async (req, res) => {
                         <div class="admin-desc">部門や個人ごとの勤怠実績を確認できます。</div>
                     </a>
 
-                    <a class="admin-card" href="/goals/admin-fix-drafts">
-                        <div class="admin-head"><div class="admin-icon">🛠️</div><div class="admin-title">目標データ修正</div></div>
-                        <div class="admin-desc">古い目標データの整備・一括修正ツール。</div>
+                    <a class="admin-card" href="/goals/admin-fix-drafts/preview" style="border:1.5px solid #fde68a;background:linear-gradient(180deg,#fffdf5,#fffbeb);">
+                        <div class="admin-head"><div class="admin-icon" style="background:linear-gradient(90deg,#fef3c7,#fde68a);color:#92400e;">⚠️</div><div class="admin-title" style="color:#92400e;">目標データ修正</div></div>
+                        <div class="admin-desc" style="color:#78350f;">データ不整合の一括修正ツール。<strong>実行前に必ず内容を確認してください。</strong></div>
                     </a>
 
                     <a class="admin-card" href="/admin/approval-requests">
@@ -90,65 +90,83 @@ router.get('/admin', requireLogin, isAdmin, async (req, res) => {
 
 // 휴가 승인 처리
 router.get('/admin/register-employee', requireLogin, isAdmin, (req, res) => {
-    res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>従業員登録</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-            <link rel="stylesheet" href="/styles.css">
-            <script>
-                function updateClock() {
-                    const now = new Date();
-                    document.getElementById('current-time').textContent = 
-                        '現在時刻: ' + now.toLocaleTimeString('ja-JP');
-                }
-                setInterval(updateClock, 1000);
-                window.onload = updateClock;
-            </script>
-        </head>
-        <body>
-            <div class="container">
-                <div id="current-time" class="clock"></div>
-                <h2>従業員登録</h2>
-                ${req.query.success ? '<p class="success">従業員登録が完了しました</p>' : ''}
-                ${req.query.error ? '<p class="error">従業員登録中にエラーが発生しました</p>' : ''}
+    const html = `
+        ${req.query.success ? `
+        <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;gap:10px;color:#166534;">
+            <i class="fa-solid fa-circle-check"></i>
+            <span>従業員登録が完了しました。</span>
+        </div>` : ''}
+        ${req.query.error ? `
+        <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;gap:10px;color:#991b1b;">
+            <i class="fa-solid fa-circle-exclamation"></i>
+            <span>従業員登録中にエラーが発生しました。再度お試しください。</span>
+        </div>` : ''}
+
+        <div style="max-width:600px;">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:28px 32px;">
                 <form action="/admin/register-employee" method="POST">
-                    <div class="form-group">
-                        <label for="username">ユーザー名:</label>
-                        <input type="text" id="username" name="username" required>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                        <div style="grid-column:1/3;">
+                            <label style="display:block;font-size:12.5px;font-weight:600;color:#475569;margin-bottom:5px;">ユーザー名 <span style="color:#ef4444;">*</span></label>
+                            <input type="text" name="username" required
+                                style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px;box-sizing:border-box;outline:none;transition:border .15s;"
+                                onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#cbd5e1'">
+                        </div>
+                        <div style="grid-column:1/3;">
+                            <label style="display:block;font-size:12.5px;font-weight:600;color:#475569;margin-bottom:5px;">パスワード <span style="color:#ef4444;">*</span></label>
+                            <input type="password" name="password" required
+                                style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px;box-sizing:border-box;outline:none;transition:border .15s;"
+                                onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#cbd5e1'">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:12.5px;font-weight:600;color:#475569;margin-bottom:5px;">従業員ID <span style="color:#ef4444;">*</span></label>
+                            <input type="text" name="employeeId" required
+                                style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px;box-sizing:border-box;outline:none;transition:border .15s;"
+                                onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#cbd5e1'">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:12.5px;font-weight:600;color:#475569;margin-bottom:5px;">氏名 <span style="color:#ef4444;">*</span></label>
+                            <input type="text" name="name" required
+                                style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px;box-sizing:border-box;outline:none;transition:border .15s;"
+                                onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#cbd5e1'">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:12.5px;font-weight:600;color:#475569;margin-bottom:5px;">部署 <span style="color:#ef4444;">*</span></label>
+                            <input type="text" name="department" required
+                                style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px;box-sizing:border-box;outline:none;transition:border .15s;"
+                                onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#cbd5e1'">
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:12.5px;font-weight:600;color:#475569;margin-bottom:5px;">職位 <span style="color:#ef4444;">*</span></label>
+                            <input type="text" name="position" required
+                                style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px;box-sizing:border-box;outline:none;transition:border .15s;"
+                                onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#cbd5e1'">
+                        </div>
+                        <div style="grid-column:1/3;">
+                            <label style="display:block;font-size:12.5px;font-weight:600;color:#475569;margin-bottom:5px;">入社日 <span style="color:#ef4444;">*</span></label>
+                            <input type="date" name="joinDate" required
+                                style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px;box-sizing:border-box;outline:none;transition:border .15s;"
+                                onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#cbd5e1'">
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="password">パスワード:</label>
-                        <input type="password" id="password" name="password" required>
+
+                    <div style="margin-top:24px;display:flex;gap:10px;">
+                        <button type="submit"
+                            style="background:#3b82f6;color:#fff;border:none;padding:10px 24px;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;transition:background .15s;"
+                            onmouseover="this.style.background='#2563eb'" onmouseout="this.style.background='#3b82f6'">
+                            <i class="fa-solid fa-user-plus" style="margin-right:6px;"></i>登録する
+                        </button>
+                        <a href="/admin"
+                            style="background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;padding:10px 20px;border-radius:6px;font-size:14px;font-weight:500;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:background .15s;"
+                            onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
+                            <i class="fa-solid fa-arrow-left"></i>管理者メニューに戻る
+                        </a>
                     </div>
-                    <div class="form-group">
-                        <label for="employeeId">従業員ID:</label>
-                        <input type="text" id="employeeId" name="employeeId" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="name">氏名:</label>
-                        <input type="text" id="name" name="name" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="department">部署:</label>
-                        <input type="text" id="department" name="department" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="position">職位:</label>
-                        <input type="text" id="position" name="position" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="joinDate">入社日:</label>
-                        <input type="date" id="joinDate" name="joinDate" required>
-                    </div>
-                    <button type="submit" class="btn">登録</button>
                 </form>
-                <a href="/attendance-main" class="btn">ダッシュボードに戻る</a>
             </div>
-        </body>
-        </html>
-    `);
+        </div>
+    `;
+    renderPage(req, res, '従業員登録', '従業員登録', html);
 });
 
 // 管理者従業員登録処理
@@ -624,176 +642,113 @@ router.get('/admin/print-attendance', requireLogin, isAdmin, async (req, res) =>
 // 一般ユーザー月別勤怠照会ページ
 router.get('/admin/approval-requests', requireLogin, isAdmin, async (req, res) => {
     try {
-        const requests = await ApprovalRequest.find({ 
-            status: { $in: ['pending', 'returned'] } // 반려된 요청도 표시
+        const requests = await ApprovalRequest.find({
+            status: { $in: ['pending', 'returned'] }
         })
-            .populate('userId', 'username') // ユーザー名を取得
-            .populate('processedBy', 'username') // 処理者名を取得
+            .populate('userId', 'username')
+            .populate('processedBy', 'username')
             .sort({ requestedAt: -1 });
-            
-        res.send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>承認リクエスト一覧</title>
-                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                <link rel="stylesheet" href="/styles.css">
-                <style>
-                    .request-card {
-                        background: white;
-                        border-radius: 8px;
-                        padding: 15px;
-                        margin-bottom: 15px;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                    }
-                    .request-header {
-                        display: flex;
-                        justify-content: space-between;
-                        margin-bottom: 10px;
-                    }
-                    .request-status {
-                        padding: 5px 10px;
-                        border-radius: 4px;
-                        font-weight: bold;
-                    }
-                    .status-pending {
-                        background: #fff3cd;
-                        color: #856404;
-                    }
-                    .status-approved {
-                        background: #d4edda;
-                        color: #155724;
-                    }
-                    .status-returned {
-                        background: #f8d7da;
-                        color: #721c24;
-                    }
-                    .request-actions {
-                        margin-top: 10px;
-                        display: flex;
-                        gap: 10px;
-                    }
-                    .return-reason {
-                        margin-top: 10px;
-                        padding: 10px;
-                        background: #f8f9fa;
-                        border-radius: 4px;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <h2>承認リクエスト一覧</h2>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>従業員ID</th>
-                                <th>氏名</th>
-                                <th>年月</th>
-                                <th>リクエスト日</th>
-                                <th>状態</th>
-                                <th>操作</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${requests.map(req => `
-                                <tr>
-                                    <td>${req.employeeId}</td>
-                                    <td>${req.userId.username}</td>
-                                    <td>${req.year}年${req.month}月</td>
-                                    <td>${req.requestedAt.toLocaleDateString('ja-JP')}</td>
-                                    <td>
-                                        ${req.status === 'pending' ? '承認待ち' : 
-                                          req.status === 'returned' ? '差し戻し' : ''}
-                                        ${req.status === 'returned' && req.returnReason ? `
-                                            <div class="return-reason">
-                                                <strong>差し戻し理由:</strong> ${req.returnReason}
-                                            </div>
-                                        ` : ''}
-                                    </td>
-                                    <td>
-                                    ${req.status === 'pending' ? `
-                                        <a href="/admin/approve-request/${req._id}" class="btn">承認</a>
-                                        <button onclick="showReturnModal('${req._id}')" class="btn reject-btn">差し戻し</button>
-                                    ` : ''}                                        
-                                        <a href="/admin/view-attendance/${req.userId._id}/${req.year}/${req.month}" 
-                                           class="btn view-btn">確認</a>
-                                    </td>
-                                </tr>
-                            `).join('')}
-                            ${requests.length === 0 ? `
-                                <tr>
-                                    <td colspan="6">承認待ちのリクエストがありません</td>
-                                </tr>
-                            ` : ''}
-                        </tbody>
-                    </table>
-                    <div id="returnModal" class="modal" style="display:none;">
-                        <div class="modal-content">
-                            <h3>差し戻し理由入力</h3>
-                            <form id="returnForm" method="POST" action="/admin/return-request">
-                                <input type="hidden" id="requestId" name="requestId">
-                                <div class="form-group">
-                                    <label for="returnReason">差し戻し理由:</label>
-                                    <textarea id="returnReason" name="returnReason" required class="form-control" rows="4"></textarea>
-                                </div>
-                                <button type="submit" class="btn reject-btn">差し戻し</button>
-                                <button type="button" onclick="hideReturnModal()" class="btn cancel-btn">キャンセル</button>
-                            </form>
-                        </div>
-                    </div>
-                    <script>
-                        function showReturnModal(requestId) {
-                            document.getElementById('requestId').value = requestId;
-                            document.getElementById('returnModal').style.display = 'block';
-                        }
-                        
-                        function hideReturnModal() {
-                            document.getElementById('returnModal').style.display = 'none';
-                            document.getElementById('returnForm').reset();
-                        }
-                        
-                        window.onclick = function(event) {
-                            const modal = document.getElementById('returnModal');
-                            if (event.target === modal) {
-                                hideReturnModal();
-                            }
-                        }
 
-                        document.getElementById('returnForm').addEventListener('submit', function(e) {
-                            e.preventDefault();
-                            const formData = new FormData(this);
-                            
-                            fetch('/admin/return-request', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/x-www-form-urlencoded',
-                                },
-                                body: new URLSearchParams(formData).toString()
-                            })
-                            .then(response => {
-                                if (response.redirected) {
-                                    window.location.href = response.url;
-                                } else {
-                                    return response.json();
-                                }
-                            })
-                            .then(data => {
-                                if (data && !data.success) {
-                                    alert('エラー: ' + data.message);
-                                }
-                            })
-                            .catch(error => {
-                                console.error('Error:', error);
-                                alert('処理中にエラーが発生しました');
-                            });
-                        });
-                    </script>
-                    <a href="/attendance-main" class="btn">ダッシュボードに戻る</a>
-                </div>
-            </body>
-            </html>
-        `);
+        const rows = requests.map(r => `
+            <tr>
+                <td>${escapeHtml(r.employeeId || '')}</td>
+                <td>${escapeHtml(r.userId?.username || '-')}</td>
+                <td>${r.year}年${r.month}月</td>
+                <td>${new Date(r.requestedAt).toLocaleDateString('ja-JP')}</td>
+                <td>
+                    ${r.status === 'pending'
+                        ? '<span class="badge badge-warning">承認待ち</span>'
+                        : '<span class="badge badge-danger">差し戻し</span>'}
+                    ${r.status === 'returned' && r.returnReason
+                        ? `<div style="font-size:12px;color:#6b7280;margin-top:4px">📋 ${escapeHtml(r.returnReason)}</div>`
+                        : ''}
+                </td>
+                <td style="display:flex;gap:6px;flex-wrap:wrap">
+                    ${r.status === 'pending' ? `
+                        <a href="/admin/approve-request/${r._id}" class="btn btn-success btn-sm">✅ 承認</a>
+                        <button onclick="openReturnModal('${r._id}')" class="btn btn-danger btn-sm">↩ 差し戻し</button>
+                    ` : ''}
+                    <a href="/admin/view-attendance/${r.userId?._id}/${r.year}/${r.month}" class="btn btn-ghost btn-sm">📋 確認</a>
+                </td>
+            </tr>
+        `).join('');
+
+        const html = `
+        <style>
+            .modal-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;align-items:center;justify-content:center;}
+            .modal-backdrop.open{display:flex;}
+            .modal-box{background:#fff;border-radius:14px;padding:28px;width:100%;max-width:460px;box-shadow:0 8px 32px rgba(0,0,0,.18);}
+            .modal-box h3{margin:0 0 16px;font-size:17px;color:#0b2540;}
+        </style>
+
+        <h2 style="margin-bottom:4px">🔔 承認リクエスト一覧</h2>
+        <p style="color:#6b7280;margin-bottom:20px">未処理の勤怠承認リクエストを確認・処理します。</p>
+
+        <div class="card" style="padding:0;overflow:hidden">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>従業員ID</th>
+                        <th>ユーザー名</th>
+                        <th>年月</th>
+                        <th>申請日</th>
+                        <th>状態</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows || `<tr><td colspan="6" style="text-align:center;color:#6b7280;padding:32px">承認待ちのリクエストがありません</td></tr>`}
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-top:16px">
+            <a href="/admin" class="btn btn-ghost">← 管理者メニューに戻る</a>
+        </div>
+
+        <!-- 差し戻しモーダル -->
+        <div class="modal-backdrop" id="returnModal">
+            <div class="modal-box">
+                <h3>↩ 差し戻し理由</h3>
+                <form id="returnForm">
+                    <input type="hidden" id="returnRequestId">
+                    <div class="form-group">
+                        <label>差し戻し理由</label>
+                        <textarea id="returnReason" class="form-control" rows="4" placeholder="理由を入力してください" required></textarea>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-top:8px">
+                        <button type="submit" class="btn btn-danger">差し戻す</button>
+                        <button type="button" onclick="closeReturnModal()" class="btn btn-ghost">キャンセル</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script>
+        function openReturnModal(id){
+            document.getElementById('returnRequestId').value = id;
+            document.getElementById('returnReason').value = '';
+            document.getElementById('returnModal').classList.add('open');
+        }
+        function closeReturnModal(){
+            document.getElementById('returnModal').classList.remove('open');
+        }
+        document.getElementById('returnModal').addEventListener('click', function(e){
+            if(e.target === this) closeReturnModal();
+        });
+        document.getElementById('returnForm').addEventListener('submit', function(e){
+            e.preventDefault();
+            const id = document.getElementById('returnRequestId').value;
+            const reason = document.getElementById('returnReason').value;
+            fetch('/admin/return-request', {
+                method: 'POST',
+                headers: {'Content-Type':'application/x-www-form-urlencoded'},
+                body: 'requestId=' + encodeURIComponent(id) + '&returnReason=' + encodeURIComponent(reason)
+            }).then(r => { if(r.redirected) window.location.href = r.url; else location.reload(); })
+              .catch(() => alert('エラーが発生しました'));
+        });
+        </script>
+        `;
+        renderPage(req, res, '承認リクエスト一覧', '承認リクエスト一覧', html);
     } catch (error) {
         console.error(error);
         res.status(500).send('承認リクエスト一覧取得中にエラーが発生しました');
@@ -1107,55 +1062,54 @@ router.get('/admin/view-attendance/:userId/:year/:month', requireLogin, isAdmin,
             date: { $gte: startDate, $lte: endDate }
         }).sort({ date: 1 });
 
-        res.send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>勤怠確認 - ${employee.name}</title>
-                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                <link rel="stylesheet" href="/styles.css">
-            </head>
-            <body>
-                <div class="container">
-                    <h2>${employee.name}さんの${year}年${month}月勤怠記録</h2>
-                    <p>社員番号: ${employee.employeeId} | 部署: ${employee.department}</p>
-                    
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>日付</th>
-                                <th>出勤</th>
-                                <th>退勤</th>
-                                <th>勤務時間</th>
-                                <th>状態</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${attendances.map(att => `
-                                <tr>
-
-                                    <td>${moment(att.date).tz('Asia/Tokyo').format('YYYY/MM/DD')}</td>
-                                    <td>${att.checkIn ? moment(att.checkIn).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}</td>
-                                    <td>${att.checkOut ? moment(att.checkOut).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}</td>
-                                    <td>${att.workingHours || '-'}時間</td>
-                                    <td>${att.status}</td>                                    
-                                </tr>
-                            `).join('')}
-                            ${attendances.length === 0 ? `
-                                <tr>
-                                    <td colspan="5">該当月の勤怠記録がありません</td>
-                                </tr>
-                            ` : ''}
-                        </tbody>
-                    </table>
-                    
-                    <div class="actions">
-                        <a href="/admin/approve-request" class="btn">承認リクエスト一覧に戻る</a>
-                    </div>
+        const statusBadge = s => {
+            const map = { '正常':'#22c55e', '遅刻':'#f59e0b', '早退':'#f97316', '欠勤':'#ef4444' };
+            const c = map[s] || '#94a3b8';
+            return `<span style="background:${c}20;color:${c};border:1px solid ${c}40;padding:2px 8px;border-radius:4px;font-size:11.5px;font-weight:600;">${s||'正常'}</span>`;
+        };
+        const html = `
+            <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:12px 20px;display:flex;gap:24px;">
+                    <span style="font-size:13px;color:#64748b;">社員番号：<strong style="color:#1e293b;">${employee.employeeId}</strong></span>
+                    <span style="font-size:13px;color:#64748b;">部署：<strong style="color:#1e293b;">${employee.department||'-'}</strong></span>
+                    <span style="font-size:13px;color:#64748b;">対象月：<strong style="color:#1e293b;">${year}年${month}月</strong></span>
                 </div>
-            </body>
-            </html>
-        `);
+            </div>
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+                <table style="width:100%;border-collapse:collapse;font-size:13.5px;">
+                    <thead>
+                        <tr style="background:#f8fafc;border-bottom:1px solid #e2e8f0;">
+                            <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:700;color:#64748b;">日付</th>
+                            <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:700;color:#64748b;">出勤</th>
+                            <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:700;color:#64748b;">退勤</th>
+                            <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:700;color:#64748b;">勤務時間</th>
+                            <th style="padding:10px 16px;text-align:left;font-size:12px;font-weight:700;color:#64748b;">状態</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${attendances.length === 0 ? `
+                            <tr><td colspan="5" style="padding:32px;text-align:center;color:#94a3b8;">該当月の勤怠記録がありません</td></tr>
+                        ` : attendances.map((att, i) => `
+                            <tr style="border-bottom:1px solid #f1f5f9;${i%2===1?'background:#fafafa':''}">
+                                <td style="padding:10px 16px;font-weight:500;">${moment(att.date).tz('Asia/Tokyo').format('YYYY/MM/DD（ddd）')}</td>
+                                <td style="padding:10px 16px;">${att.checkIn ? moment(att.checkIn).tz('Asia/Tokyo').format('HH:mm') : '<span style="color:#cbd5e1;">—</span>'}</td>
+                                <td style="padding:10px 16px;">${att.checkOut ? moment(att.checkOut).tz('Asia/Tokyo').format('HH:mm') : '<span style="color:#cbd5e1;">—</span>'}</td>
+                                <td style="padding:10px 16px;">${att.workingHours != null ? att.workingHours+'h' : '<span style="color:#cbd5e1;">—</span>'}</td>
+                                <td style="padding:10px 16px;">${statusBadge(att.status)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <div style="margin-top:16px;">
+                <a href="/admin/approval-requests"
+                    style="background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;padding:9px 18px;border-radius:6px;font-size:13.5px;font-weight:500;text-decoration:none;display:inline-flex;align-items:center;gap:6px;"
+                    onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
+                    <i class="fa-solid fa-arrow-left"></i>承認リクエスト一覧に戻る
+                </a>
+            </div>
+        `;
+        renderPage(req, res, `${employee.name}さんの勤怠記録`, `${employee.name}さんの${year}年${month}月勤怠記録`, html);
     } catch (error) {
         console.error(error);
         res.status(500).send('勤怠確認中にエラーが発生しました');
