@@ -8,7 +8,7 @@ const { User, Employee, Attendance, ApprovalRequest, LeaveRequest, PayrollSlip, 
 const { requireLogin, isAdmin } = require('../middleware/auth');
 const { sendMail } = require('../config/mailer');
 const { escapeHtml } = require('../lib/helpers');
-const { renderPage, buildPageShell } = require('../lib/renderPage');
+const { renderPage, buildPageShell, pageFooter } = require('../lib/renderPage');
 
 router.get('/admin', requireLogin, isAdmin, async (req, res) => {
         const username = req.session.user?.username || req.session.username || '管理者';
@@ -347,7 +347,7 @@ function approveAttendance(employeeId, year, month) {
     .catch(() => alert('通信エラーが発生しました'));
 }
 </script>
-</div></body></html>`);
+${pageFooter()}`);
     } catch (error) {
         console.error('error:', error);
         res.status(500).send(`<div style="padding:40px;font-family:sans-serif"><h2>エラー</h2><p>データ照会中にエラーが発生しました</p><a href="/admin">管理画面に戻る</a></div>`);

@@ -6,7 +6,7 @@ const moment = require('moment-timezone');
 const { User, Employee, Attendance, ApprovalRequest } = require('../models');
 const { requireLogin } = require('../middleware/auth');
 const { escapeHtml } = require('../lib/helpers');
-const { buildPageShell } = require('../lib/renderPage');
+const { buildPageShell, pageFooter } = require('../lib/renderPage');
 
 router.get('/attendance-main', requireLogin, async (req, res) => {
     try {
@@ -386,7 +386,7 @@ router.get('/edit-attendance/:id', requireLogin, async (req, res) => {
     <p style="color:#6b7280;margin-bottom:20px">この勤怠記録は<strong>${attendance.isConfirmed ? '承認済み' : '承認リクエスト中'}</strong>のため編集できません。</p>
     <a href="/my-monthly-attendance?year=${year}&month=${month}" class="btn btn-ghost">勤怠一覧に戻る</a>
 </div>
-</div></body></html>`);
+${pageFooter()}`);
         }
 
         function formatDateTimeForInput(date) {
@@ -492,7 +492,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
-</div></body></html>`);
+${pageFooter()}`);
     } catch (error) {
         console.error(error);
         res.redirect('/attendance-main');
@@ -665,7 +665,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
-</div></body></html>`);
+${pageFooter()}`);
 });
 
 // 勤怠記録削除
@@ -1501,7 +1501,7 @@ function requestApproval(year, month) {
     .catch(() => alert('通信エラーが発生しました'));
 }
 </script>
-</div></body></html>`);
+${pageFooter()}`);
     } catch (error) {
         console.error(error);
         res.status(500).send('月別勤怠照会中にエラーが発生しました');

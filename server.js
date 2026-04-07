@@ -36,6 +36,7 @@ app.use('/', require('./routes/goals'));
 app.use('/', require('./routes/board'));
 app.use('/', require('./routes/pretest'));
 app.use('/', require('./routes/rules'));
+app.use('/', require('./routes/chatbot'));
 
 // デフォルト管理者アカウント作成
 async function createAdminUser() {
