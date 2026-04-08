@@ -4,6 +4,17 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const app = express();
 
+// ── プロセスクラッシュ防止（Render本番環境用） ─────────────────────
+process.on('uncaughtException', (err) => {
+    console.error('[uncaughtException] プロセスクラッシュを防止:', err.message);
+    console.error(err.stack);
+    // プロセスを終了させない（Renderが再起動ループに入るのを防ぐ）
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[unhandledRejection] 未処理のPromise拒否:', reason);
+    // プロセスを終了させない
+});
+
 // DB接続
 require('./config/db');
 
@@ -35,6 +46,11 @@ app.get('/debug-session', (req, res) => {
     });
 });
 
+// ── ヘルスチェック（Renderの生存確認用） ─────────────────────────
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 // ルート登録
 app.use('/', require('./routes/auth'));
 app.use('/', require('./routes/attendance'));
@@ -49,6 +65,20 @@ app.use('/', require('./routes/rules'));
 app.use('/', require('./routes/chatbot'));
 app.use('/', require('./routes/skillsheet'));
 app.use('/', require('./routes/notifications').router);
+
+// ── グローバルエラーハンドラー（500エラーでプロセスをクラッシュさせない） ─
+app.use((err, req, res, next) => {
+    console.error('[GlobalErrorHandler]', req.method, req.path, '→', err.message);
+    console.error(err.stack);
+    if (res.headersSent) return next(err);
+    res.status(500).send(`
+        <html><body style="font-family:sans-serif;padding:40px;text-align:center">
+            <h2>⚠️ サーバーエラーが発生しました</h2>
+            <p style="color:#666">しばらくしてから再度お試しください。</p>
+            <a href="/dashboard" style="color:#2563eb">ダッシュボードに戻る</a>
+        </body></html>
+    `);
+});
 
 // デフォルト管理者アカウント作成
 async function createAdminUser() {
