@@ -10,6 +10,7 @@ const { requireLogin, isAdmin } = require('../middleware/auth');
 const { sendMail } = require('../config/mailer');
 const { escapeHtml } = require('../lib/helpers');
 const { renderPage, buildPageShell, pageFooter } = require('../lib/renderPage');
+const { createNotification } = require('./notifications');
 
 router.get('/admin', requireLogin, isAdmin, async (req, res) => {
         const username = req.session.user?.username || req.session.username || '管理者';
@@ -784,6 +785,15 @@ router.post('/admin/return-request', requireLogin, isAdmin, async (req, res) => 
         request.processedAt = new Date();
         request.processedBy = req.session.userId;
         await request.save();
+
+        // 勤怠差し戻し通知
+        await createNotification({
+            userId: request.userId,
+            type: 'attendance_returned',
+            title: `↩ 勤怠記録が差し戻されました`,
+            body: `${request.year}年${request.month}月の勤怠${returnReason ? ' - ' + returnReason.substring(0,60) : ''}`,
+            link: '/attendance',
+        });
         res.redirect('/admin/approval-requests');
     } catch (error) {
         console.error('差し戻し処理エラー:', error);
@@ -827,7 +837,16 @@ router.get('/admin/approve-request/:id', requireLogin, isAdmin, async (req, res)
         request.processedAt = new Date();
         request.processedBy = req.session.userId;
         await request.save();
-        
+
+        // 勤怠承認通知
+        await createNotification({
+            userId: request.userId,
+            type: 'attendance_approved',
+            title: `✅ 勤怠記録が承認されました`,
+            body: `${request.year}年${request.month}月の勤怠が承認されました`,
+            link: '/attendance',
+        });
+
         // 승인 완료 후 이메일 발송 로직 추가
         try {
             // 1. 사용자 정보 조회

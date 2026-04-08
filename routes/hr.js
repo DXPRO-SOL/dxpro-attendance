@@ -10,6 +10,31 @@ const { User, Employee, Attendance, PayrollSlip, PayrollRun, LeaveRequest, Goal,
 const { requireLogin, isAdmin } = require('../middleware/auth');
 const { escapeHtml } = require('../lib/helpers');
 const { renderPage } = require('../lib/renderPage');
+const { createNotification } = require('./notifications');
+
+// ─── 日報スタンプ定義（一覧・詳細・APIで共通使用）────────────────
+const STAMPS = [
+    { key: 'like',       emoji: '👍',  label: 'いいね'     },
+    { key: 'great',      emoji: '✨',  label: 'すごい'     },
+    { key: 'nice',       emoji: '👏',  label: 'ナイス'     },
+    { key: 'hard',       emoji: '💪',  label: 'お疲れ様'   },
+    { key: 'check',      emoji: '✅',  label: '確認OK'     },
+    { key: 'idea',       emoji: '💡',  label: 'なるほど'   },
+    { key: 'smile',      emoji: '😊',  label: 'ありがとう' },
+    { key: 'love',       emoji: '❤️',  label: '最高'       },
+    { key: 'clap',       emoji: '🎉',  label: 'おめでとう' },
+    { key: 'fire',       emoji: '🔥',  label: '熱い！'     },
+    { key: 'eyes',       emoji: '👀',  label: '見てるよ'   },
+    { key: 'think',      emoji: '🤔',  label: '考え中'     },
+    { key: 'pray',       emoji: '🙏',  label: 'よろしく'   },
+    { key: 'muscle',     emoji: '💯',  label: '満点'       },
+    { key: 'star',       emoji: '⭐',  label: 'スター'     },
+    { key: 'rocket',     emoji: '🚀',  label: '爆速'       },
+    { key: 'cry',        emoji: '😢',  label: '大変だね'   },
+    { key: 'support',    emoji: '🤝',  label: 'サポート'   },
+];
+const STAMP_KEYS = STAMPS.map(s => s.key);
+const STAMP_MAP  = Object.fromEntries(STAMPS.map(s => [s.key, s]));
 
 // ファイルアップロード設定
 const storage = multer.diskStorage({
@@ -709,6 +734,22 @@ router.post('/hr/payroll/admin/add', requireLogin, async (req, res) => {
         }
     });
 
+    // 給与明細発行通知（issued / locked / paid のとき）
+    const newStatus = req.body.status || 'draft';
+    if (['issued', 'locked', 'paid'].includes(newStatus)) {
+        const targetEmp = await Employee.findOne({ employeeId });
+        if (targetEmp && targetEmp.userId) {
+            const [y, m] = payMonth.split('-');
+            await createNotification({
+                userId: targetEmp.userId,
+                type: 'payslip_issued',
+                title: `💴 給与明細が発行されました`,
+                body: `${y}年${m}月分の給与明細が確認できます`,
+                link: '/hr/payroll',
+            });
+        }
+    }
+
     res.redirect('/hr/payroll/admin');
 });
 
@@ -861,6 +902,7 @@ router.post('/hr/payroll/admin/edit/:slipId', requireLogin, async (req, res) => 
     slip.baseSalary = Number(req.body.baseSalary || 0);
     slip.gross = Number(req.body.gross || 0);
     slip.net = Number(req.body.net || 0);
+    const prevStatus = slip.status;
     slip.status = req.body.status || slip.status;
 
     slip.allowances = Object.entries(req.body.allowances || {}).map(([name, amount]) => ({
@@ -881,6 +923,24 @@ router.post('/hr/payroll/admin/edit/:slipId', requireLogin, async (req, res) => 
     };
 
     await slip.save();
+
+    // draft → issued/locked/paid に変更されたとき通知
+    const isNowIssued = ['issued', 'locked', 'paid'].includes(slip.status);
+    const wasNotIssued = !['issued', 'locked', 'paid'].includes(prevStatus);
+    if (isNowIssued && wasNotIssued && slip.employeeId && slip.employeeId.userId) {
+        const run = slip.runId ? await require('../models').PayrollRun.findById(slip.runId).lean() : null;
+        const label = run
+            ? `${new Date(run.periodFrom).getFullYear()}年${new Date(run.periodFrom).getMonth()+1}月分`
+            : '最新';
+        await createNotification({
+            userId: slip.employeeId.userId,
+            type: 'payslip_issued',
+            title: `💴 給与明細が発行されました`,
+            body: `${label}の給与明細が確認できます`,
+            link: '/hr/payroll',
+        });
+    }
+
     res.redirect(`/hr/payroll/${slip.employeeId._id}`);
 });
 
@@ -1575,22 +1635,40 @@ router.get('/hr/daily-report', requireLogin, async (req, res) => {
                 .report-card{background:#fff;border-radius:14px;box-shadow:0 4px 14px rgba(11,36,48,.06);margin-bottom:14px;padding:18px 22px}
                 .report-meta{display:flex;gap:14px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
                 .report-date{font-weight:700;font-size:16px;color:#0b2540}
-                .report-name{padding:3px 12px;background:#e8effc;color:#0b5fff;border-radius:999px;font-size:13px;font-weight:600}
+                .report-name{padding:3px 12px;background:#eff6ff;color:#2563eb;border-radius:999px;font-size:13px;font-weight:700}
                 .report-dept{font-size:13px;color:#6b7280}
-                .section-label{font-size:12px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
-                .section-body{font-size:14px;color:#374151;line-height:1.7;white-space:pre-wrap;margin-bottom:10px}
-                .comment-badge{background:#f3f4f6;border-radius:999px;padding:2px 10px;font-size:12px;color:#374151;font-weight:600}
+                .section-label{font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+                .section-body{font-size:13.5px;color:#374151;line-height:1.7;margin-bottom:10px}
                 .filters-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;align-items:flex-end}
                 .filters-row label{font-size:13px;font-weight:600;color:#374151}
                 .filters-row select,.filters-row input[type=date]{padding:8px;border-radius:8px;border:1px solid #e2e8f0;font-size:13px}
                 .pagination{display:flex;gap:6px;justify-content:center;margin-top:18px}
                 .pagination a{padding:7px 14px;border-radius:8px;background:#fff;border:1px solid #e2e8f0;text-decoration:none;color:#374151;font-weight:600;font-size:13px}
-                .pagination a.active,.pagination a:hover{background:#0b5fff;color:#fff;border-color:#0b5fff}
+                .pagination a.active,.pagination a:hover{background:#2563eb;color:#fff;border-color:#2563eb}
+                /* カード内スタンプ */
+                .card-reactions{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid #f1f5f9}
+                .cr-btn{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:999px;border:1.5px solid #e2e8f0;background:#f8fafc;font-size:12.5px;cursor:pointer;color:#475569;font-family:inherit;transition:all .12s;white-space:nowrap}
+                .cr-btn:hover{background:#eff6ff;border-color:#bfdbfe;color:#2563eb;transform:scale(1.05)}
+                .cr-btn.cr-on{background:#eff6ff;border-color:#3b82f6;color:#2563eb;font-weight:700}
+                .cr-count{background:#3b82f6;color:#fff;border-radius:999px;padding:0 5px;font-size:10.5px;font-weight:700;line-height:1.6}
+                .cr-on .cr-count{background:#1d4ed8}
+                .cr-add{display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:999px;border:1.5px dashed #cbd5e1;background:transparent;font-size:12.5px;cursor:pointer;color:#94a3b8;font-family:inherit;transition:all .12s;position:relative}
+                .cr-add:hover{border-color:#3b82f6;color:#3b82f6;background:#f0f7ff}
+                .cr-picker{display:none;position:absolute;z-index:300;background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,.14);padding:10px;width:260px;bottom:calc(100% + 6px);left:0}
+                .cr-picker.open{display:block}
+                .cr-picker-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px}
+                .crp-btn{display:flex;flex-direction:column;align-items:center;padding:5px 2px;border-radius:7px;border:none;background:transparent;cursor:pointer;font-family:inherit;transition:background .1s}
+                .crp-btn:hover{background:#f1f5f9}
+                .crp-emoji{font-size:18px;line-height:1.2}
+                .crp-lbl{font-size:8.5px;color:#94a3b8;margin-top:1px;max-width:38px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+                /* カスタムツールチップ（一覧ページ共用） */
+                .rx-tooltip{position:fixed;z-index:9999;background:#1e293b;color:#f1f5f9;font-size:12px;line-height:1.5;padding:6px 10px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.22);pointer-events:none;max-width:220px;word-break:break-all;opacity:0;transition:opacity .1s}
+                .rx-tooltip.show{opacity:1}
             </style>
             <div style="max-width:960px;margin:0 auto">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
                     <h2 style="margin:0;font-size:22px;color:#0b2540">日報一覧</h2>
-                    <a href="/hr/daily-report/new" style="padding:9px 20px;background:#0b5fff;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">＋ 日報を投稿</a>
+                    <a href="/hr/daily-report/new" style="padding:9px 20px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">＋ 日報を投稿</a>
                 </div>
 
                 <form method="GET" action="/hr/daily-report" class="filters-row">
@@ -1606,7 +1684,7 @@ router.get('/hr/daily-report', requireLogin, async (req, res) => {
                         <label>日付</label>
                         <input type="date" name="date" value="${req.query.date || ''}">
                     </div>
-                    <button type="submit" style="padding:8px 16px;background:#0b5fff;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer">絞り込み</button>
+                    <button type="submit" style="padding:8px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer">絞り込み</button>
                     <a href="/hr/daily-report" style="padding:8px 14px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-weight:600">クリア</a>
                 </form>
 
@@ -1614,24 +1692,66 @@ router.get('/hr/daily-report', requireLogin, async (req, res) => {
                     <div style="background:#f8fafc;border-radius:14px;padding:40px;text-align:center;color:#6b7280">
                         <div style="font-size:32px;margin-bottom:10px">📋</div>
                         <div style="font-weight:600">日報がまだありません</div>
-                        <a href="/hr/daily-report/new" style="display:inline-block;margin-top:14px;padding:9px 22px;background:#0b5fff;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">日報を投稿する</a>
+                        <a href="/hr/daily-report/new" style="display:inline-block;margin-top:14px;padding:9px 22px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">日報を投稿する</a>
                     </div>
                 ` : ''}
 
                 ${reports.map(r => {
                     const emp = r.employeeId || {};
                     const dateStr = r.reportDate ? new Date(r.reportDate).toLocaleDateString('ja-JP') : '-';
+                    const myUid = String(req.session.userId);
+
+                    // スタンプ集計（件数あるもののみ表示）
+                    const rMap = {};
+                    (r.reactions || []).forEach(rx => {
+                        if (!rMap[rx.emoji]) rMap[rx.emoji] = { count: 0, users: [] };
+                        rMap[rx.emoji].count++;
+                        rMap[rx.emoji].users.push(rx.userName || '?');
+                        rMap[rx.emoji].isMine = rMap[rx.emoji].isMine || String(rx.userId) === myUid;
+                    });
+
+                    const activeStamps = Object.entries(rMap).map(([key, v]) => {
+                        const def = STAMP_MAP[key] || { emoji: key, label: key };
+                        const namesStr = escapeHtml(v.users.join(', '));
+                        return `<button class="cr-btn${v.isMine ? ' cr-on' : ''}"
+                            data-key="${key}" data-report="${r._id}"
+                            data-names="${namesStr}" title="${namesStr}"
+                            onclick="toggleCardStamp(this)">
+                            <span>${def.emoji}</span>
+                            <span>${def.label}</span>
+                            <span class="cr-count">${v.count}</span>
+                        </button>`;
+                    }).join('');
+
+                    const pickerBtns = STAMPS.map(s => `
+                        <button class="crp-btn" onclick="pickCardStamp('${s.key}','${r._id}',this)" title="${s.label}">
+                            <span class="crp-emoji">${s.emoji}</span>
+                            <span class="crp-lbl">${s.label}</span>
+                        </button>`).join('');
+
                     return `
-                    <div class="report-card">
+                    <div class="report-card" id="card-${r._id}">
                         <div class="report-meta">
                             <span class="report-date">${dateStr}</span>
                             <span class="report-name">${escapeHtml(emp.name || '不明')}</span>
                             <span class="report-dept">${escapeHtml(emp.department || '')}</span>
-                            <span class="comment-badge">💬 ${r.comments ? r.comments.length : 0}件</span>
+                            <span style="background:#f1f5f9;border-radius:999px;padding:2px 10px;font-size:12px;color:#374151;font-weight:600">💬 ${r.comments ? r.comments.length : 0}</span>
                             <a href="/hr/daily-report/${r._id}" style="margin-left:auto;padding:5px 14px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600">詳細 →</a>
                         </div>
                         <div class="section-label">本日の業務内容</div>
-                        <div class="section-body">${escapeHtml((r.content || '').substring(0, 180))}${(r.content || '').length > 180 ? '…' : ''}</div>
+                        <div class="section-body">${escapeHtml((r.content || '').substring(0, 160))}${(r.content || '').length > 160 ? '…' : ''}</div>
+                        <div class="card-reactions" id="cr-${r._id}">
+                            ${activeStamps}
+                            <div style="position:relative;display:inline-block">
+                                <button class="cr-add" onclick="toggleCardPicker(this)" title="リアクションを追加">
+                                    😀 <span style="font-size:13px;font-weight:700">+</span>
+                                </button>
+                                <div class="cr-picker" id="crp-${r._id}">
+                                    <div style="font-size:10.5px;color:#94a3b8;margin-bottom:6px;font-weight:600">リアクションを選択</div>
+                                    <div class="cr-picker-grid">${pickerBtns}</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>`;
                 }).join('')}
 
@@ -1642,6 +1762,102 @@ router.get('/hr/daily-report', requireLogin, async (req, res) => {
                     `).join('')}
                 </div>` : ''}
             </div>
+
+            <script>
+            const CARD_STAMPS = ${JSON.stringify(STAMPS)};
+            const CARD_DICT   = Object.fromEntries(CARD_STAMPS.map(s=>[s.key,s]));
+
+            // ── カスタムツールチップ ──
+            const _tt = document.createElement('div');
+            _tt.className = 'rx-tooltip';
+            document.body.appendChild(_tt);
+            let _ttTimer;
+            function showRxTooltip(el, e) {
+                // data-names を正として使う（title より優先）
+                const names = el.dataset.names || el.getAttribute('title') || '';
+                if (!names) return;
+                el.dataset.names = names;  // 常に最新を保持
+                clearTimeout(_ttTimer);
+                _tt.textContent = names;
+                _tt.classList.add('show');
+                moveRxTooltip(e);
+            }
+            function moveRxTooltip(e) {
+                const x = e.clientX + 12, y = e.clientY - 36;
+                const maxX = window.innerWidth  - _tt.offsetWidth  - 8;
+                const maxY = window.innerHeight - _tt.offsetHeight - 8;
+                _tt.style.left = Math.min(x, maxX) + 'px';
+                _tt.style.top  = Math.max(8, Math.min(y, maxY)) + 'px';
+            }
+            function hideRxTooltip() {
+                _ttTimer = setTimeout(() => { _tt.classList.remove('show'); }, 80);
+            }
+            document.addEventListener('mouseover', e => {
+                const btn = e.target.closest('.cr-btn');
+                if (btn) showRxTooltip(btn, e);
+            });
+            document.addEventListener('mousemove', e => {
+                if (_tt.classList.contains('show')) moveRxTooltip(e);
+            });
+            document.addEventListener('mouseout', e => {
+                const btn = e.target.closest('.cr-btn');
+                if (btn) hideRxTooltip();
+            });
+
+            function toggleCardPicker(btn){
+                const picker = btn.nextElementSibling;
+                const isOpen = picker.classList.contains('open');
+                document.querySelectorAll('.cr-picker.open').forEach(p=>p.classList.remove('open'));
+                if(!isOpen){ picker.classList.add('open'); }
+            }
+            document.addEventListener('click', e=>{
+                if(!e.target.closest('.cr-add') && !e.target.closest('.cr-picker'))
+                    document.querySelectorAll('.cr-picker.open').forEach(p=>p.classList.remove('open'));
+            });
+            function pickCardStamp(key,reportId,btn){
+                document.querySelectorAll('.cr-picker.open').forEach(p=>p.classList.remove('open'));
+                sendCardStamp(key,reportId);
+            }
+            function toggleCardStamp(btn){
+                sendCardStamp(btn.dataset.key, btn.dataset.report);
+            }
+            function sendCardStamp(key, reportId){
+                fetch('/hr/daily-report/'+reportId+'/reaction',{
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({emoji:key})
+                }).then(r=>r.json()).then(d=>{
+                    if(!d.ok) return;
+                    const area = document.getElementById('cr-'+reportId);
+                    if(!area) return;
+                    const pickerWrap = area.querySelector('[style*="position:relative"]');
+                    let btn = area.querySelector('.cr-btn[data-key="'+key+'"]');
+                    const def = CARD_DICT[key]||{emoji:key,label:key};
+
+                    if(d.count <= 0){
+                        // 誰もいなくなったらバッジ削除
+                        if(btn) btn.remove();
+                        return;
+                    }
+                    if(!btn){
+                        // 新規バッジ作成
+                        btn = document.createElement('button');
+                        btn.className='cr-btn';
+                        btn.dataset.key=key; btn.dataset.report=reportId;
+                        btn.onclick=function(){toggleCardStamp(this);};
+                        btn.innerHTML='<span>'+def.emoji+'</span><span>'+def.label+'</span>';
+                        area.insertBefore(btn, pickerWrap);
+                    }
+                    // reacted=true なら自分押し（青）、false なら未押し（グレー）
+                    if(d.reacted){ btn.classList.add('cr-on'); }
+                    else { btn.classList.remove('cr-on'); }
+                    let cnt=btn.querySelector('.cr-count');
+                    if(!cnt){cnt=document.createElement('span');cnt.className='cr-count';btn.appendChild(cnt);}
+                    cnt.textContent=d.count;
+                    btn.title=d.names||'';
+                    btn.dataset.names=d.names||'';
+                }).catch(console.error);
+            }
+            <\/script>
         `);
     } catch (error) {
         console.error(error);
@@ -1873,6 +2089,134 @@ router.post('/hr/daily-report/new', requireLogin, async (req, res) => {
     }
 });
 
+// 日報編集ページ
+router.get('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
+    try {
+        const report = await DailyReport.findById(req.params.id).populate('employeeId', 'name');
+        if (!report) return res.redirect('/hr/daily-report');
+
+        // 本人または管理者のみ
+        if (String(report.userId) !== String(req.session.userId) && !req.session.isAdmin) {
+            return res.redirect('/hr/daily-report/' + req.params.id);
+        }
+
+        const dateVal = report.reportDate ? new Date(report.reportDate).toISOString().split('T')[0] : '';
+        const emp = report.employeeId || {};
+
+        renderPage(req, res, '日報編集', '日報を編集', `
+            <style>
+                .form-card{background:#fff;border-radius:14px;padding:28px;box-shadow:0 4px 14px rgba(11,36,48,.06);max-width:860px;margin:0 auto}
+                .field-label{font-weight:700;font-size:14px;display:block;margin-bottom:6px;color:#0b2540}
+                .field-hint{font-size:12px;color:#9ca3af;margin-bottom:6px;display:block}
+                .form-textarea{width:100%;padding:11px 13px;border-radius:9px;border:1px solid #e2e8f0;box-sizing:border-box;font-size:14px;line-height:1.7;resize:vertical;transition:border .2s;font-family:inherit}
+                .form-textarea:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+                .char-count{font-size:12px;color:#9ca3af;text-align:right;margin-top:3px}
+            </style>
+            <div style="max-width:860px;margin:0 auto">
+                <div style="margin-bottom:16px">
+                    <a href="/hr/daily-report/${report._id}" style="color:#3b82f6;text-decoration:none;font-size:14px;display:inline-flex;align-items:center;gap:5px">
+                        <i class="fa-solid fa-arrow-left" style="font-size:12px"></i> 詳細に戻る
+                    </a>
+                </div>
+                <div class="form-card">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+                        <h3 style="margin:0;font-size:18px;color:#0b2540">日報を編集</h3>
+                        <span style="padding:2px 12px;background:#eff6ff;color:#2563eb;border-radius:999px;font-size:13px;font-weight:700">${escapeHtml(emp.name || '')}</span>
+                    </div>
+                    <form action="/hr/daily-report/${report._id}/edit" method="POST" id="editForm">
+                        <div style="margin-bottom:18px">
+                            <label class="field-label">日付</label>
+                            <input type="date" name="reportDate" value="${dateVal}" required style="padding:10px;border-radius:8px;border:1px solid #e2e8f0;font-size:14px">
+                        </div>
+                        <div style="margin-bottom:18px">
+                            <label class="field-label">本日の業務内容 <span style="color:#ef4444">*</span></label>
+                            <textarea id="f_content" name="content" rows="8" required class="form-textarea">${escapeHtml(report.content || '')}</textarea>
+                            <div class="char-count"><span id="cnt_content">0</span> 文字</div>
+                        </div>
+                        <div style="margin-bottom:18px">
+                            <label class="field-label">本日の成果・進捗</label>
+                            <textarea id="f_achievements" name="achievements" rows="5" class="form-textarea">${escapeHtml(report.achievements || '')}</textarea>
+                            <div class="char-count"><span id="cnt_achievements">0</span> 文字</div>
+                        </div>
+                        <div style="margin-bottom:18px">
+                            <label class="field-label">課題・問題点</label>
+                            <textarea id="f_issues" name="issues" rows="5" class="form-textarea">${escapeHtml(report.issues || '')}</textarea>
+                            <div class="char-count"><span id="cnt_issues">0</span> 文字</div>
+                        </div>
+                        <div style="margin-bottom:24px">
+                            <label class="field-label">明日の予定</label>
+                            <textarea id="f_tomorrow" name="tomorrow" rows="5" class="form-textarea">${escapeHtml(report.tomorrow || '')}</textarea>
+                            <div class="char-count"><span id="cnt_tomorrow">0</span> 文字</div>
+                        </div>
+                        <div style="display:flex;gap:10px">
+                            <button type="submit" style="padding:11px 30px;background:#2563eb;color:#fff;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:15px">
+                                <i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>保存する
+                            </button>
+                            <a href="/hr/daily-report/${report._id}" style="padding:11px 22px;background:#f3f4f6;color:#374151;border-radius:9px;text-decoration:none;font-weight:600;font-size:15px">キャンセル</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <script>
+            ['content','achievements','issues','tomorrow'].forEach(function(key){
+                var el = document.getElementById('f_' + key);
+                var cnt = document.getElementById('cnt_' + key);
+                if(!el || !cnt) return;
+                function update(){ cnt.textContent = el.value.length; }
+                el.addEventListener('input', update);
+                update();
+            });
+            </script>
+        `);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('エラーが発生しました');
+    }
+});
+
+// 日報編集保存
+router.post('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
+    try {
+        const report = await DailyReport.findById(req.params.id);
+        if (!report) return res.redirect('/hr/daily-report');
+
+        if (String(report.userId) !== String(req.session.userId) && !req.session.isAdmin) {
+            return res.redirect('/hr/daily-report/' + req.params.id);
+        }
+
+        const { reportDate, content, achievements, issues, tomorrow } = req.body;
+        await DailyReport.findByIdAndUpdate(req.params.id, {
+            reportDate: new Date(reportDate),
+            content:      content      || '',
+            achievements: achievements || '',
+            issues:       issues       || '',
+            tomorrow:     tomorrow     || ''
+        });
+        res.redirect('/hr/daily-report/' + req.params.id);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('エラーが発生しました');
+    }
+});
+
+// 日報削除
+router.post('/hr/daily-report/:id/delete', requireLogin, async (req, res) => {
+    try {
+        const report = await DailyReport.findById(req.params.id);
+        if (!report) return res.redirect('/hr/daily-report');
+
+        if (String(report.userId) !== String(req.session.userId) && !req.session.isAdmin) {
+            return res.redirect('/hr/daily-report/' + req.params.id);
+        }
+
+        await DailyReport.findByIdAndDelete(req.params.id);
+        res.redirect('/hr/daily-report');
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('エラーが発生しました');
+    }
+});
+
 // 日報詳細・コメント
 router.get('/hr/daily-report/:id', requireLogin, async (req, res) => {
     try {
@@ -1884,58 +2228,585 @@ router.get('/hr/daily-report/:id', requireLogin, async (req, res) => {
         const emp = report.employeeId || {};
         const dateStr = report.reportDate ? new Date(report.reportDate).toLocaleDateString('ja-JP') : '-';
 
+        // 改行を <br> に変換するヘルパー
+        const nl2br = (str) => escapeHtml(str || '').replace(/\n/g, '<br>');
+
+        // スタンプ集計（key → [{userId, userName}]）
+        const reactionMap = {};
+        (report.reactions || []).forEach(r => {
+            if (!reactionMap[r.emoji]) reactionMap[r.emoji] = [];
+            reactionMap[r.emoji].push({ userId: String(r.userId), userName: r.userName || '?' });
+        });
+
+        const myUserId = String(req.session.userId);
+
+        // リアクションが1件以上あるもののみバッジ表示（Slack方式）
+        const stampHtml = Object.entries(reactionMap).map(([key, users]) => {
+            const def = STAMP_MAP[key] || { emoji: key, label: key };
+            const count = users.length;
+            const reacted = users.some(u => u.userId === myUserId);
+            const names = users.map(u => escapeHtml(u.userName)).join(', ');
+            return `<button
+                class="stamp-btn${reacted ? ' stamp-on' : ''}"
+                data-key="${key}"
+                data-report="${report._id}"
+                data-names="${names}"
+                title="${names}"
+                onclick="toggleStamp(this)">
+                <span class="stamp-emoji">${def.emoji}</span>
+                <span class="stamp-label">${def.label}</span>
+                <span class="stamp-count">${count}</span>
+            </button>`;
+        }).join('');
+
         renderPage(req, res, '日報詳細', `${escapeHtml(emp.name || '')} の日報`, `
-            <style>
-                .report-detail{background:#fff;border-radius:14px;padding:24px;box-shadow:0 4px 14px rgba(11,36,48,.06);max-width:860px;margin:0 auto}
-                .section-block{margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid #f1f5f9}
-                .section-block:last-of-type{border-bottom:none}
-                .section-label{font-size:12px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
-                .section-body{color:#374151;line-height:1.8;font-size:15px;white-space:pre-wrap}
-                .comment-item{padding:14px;background:#f8fafc;border-radius:10px;margin-bottom:10px}
-                .comment-meta{font-size:12px;color:#6b7280;margin-bottom:4px}
-                .comment-body{font-size:14px;color:#374151;line-height:1.7}
-            </style>
-            <div style="max-width:860px;margin:0 auto">
-                <div style="margin-bottom:14px">
-                    <a href="/hr/daily-report" style="color:#0b5fff;text-decoration:none;font-size:14px">← 日報一覧に戻る</a>
-                </div>
-                <div class="report-detail">
-                    <div style="display:flex;gap:12px;align-items:center;margin-bottom:20px;flex-wrap:wrap">
-                        <span style="font-size:22px;font-weight:700;color:#0b2540">${dateStr}</span>
-                        <span style="padding:3px 14px;background:#e8effc;color:#0b5fff;border-radius:999px;font-weight:600">${escapeHtml(emp.name || '不明')}</span>
-                        <span style="font-size:13px;color:#6b7280">${escapeHtml(emp.department || '')}</span>
-                    </div>
+<style>
+.report-detail { background:#fff;border-radius:14px;padding:28px 32px;box-shadow:0 4px 14px rgba(11,36,48,.06);max-width:860px;margin:0 auto }
+.section-block { margin-bottom:22px;padding-bottom:22px;border-bottom:1px solid #f1f5f9 }
+.section-block:last-of-type { border-bottom:none }
+.section-label { font-size:11.5px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;display:flex;align-items:center;gap:6px }
+.section-body { color:#1e293b;line-height:1.85;font-size:14.5px }
 
-                    <div class="section-block">
-                        <div class="section-label">本日の業務内容</div>
-                        <div class="section-body">${escapeHtml(report.content || '-')}</div>
-                    </div>
-                    ${report.achievements ? `<div class="section-block"><div class="section-label">本日の成果・進捗</div><div class="section-body">${escapeHtml(report.achievements)}</div></div>` : ''}
-                    ${report.issues ? `<div class="section-block"><div class="section-label">課題・問題点</div><div class="section-body">${escapeHtml(report.issues)}</div></div>` : ''}
-                    ${report.tomorrow ? `<div class="section-block"><div class="section-label">明日の予定</div><div class="section-body">${escapeHtml(report.tomorrow)}</div></div>` : ''}
+/* スタンプエリア */
+.stamp-area { display:flex;flex-wrap:wrap;gap:6px;align-items:center }
+.stamp-btn {
+    display:inline-flex;align-items:center;gap:4px;
+    padding:4px 10px;border-radius:999px;
+    border:1.5px solid #e2e8f0;background:#f8fafc;
+    font-size:13px;cursor:pointer;transition:all .13s;
+    color:#475569;font-family:inherit;white-space:nowrap;
+}
+.stamp-btn:hover { background:#eff6ff;border-color:#bfdbfe;color:#2563eb;transform:scale(1.06) }
+.stamp-btn.stamp-on { background:#eff6ff;border-color:#3b82f6;color:#2563eb;font-weight:700 }
+.stamp-emoji { font-size:15px;line-height:1 }
+.stamp-label { font-size:11.5px }
+.stamp-count { background:#3b82f6;color:#fff;border-radius:999px;padding:0 6px;font-size:11px;font-weight:700;min-width:17px;text-align:center;line-height:1.6 }
+.stamp-btn.stamp-on .stamp-count { background:#1d4ed8 }
 
-                    <div style="margin-top:24px">
-                        <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">💬 コメント (${(report.comments || []).length}件)</h3>
-                        ${(report.comments || []).map(c => {
-                            const authorName = c.authorName || '不明';
-                            const commentDate = c.at ? new Date(c.at).toLocaleString('ja-JP') : (c.createdAt ? new Date(c.createdAt).toLocaleString('ja-JP') : '');
-                            return `<div class="comment-item">
-                                <div class="comment-meta">${escapeHtml(authorName)} · ${commentDate}</div>
-                                <div class="comment-body">${escapeHtml(c.text || '')}</div>
-                            </div>`;
-                        }).join('')}
+/* カスタムツールチップ */
+.rx-tooltip {
+    position:fixed;z-index:9999;
+    background:#1e293b;color:#f1f5f9;
+    font-size:12px;line-height:1.5;font-family:inherit;
+    padding:6px 10px;border-radius:8px;
+    box-shadow:0 4px 14px rgba(0,0,0,.22);
+    pointer-events:none;white-space:pre;
+    max-width:220px;white-space:normal;word-break:break-all;
+    opacity:0;transition:opacity .1s;
+}
+.rx-tooltip.show { opacity:1 }
 
-                        <form action="/hr/daily-report/${report._id}/comment" method="POST" style="margin-top:16px">
-                            <textarea name="text" rows="3" required placeholder="コメントを入力…" style="width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;box-sizing:border-box;margin-bottom:8px"></textarea>
-                            <button type="submit" style="padding:9px 22px;background:#0b5fff;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">コメントする</button>
-                        </form>
+/* ＋ スタンプ追加ボタン */
+.stamp-add-btn {
+    display:inline-flex;align-items:center;gap:4px;
+    padding:4px 10px;border-radius:999px;
+    border:1.5px dashed #cbd5e1;background:transparent;
+    font-size:13px;cursor:pointer;color:#94a3b8;
+    font-family:inherit;transition:all .13s;
+    position:relative;
+}
+.stamp-add-btn:hover { border-color:#3b82f6;color:#3b82f6;background:#f0f7ff }
+
+/* ピッカーパネル */
+.stamp-picker {
+    display:none;position:absolute;z-index:200;
+    background:#fff;border:1px solid #e2e8f0;border-radius:14px;
+    box-shadow:0 8px 32px rgba(0,0,0,.14);
+    padding:12px;width:280px;
+    top:calc(100% + 6px);left:0;
+}
+.stamp-picker.open { display:block }
+.stamp-picker-grid { display:grid;grid-template-columns:repeat(6,1fr);gap:4px }
+.sp-btn {
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:6px 2px;border-radius:8px;border:none;background:transparent;
+    cursor:pointer;font-family:inherit;transition:background .1s;
+}
+.sp-btn:hover { background:#f1f5f9 }
+.sp-btn .sp-emoji { font-size:20px;line-height:1.2 }
+.sp-btn .sp-lbl { font-size:9px;color:#94a3b8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40px }
+
+/* コメント */
+.comment-list { margin-top:8px }
+.comment-item { display:flex;gap:10px;padding:12px 0;border-bottom:1px solid #f1f5f9 }
+.comment-item:last-child { border-bottom:none }
+.comment-avatar { width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0 }
+.comment-meta { font-size:12px;color:#94a3b8;margin-bottom:4px }
+.comment-body { font-size:13.5px;color:#1e293b;line-height:1.75 }
+.c-reaction-row { display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:7px }
+.c-stamp-btn {
+    display:inline-flex;align-items:center;gap:3px;
+    padding:2px 8px;border-radius:999px;
+    border:1.5px solid #e2e8f0;background:#f8fafc;
+    font-size:11.5px;cursor:pointer;color:#475569;font-family:inherit;
+    transition:all .12s;white-space:nowrap;
+}
+.c-stamp-btn:hover { background:#eff6ff;border-color:#bfdbfe;color:#2563eb;transform:scale(1.05) }
+.c-stamp-btn.stamp-on { background:#eff6ff;border-color:#3b82f6;color:#2563eb;font-weight:700 }
+.c-stamp-btn.stamp-on .stamp-count { background:#1d4ed8 }
+.c-stamp-add {
+    display:inline-flex;align-items:center;gap:2px;
+    padding:2px 7px;border-radius:999px;
+    border:1.5px dashed #cbd5e1;background:transparent;
+    font-size:11.5px;cursor:pointer;color:#94a3b8;font-family:inherit;
+    transition:all .12s;position:relative;
+}
+.c-stamp-add:hover { border-color:#3b82f6;color:#3b82f6;background:#f0f7ff }
+.comment-form textarea { width:100%;padding:11px 14px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;resize:vertical;box-sizing:border-box;outline:none;transition:border .15s;font-family:inherit;line-height:1.6 }
+.comment-form textarea:focus { border-color:#3b82f6 }
+.comment-submit { padding:9px 22px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;transition:background .15s }
+.comment-submit:hover { background:#1d4ed8 }
+</style>
+
+<div style="max-width:860px;margin:0 auto">
+    <div style="margin-bottom:16px; margin-top:15px">
+        <a href="/hr/daily-report" style="color:#3b82f6;text-decoration:none;font-size:14px;display:inline-flex;align-items:center;gap:5px;">
+            <i class="fa-solid fa-arrow-left" style="font-size:12px"></i> 日報一覧に戻る
+        </a>
+    </div>
+    <div class="report-detail">
+
+        <!-- ヘッダー -->
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:24px;flex-wrap:wrap;border-bottom:2px solid #f1f5f9;padding-bottom:18px">
+            <span style="font-size:20px;font-weight:800;color:#0f172a">${dateStr}</span>
+            <span style="padding:3px 14px;background:#eff6ff;color:#2563eb;border-radius:999px;font-weight:700;font-size:13px">${escapeHtml(emp.name || '不明')}</span>
+            <span style="font-size:13px;color:#64748b">${escapeHtml(emp.department || '')}</span>
+            ${(String(report.userId) === String(req.session.userId) || req.session.isAdmin) ? `
+            <div style="margin-left:auto;display:flex;gap:8px">
+                <a href="/hr/daily-report/${report._id}/edit" style="padding:6px 16px;background:#f1f5f9;color:#374151;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:5px">
+                    <i class="fa-solid fa-pen" style="font-size:11px"></i> 編集
+                </a>
+                <form method="POST" action="/hr/daily-report/${report._id}/delete" onsubmit="return confirm('この日報を削除しますか？この操作は元に戻せません。')" style="margin:0">
+                    <button type="submit" style="padding:6px 16px;background:#fee2e2;color:#dc2626;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px">
+                        <i class="fa-solid fa-trash" style="font-size:11px"></i> 削除
+                    </button>
+                </form>
+            </div>` : ''}
+        </div>
+
+        <!-- 本文セクション -->
+        <div class="section-block">
+            <div class="section-label"><i class="fa-solid fa-pen-to-square" style="color:#3b82f6"></i>本日の業務内容</div>
+            <div class="section-body">${nl2br(report.content || '-')}</div>
+        </div>
+        ${report.achievements ? `
+        <div class="section-block">
+            <div class="section-label"><i class="fa-solid fa-trophy" style="color:#f59e0b"></i>本日の成果・進捗</div>
+            <div class="section-body">${nl2br(report.achievements)}</div>
+        </div>` : ''}
+        ${report.issues ? `
+        <div class="section-block">
+            <div class="section-label"><i class="fa-solid fa-triangle-exclamation" style="color:#ef4444"></i>課題・問題点</div>
+            <div class="section-body">${nl2br(report.issues)}</div>
+        </div>` : ''}
+        ${report.tomorrow ? `
+        <div class="section-block">
+            <div class="section-label"><i class="fa-solid fa-calendar-check" style="color:#10b981"></i>明日の予定</div>
+            <div class="section-body">${nl2br(report.tomorrow)}</div>
+        </div>` : ''}
+
+        <!-- スタンプ -->
+        <div style="margin-top:10px;padding-top:20px;border-top:1px solid #f1f5f9">
+            <div style="font-size:11.5px;font-weight:700;color:#94a3b8;margin-bottom:10px;letter-spacing:.06em;text-transform:uppercase">Reactions</div>
+            <div class="stamp-area" id="stampArea-${report._id}">
+                ${stampHtml}
+                <!-- ＋ ピッカーボタン -->
+                <div style="position:relative;display:inline-block">
+                    <button class="stamp-add-btn" onclick="togglePicker(this)" title="リアクションを追加">
+                        <span style="font-size:15px">😀</span>
+                        <span style="font-size:12px">+</span>
+                    </button>
+                    <div class="stamp-picker" id="picker-${report._id}">
+                        <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;font-weight:600">リアクションを選択</div>
+                        <div class="stamp-picker-grid">
+                            ${STAMPS.map(s => `
+                            <button class="sp-btn" onclick="pickStamp('${s.key}','${report._id}',this)" title="${s.label}">
+                                <span class="sp-emoji">${s.emoji}</span>
+                                <span class="sp-lbl">${s.label}</span>
+                            </button>`).join('')}
+                        </div>
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- コメント -->
+        <div style="margin-top:24px;padding-top:20px;border-top:1px solid #f1f5f9">
+            <div style="font-size:14px;font-weight:700;color:#1e293b;margin-bottom:14px;display:flex;align-items:center;gap:7px">
+                <i class="fa-solid fa-comment-dots" style="color:#3b82f6"></i>
+                コメント
+                <span style="background:#f1f5f9;color:#64748b;font-size:11.5px;border-radius:999px;padding:1px 9px;font-weight:600">${(report.comments || []).length}</span>
+            </div>
+            <div class="comment-list">
+                ${(report.comments || []).map(c => {
+                    const authorName = c.authorName || '不明';
+                    const commentDate = c.at ? new Date(c.at).toLocaleString('ja-JP') : '';
+                    const initial = authorName.charAt(0);
+                    const cid = String(c._id);
+
+                    // コメントのリアクション集計
+                    const cRMap = {};
+                    (c.reactions || []).forEach(rx => {
+                        if (!cRMap[rx.emoji]) cRMap[rx.emoji] = { count: 0, users: [], isMine: false };
+                        cRMap[rx.emoji].count++;
+                        cRMap[rx.emoji].users.push(rx.userName || '?');
+                        if (String(rx.userId) === myUserId) cRMap[rx.emoji].isMine = true;
+                    });
+
+                    const cStampHtml = Object.entries(cRMap).map(([key, v]) => {
+                        const def = STAMP_MAP[key] || { emoji: key, label: key };
+                        const namesStr = escapeHtml(v.users.join(', '));
+                        return `<button class="c-stamp-btn${v.isMine ? ' stamp-on' : ''}"
+                            data-key="${key}" data-comment="${cid}" data-report="${report._id}"
+                            data-names="${namesStr}" title="${namesStr}"
+                            onclick="toggleCStamp(this)">
+                            <span>${def.emoji}</span><span>${def.label}</span>
+                            <span class="stamp-count">${v.count}</span>
+                        </button>`;
+                    }).join('');
+
+                    const cPickerBtns = STAMPS.map(s => `
+                        <button class="sp-btn" onclick="pickCStamp('${s.key}','${cid}','${report._id}',this)" title="${s.label}">
+                            <span class="sp-emoji">${s.emoji}</span>
+                            <span class="sp-lbl">${s.label}</span>
+                        </button>`).join('');
+
+                    return `<div class="comment-item" id="ci-${cid}">
+                        <div class="comment-avatar">${escapeHtml(initial)}</div>
+                        <div style="flex:1;min-width:0">
+                            <div class="comment-meta">${escapeHtml(authorName)} · ${commentDate}</div>
+                            <div class="comment-body">${nl2br(c.text || '')}</div>
+                            <div class="c-reaction-row" id="cr-${cid}">
+                                ${cStampHtml}
+                                <div style="position:relative;display:inline-block">
+                                    <button class="c-stamp-add" onclick="toggleCPicker(this)" title="リアクション">😀 <span>+</span></button>
+                                    <div class="stamp-picker" id="cpicker-${cid}">
+                                        <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;font-weight:600">リアクションを選択</div>
+                                        <div class="stamp-picker-grid">${cPickerBtns}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>
+            <form action="/hr/daily-report/${report._id}/comment" method="POST" class="comment-form" style="margin-top:16px">
+                <textarea name="text" rows="3" required placeholder="コメントを入力… (Shift+Enter で改行)"></textarea>
+                <div style="display:flex;justify-content:flex-end;margin-top:8px">
+                    <button type="submit" class="comment-submit">
+                        <i class="fa-solid fa-paper-plane" style="margin-right:5px"></i>送信
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// ── スタンプ定義（サーバーと同期） ──
+const STAMP_DEF = ${JSON.stringify(STAMPS)};
+const STAMP_DICT = Object.fromEntries(STAMP_DEF.map(s => [s.key, s]));
+
+// ── カスタムツールチップ ──
+const _tt = document.createElement('div');
+_tt.className = 'rx-tooltip';
+document.body.appendChild(_tt);
+let _ttTimer;
+
+function showRxTooltip(el, e) {
+    const names = el.dataset.names || el.getAttribute('title') || '';
+    if (!names) return;
+    el.dataset.names = names;  // 常に最新を保持
+    clearTimeout(_ttTimer);
+    _tt.textContent = names;
+    _tt.classList.add('show');
+    moveRxTooltip(e);
+}
+function moveRxTooltip(e) {
+    const x = e.clientX + 12, y = e.clientY - 36;
+    const maxX = window.innerWidth  - _tt.offsetWidth  - 8;
+    const maxY = window.innerHeight - _tt.offsetHeight - 8;
+    _tt.style.left = Math.min(x, maxX) + 'px';
+    _tt.style.top  = Math.max(8, Math.min(y, maxY)) + 'px';
+}
+function hideRxTooltip() {
+    _ttTimer = setTimeout(() => { _tt.classList.remove('show'); }, 80);
+}
+
+// ホバー対象クラスにまとめてリスナーを委譲
+document.addEventListener('mouseover', e => {
+    const btn = e.target.closest('.stamp-btn,.c-stamp-btn,.cr-btn');
+    if (btn) showRxTooltip(btn, e);
+});
+document.addEventListener('mousemove', e => {
+    if (_tt.classList.contains('show')) moveRxTooltip(e);
+});
+document.addEventListener('mouseout', e => {
+    const btn = e.target.closest('.stamp-btn,.c-stamp-btn,.cr-btn');
+    if (btn) hideRxTooltip();
+});
+
+// ── ピッカー開閉 ──
+function togglePicker(btn) {
+    const picker = btn.nextElementSibling;
+    const isOpen = picker.classList.contains('open');
+    // 他を全部閉じる
+    document.querySelectorAll('.stamp-picker.open').forEach(p => p.classList.remove('open'));
+    if (!isOpen) {
+        picker.classList.add('open');
+        // 画面外チェック
+        const rect = picker.getBoundingClientRect();
+        if (rect.right > window.innerWidth) picker.style.left = 'auto';
+        if (rect.left < 0) picker.style.left = '0';
+    }
+}
+document.addEventListener('click', e => {
+    if (!e.target.closest('.stamp-add-btn') && !e.target.closest('.stamp-picker') &&
+        !e.target.closest('.c-stamp-add')) {
+        document.querySelectorAll('.stamp-picker.open').forEach(p => p.classList.remove('open'));
+    }
+});
+
+// ── ピッカーから選択 ──
+function pickStamp(key, reportId, spBtn) {
+    document.querySelectorAll('.stamp-picker.open').forEach(p => p.classList.remove('open'));
+    sendStamp(key, reportId);
+}
+
+// ── 既存スタンプボタンのトグル ──
+function toggleStamp(btn) {
+    sendStamp(btn.dataset.key, btn.dataset.report);
+}
+
+// ── スタンプ送信 ──
+function sendStamp(key, reportId) {
+    fetch('/hr/daily-report/' + reportId + '/reaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emoji: key })
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (!d.ok) return;
+        const area = document.getElementById('stampArea-' + reportId);
+        if (!area) return;
+        const pickerWrap = area.querySelector('[style*="position:relative"]');
+        let existing = area.querySelector('.stamp-btn[data-key="' + key + '"]');
+        const def = STAMP_DICT[key] || { emoji: key, label: key };
+
+        if (d.count <= 0) {
+            if (existing) existing.remove();
+            return;
+        }
+        if (!existing) {
+            existing = document.createElement('button');
+            existing.className = 'stamp-btn';
+            existing.dataset.key = key;
+            existing.dataset.report = reportId;
+            existing.onclick = function() { toggleStamp(this); };
+            existing.innerHTML =
+                '<span class="stamp-emoji">' + def.emoji + '</span>' +
+                '<span class="stamp-label">' + def.label + '</span>';
+            area.insertBefore(existing, pickerWrap);
+        }
+        if (d.reacted) { existing.classList.add('stamp-on'); }
+        else { existing.classList.remove('stamp-on'); }
+        let countEl = existing.querySelector('.stamp-count');
+        if (!countEl) { countEl = document.createElement('span'); countEl.className = 'stamp-count'; existing.appendChild(countEl); }
+        countEl.textContent = d.count;
+        existing.title = d.names || '';
+        existing.dataset.names = d.names || '';
+    })
+    .catch(console.error);
+}
+
+// ── コメント用ピッカー開閉 ──
+function toggleCPicker(btn) {
+    const addBtn = btn.closest('.c-stamp-add') || btn;
+    const picker = addBtn.nextElementSibling;
+    if (!picker) return;
+    const isOpen = picker.classList.contains('open');
+    document.querySelectorAll('.stamp-picker.open').forEach(p => p.classList.remove('open'));
+    if (!isOpen) {
+        picker.classList.add('open');
+        const rect = picker.getBoundingClientRect();
+        if (rect.right > window.innerWidth) picker.style.left = 'auto';
+        if (rect.bottom > window.innerHeight) {
+            picker.style.top = 'auto';
+            picker.style.bottom = 'calc(100% + 6px)';
+        }
+    }
+}
+
+// ── コメント用ピッカー選択 ──
+function pickCStamp(key, commentId, reportId, btn) {
+    document.querySelectorAll('.stamp-picker.open').forEach(p => p.classList.remove('open'));
+    sendCStamp(key, commentId, reportId);
+}
+
+// ── コメント既存スタンプのトグル ──
+function toggleCStamp(btn) {
+    sendCStamp(btn.dataset.key, btn.dataset.comment, btn.dataset.report);
+}
+
+// ── コメントスタンプ送信 ──
+function sendCStamp(key, commentId, reportId) {
+    fetch('/hr/daily-report/' + reportId + '/comment/' + commentId + '/reaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emoji: key })
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (!d.ok) return;
+        const area = document.getElementById('cr-' + commentId);
+        if (!area) return;
+        const pickerWrap = area.querySelector('[style*="position:relative"]');
+        let existing = area.querySelector('.c-stamp-btn[data-key="' + key + '"]');
+        const def = STAMP_DICT[key] || { emoji: key, label: key };
+
+        if (d.count <= 0) {
+            if (existing) existing.remove();
+            return;
+        }
+        if (!existing) {
+            existing = document.createElement('button');
+            existing.className = 'c-stamp-btn';
+            existing.dataset.key = key;
+            existing.dataset.comment = commentId;
+            existing.dataset.report = reportId;
+            existing.onclick = function() { toggleCStamp(this); };
+            existing.innerHTML =
+                '<span>' + def.emoji + '</span>' +
+                '<span>' + def.label + '</span>';
+            area.insertBefore(existing, pickerWrap);
+        }
+        if (d.reacted) { existing.classList.add('stamp-on'); }
+        else { existing.classList.remove('stamp-on'); }
+        let cnt = existing.querySelector('.stamp-count');
+        if (!cnt) { cnt = document.createElement('span'); cnt.className = 'stamp-count'; existing.appendChild(cnt); }
+        cnt.textContent = d.count;
+        existing.title = d.names || '';
+        existing.dataset.names = d.names || '';
+    })
+    .catch(console.error);
+}
+</script>
         `);
     } catch (error) {
         console.error(error);
         res.status(500).send('エラーが発生しました');
+    }
+});
+
+// スタンプ（リアクション）API
+router.post('/hr/daily-report/:id/reaction', requireLogin, async (req, res) => {
+    try {
+        const { emoji } = req.body;
+        if (!STAMP_KEYS.includes(emoji)) return res.json({ ok: false });
+
+        const user = await User.findById(req.session.userId);
+        const employee = await Employee.findOne({ userId: user._id });
+        const userName = employee ? employee.name : user.username;
+
+        const report = await DailyReport.findById(req.params.id);
+        if (!report) return res.json({ ok: false });
+
+        const alreadyReacted = (report.reactions || []).some(
+            r => r.emoji === emoji && String(r.userId) === String(user._id)
+        );
+
+        if (alreadyReacted) {
+            // トグル OFF（自分のリアクションのみ削除）
+            await DailyReport.findByIdAndUpdate(req.params.id, {
+                $pull: { reactions: { emoji, userId: user._id } }
+            });
+        } else {
+            // トグル ON（追加）
+            await DailyReport.findByIdAndUpdate(req.params.id, {
+                $push: { reactions: { emoji, userId: user._id, userName } }
+            });
+            // 日報の所有者に通知（自分へのリアクションは除く）
+            if (String(report.userId) !== String(user._id)) {
+                const stamp = STAMP_MAP[emoji];
+                await createNotification({
+                    userId: report.userId,
+                    type: 'reaction',
+                    title: `${userName} さんが ${stamp ? stamp.emoji : emoji} を押しました`,
+                    body: '',
+                    link: `/hr/daily-report/${report._id}`,
+                    fromUserId: user._id,
+                    fromName: userName
+                });
+            }
+        }
+
+        // 常に最新データで返す
+        const updated = await DailyReport.findById(req.params.id);
+        const reactors = (updated.reactions || []).filter(r => r.emoji === emoji);
+        const reacted = reactors.some(r => String(r.userId) === String(user._id));
+        const names = reactors.map(r => r.userName || '?').join(', ');
+        return res.json({ ok: true, reacted, count: reactors.length, names });
+    } catch (e) {
+        console.error(e);
+        res.json({ ok: false });
+    }
+});
+
+// コメントリアクションAPI
+router.post('/hr/daily-report/:reportId/comment/:commentId/reaction', requireLogin, async (req, res) => {
+    try {
+        const { emoji } = req.body;
+        if (!STAMP_KEYS.includes(emoji)) return res.json({ ok: false });
+
+        const user = await User.findById(req.session.userId);
+        const employee = await Employee.findOne({ userId: user._id });
+        const userName = employee ? employee.name : user.username;
+
+        const report = await DailyReport.findById(req.params.reportId);
+        if (!report) return res.json({ ok: false });
+
+        const comment = (report.comments || []).id(req.params.commentId);
+        if (!comment) return res.json({ ok: false });
+
+        const alreadyReacted = (comment.reactions || []).some(
+            r => r.emoji === emoji && String(r.userId) === String(user._id)
+        );
+
+        if (alreadyReacted) {
+            // 自分のリアクションのみ削除
+            const idx = comment.reactions.findIndex(
+                r => r.emoji === emoji && String(r.userId) === String(user._id)
+            );
+            comment.reactions.splice(idx, 1);
+        } else {
+            if (!comment.reactions) comment.reactions = [];
+            comment.reactions.push({ emoji, userId: user._id, userName });
+            // コメント投稿者に通知（自分へのリアクションは除く）
+            if (comment.authorId && String(comment.authorId) !== String(user._id)) {
+                const stamp = STAMP_MAP[emoji];
+                await createNotification({
+                    userId: comment.authorId,
+                    type: 'reaction',
+                    title: `${userName} さんがコメントに ${stamp ? stamp.emoji : emoji} を押しました`,
+                    body: comment.text ? comment.text.substring(0, 60) : '',
+                    link: `/hr/daily-report/${report._id}`,
+                    fromUserId: user._id,
+                    fromName: userName
+                });
+            }
+        }
+
+        await report.save();
+
+        // 常に最新データで返す
+        const reactors = (comment.reactions || []).filter(r => r.emoji === emoji);
+        const reacted = reactors.some(r => String(r.userId) === String(user._id));
+        const names = reactors.map(r => r.userName || '?').join(', ');
+        return res.json({ ok: true, reacted, count: reactors.length, names });
+    } catch (e) {
+        console.error(e);
+        res.json({ ok: false });
     }
 });
 
@@ -1944,11 +2815,26 @@ router.post('/hr/daily-report/:id/comment', requireLogin, async (req, res) => {
     try {
         const user = await User.findById(req.session.userId);
         const employee = await Employee.findOne({ userId: user._id });
+        const authorName = employee ? employee.name : user.username;
         const { text } = req.body;
         if (text && text.trim()) {
             await DailyReport.findByIdAndUpdate(req.params.id, {
-                $push: { comments: { authorId: user._id, authorName: employee ? employee.name : user.username, text: text.trim() } }
+                $push: { comments: { authorId: user._id, authorName, text: text.trim() } }
             });
+
+            // 日報の所有者に通知（自分へのコメントは除く）
+            const report = await DailyReport.findById(req.params.id).lean();
+            if (report && String(report.userId) !== String(user._id)) {
+                await createNotification({
+                    userId: report.userId,
+                    type: 'comment',
+                    title: `${authorName} さんがコメントしました`,
+                    body: text.trim().substring(0, 80),
+                    link: `/hr/daily-report/${report._id}`,
+                    fromUserId: user._id,
+                    fromName: authorName
+                });
+            }
         }
         res.redirect(`/hr/daily-report/${req.params.id}`);
     } catch (error) {

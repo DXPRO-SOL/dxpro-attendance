@@ -282,8 +282,32 @@ const DailyReportSchema = new mongoose.Schema({
         authorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         authorName: { type: String },
         text: { type: String },
-        at: { type: Date, default: Date.now }
+        at: { type: Date, default: Date.now },
+        reactions: [{
+            emoji:    { type: String, required: true },
+            userId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+            userName: { type: String }
+        }]
+    }],
+    reactions: [{
+        emoji:      { type: String, required: true },   // 'like','great','nice','hard','check'
+        userId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+        userName:   { type: String }
     }]
+}, { timestamps: true });
+
+// 通知スキーマ
+const NotificationSchema = new mongoose.Schema({
+    userId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, // 受信者
+    type:       { type: String, required: true },
+    // タイプ例: 'comment'|'reaction'|'goal_deadline'|'attendance_missing'|'leave_approved'|'leave_rejected'|'ai_advice'
+    title:      { type: String, required: true },
+    body:       { type: String, default: '' },
+    link:       { type: String, default: '' },   // クリック先URL
+    isRead:     { type: Boolean, default: false },
+    fromUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // 送信者（システム通知はnull）
+    fromName:   { type: String, default: '' },
+    meta:       { type: mongoose.Schema.Types.Mixed, default: {} }     // 追加データ
 }, { timestamps: true });
 
 // 従業員スキーマ
@@ -315,6 +339,7 @@ const LeaveBalance    = mongoose.model('LeaveBalance', LeaveBalanceSchema);
 const CompanyRule     = mongoose.model('CompanyRule', CompanyRuleSchema);
 const DailyReport     = mongoose.model('DailyReport', DailyReportSchema);
 const SkillSheet      = mongoose.model('SkillSheet', SkillSheetSchema);
+const Notification    = mongoose.model('Notification', NotificationSchema);
 
 module.exports = {
     User,
@@ -332,5 +357,6 @@ module.exports = {
     LeaveBalance,
     CompanyRule,
     DailyReport,
-    SkillSheet
+    SkillSheet,
+    Notification
 };

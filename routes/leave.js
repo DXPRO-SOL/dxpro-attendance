@@ -8,6 +8,7 @@ const { requireLogin, isAdmin } = require('../middleware/auth');
 const { sendMail } = require('../config/mailer');
 const { renderPage } = require('../lib/renderPage');
 const { escapeHtml } = require('../lib/helpers');
+const { createNotification } = require('./notifications');
 
 // ── 休暇種別→残日数フィールドのマッピング ──────────
 const leaveTypeToField = { '有給': 'paid', '病欠': 'sick', '慶弔': 'special', 'その他': 'other', '午前休': 'paid', '午後休': 'paid', '早退': 'paid' };
@@ -473,6 +474,17 @@ router.post('/admin/approve-leave/:id', requireLogin, isAdmin, async (req, res) 
         request.processedAt = new Date();
         request.processedBy = req.session.userId;
         await request.save();
+
+        // 申請者に承認通知
+        if (employee && employee.userId) {
+            await createNotification({
+                userId: employee.userId,
+                type: 'leave_approved',
+                title: '✅ 休暇申請が承認されました',
+                body: `${request.leaveType} (${request.startDate}〜${request.endDate || request.startDate})`,
+                link: '/leave',
+            });
+        }
         res.redirect('/admin/leave-requests');
     } catch (error) {
         console.error(error);
@@ -491,6 +503,18 @@ router.post('/admin/reject-leave/:id', requireLogin, isAdmin, async (req, res) =
         request.processedBy = req.session.userId;
         request.notes = req.body.notes || '';
         await request.save();
+
+        // 申請者に却下通知
+        const emp = await Employee.findOne({ employeeId: request.employeeId });
+        if (emp && emp.userId) {
+            await createNotification({
+                userId: emp.userId,
+                type: 'leave_rejected',
+                title: '❌ 休暇申請が却下されました',
+                body: `${request.leaveType} (${request.startDate}〜${request.endDate || request.startDate})${request.notes ? ' - ' + request.notes : ''}`,
+                link: '/leave',
+            });
+        }
         res.redirect('/admin/leave-requests');
     } catch (error) {
         console.error(error);

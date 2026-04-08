@@ -8,6 +8,7 @@ const { Employee, Goal } = require('../models');
 const { requireLogin, isAdmin } = require('../middleware/auth');
 const { escapeHtml, stripHtmlTags, renderMarkdownToHtml } = require('../lib/helpers');
 const { renderPage } = require('../lib/renderPage');
+const { createNotification } = require('./notifications');
 
 // ─── 共通ヘルパー ─────────────────────────────────────────
 // ownerName / createdByName を最新の Employee 情報に同期する
@@ -441,6 +442,22 @@ router.get('/goals/submit1/:id', requireLogin, async (req, res) => {
     goal.history.push({ action: 'submit1', by: employee._id, date: new Date() });
     await ensureOwnerName(goal);
     await goal.save();
+
+    // 1次承認者に通知
+    if (goal.currentApprover) {
+        const approverEmp = await Employee.findById(goal.currentApprover);
+        if (approverEmp && approverEmp.userId) {
+            await createNotification({
+                userId: approverEmp.userId,
+                type: 'goal_approval',
+                title: `📋 目標の1次承認依頼が届きました`,
+                body: `${employee.name} さんの目標「${(goal.title||'').substring(0,40)}」`,
+                link: '/goals/approval',
+                fromUserId: req.session.userId,
+                fromName: employee.name
+            });
+        }
+    }
     res.redirect('/goals');
 });
 
@@ -454,6 +471,22 @@ router.get('/goals/approve1/:id', requireLogin, async (req, res) => {
     goal.history.push({ action:'approve1', by: employee?._id || req.session.userId });
     await ensureOwnerName(goal);
     await goal.save();
+
+    // 目標作成者に1次承認完了を通知
+    if (goal.createdBy) {
+        const creatorEmp = await Employee.findById(goal.createdBy);
+        if (creatorEmp && creatorEmp.userId) {
+            await createNotification({
+                userId: creatorEmp.userId,
+                type: 'goal_approval',
+                title: `✅ 目標が1次承認されました`,
+                body: `「${(goal.title||'').substring(0,40)}」が承認されました。評価入力へ進んでください。`,
+                link: '/goals',
+                fromUserId: req.session.userId,
+                fromName: employee ? employee.name : ''
+            });
+        }
+    }
     res.redirect('/goals');
 });
 
@@ -494,6 +527,21 @@ router.post('/goals/reject1/:id', requireLogin, async (req, res) => {
     await ensureOwnerName(goal);
     await goal.save();
 
+    // 目標作成者に1次差し戻しを通知
+    if (goal.createdBy) {
+        const creatorEmp = await Employee.findById(goal.createdBy);
+        if (creatorEmp && creatorEmp.userId) {
+            await createNotification({
+                userId: creatorEmp.userId,
+                type: 'goal_approval',
+                title: `↩ 目標が差し戻されました（1次）`,
+                body: `「${(goal.title||'').substring(0,40)}」${comment ? ' - ' + comment.substring(0,60) : ''}`,
+                link: '/goals',
+                fromUserId: req.session.userId,
+                fromName: employee ? employee.name : ''
+            });
+        }
+    }
     res.redirect('/goals/approval');
 });
 
@@ -551,6 +599,19 @@ router.post('/goals/evaluate/:id', requireLogin, async (req,res)=>{
 
     await ensureOwnerName(goal);
     await goal.save();
+
+    // 2次承認者に通知
+    if (approverEmp.userId) {
+        await createNotification({
+            userId: approverEmp.userId,
+            type: 'goal_approval',
+            title: `📋 目標の2次承認依頼が届きました`,
+            body: `${employee ? employee.name : '社員'} さんの目標「${(goal.title||'').substring(0,40)}」`,
+            link: '/goals/approval',
+            fromUserId: req.session.userId,
+            fromName: employee ? employee.name : ''
+        });
+    }
     res.redirect('/goals');
 });
 
@@ -594,6 +655,21 @@ router.post('/goals/reject2/:id', requireLogin, async (req, res) => {
         await ensureOwnerName(goal);
         await goal.save();
 
+        // 目標作成者に2次差し戻しを通知
+        if (goal.createdBy) {
+            const creatorEmp = await Employee.findById(goal.createdBy);
+            if (creatorEmp && creatorEmp.userId) {
+                await createNotification({
+                    userId: creatorEmp.userId,
+                    type: 'goal_approval',
+                    title: `↩ 目標が差し戻されました（2次）`,
+                    body: `「${(goal.title||'').substring(0,40)}」${comment ? ' - ' + comment.substring(0,60) : ''}`,
+                    link: '/goals',
+                    fromUserId: req.session.userId,
+                    fromName: employee ? employee.name : ''
+                });
+            }
+        }
         res.redirect('/goals/approval');
 });
 
@@ -620,6 +696,22 @@ router.get('/goals/approve2/:id', requireLogin, async (req, res) => {
     });
     await ensureOwnerName(goal);
     await goal.save();
+
+    // 目標作成者に2次承認完了を通知
+    if (goal.createdBy) {
+        const creatorEmp = await Employee.findById(goal.createdBy);
+        if (creatorEmp && creatorEmp.userId) {
+            await createNotification({
+                userId: creatorEmp.userId,
+                type: 'goal_approval',
+                title: `🎉 目標が最終承認されました`,
+                body: `「${(goal.title||'').substring(0,40)}」の評価プロセスが完了しました。`,
+                link: '/goals',
+                fromUserId: req.session.userId,
+                fromName: employee.name
+            });
+        }
+    }
     res.redirect('/goals/approval');
 });
 // 目標編集フォーム

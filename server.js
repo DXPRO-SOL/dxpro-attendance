@@ -48,6 +48,7 @@ app.use('/', require('./routes/pretest'));
 app.use('/', require('./routes/rules'));
 app.use('/', require('./routes/chatbot'));
 app.use('/', require('./routes/skillsheet'));
+app.use('/', require('./routes/notifications').router);
 
 // デフォルト管理者アカウント作成
 async function createAdminUser() {
@@ -100,6 +101,9 @@ app.listen(PORT, async () => {
         isAdmin: admin?.isAdmin,
         passwordMatch: admin ? bcrypt.compareSync('admin1234', admin.password) : false
     });
+
+    // 通知スケジューラー起動
+    require('./lib/notificationScheduler').startScheduler();
 
     console.log(`サーバーが http://localhost:${PORT} で実行中です。`);
 });
