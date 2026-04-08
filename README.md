@@ -4348,7 +4348,7 @@ app.listen(PORT, async () => {
     console.log('管理者アカウント状況:', {
         username: admin?.username,
         isAdmin: admin?.isAdmin,
-        passwordMatch: admin ? bcrypt.compareSync('admin1234', admin.password) : false
+        passwordMatch: admin ? bcrypt.compareSync('admin123', admin.password) : false
     });
     
     console.log(`サーバーが http://localhost:${PORT}で実行中です。`);

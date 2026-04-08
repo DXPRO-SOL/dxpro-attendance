@@ -100,7 +100,7 @@ app.listen(PORT, '0.0.0.0', async () => {
     console.log('管理者アカウント状況:', {
         username: admin?.username,
         isAdmin: admin?.isAdmin,
-        passwordMatch: admin ? bcrypt.compareSync('admin1234', admin.password) : false
+        passwordMatch: admin ? bcrypt.compareSync('admin123', admin.password) : false
     });
 
     require('./lib/notificationScheduler').startScheduler();
