@@ -4,6 +4,9 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const app = express();
 
+// Render/Cloudflare環境ではプロキシを信頼してHTTPS判定を正しく行う
+app.set('trust proxy', 1);
+
 // ── プロセスクラッシュ防止（Render本番環境用） ─────────────────────
 process.on('uncaughtException', (err) => {
     console.error('[uncaughtException] プロセスクラッシュを防止:', err.message);
@@ -29,7 +32,8 @@ app.use(session({
     resave: false,
     saveUninitialized: false,
     cookie: {
-        secure: false,
+        secure: false,  // RenderはHTTPSだがCloudflare経由のためfalseのまま
+        httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000
     }
 }));
@@ -134,6 +138,20 @@ app.listen(PORT, '0.0.0.0', async () => {
     });
 
     require('./lib/notificationScheduler').startScheduler();
+
+    // ── Renderスリープ防止（無料プランは15分でスリープするため自己pingで起動維持） ──
+    if (process.env.RENDER_EXTERNAL_URL || process.env.RENDER) {
+        const https = require('https');
+        const selfUrl = process.env.RENDER_EXTERNAL_URL || 'https://dxpro-attendance.onrender.com';
+        setInterval(() => {
+            https.get(selfUrl + '/health', (res) => {
+                console.log('[KeepAlive] self-ping:', res.statusCode);
+            }).on('error', (e) => {
+                console.error('[KeepAlive] ping error:', e.message);
+            });
+        }, 14 * 60 * 1000); // 14分ごと（スリープの15分前にping）
+        console.log('[KeepAlive] スリープ防止タイマー起動:', selfUrl);
+    }
 
     console.log(`Server running on port ${PORT}`);
 });
