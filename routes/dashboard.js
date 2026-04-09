@@ -444,6 +444,10 @@ router.get('/dashboard', requireLogin, async (req, res) => {
                             <div class="qa-icon" style="background:#eff6ff;color:#2563eb"><i class="fa-solid fa-comments"></i></div>
                             掲示板投稿
                         </a>
+                        <a href="/overtime/new" class="qa-btn">
+                            <div class="qa-icon" style="background:#fff7ed;color:#ea580c"><i class="fa-solid fa-clock"></i></div>
+                            残業申請
+                        </a>
                     </div>
                 </div>
             </div>

@@ -36,15 +36,33 @@ const STAMPS = [
 const STAMP_KEYS = STAMPS.map(s => s.key);
 const STAMP_MAP  = Object.fromEntries(STAMPS.map(s => [s.key, s]));
 
-// ファイルアップロード設定
+// ファイルアップロード設定（日報用：uploads/daily/ サブフォルダ）
 const storage = multer.diskStorage({
-    destination: function (req, file, cb) { cb(null, 'uploads/'); },
+    destination: function (req, file, cb) {
+        const dir = path.join('uploads', 'daily');
+        require('fs').mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+    },
     filename: function (req, file, cb) {
-        const ext = path.extname(file.originalname) || '';
+        // multerはoriginalname をlatin1で受け取るため、UTF-8に変換してから拡張子を取得
+        const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+        file.originalname = originalName;
+        const ext = path.extname(originalName) || '';
         cb(null, Date.now() + '-' + Math.round(Math.random() * 1e9) + ext);
     }
 });
-const upload = multer({ storage });
+const upload = multer({
+    storage,
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+    fileFilter: function (req, file, cb) {
+        // multerはoriginalname をlatin1で受け取るため、UTF-8に変換してから拡張子をチェック
+        const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+        // 画像・PDF・Office系ドキュメントを許可
+        const allowed = /\.(jpe?g|png|gif|webp|pdf|docx?|xlsx?|pptx?|txt|csv|zip)$/i;
+        if (allowed.test(originalName)) return cb(null, true);
+        cb(new Error('許可されていないファイル形式です'));
+    }
+});
 
 router.get('/hr', requireLogin, async (req, res) => {
     try {
@@ -2652,6 +2670,11 @@ router.get('/hr/daily-report', requireLogin, async (req, res) => {
 router.get('/hr/daily-report/new', requireLogin, async (req, res) => {
     try {
         const today = new Date().toISOString().split('T')[0];
+        // メンション候補（全従業員）
+        const allEmps = await Employee.find({}, 'name userId').lean();
+        const mentionUsersJson = JSON.stringify(
+            allEmps.map(e => ({ id: String(e.userId), name: e.name }))
+        );
         renderPage(req, res, '日報投稿', '日報を投稿', `
             <style>
                 .form-card{background:#fff;border-radius:14px;padding:28px;box-shadow:0 4px 14px rgba(11,36,48,.06);max-width:860px;margin:0 auto}
@@ -2667,6 +2690,21 @@ router.get('/hr/daily-report/new', requireLogin, async (req, res) => {
                 .sample-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:#e8effc;color:#0b5fff;border:1px solid #bfdbfe;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px;transition:background .2s}
                 .sample-btn:hover{background:#dbeafe}
                 .char-count{font-size:12px;color:#9ca3af;text-align:right;margin-top:3px}
+                /* メンション */
+                .mention-wrap{position:relative}
+                .mention{color:#2563eb;font-weight:700;background:#eff6ff;border-radius:4px;padding:0 3px}
+                .mention-suggest{position:absolute;z-index:500;background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:200px;max-height:220px;overflow-y:auto;display:none;margin-top:2px}
+                .mention-suggest.open{display:block}
+                .mention-item{padding:8px 14px;font-size:13px;cursor:pointer;color:#1e293b;transition:background .1s}
+                .mention-item:hover,.mention-item.active{background:#eff6ff;color:#2563eb}
+                /* 添付 */
+                .attach-area{border:2px dashed #e2e8f0;border-radius:10px;padding:14px 18px;margin-top:8px;cursor:pointer;transition:border .2s;background:#fafafa}
+                .attach-area:hover,.attach-area.drag-over{border-color:#2563eb;background:#eff6ff}
+                .attach-label{font-size:13px;color:#94a3b8;display:flex;align-items:center;gap:8px;pointer-events:none}
+                .attach-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+                .attach-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:#f1f5f9;border-radius:7px;font-size:12px;color:#374151}
+                .attach-chip .rm{background:none;border:none;cursor:pointer;color:#9ca3af;padding:0;font-size:14px;line-height:1}
+                .attach-chip .rm:hover{color:#ef4444}
             </style>
 
             <div style="max-width:860px;margin:0 auto">
@@ -2745,7 +2783,7 @@ router.get('/hr/daily-report/new', requireLogin, async (req, res) => {
                         <h3 style="margin:0;font-size:18px;color:#0b2540">日報を記入</h3>
                         <button type="button" class="sample-btn" onclick="insertSample()">📝 記入例を挿入</button>
                     </div>
-                    <form action="/hr/daily-report/new" method="POST" id="reportForm">
+                    <form action="/hr/daily-report/new" method="POST" id="reportForm" enctype="multipart/form-data">
                         <div style="margin-bottom:18px">
                             <label class="field-label">日付</label>
                             <input type="date" name="reportDate" value="${today}" required style="padding:10px;border-radius:8px;border:1px solid #e2e8f0;font-size:14px">
@@ -2753,30 +2791,59 @@ router.get('/hr/daily-report/new', requireLogin, async (req, res) => {
 
                         <div style="margin-bottom:18px">
                             <label class="field-label">本日の業務内容 <span style="color:#ef4444">*</span></label>
-                            <span class="field-hint">時間帯ごとに実施した業務を具体的に記入してください</span>
-                            <textarea id="f_content" name="content" rows="8" required class="form-textarea" placeholder="例）9:00〜 朝礼・メールチェック&#10;9:30〜11:30　○○プロジェクト 要件定義書レビュー&#10;13:00〜15:00　システム仕様書修正..."></textarea>
+                            <span class="field-hint">時間帯ごとに実施した業務を具体的に記入してください。@名前 でメンションできます</span>
+                            <div class="mention-wrap">
+                                <textarea id="f_content" name="content" rows="8" required class="form-textarea" placeholder="例）9:00〜 朝礼・メールチェック&#10;9:30〜11:30　○○プロジェクト 要件定義書レビュー&#10;@田中さん と連携して進めました"></textarea>
+                                <div class="mention-suggest" id="ms_content"></div>
+                            </div>
                             <div class="char-count"><span id="cnt_content">0</span> 文字</div>
                         </div>
 
                         <div style="margin-bottom:18px">
                             <label class="field-label">本日の成果・進捗</label>
                             <span class="field-hint">✅ 完了 / 🔄 進行中 / ⏳ 着手予定 などの記号を使うと分かりやすいです</span>
-                            <textarea id="f_achievements" name="achievements" rows="5" class="form-textarea" placeholder="例）&#10;✅ ○○レビュー完了（指摘事項3件 → 全対応済み）&#10;🔄 仕様書修正 90%完了（残：図表修正のみ）&#10;⏳ ユーザーテスト準備（明日対応予定）"></textarea>
+                            <div class="mention-wrap">
+                                <textarea id="f_achievements" name="achievements" rows="5" class="form-textarea" placeholder="例）&#10;✅ ○○レビュー完了（指摘事項3件 → 全対応済み）&#10;🔄 仕様書修正 90%完了（残：図表修正のみ）&#10;⏳ ユーザーテスト準備（明日対応予定）"></textarea>
+                                <div class="mention-suggest" id="ms_achievements"></div>
+                            </div>
                             <div class="char-count"><span id="cnt_achievements">0</span> 文字</div>
                         </div>
 
                         <div style="margin-bottom:18px">
                             <label class="field-label">課題・問題点</label>
                             <span class="field-hint">「事実」「影響」「対応策」の3点セットで。支援が必要な場合は明示してください</span>
-                            <textarea id="f_issues" name="issues" rows="5" class="form-textarea" placeholder="例）&#10;■ 解決済み：仕様書バージョン誤り → 最新版に修正済み&#10;■ 未解決：△△社APIの仕様変更通知あり。影響範囲を明日調査予定。"></textarea>
+                            <div class="mention-wrap">
+                                <textarea id="f_issues" name="issues" rows="5" class="form-textarea" placeholder="例）&#10;■ 解決済み：仕様書バージョン誤り → 最新版に修正済み&#10;■ 未解決：△△社APIの仕様変更通知あり。影響範囲を明日調査予定。"></textarea>
+                                <div class="mention-suggest" id="ms_issues"></div>
+                            </div>
                             <div class="char-count"><span id="cnt_issues">0</span> 文字</div>
                         </div>
 
-                        <div style="margin-bottom:24px">
+                        <div style="margin-bottom:18px">
                             <label class="field-label">明日の予定</label>
                             <span class="field-hint">優先度順に記入。締め切りや社外アポは必ず明記してください</span>
-                            <textarea id="f_tomorrow" name="tomorrow" rows="5" class="form-textarea" placeholder="例）&#10;① 【最優先】△△社API仕様変更の影響調査・技術MTG（午前中）&#10;② ログイン画面実装の続き（13:00〜15:00）&#10;③ 週次レポート提出（17:00締め切り）"></textarea>
+                            <div class="mention-wrap">
+                                <textarea id="f_tomorrow" name="tomorrow" rows="5" class="form-textarea" placeholder="例）&#10;① 【最優先】△△社API仕様変更の影響調査・技術MTG（午前中）&#10;② ログイン画面実装の続き（13:00〜15:00）&#10;③ 週次レポート提出（17:00締め切り）"></textarea>
+                                <div class="mention-suggest" id="ms_tomorrow"></div>
+                            </div>
                             <div class="char-count"><span id="cnt_tomorrow">0</span> 文字</div>
+                        </div>
+
+                        <div style="margin-bottom:24px">
+                            <label class="field-label">ファイル添付（任意）</label>
+                            <span class="field-hint">画像・PDF・Officeファイルなど。複数選択可。最大20MB/ファイル</span>
+                            <label for="fileInput" class="attach-area" id="dropArea"
+                                ondragover="event.preventDefault();this.classList.add('drag-over')"
+                                ondragleave="this.classList.remove('drag-over')"
+                                ondrop="event.preventDefault();this.classList.remove('drag-over');handleFileDrop(event)">
+                                <span style="font-size:20px">📎</span>
+                                <span>ここをクリックまたはファイルをドラッグ&ドロップ</span>
+                                <input type="file" name="attachments" id="fileInput" multiple
+                                    style="opacity:0;position:absolute;width:0;height:0"
+                                    accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+                                    onchange="handleFileChange(this)">
+                            </label>
+                            <div class="attach-list" id="attachList"></div>
                         </div>
 
                         <div style="display:flex;gap:10px">
@@ -2788,7 +2855,10 @@ router.get('/hr/daily-report/new', requireLogin, async (req, res) => {
             </div>
 
             <script>
-            // 文字数カウント
+            // ─── メンション候補データ ───
+            const MENTION_USERS = ${mentionUsersJson};
+
+            // ─── 文字数カウント ───
             ['content','achievements','issues','tomorrow'].forEach(function(key){
                 var el = document.getElementById('f_' + key);
                 var cnt = document.getElementById('cnt_' + key);
@@ -2798,7 +2868,142 @@ router.get('/hr/daily-report/new', requireLogin, async (req, res) => {
                 update();
             });
 
-            // 記入例を挿入
+            // ─── メンション候補表示 ───
+            function setupMention(textareaId, suggestId) {
+                var ta  = document.getElementById(textareaId);
+                var sug = document.getElementById(suggestId);
+                if (!ta || !sug) return;
+                var activeIdx = -1;
+
+                ta.addEventListener('input', function() {
+                    var val = ta.value;
+                    var pos = ta.selectionStart;
+                    var before = val.slice(0, pos);
+                    var m = before.match(/@([^\s@]*)$/);
+                    if (!m) { sug.classList.remove('open'); return; }
+                    var q = m[1].toLowerCase();
+                    var hits = MENTION_USERS.filter(u => u.name.toLowerCase().includes(q));
+                    if (!hits.length) { sug.classList.remove('open'); return; }
+                    sug.innerHTML = hits.map((u, i) =>
+                        '<div class="mention-item" data-name="' + u.name + '" data-id="' + u.id + '" data-idx="' + i + '">' + u.name + '</div>'
+                    ).join('');
+                    sug.classList.add('open');
+                    activeIdx = -1;
+                    sug.querySelectorAll('.mention-item').forEach(function(el) {
+                        el.addEventListener('mousedown', function(e) {
+                            e.preventDefault();
+                            insertMention(ta, sug, el.dataset.name);
+                        });
+                    });
+                });
+
+                ta.addEventListener('keydown', function(e) {
+                    if (!sug.classList.contains('open')) return;
+                    var items = sug.querySelectorAll('.mention-item');
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        activeIdx = (activeIdx + 1) % items.length;
+                        items.forEach(function(el, i) { el.classList.toggle('active', i === activeIdx); });
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        activeIdx = (activeIdx - 1 + items.length) % items.length;
+                        items.forEach(function(el, i) { el.classList.toggle('active', i === activeIdx); });
+                    } else if (e.key === 'Enter' && activeIdx >= 0) {
+                        e.preventDefault();
+                        insertMention(ta, sug, items[activeIdx].dataset.name);
+                    } else if (e.key === 'Escape') {
+                        sug.classList.remove('open');
+                    }
+                });
+
+                document.addEventListener('click', function(e) {
+                    if (!ta.contains(e.target) && !sug.contains(e.target)) sug.classList.remove('open');
+                });
+            }
+
+            function insertMention(ta, sug, name) {
+                var val = ta.value;
+                var pos = ta.selectionStart;
+                var before = val.slice(0, pos);
+                var after  = val.slice(pos);
+                var newBefore = before.replace(/@([^\s@]*)$/, '@' + name + ' ');
+                ta.value = newBefore + after;
+                ta.selectionStart = ta.selectionEnd = newBefore.length;
+                sug.classList.remove('open');
+                ta.dispatchEvent(new Event('input'));
+            }
+
+            ['content','achievements','issues','tomorrow'].forEach(function(k) {
+                setupMention('f_' + k, 'ms_' + k);
+            });
+
+            // ─── 添付ファイル ───
+            var fileInput  = document.getElementById('fileInput');
+            var attachList = document.getElementById('attachList');
+            var selectedFiles = [];
+
+            function handleFileChange(input) {
+                // 選択されたファイルを追加
+                Array.from(input.files).forEach(function(f) { selectedFiles.push(f); });
+                renderAttachList();
+                syncFilesToInput();
+                // value をリセット（同ファイルの再選択のため）
+                input.value = '';
+            }
+
+            function handleFileDrop(event) {
+                Array.from(event.dataTransfer.files).forEach(function(f) { selectedFiles.push(f); });
+                renderAttachList();
+                syncFilesToInput();
+            }
+
+            function addFiles(files) {
+                files.forEach(function(f) { selectedFiles.push(f); });
+                renderAttachList();
+                syncFilesToInput();
+            }
+
+            function renderAttachList() {
+                attachList.innerHTML = '';
+                selectedFiles.forEach(function(f, i) {
+                    var icon = f.type.startsWith('image/') ? '🖼️' : f.name.endsWith('.pdf') ? '📄' : '📎';
+                    var size = f.size > 1024*1024 ? (f.size/1024/1024).toFixed(1)+'MB' : Math.round(f.size/1024)+'KB';
+                    var chip = document.createElement('div');
+                    chip.className = 'attach-chip';
+                    var iconSpan = document.createElement('span');
+                    iconSpan.textContent = icon + ' ';
+                    var nameSpan = document.createElement('span');
+                    nameSpan.textContent = f.name;
+                    var sizeSpan = document.createElement('span');
+                    sizeSpan.style.color = '#9ca3af';
+                    sizeSpan.textContent = '(' + size + ')';
+                    var rmBtn = document.createElement('button');
+                    rmBtn.type = 'button';
+                    rmBtn.className = 'rm';
+                    rmBtn.textContent = '✕';
+                    rmBtn.setAttribute('data-idx', i);
+                    rmBtn.onclick = function() { removeFile(parseInt(this.getAttribute('data-idx'))); };
+                    chip.appendChild(iconSpan);
+                    chip.appendChild(nameSpan);
+                    chip.appendChild(sizeSpan);
+                    chip.appendChild(rmBtn);
+                    attachList.appendChild(chip);
+                });
+            }
+
+            function removeFile(idx) {
+                selectedFiles.splice(idx, 1);
+                renderAttachList();
+                syncFilesToInput();
+            }
+
+            function syncFilesToInput() {
+                var dt = new DataTransfer();
+                selectedFiles.forEach(function(f) { dt.items.add(f); });
+                fileInput.files = dt.files;
+            }
+
+            // ─── 記入例を挿入 ───
             function insertSample(){
                 if(!confirm('記入例をフォームに挿入しますか？\\n（入力済みの内容は上書きされます）')) return;
 
@@ -2836,7 +3041,6 @@ router.get('/hr/daily-report/new', requireLogin, async (req, res) => {
 '④ ユーザーテスト準備資料作成（16:00〜）\\n' +
 '⑤ 週次レポート提出（17:00までに提出）';
 
-                // 文字数更新
                 ['content','achievements','issues','tomorrow'].forEach(function(key){
                     var el = document.getElementById('f_' + key);
                     var cnt = document.getElementById('cnt_' + key);
@@ -2851,20 +3055,55 @@ router.get('/hr/daily-report/new', requireLogin, async (req, res) => {
     }
 });
 
-router.post('/hr/daily-report/new', requireLogin, async (req, res) => {
+router.post('/hr/daily-report/new', requireLogin, upload.array('attachments', 10), async (req, res) => {
     try {
         const user = await User.findById(req.session.userId);
         const employee = await Employee.findOne({ userId: user._id });
         const { reportDate, content, achievements, issues, tomorrow } = req.body;
-        await DailyReport.create({
+
+        // メンション解析（@名前 → userId 解決）
+        const allText = [content, achievements, issues, tomorrow].join(' ');
+        const mentionNames = [...new Set((allText.match(/@([^\s@]+)/g) || []).map(m => m.slice(1)))];
+        const mentionedUsers = mentionNames.length
+            ? await Employee.find({ name: { $in: mentionNames } }, 'name userId')
+            : [];
+        const mentionIds = mentionedUsers.map(e => e.userId);
+
+        // 添付ファイル
+        const attachments = (req.files || []).map(f => ({
+            originalName: f.originalname,
+            filename:     f.filename,
+            mimetype:     f.mimetype,
+            size:         f.size
+        }));
+
+        const report = await DailyReport.create({
             employeeId: employee._id,
-            userId: user._id,
+            userId:     user._id,
             reportDate: new Date(reportDate),
-            content: content || '',
+            content:      content      || '',
             achievements: achievements || '',
-            issues: issues || '',
-            tomorrow: tomorrow || ''
+            issues:       issues       || '',
+            tomorrow:     tomorrow     || '',
+            mentions:     mentionIds,
+            attachments
         });
+
+        // メンション通知
+        for (const emp of mentionedUsers) {
+            if (String(emp.userId) !== String(user._id)) {
+                await createNotification({
+                    userId:     emp.userId,
+                    type:       'mention',
+                    title:      `${employee.name} さんが日報であなたをメンションしました`,
+                    body:       (content || '').slice(0, 80),
+                    link:       `/hr/daily-report/${report._id}`,
+                    fromUserId: user._id,
+                    fromName:   employee.name
+                });
+            }
+        }
+
         res.redirect('/hr/daily-report');
     } catch (error) {
         console.error(error);
@@ -2885,6 +3124,15 @@ router.get('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
 
         const dateVal = report.reportDate ? new Date(report.reportDate).toISOString().split('T')[0] : '';
         const emp = report.employeeId || {};
+        const allEmps = await Employee.find({}, 'name userId').lean();
+        const mentionUsersJson = JSON.stringify(allEmps.map(e => ({ id: String(e.userId), name: e.name })));
+
+        // 既存添付ファイルの表示
+        const existingAttachHtml = (report.attachments || []).map(a => {
+            const icon = (a.mimetype || '').startsWith('image/') ? '🖼️' : a.originalName && a.originalName.endsWith('.pdf') ? '📄' : '📎';
+            const size = a.size > 1024*1024 ? (a.size/1024/1024).toFixed(1)+'MB' : Math.round((a.size||0)/1024)+'KB';
+            return `<div class="attach-chip">${icon} ${escapeHtml(a.originalName||a.filename)} <span style="color:#9ca3af">(${size})</span></div>`;
+        }).join('');
 
         renderPage(req, res, '日報編集', '日報を編集', `
             <style>
@@ -2894,6 +3142,18 @@ router.get('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
                 .form-textarea{width:100%;padding:11px 13px;border-radius:9px;border:1px solid #e2e8f0;box-sizing:border-box;font-size:14px;line-height:1.7;resize:vertical;transition:border .2s;font-family:inherit}
                 .form-textarea:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
                 .char-count{font-size:12px;color:#9ca3af;text-align:right;margin-top:3px}
+                .mention-wrap{position:relative}
+                .mention-suggest{position:absolute;z-index:500;background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:200px;max-height:220px;overflow-y:auto;display:none;margin-top:2px}
+                .mention-suggest.open{display:block}
+                .mention-item{padding:8px 14px;font-size:13px;cursor:pointer;color:#1e293b;transition:background .1s}
+                .mention-item:hover,.mention-item.active{background:#eff6ff;color:#2563eb}
+                .attach-area{border:2px dashed #e2e8f0;border-radius:10px;padding:14px 18px;margin-top:8px;cursor:pointer;transition:border .2s;background:#fafafa}
+                .attach-area:hover,.attach-area.drag-over{border-color:#2563eb;background:#eff6ff}
+                .attach-label{font-size:13px;color:#94a3b8;display:flex;align-items:center;gap:8px;pointer-events:none}
+                .attach-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+                .attach-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:#f1f5f9;border-radius:7px;font-size:12px;color:#374151}
+                .attach-chip .rm{background:none;border:none;cursor:pointer;color:#9ca3af;padding:0;font-size:14px;line-height:1}
+                .attach-chip .rm:hover{color:#ef4444}
             </style>
             <div style="max-width:860px;margin:0 auto">
                 <div style="margin-bottom:16px">
@@ -2906,30 +3166,60 @@ router.get('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
                         <h3 style="margin:0;font-size:18px;color:#0b2540">日報を編集</h3>
                         <span style="padding:2px 12px;background:#eff6ff;color:#2563eb;border-radius:999px;font-size:13px;font-weight:700">${escapeHtml(emp.name || '')}</span>
                     </div>
-                    <form action="/hr/daily-report/${report._id}/edit" method="POST" id="editForm">
+                    <form action="/hr/daily-report/${report._id}/edit" method="POST" id="editForm" enctype="multipart/form-data">
                         <div style="margin-bottom:18px">
                             <label class="field-label">日付</label>
                             <input type="date" name="reportDate" value="${dateVal}" required style="padding:10px;border-radius:8px;border:1px solid #e2e8f0;font-size:14px">
                         </div>
                         <div style="margin-bottom:18px">
                             <label class="field-label">本日の業務内容 <span style="color:#ef4444">*</span></label>
-                            <textarea id="f_content" name="content" rows="8" required class="form-textarea">${escapeHtml(report.content || '')}</textarea>
+                            <span class="field-hint">@名前 でメンションできます</span>
+                            <div class="mention-wrap">
+                                <textarea id="f_content" name="content" rows="8" required class="form-textarea">${escapeHtml(report.content || '')}</textarea>
+                                <div class="mention-suggest" id="ms_content"></div>
+                            </div>
                             <div class="char-count"><span id="cnt_content">0</span> 文字</div>
                         </div>
                         <div style="margin-bottom:18px">
                             <label class="field-label">本日の成果・進捗</label>
-                            <textarea id="f_achievements" name="achievements" rows="5" class="form-textarea">${escapeHtml(report.achievements || '')}</textarea>
+                            <div class="mention-wrap">
+                                <textarea id="f_achievements" name="achievements" rows="5" class="form-textarea">${escapeHtml(report.achievements || '')}</textarea>
+                                <div class="mention-suggest" id="ms_achievements"></div>
+                            </div>
                             <div class="char-count"><span id="cnt_achievements">0</span> 文字</div>
                         </div>
                         <div style="margin-bottom:18px">
                             <label class="field-label">課題・問題点</label>
-                            <textarea id="f_issues" name="issues" rows="5" class="form-textarea">${escapeHtml(report.issues || '')}</textarea>
+                            <div class="mention-wrap">
+                                <textarea id="f_issues" name="issues" rows="5" class="form-textarea">${escapeHtml(report.issues || '')}</textarea>
+                                <div class="mention-suggest" id="ms_issues"></div>
+                            </div>
                             <div class="char-count"><span id="cnt_issues">0</span> 文字</div>
                         </div>
-                        <div style="margin-bottom:24px">
+                        <div style="margin-bottom:18px">
                             <label class="field-label">明日の予定</label>
-                            <textarea id="f_tomorrow" name="tomorrow" rows="5" class="form-textarea">${escapeHtml(report.tomorrow || '')}</textarea>
+                            <div class="mention-wrap">
+                                <textarea id="f_tomorrow" name="tomorrow" rows="5" class="form-textarea">${escapeHtml(report.tomorrow || '')}</textarea>
+                                <div class="mention-suggest" id="ms_tomorrow"></div>
+                            </div>
                             <div class="char-count"><span id="cnt_tomorrow">0</span> 文字</div>
+                        </div>
+                        <div style="margin-bottom:24px">
+                            <label class="field-label">ファイル添付（追加）</label>
+                            <span class="field-hint">既存ファイルに追加できます。既存ファイルの削除は詳細画面から行ってください</span>
+                            ${existingAttachHtml ? `<div class="attach-list" style="margin-bottom:8px">${existingAttachHtml}</div>` : ''}
+                            <label for="fileInput" class="attach-area" id="dropArea"
+                                ondragover="event.preventDefault();this.classList.add('drag-over')"
+                                ondragleave="this.classList.remove('drag-over')"
+                                ondrop="event.preventDefault();this.classList.remove('drag-over');handleFileDrop(event)">
+                                <span style="font-size:20px">📎</span>
+                                <span>ここをクリックまたはファイルをドラッグ&ドロップ</span>
+                                <input type="file" name="attachments" id="fileInput" multiple
+                                    style="opacity:0;position:absolute;width:0;height:0"
+                                    accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+                                    onchange="handleFileChange(this)">
+                            </label>
+                            <div class="attach-list" id="attachList"></div>
                         </div>
                         <div style="display:flex;gap:10px">
                             <button type="submit" style="padding:11px 30px;background:#2563eb;color:#fff;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:15px">
@@ -2941,6 +3231,7 @@ router.get('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
                 </div>
             </div>
             <script>
+            const MENTION_USERS = ${mentionUsersJson};
             ['content','achievements','issues','tomorrow'].forEach(function(key){
                 var el = document.getElementById('f_' + key);
                 var cnt = document.getElementById('cnt_' + key);
@@ -2949,6 +3240,85 @@ router.get('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
                 el.addEventListener('input', update);
                 update();
             });
+            function setupMention(textareaId, suggestId) {
+                var ta = document.getElementById(textareaId);
+                var sug = document.getElementById(suggestId);
+                if (!ta || !sug) return;
+                var activeIdx = -1;
+                ta.addEventListener('input', function() {
+                    var val = ta.value, pos = ta.selectionStart;
+                    var before = val.slice(0, pos);
+                    var m = before.match(/@([^\\s@]*)$/);
+                    if (!m) { sug.classList.remove('open'); return; }
+                    var q = m[1].toLowerCase();
+                    var hits = MENTION_USERS.filter(u => u.name.toLowerCase().includes(q));
+                    if (!hits.length) { sug.classList.remove('open'); return; }
+                    sug.innerHTML = hits.map((u, i) =>
+                        '<div class="mention-item" data-name="' + u.name + '" data-idx="' + i + '">' + u.name + '</div>'
+                    ).join('');
+                    sug.classList.add('open'); activeIdx = -1;
+                    sug.querySelectorAll('.mention-item').forEach(function(el) {
+                        el.addEventListener('mousedown', function(e) { e.preventDefault(); insertMention(ta, sug, el.dataset.name); });
+                    });
+                });
+                ta.addEventListener('keydown', function(e) {
+                    if (!sug.classList.contains('open')) return;
+                    var items = sug.querySelectorAll('.mention-item');
+                    if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = (activeIdx + 1) % items.length; items.forEach(function(el, i){ el.classList.toggle('active', i === activeIdx); }); }
+                    else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = (activeIdx - 1 + items.length) % items.length; items.forEach(function(el, i){ el.classList.toggle('active', i === activeIdx); }); }
+                    else if (e.key === 'Enter' && activeIdx >= 0) { e.preventDefault(); insertMention(ta, sug, items[activeIdx].dataset.name); }
+                    else if (e.key === 'Escape') { sug.classList.remove('open'); }
+                });
+                document.addEventListener('click', function(e) { if (!ta.contains(e.target) && !sug.contains(e.target)) sug.classList.remove('open'); });
+            }
+            function insertMention(ta, sug, name) {
+                var val = ta.value, pos = ta.selectionStart, before = val.slice(0, pos), after = val.slice(pos);
+                var nb = before.replace(/@([^\\s@]*)$/, '@' + name + ' ');
+                ta.value = nb + after; ta.selectionStart = ta.selectionEnd = nb.length;
+                sug.classList.remove('open'); ta.dispatchEvent(new Event('input'));
+            }
+            ['content','achievements','issues','tomorrow'].forEach(function(k) { setupMention('f_' + k, 'ms_' + k); });
+            var fileInput = document.getElementById('fileInput');
+            var attachList = document.getElementById('attachList');
+            var selectedFiles = [];
+
+            function handleFileChange(input) {
+                Array.from(input.files).forEach(function(f) { selectedFiles.push(f); });
+                renderAttachList();
+                syncFilesToInput();
+                input.value = '';
+            }
+
+            function handleFileDrop(event) {
+                Array.from(event.dataTransfer.files).forEach(function(f) { selectedFiles.push(f); });
+                renderAttachList();
+                syncFilesToInput();
+            }
+
+            function addFiles(files) { files.forEach(function(f) { selectedFiles.push(f); }); renderAttachList(); syncFilesToInput(); }
+            function renderAttachList() {
+                attachList.innerHTML = '';
+                selectedFiles.forEach(function(f, i) {
+                    var icon = f.type.startsWith('image/') ? '🖼️' : f.name.endsWith('.pdf') ? '📄' : '📎';
+                    var size = f.size > 1024*1024 ? (f.size/1024/1024).toFixed(1)+'MB' : Math.round(f.size/1024)+'KB';
+                    var chip = document.createElement('div');
+                    chip.className = 'attach-chip';
+                    var iconSpan = document.createElement('span'); iconSpan.textContent = icon + ' ';
+                    var nameSpan = document.createElement('span'); nameSpan.textContent = f.name;
+                    var sizeSpan = document.createElement('span'); sizeSpan.style.color = '#9ca3af'; sizeSpan.textContent = '(' + size + ')';
+                    var rmBtn = document.createElement('button'); rmBtn.type = 'button'; rmBtn.className = 'rm'; rmBtn.textContent = '✕';
+                    rmBtn.setAttribute('data-idx', i);
+                    rmBtn.onclick = function() { removeFile(parseInt(this.getAttribute('data-idx'))); };
+                    chip.appendChild(iconSpan); chip.appendChild(nameSpan); chip.appendChild(sizeSpan); chip.appendChild(rmBtn);
+                    attachList.appendChild(chip);
+                });
+            }
+            function removeFile(idx) { selectedFiles.splice(idx, 1); renderAttachList(); syncFilesToInput(); }
+            function syncFilesToInput() {
+                var dt = new DataTransfer();
+                selectedFiles.forEach(function(f) { dt.items.add(f); });
+                fileInput.files = dt.files;
+            }
             </script>
         `);
     } catch (error) {
@@ -2958,7 +3328,7 @@ router.get('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
 });
 
 // 日報編集保存
-router.post('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
+router.post('/hr/daily-report/:id/edit', requireLogin, upload.array('attachments', 10), async (req, res) => {
     try {
         const report = await DailyReport.findById(req.params.id);
         if (!report) return res.redirect('/hr/daily-report');
@@ -2968,12 +3338,31 @@ router.post('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
         }
 
         const { reportDate, content, achievements, issues, tomorrow } = req.body;
+
+        // メンション解析
+        const allText = [content, achievements, issues, tomorrow].join(' ');
+        const mentionNames = [...new Set((allText.match(/@([^\s@]+)/g) || []).map(m => m.slice(1)))];
+        const mentionedUsers = mentionNames.length
+            ? await Employee.find({ name: { $in: mentionNames } }, 'name userId')
+            : [];
+        const mentionIds = mentionedUsers.map(e => e.userId);
+
+        // 新規添付ファイル（既存に追加）
+        const newAttachments = (req.files || []).map(f => ({
+            originalName: f.originalname,
+            filename:     f.filename,
+            mimetype:     f.mimetype,
+            size:         f.size
+        }));
+
         await DailyReport.findByIdAndUpdate(req.params.id, {
-            reportDate: new Date(reportDate),
+            reportDate:   new Date(reportDate),
             content:      content      || '',
             achievements: achievements || '',
             issues:       issues       || '',
-            tomorrow:     tomorrow     || ''
+            tomorrow:     tomorrow     || '',
+            mentions:     mentionIds,
+            $push: { attachments: { $each: newAttachments } }
         });
         res.redirect('/hr/daily-report/' + req.params.id);
     } catch (error) {
@@ -3011,8 +3400,38 @@ router.get('/hr/daily-report/:id', requireLogin, async (req, res) => {
         const emp = report.employeeId || {};
         const dateStr = report.reportDate ? new Date(report.reportDate).toLocaleDateString('ja-JP') : '-';
 
-        // 改行を <br> に変換するヘルパー
-        const nl2br = (str) => escapeHtml(str || '').replace(/\n/g, '<br>');
+        // メンションハイライト付きnl2br
+        const nl2br = (str) => {
+            return escapeHtml(str || '')
+                .replace(/@([^\s@]+)/g, '<span style="color:#2563eb;font-weight:700;background:#eff6ff;border-radius:4px;padding:0 3px">@$1</span>')
+                .replace(/\n/g, '<br>');
+        };
+
+        // 添付ファイル表示HTML生成
+        const makeAttachHtml = (attachments) => {
+            if (!attachments || !attachments.length) return '';
+            return `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">` +
+                attachments.map(a => {
+                    const isImage = (a.mimetype || '').startsWith('image/');
+                    const url = `/uploads/daily/${a.filename}`;
+                    if (isImage) {
+                        return `<a href="${url}" target="_blank" style="display:block">
+                            <img src="${url}" alt="${escapeHtml(a.originalName||a.filename)}"
+                                style="max-width:160px;max-height:120px;border-radius:8px;border:1px solid #e2e8f0;object-fit:cover">
+                        </a>`;
+                    }
+                    const icon = (a.originalName||'').endsWith('.pdf') ? '📄' : '📎';
+                    const size = a.size > 1024*1024 ? (a.size/1024/1024).toFixed(1)+'MB' : Math.round((a.size||0)/1024)+'KB';
+                    return `<a href="${url}" target="_blank" download="${escapeHtml(a.originalName||a.filename)}"
+                        style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#f1f5f9;border-radius:8px;font-size:13px;color:#374151;text-decoration:none;border:1px solid #e2e8f0">
+                        ${icon} ${escapeHtml(a.originalName||a.filename)} <span style="color:#9ca3af;font-size:11px">${size}</span>
+                    </a>`;
+                }).join('') + `</div>`;
+        };
+
+        // メンション候補（コメント用）
+        const allEmps = await Employee.find({}, 'name userId').lean();
+        const mentionUsersJson = JSON.stringify(allEmps.map(e => ({ id: String(e.userId), name: e.name })));
 
         // スタンプ集計（key → [{userId, userName}]）
         const reactionMap = {};
@@ -3139,6 +3558,27 @@ router.get('/hr/daily-report/:id', requireLogin, async (req, res) => {
 .comment-form textarea:focus { border-color:#3b82f6 }
 .comment-submit { padding:9px 22px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;transition:background .15s }
 .comment-submit:hover { background:#1d4ed8 }
+/* メンション (コメント用) */
+.c-mention-wrap{position:relative}
+.mention-suggest{position:absolute;z-index:500;background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:200px;max-height:220px;overflow-y:auto;display:none;margin-top:2px}
+.mention-suggest.open{display:block}
+.mention-item{padding:8px 14px;font-size:13px;cursor:pointer;color:#1e293b}
+.mention-item:hover,.mention-item.active{background:#eff6ff;color:#2563eb}
+/* コメント添付 */
+.c-attach-area{border:1.5px dashed #e2e8f0;border-radius:8px;padding:10px 14px;margin-top:6px;cursor:pointer;transition:border .2s,background .2s;background:#fafafa;font-size:13px;color:#94a3b8;display:flex;align-items:center;gap:8px}
+.c-attach-area:hover,.c-attach-area.drag-over{border-color:#3b82f6;background:#eff6ff;color:#3b82f6}
+.c-attach-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.c-attach-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;background:#f1f5f9;border-radius:6px;font-size:12px;color:#374151}
+.c-attach-chip .rm{background:none;border:none;cursor:pointer;color:#9ca3af;padding:0;font-size:13px}
+.c-attach-chip .rm:hover{color:#ef4444}
+/* コメント編集 */
+.comment-edit-form{margin-top:8px;display:none}
+.comment-edit-form.open{display:block}
+.comment-actions{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.c-action-btn{display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border-radius:7px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:#f1f5f9;color:#374151;transition:background .12s;text-decoration:none}
+.c-action-btn:hover{background:#e5e7eb}
+.c-action-btn.edit{color:#2563eb;background:#eff6ff}.c-action-btn.edit:hover{background:#dbeafe}
+.c-action-btn.del{color:#ef4444;background:#fee2e2}.c-action-btn.del:hover{background:#fecaca}
 </style>
 
 <div style="max-width:860px;margin:0 auto">
@@ -3188,6 +3628,13 @@ router.get('/hr/daily-report/:id', requireLogin, async (req, res) => {
             <div class="section-body">${nl2br(report.tomorrow)}</div>
         </div>` : ''}
 
+        <!-- 本文添付ファイル -->
+        ${(report.attachments && report.attachments.length) ? `
+        <div class="section-block">
+            <div class="section-label"><i class="fa-solid fa-paperclip" style="color:#64748b"></i>添付ファイル</div>
+            ${makeAttachHtml(report.attachments)}
+        </div>` : ''}
+
         <!-- スタンプ -->
         <div style="margin-top:10px;padding-top:20px;border-top:1px solid #f1f5f9">
             <div style="font-size:11.5px;font-weight:700;color:#94a3b8;margin-bottom:10px;letter-spacing:.06em;text-transform:uppercase">Reactions</div>
@@ -3226,6 +3673,7 @@ router.get('/hr/daily-report/:id', requireLogin, async (req, res) => {
                     const commentDate = c.at ? new Date(c.at).toLocaleString('ja-JP') : '';
                     const initial = authorName.charAt(0);
                     const cid = String(c._id);
+                    const canEdit = (String(c.authorId) === myUserId || req.session.isAdmin);
 
                     // コメントのリアクション集計
                     const cRMap = {};
@@ -3257,8 +3705,26 @@ router.get('/hr/daily-report/:id', requireLogin, async (req, res) => {
                     return `<div class="comment-item" id="ci-${cid}">
                         <div class="comment-avatar">${escapeHtml(initial)}</div>
                         <div style="flex:1;min-width:0">
-                            <div class="comment-meta">${escapeHtml(authorName)} · ${commentDate}</div>
-                            <div class="comment-body">${nl2br(c.text || '')}</div>
+                            <div class="comment-meta">
+                                ${escapeHtml(authorName)} · ${commentDate}
+                                ${c.editedAt ? `<span style="font-size:11px;color:#9ca3af;margin-left:4px">（編集済み）</span>` : ''}
+                            </div>
+                            <div class="comment-body" id="cbody-${cid}">${nl2br(c.text || '')}</div>
+                            ${makeAttachHtml(c.attachments)}
+                            ${canEdit ? `<div class="comment-actions">
+                                <button class="c-action-btn edit" onclick="startEditComment('${cid}')">✏️ 編集</button>
+                                <form method="POST" action="/hr/daily-report/${report._id}/comment/${cid}/delete"
+                                    onsubmit="return confirm('このコメントを削除しますか？')" style="margin:0">
+                                    <button type="submit" class="c-action-btn del">🗑 削除</button>
+                                </form>
+                            </div>` : ''}
+                            <div class="comment-edit-form" id="cedit-${cid}">
+                                <textarea id="cedit-text-${cid}" rows="3" style="width:100%;padding:9px 12px;border:1.5px solid #3b82f6;border-radius:9px;font-size:13.5px;resize:vertical;box-sizing:border-box;font-family:inherit;line-height:1.6;outline:none">${escapeHtml(c.text || '')}</textarea>
+                                <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
+                                    <button class="c-action-btn" onclick="cancelEditComment('${cid}')">キャンセル</button>
+                                    <button class="c-action-btn edit" onclick="submitEditComment('${cid}','${report._id}')">💾 保存</button>
+                                </div>
+                            </div>
                             <div class="c-reaction-row" id="cr-${cid}">
                                 ${cStampHtml}
                                 <div style="position:relative;display:inline-block">
@@ -3273,8 +3739,26 @@ router.get('/hr/daily-report/:id', requireLogin, async (req, res) => {
                     </div>`;
                 }).join('')}
             </div>
-            <form action="/hr/daily-report/${report._id}/comment" method="POST" class="comment-form" style="margin-top:16px">
-                <textarea name="text" rows="3" required placeholder="コメントを入力… (Shift+Enter で改行)"></textarea>
+
+            <!-- コメント投稿フォーム（メンション＋添付） -->
+            <form action="/hr/daily-report/${report._id}/comment" method="POST"
+                enctype="multipart/form-data" class="comment-form" style="margin-top:16px">
+                <div class="c-mention-wrap">
+                    <textarea name="text" id="commentText" rows="3" required
+                        placeholder="コメントを入力… @名前 でメンション (Shift+Enter で改行)"></textarea>
+                    <div class="mention-suggest" id="ms_commentText"></div>
+                </div>
+                <!-- 添付エリア：label でラップして input を直接紐づけ -->
+                <label for="cFileInput" class="c-attach-area" id="cDropArea"
+                    ondragover="event.preventDefault();this.classList.add('drag-over')"
+                    ondragleave="this.classList.remove('drag-over')"
+                    ondrop="event.preventDefault();this.classList.remove('drag-over');handleCDrop(event)">
+                    <span>📎 ファイルをドラッグ＆ドロップ、またはクリックして選択</span>
+                    <input type="file" name="commentFiles" id="cFileInput" multiple
+                        style="opacity:0;position:absolute;width:0;height:0"
+                        onchange="handleCFileChange(this)">
+                </label>
+                <div class="c-attach-list" id="cAttachList"></div>
                 <div style="display:flex;justify-content:flex-end;margin-top:8px">
                     <button type="submit" class="comment-submit">
                         <i class="fa-solid fa-paper-plane" style="margin-right:5px"></i>送信
@@ -3474,6 +3958,179 @@ function sendCStamp(key, commentId, reportId) {
     })
     .catch(console.error);
 }
+
+// ── メンション（コメント用） ──
+const MENTION_USERS = ${mentionUsersJson};
+function setupCommentMention(taId, sugId) {
+    const ta = document.getElementById(taId);
+    const sug = document.getElementById(sugId);
+    if (!ta || !sug) return;
+    let mentionStart = -1, filtered = [];
+
+    ta.addEventListener('keydown', e => {
+        if (!sug.classList.contains('open')) return;
+        const items = sug.querySelectorAll('.mention-item');
+        const active = sug.querySelector('.mention-item.active');
+        const idx = active ? [...items].indexOf(active) : -1;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            items.forEach(i => i.classList.remove('active'));
+            const n = items[(idx + 1) % items.length];
+            if (n) { n.classList.add('active'); n.scrollIntoView({ block: 'nearest' }); }
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            items.forEach(i => i.classList.remove('active'));
+            const n = items[(idx - 1 + items.length) % items.length];
+            if (n) { n.classList.add('active'); n.scrollIntoView({ block: 'nearest' }); }
+        } else if (e.key === 'Enter' || e.key === 'Tab') {
+            if (active) { e.preventDefault(); insertCommentMention(ta, sug, active.dataset.name, mentionStart); }
+        } else if (e.key === 'Escape') {
+            sug.classList.remove('open');
+        }
+    });
+    ta.addEventListener('input', () => {
+        const pos = ta.selectionStart, text = ta.value;
+        let at = -1;
+        for (let i = pos - 1; i >= 0; i--) {
+            if (text[i] === '@') { at = i; break; }
+            if (/\s/.test(text[i])) break;
+        }
+        if (at < 0) { sug.classList.remove('open'); return; }
+        const q = text.slice(at + 1, pos).toLowerCase();
+        mentionStart = at;
+        filtered = MENTION_USERS.filter(u => u.name.toLowerCase().includes(q)).slice(0, 8);
+        if (!filtered.length) { sug.classList.remove('open'); return; }
+        sug.innerHTML = filtered.map(u =>
+            '<div class="mention-item" data-name="' + u.name + '">' + u.name + '</div>'
+        ).join('');
+        sug.querySelectorAll('.mention-item').forEach(item => {
+            item.addEventListener('mousedown', e => {
+                e.preventDefault();
+                insertCommentMention(ta, sug, item.dataset.name, mentionStart);
+            });
+        });
+        sug.classList.add('open');
+    });
+    ta.addEventListener('blur', () => setTimeout(() => sug.classList.remove('open'), 150));
+}
+function insertCommentMention(ta, sug, name, start) {
+    const pos = ta.selectionStart;
+    ta.value = ta.value.slice(0, start) + '@' + name + ' ' + ta.value.slice(pos);
+    ta.selectionStart = ta.selectionEnd = start + name.length + 2;
+    ta.focus();
+    sug.classList.remove('open');
+}
+setupCommentMention('commentText', 'ms_commentText');
+
+// ── コメント添付ファイル ──
+let cAttachFiles = [];
+
+// input[onchange] から呼ばれる
+function handleCFileChange(input) {
+    addCFiles(input.files);
+    input.value = ''; // 同じファイルを再選択できるようにリセット
+}
+
+// ドロップから呼ばれる
+function handleCDrop(event) {
+    addCFiles(event.dataTransfer.files);
+}
+
+function addCFiles(fileList) {
+    Array.from(fileList).forEach(f => cAttachFiles.push(f));
+    renderCAttachList();
+    syncCFilesToInput();
+}
+function renderCAttachList() {
+    const list = document.getElementById('cAttachList');
+    if (!list) return;
+    list.innerHTML = '';
+    cAttachFiles.forEach((f, i) => {
+        const icon = f.type.startsWith('image/') ? '🖼' : '📎';
+        const size = f.size > 1024*1024 ? (f.size/1024/1024).toFixed(1)+'MB' : Math.round((f.size||0)/1024)+'KB';
+        const chip = document.createElement('div');
+        chip.className = 'c-attach-chip';
+        const iconSpan = document.createElement('span');
+        iconSpan.textContent = icon + ' ';
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = f.name;
+        const sizeSpan = document.createElement('span');
+        sizeSpan.style.cssText = 'color:#9ca3af;margin-left:3px';
+        sizeSpan.textContent = '(' + size + ')';
+        const rmBtn = document.createElement('button');
+        rmBtn.type = 'button';
+        rmBtn.className = 'rm';
+        rmBtn.textContent = '✕';
+        rmBtn.setAttribute('data-idx', i);
+        rmBtn.onclick = function() { removeCAttach(parseInt(this.getAttribute('data-idx'))); };
+        chip.appendChild(iconSpan);
+        chip.appendChild(nameSpan);
+        chip.appendChild(sizeSpan);
+        chip.appendChild(rmBtn);
+        list.appendChild(chip);
+    });
+}
+function removeCAttach(i) {
+    cAttachFiles.splice(i, 1);
+    renderCAttachList();
+    syncCFilesToInput();
+}
+function syncCFilesToInput() {
+    const inp = document.getElementById('cFileInput');
+    if (!inp) return;
+    const dt = new DataTransfer();
+    cAttachFiles.forEach(f => dt.items.add(f));
+    inp.files = dt.files;
+}
+
+// ── コメント編集 ──
+function startEditComment(cid) {
+    document.getElementById('cedit-' + cid).classList.add('open');
+    const bodyEl = document.getElementById('cbody-' + cid);
+    if (bodyEl) bodyEl.style.display = 'none';
+    const actionsEl = document.querySelector('#ci-' + cid + ' .comment-actions');
+    if (actionsEl) actionsEl.style.display = 'none';
+}
+function cancelEditComment(cid) {
+    document.getElementById('cedit-' + cid).classList.remove('open');
+    const bodyEl = document.getElementById('cbody-' + cid);
+    if (bodyEl) bodyEl.style.display = '';
+    const actionsEl = document.querySelector('#ci-' + cid + ' .comment-actions');
+    if (actionsEl) actionsEl.style.display = '';
+}
+function submitEditComment(cid, reportId) {
+    const ta = document.getElementById('cedit-text-' + cid);
+    if (!ta) return;
+    const text = ta.value.trim();
+    if (!text) return;
+    fetch('/hr/daily-report/' + reportId + '/comment/' + cid + '/edit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (!d.ok) { alert(d.error || '保存に失敗しました'); return; }
+        const bodyEl = document.getElementById('cbody-' + cid);
+        if (bodyEl) {
+            bodyEl.innerHTML = d.html || d.text.replace(/\n/g, '<br>');
+            bodyEl.style.display = '';
+        }
+        // 「編集済み」バッジを追加
+        const metaEl = document.querySelector('#ci-' + cid + ' .comment-meta');
+        if (metaEl && !metaEl.querySelector('.edited-badge')) {
+            const badge = document.createElement('span');
+            badge.className = 'edited-badge';
+            badge.style.cssText = 'font-size:11px;color:#9ca3af;margin-left:4px';
+            badge.textContent = '（編集済み）';
+            metaEl.appendChild(badge);
+        }
+        const actionsEl = document.querySelector('#ci-' + cid + ' .comment-actions');
+        if (actionsEl) actionsEl.style.display = '';
+        document.getElementById('cedit-' + cid).classList.remove('open');
+    })
+    .catch(() => alert('通信エラーが発生しました'));
+}
 </script>
         `);
     } catch (error) {
@@ -3594,34 +4251,122 @@ router.post('/hr/daily-report/:reportId/comment/:commentId/reaction', requireLog
 });
 
 // コメント投稿
-router.post('/hr/daily-report/:id/comment', requireLogin, async (req, res) => {
+router.post('/hr/daily-report/:id/comment', requireLogin, upload.array('commentFiles', 5), async (req, res) => {
     try {
         const user = await User.findById(req.session.userId);
         const employee = await Employee.findOne({ userId: user._id });
         const authorName = employee ? employee.name : user.username;
         const { text } = req.body;
-        if (text && text.trim()) {
-            await DailyReport.findByIdAndUpdate(req.params.id, {
-                $push: { comments: { authorId: user._id, authorName, text: text.trim() } }
-            });
+        if (!text || !text.trim()) return res.redirect(`/hr/daily-report/${req.params.id}`);
 
-            // 日報の所有者に通知（自分へのコメントは除く）
-            const report = await DailyReport.findById(req.params.id).lean();
-            if (report && String(report.userId) !== String(user._id)) {
+        // メンション解析
+        const mentionNames = [];
+        const mentionRe = /@([^\s@]+)/g;
+        let m2;
+        while ((m2 = mentionRe.exec(text)) !== null) mentionNames.push(m2[1]);
+        let mentionIds = [];
+        const mentionedEmps = mentionNames.length
+            ? await Employee.find({ name: { $in: mentionNames } }, 'name userId').lean()
+            : [];
+        mentionIds = mentionedEmps.map(e => e.userId);
+
+        // 添付ファイル
+        const attachments = (req.files || []).map(f => ({
+            originalName: f.originalname, filename: f.filename,
+            mimetype: f.mimetype, size: f.size
+        }));
+
+        await DailyReport.findByIdAndUpdate(req.params.id, {
+            $push: { comments: {
+                authorId: user._id, authorName, text: text.trim(),
+                mentions: mentionIds, attachments
+            } }
+        });
+
+        const report = await DailyReport.findById(req.params.id).lean();
+
+        // 日報オーナーへの通知
+        if (report && String(report.userId) !== String(user._id)) {
+            await createNotification({
+                userId: report.userId,
+                type: 'comment',
+                title: `${authorName} さんがコメントしました`,
+                body: text.trim().substring(0, 80),
+                link: `/hr/daily-report/${report._id}`,
+                fromUserId: user._id, fromName: authorName
+            });
+        }
+
+        // メンション通知
+        for (const emp of mentionedEmps) {
+            if (String(emp.userId) !== String(user._id)) {
                 await createNotification({
-                    userId: report.userId,
-                    type: 'comment',
-                    title: `${authorName} さんがコメントしました`,
+                    userId: emp.userId,
+                    type: 'mention',
+                    title: `${authorName} さんがコメントでメンションしました`,
                     body: text.trim().substring(0, 80),
-                    link: `/hr/daily-report/${report._id}`,
-                    fromUserId: user._id,
-                    fromName: authorName
+                    link: `/hr/daily-report/${req.params.id}`,
+                    fromUserId: user._id, fromName: authorName
                 });
             }
         }
+
         res.redirect(`/hr/daily-report/${req.params.id}`);
     } catch (error) {
         console.error(error);
+        res.redirect('/hr/daily-report');
+    }
+});
+
+// コメント編集API
+router.post('/hr/daily-report/:reportId/comment/:commentId/edit', requireLogin, async (req, res) => {
+    try {
+        const { text } = req.body;
+        if (!text || !text.trim()) return res.json({ ok: false, error: 'テキストが空です' });
+
+        const report = await DailyReport.findById(req.params.reportId);
+        if (!report) return res.json({ ok: false, error: '日報が見つかりません' });
+
+        const comment = report.comments.id(req.params.commentId);
+        if (!comment) return res.json({ ok: false, error: 'コメントが見つかりません' });
+
+        if (String(comment.authorId) !== String(req.session.userId) && !req.session.isAdmin) {
+            return res.json({ ok: false, error: '権限がありません' });
+        }
+
+        comment.text = text.trim();
+        comment.editedAt = new Date();
+        await report.save();
+
+        const { escapeHtml: esc } = require('../lib/helpers');
+        const html = esc(comment.text)
+            .replace(/@([^\s@]+)/g, '<span style="color:#2563eb;font-weight:700;background:#eff6ff;border-radius:4px;padding:0 3px">@$1</span>')
+            .replace(/\n/g, '<br>');
+        res.json({ ok: true, text: comment.text, html });
+    } catch (e) {
+        console.error(e);
+        res.json({ ok: false, error: 'サーバーエラー' });
+    }
+});
+
+// コメント削除
+router.post('/hr/daily-report/:reportId/comment/:commentId/delete', requireLogin, async (req, res) => {
+    try {
+        const report = await DailyReport.findById(req.params.reportId);
+        if (!report) return res.redirect('/hr/daily-report');
+
+        const comment = report.comments.id(req.params.commentId);
+        if (!comment) return res.redirect(`/hr/daily-report/${req.params.reportId}`);
+
+        if (String(comment.authorId) !== String(req.session.userId) && !req.session.isAdmin) {
+            return res.status(403).send('権限がありません');
+        }
+
+        comment.deleteOne();
+        await report.save();
+        res.redirect(`/hr/daily-report/${req.params.reportId}`);
+    } catch (e) {
+        console.error(e);
         res.redirect('/hr/daily-report');
     }
 });

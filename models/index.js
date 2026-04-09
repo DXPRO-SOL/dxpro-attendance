@@ -43,8 +43,46 @@ const BoardCommentSchema = new mongoose.Schema({
     postId: { type: mongoose.Schema.Types.ObjectId, ref: 'BoardPost', required: true },
     authorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     content: { type: String, required: true },
+    mentions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], // メンションされたユーザー
+    editedAt: { type: Date },   // 編集日時
     createdAt: { type: Date, default: Date.now }
 });
+
+// 残業申請スキーマ
+const OvertimeRequestSchema = new mongoose.Schema({
+    userId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    employeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee', required: true },
+    // ── 事前申請 / 事後申請 ──
+    requestTiming: {
+        type: String,
+        enum: ['pre', 'post'],   // pre: 事前申請, post: 事後申請
+        required: true,
+        default: 'pre'
+    },
+    date:          { type: Date, required: true },   // 残業日（事前=予定日 / 事後=実施日）
+    startTime:     { type: String, required: true }, // 開始時刻 "HH:MM"（事前=予定 / 事後=実績）
+    endTime:       { type: String, required: true }, // 終了時刻 "HH:MM"（事前=予定 / 事後=実績）
+    hours:         { type: Number, required: true }, // 残業時間数
+    // 事後申請専用: 実際に使用した時間（事前申請で承認後に事後実績として更新する場合）
+    actualStartTime: { type: String },
+    actualEndTime:   { type: String },
+    actualHours:     { type: Number },
+    reason:     { type: String, required: true },    // 残業理由
+    type: {
+        type: String,
+        enum: ['通常残業', '休日出勤', '深夜残業', 'その他'],
+        default: '通常残業'
+    },
+    status: {
+        type: String,
+        enum: ['pending', 'approved', 'rejected', 'canceled'],
+        default: 'pending'
+    },
+    processedAt:  { type: Date },
+    processedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    rejectReason: { type: String },
+    notes:        { type: String }
+}, { timestamps: true });
 
 // 給与設定スキーマ
 const PayrollSettingSchema = new mongoose.Schema({
@@ -278,11 +316,26 @@ const DailyReportSchema = new mongoose.Schema({
     achievements:{ type: String },
     issues:      { type: String },
     tomorrow:    { type: String },
+    mentions:    [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], // 本文メンション
+    attachments: [{                // 本文添付ファイル
+        originalName: { type: String },
+        filename:     { type: String },
+        mimetype:     { type: String },
+        size:         { type: Number }
+    }],
     comments: [{
-        authorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        authorId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         authorName: { type: String },
-        text: { type: String },
-        at: { type: Date, default: Date.now },
+        text:       { type: String },
+        mentions:   [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], // コメントメンション
+        attachments: [{             // コメント添付ファイル
+            originalName: { type: String },
+            filename:     { type: String },
+            mimetype:     { type: String },
+            size:         { type: Number }
+        }],
+        editedAt:   { type: Date },
+        at:         { type: Date, default: Date.now },
         reactions: [{
             emoji:    { type: String, required: true },
             userId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -290,7 +343,7 @@ const DailyReportSchema = new mongoose.Schema({
         }]
     }],
     reactions: [{
-        emoji:      { type: String, required: true },   // 'like','great','nice','hard','check'
+        emoji:      { type: String, required: true },
         userId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
         userName:   { type: String }
     }]
@@ -340,6 +393,7 @@ const CompanyRule     = mongoose.model('CompanyRule', CompanyRuleSchema);
 const DailyReport     = mongoose.model('DailyReport', DailyReportSchema);
 const SkillSheet      = mongoose.model('SkillSheet', SkillSheetSchema);
 const Notification    = mongoose.model('Notification', NotificationSchema);
+const OvertimeRequest = mongoose.model('OvertimeRequest', OvertimeRequestSchema);
 
 module.exports = {
     User,
@@ -358,5 +412,6 @@ module.exports = {
     CompanyRule,
     DailyReport,
     SkillSheet,
-    Notification
+    Notification,
+    OvertimeRequest
 };

@@ -5,7 +5,7 @@ const router = require('express').Router();
 const multer = require('multer');
 const path = require('path');
 const moment = require('moment-timezone');
-const { User, Employee, BoardPost, BoardComment } = require('../models');
+const { User, Employee, BoardPost, BoardComment, Notification } = require('../models');
 const { requireLogin, isAdmin } = require('../middleware/auth');
 const { escapeHtml, stripHtmlTags, renderMarkdownToHtml } = require('../lib/helpers');
 const { renderPage } = require('../lib/renderPage');
@@ -191,6 +191,9 @@ router.get('/board/:id', requireLogin, async (req, res) => {
         .populate('authorId')
         .sort({ createdAt: -1 });
 
+    // メンション候補のユーザー一覧（コメント入力で使用）
+    const allUsers = await User.find({}, 'username _id').lean();
+
     const contentHtml = renderMarkdownToHtml(post.content || '');
     renderPage(req, res, post.title, "投稿詳細", `
         <style>
@@ -240,18 +243,38 @@ router.get('/board/:id', requireLogin, async (req, res) => {
             .bd-comment:last-of-type{border-bottom:none}
             .bd-comment-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#0b5fff,#7c3aed);color:#fff;font-size:14px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
             .bd-comment-bubble{flex:1}
-            .bd-comment-name{font-size:13px;font-weight:700;color:#0b2540;margin-bottom:4px}
-            .bd-comment-date{font-size:11px;color:#9ca3af;margin-left:8px;font-weight:400}
+            .bd-comment-name{font-size:13px;font-weight:700;color:#0b2540;margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+            .bd-comment-date{font-size:11px;color:#9ca3af;font-weight:400}
+            .bd-comment-edited{font-size:11px;color:#9ca3af;font-style:italic}
             .bd-comment-text{font-size:14px;color:#374151;line-height:1.7}
+            .bd-comment-text .mention{color:#0b5fff;font-weight:700;background:#eff6ff;padding:1px 5px;border-radius:4px;font-size:13px}
+            .bd-comment-actions{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+            .bd-comment-btn{display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border-radius:7px;font-size:12px;font-weight:700;border:none;cursor:pointer;text-decoration:none;background:#f1f5f9;color:#374151;transition:background .15s}
+            .bd-comment-btn:hover{background:#e5e7eb}
+            .bd-comment-btn-del{background:#fee2e2;color:#ef4444}
+            .bd-comment-btn-del:hover{background:#fecaca}
             .bd-comment-empty{padding:32px 28px;text-align:center;color:#9ca3af;font-size:14px}
+            /* コメント編集フォーム */
+            .bd-comment-edit-form{display:none;margin-top:8px}
+            .bd-comment-edit-form.open{display:block}
+            .bd-edit-textarea{width:100%;padding:10px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical;min-height:70px;background:#fff;transition:border .15s;box-sizing:border-box}
+            .bd-edit-textarea:focus{border-color:#0b5fff;outline:none;box-shadow:0 0 0 3px rgba(11,95,255,.1)}
+            .bd-edit-actions{display:flex;gap:8px;margin-top:6px}
+            .bd-edit-btn-save{display:inline-flex;align-items:center;gap:4px;padding:7px 16px;background:#0b5fff;color:#fff;border:none;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer}
+            .bd-edit-btn-cancel{display:inline-flex;align-items:center;gap:4px;padding:7px 16px;background:#f1f5f9;color:#374151;border:none;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer}
 
             /* コメント入力 */
-            .bd-comment-form{padding:20px 28px;background:#f8fafc;border-top:1px solid #f1f5f9}
+            .bd-comment-form{padding:20px 28px;background:#f8fafc;border-top:1px solid #f1f5f9;position:relative}
             .bd-comment-label{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#6b7280;margin-bottom:8px;display:block}
             .bd-comment-textarea{width:100%;padding:12px 16px;border:1.5px solid #e5e7eb;border-radius:12px;font-size:14px;font-family:inherit;resize:vertical;min-height:90px;background:#fff;transition:border .15s,box-shadow .15s;box-sizing:border-box}
             .bd-comment-textarea:focus{border-color:#0b5fff;box-shadow:0 0 0 3px rgba(11,95,255,.1);outline:none}
             .bd-comment-submit{display:inline-flex;align-items:center;gap:7px;margin-top:10px;padding:10px 22px;background:linear-gradient(90deg,#0b5fff,#184df2);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(11,95,255,.25)}
             .bd-comment-submit:hover{opacity:.9}
+            /* メンションサジェスト */
+            .bd-mention-suggest{position:absolute;z-index:100;background:#fff;border:1.5px solid #e5e7eb;border-radius:10px;box-shadow:0 8px 24px rgba(11,36,64,.12);max-height:200px;overflow-y:auto;min-width:200px;display:none}
+            .bd-mention-item{padding:9px 14px;cursor:pointer;font-size:14px;font-weight:600;color:#0b2540;display:flex;align-items:center;gap:8px}
+            .bd-mention-item:hover,.bd-mention-item.active{background:#eff6ff;color:#0b5fff}
+            .bd-mention-item .m-avatar{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#0b5fff,#7c3aed);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
         </style>
 
         <div class="bd-detail">
@@ -305,27 +328,128 @@ router.get('/board/:id', requireLogin, async (req, res) => {
             <!-- コメント -->
             <div class="bd-comments">
                 <div class="bd-comments-head">💬 コメント（${comments.length}件）</div>
-                ${ comments.length ? comments.map(c => `
-                <div class="bd-comment">
+                ${ comments.length ? comments.map(c => {
+                    const isMyComment = String(req.session.user?._id) === String(c.authorId?._id);
+                    const canManage   = isMyComment || req.session.user?.isAdmin;
+                    // @メンションをハイライト
+                    const commentHtml = escapeHtml(c.content).replace(/@([a-zA-Z0-9_\u3040-\u30ff\u4e00-\u9fff]+)/g,
+                        '<span class="mention">@$1</span>');
+                    return `
+                <div class="bd-comment" id="comment-${c._id}">
                     <div class="bd-comment-avatar">${(c.authorId?.username||'?').charAt(0).toUpperCase()}</div>
                     <div class="bd-comment-bubble">
                         <div class="bd-comment-name">
                             ${escapeHtml(c.authorId?.username || '名無し')}
                             <span class="bd-comment-date">${moment.tz(c.createdAt,'Asia/Tokyo').format('YYYY/MM/DD HH:mm')}</span>
+                            ${c.editedAt ? `<span class="bd-comment-edited">（編集済）</span>` : ''}
                         </div>
-                        <div class="bd-comment-text">${renderMarkdownToHtml(c.content)}</div>
+                        <div class="bd-comment-text" id="comment-text-${c._id}">${commentHtml}</div>
+
+                        <!-- 編集フォーム（非表示） -->
+                        <form class="bd-comment-edit-form" id="edit-form-${c._id}"
+                              action="/board/comment/${c._id}/edit" method="post">
+                            <textarea class="bd-edit-textarea" name="content">${escapeHtml(c.content)}</textarea>
+                            <div class="bd-edit-actions">
+                                <button type="submit" class="bd-edit-btn-save">✅ 保存</button>
+                                <button type="button" class="bd-edit-btn-cancel"
+                                    onclick="cancelEdit('${c._id}')">キャンセル</button>
+                            </div>
+                        </form>
+
+                        ${canManage ? `
+                        <div class="bd-comment-actions">
+                            <button class="bd-comment-btn" onclick="startEdit('${c._id}')">✏️ 編集</button>
+                            <form action="/board/comment/${c._id}/delete" method="post" style="display:inline">
+                                <button class="bd-comment-btn bd-comment-btn-del"
+                                    onclick="return confirm('このコメントを削除しますか？')">🗑 削除</button>
+                            </form>
+                        </div>` : ''}
                     </div>
-                </div>`) .join('') : `<div class="bd-comment-empty">まだコメントはありません。最初のコメントを投稿しましょう！</div>` }
+                </div>`;
+                }).join('') : `<div class="bd-comment-empty">まだコメントはありません。最初のコメントを投稿しましょう！</div>` }
 
                 <div class="bd-comment-form">
-                    <label class="bd-comment-label">コメントを追加</label>
-                    <form action="/board/${post._id}/comment" method="post">
-                        <textarea name="content" class="bd-comment-textarea" placeholder="コメントを入力..." required></textarea>
+                    <label class="bd-comment-label">コメントを追加（@ユーザー名でメンション）</label>
+                    <form action="/board/${post._id}/comment" method="post" style="position:relative">
+                        <textarea name="content" id="bd-new-comment" class="bd-comment-textarea"
+                            placeholder="コメントを入力... @ユーザー名 でメンションできます" required></textarea>
+                        <!-- メンションサジェスト -->
+                        <div class="bd-mention-suggest" id="mention-suggest"></div>
                         <button type="submit" class="bd-comment-submit">💬 コメントする</button>
                     </form>
                 </div>
             </div>
         </div>
+
+        <script>
+        // ── コメント編集 ──────────────────────────────
+        function startEdit(id){
+            document.getElementById('comment-text-' + id).style.display = 'none';
+            document.getElementById('edit-form-' + id).classList.add('open');
+            document.getElementById('edit-form-' + id).querySelector('textarea').focus();
+            // 他の編集フォームを閉じる
+            document.querySelectorAll('.bd-comment-edit-form.open').forEach(f => {
+                if(f.id !== 'edit-form-' + id){ cancelEdit(f.id.replace('edit-form-','')); }
+            });
+        }
+        function cancelEdit(id){
+            document.getElementById('comment-text-' + id).style.display = '';
+            document.getElementById('edit-form-' + id).classList.remove('open');
+        }
+
+        // ── @メンション サジェスト ────────────────────
+        const users = ${JSON.stringify(allUsers.map(u => ({ id: u._id, name: u.username })))};
+        const textarea = document.getElementById('bd-new-comment');
+        const suggest  = document.getElementById('mention-suggest');
+        let activeIdx  = -1;
+        let mentionStart = -1;
+
+        textarea.addEventListener('keydown', function(e){
+            if(!suggest.style.display || suggest.style.display === 'none') return;
+            const items = suggest.querySelectorAll('.bd-mention-item');
+            if(e.key === 'ArrowDown'){ e.preventDefault(); activeIdx = Math.min(activeIdx+1, items.length-1); highlightItem(items); }
+            else if(e.key === 'ArrowUp'){ e.preventDefault(); activeIdx = Math.max(activeIdx-1, 0); highlightItem(items); }
+            else if(e.key === 'Enter' && activeIdx >= 0){ e.preventDefault(); insertMention(items[activeIdx].dataset.name); }
+            else if(e.key === 'Escape'){ closeSuggest(); }
+        });
+
+        textarea.addEventListener('input', function(){
+            const val = this.value, pos = this.selectionStart;
+            const before = val.slice(0, pos);
+            const atIdx = before.lastIndexOf('@');
+            if(atIdx < 0 || (atIdx > 0 && /\S/.test(before[atIdx-1]))){ closeSuggest(); return; }
+            const query = before.slice(atIdx+1).toLowerCase();
+            mentionStart = atIdx;
+            const matched = users.filter(u => u.name.toLowerCase().startsWith(query)).slice(0, 8);
+            if(!matched.length){ closeSuggest(); return; }
+            suggest.innerHTML = matched.map((u,i) =>
+                '<div class="bd-mention-item" data-name="' + u.name + '" onclick="insertMention(\'' + u.name + '\')">' +
+                '<span class="m-avatar">' + u.name.charAt(0).toUpperCase() + '</span>' +
+                '@' + escHtml(u.name) + '</div>'
+            ).join('');
+            suggest.style.display = 'block';
+            activeIdx = -1;
+        });
+
+        document.addEventListener('click', function(e){ if(!suggest.contains(e.target) && e.target !== textarea) closeSuggest(); });
+
+        function highlightItem(items){
+            items.forEach((it,i) => it.classList.toggle('active', i === activeIdx));
+            if(items[activeIdx]) items[activeIdx].scrollIntoView({block:'nearest'});
+        }
+        function insertMention(name){
+            const val = textarea.value;
+            const before = val.slice(0, mentionStart);
+            const after  = val.slice(textarea.selectionStart);
+            textarea.value = before + '@' + name + ' ' + after;
+            const newPos = mentionStart + name.length + 2;
+            textarea.setSelectionRange(newPos, newPos);
+            textarea.focus();
+            closeSuggest();
+        }
+        function closeSuggest(){ suggest.style.display = 'none'; activeIdx = -1; }
+        function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+        </script>
     `);
 });
 
@@ -346,14 +470,88 @@ router.post('/board/:id/like', requireLogin, async (req, res) => {
 // --- コメント投稿 ---
 router.post('/board/:id/comment', requireLogin, async (req, res) => {
     try {
-    const { content } = req.body;
-    const safe = stripHtmlTags(content);
-    const newComment = new BoardComment({ postId: req.params.id, authorId: req.session.user._id, content: safe });
+        const { content } = req.body;
+        const safe = stripHtmlTags(content);
+        if (!safe.trim()) return res.redirect(`/board/${req.params.id}`);
+
+        // @メンション抽出
+        const mentionMatches = [...safe.matchAll(/@([a-zA-Z0-9_\u3040-\u30ff\u4e00-\u9fff]+)/g)];
+        const mentionedUsernames = [...new Set(mentionMatches.map(m => m[1]))];
+        const mentionedUsers = mentionedUsernames.length
+            ? await User.find({ username: { $in: mentionedUsernames } }).lean()
+            : [];
+        const mentionIds = mentionedUsers.map(u => u._id);
+
+        const newComment = new BoardComment({
+            postId:   req.params.id,
+            authorId: req.session.user._id,
+            content:  safe,
+            mentions: mentionIds
+        });
         await newComment.save();
+
+        // メンション通知送信
+        for (const mu of mentionedUsers) {
+            if (String(mu._id) === String(req.session.user._id)) continue; // 自分は除外
+            const post = await BoardPost.findById(req.params.id).lean();
+            const notif = new Notification({
+                userId:     mu._id,
+                type:       'mention',
+                title:      `${req.session.user.username} さんがあなたをメンションしました`,
+                body:       safe.slice(0, 80),
+                link:       `/board/${req.params.id}#comment-${newComment._id}`,
+                fromUserId: req.session.user._id,
+                fromName:   req.session.user.username
+            });
+            await notif.save();
+        }
+
         res.redirect(`/board/${req.params.id}`);
     } catch (err) {
         console.error(err);
         res.status(500).send("コメント投稿に失敗しました");
+    }
+});
+
+// --- コメント編集 ---
+router.post('/board/comment/:commentId/edit', requireLogin, async (req, res) => {
+    try {
+        const comment = await BoardComment.findById(req.params.commentId);
+        if (!comment) return res.status(404).send('コメントが見つかりません');
+
+        const isOwner = String(comment.authorId) === String(req.session.user._id);
+        if (!isOwner && !req.session.user.isAdmin) return res.status(403).send('権限がありません');
+
+        const safe = stripHtmlTags(req.body.content || '');
+        if (!safe.trim()) return res.status(400).send('コメントを入力してください');
+
+        comment.content  = safe;
+        comment.editedAt = new Date();
+        await comment.save();
+
+        res.redirect(`/board/${comment.postId}`);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('コメント編集に失敗しました');
+    }
+});
+
+// --- コメント削除 ---
+router.post('/board/comment/:commentId/delete', requireLogin, async (req, res) => {
+    try {
+        const comment = await BoardComment.findById(req.params.commentId);
+        if (!comment) return res.status(404).send('コメントが見つかりません');
+
+        const isOwner = String(comment.authorId) === String(req.session.user._id);
+        if (!isOwner && !req.session.user.isAdmin) return res.status(403).send('権限がありません');
+
+        const postId = comment.postId;
+        await BoardComment.findByIdAndDelete(req.params.commentId);
+
+        res.redirect(`/board/${postId}`);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('コメント削除に失敗しました');
     }
 });
 

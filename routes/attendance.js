@@ -312,6 +312,14 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
             <div><i class="fa-solid fa-plane-departure" style="color:#f59e0b"></i></div>
           </a>
 
+          <a class="link-card" href="/overtime/new">
+            <div>
+              <div style="font-weight:700">残業申請</div>
+              <small>残業・休日出勤申請</small>
+            </div>
+            <div><i class="fa-solid fa-clock" style="color:#ea580c"></i></div>
+          </a>
+
           <a class="link-card" href="/goals">
             <div>
               <div style="font-weight:700">目標管理</div>

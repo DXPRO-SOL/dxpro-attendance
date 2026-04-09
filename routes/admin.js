@@ -47,6 +47,11 @@ router.get('/admin', requireLogin, isAdmin, async (req, res) => {
                         <div class="admin-desc">従業員からの休暇申請を確認・承認します。</div>
                     </a>
 
+                    <a class="admin-card" href="/admin/overtime">
+                        <div class="admin-head"><div class="admin-icon">⏰</div><div class="admin-title">残業申請管理</div></div>
+                        <div class="admin-desc">従業員からの残業・休日出勤申請を承認・却下します。</div>
+                    </a>
+
                     <a class="admin-card" href="/admin/register-employee">
                         <div class="admin-head"><div class="admin-icon">👥</div><div class="admin-title">従業員登録</div></div>
                         <div class="admin-desc">新しい社員アカウント・従業員情報を作成します。</div>
