@@ -44,22 +44,18 @@ const storage = multer.diskStorage({
         cb(null, dir);
     },
     filename: function (req, file, cb) {
-        // multerはoriginalname をlatin1で受け取るため、UTF-8に変換してから拡張子を取得
-        const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
-        file.originalname = originalName;
-        const ext = path.extname(originalName) || '';
+        const ext = path.extname(file.originalname) || '';
         cb(null, Date.now() + '-' + Math.round(Math.random() * 1e9) + ext);
     }
 });
 const upload = multer({
     storage,
+    defParamCharset: 'utf8',  // ファイル名を UTF-8 として正しく受け取る
     limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
     fileFilter: function (req, file, cb) {
-        // multerはoriginalname をlatin1で受け取るため、UTF-8に変換してから拡張子をチェック
-        const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
         // 画像・PDF・Office系ドキュメントを許可
         const allowed = /\.(jpe?g|png|gif|webp|pdf|docx?|xlsx?|pptx?|txt|csv|zip)$/i;
-        if (allowed.test(originalName)) return cb(null, true);
+        if (allowed.test(file.originalname)) return cb(null, true);
         cb(new Error('許可されていないファイル形式です'));
     }
 });
