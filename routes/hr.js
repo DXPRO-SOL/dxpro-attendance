@@ -3708,7 +3708,7 @@ router.get('/hr/daily-report/:id', requireLogin, async (req, res) => {
                             <div class="comment-body" id="cbody-${cid}">${nl2br(c.text || '')}</div>
                             ${makeAttachHtml(c.attachments)}
                             ${canEdit ? `<div class="comment-actions">
-                                <button class="c-action-btn edit" onclick="startEditComment('${cid}')">✏️ 編集</button>
+                                <button type="button" class="c-action-btn edit" onclick="startEditComment('${cid}')">✏️ 編集</button>
                                 <form method="POST" action="/hr/daily-report/${report._id}/comment/${cid}/delete"
                                     onsubmit="return confirm('このコメントを削除しますか？')" style="margin:0">
                                     <button type="submit" class="c-action-btn del">🗑 削除</button>
@@ -3717,8 +3717,8 @@ router.get('/hr/daily-report/:id', requireLogin, async (req, res) => {
                             <div class="comment-edit-form" id="cedit-${cid}">
                                 <textarea id="cedit-text-${cid}" rows="3" style="width:100%;padding:9px 12px;border:1.5px solid #3b82f6;border-radius:9px;font-size:13.5px;resize:vertical;box-sizing:border-box;font-family:inherit;line-height:1.6;outline:none">${escapeHtml(c.text || '')}</textarea>
                                 <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
-                                    <button class="c-action-btn" onclick="cancelEditComment('${cid}')">キャンセル</button>
-                                    <button class="c-action-btn edit" onclick="submitEditComment('${cid}','${report._id}')">💾 保存</button>
+                                    <button type="button" class="c-action-btn" onclick="cancelEditComment('${cid}')">キャンセル</button>
+                                    <button type="button" class="c-action-btn edit" onclick="submitEditComment('${cid}','${report._id}')">💾 保存</button>
                                 </div>
                             </div>
                             <div class="c-reaction-row" id="cr-${cid}">
@@ -4081,14 +4081,18 @@ function syncCFilesToInput() {
 
 // ── コメント編集 ──
 function startEditComment(cid) {
-    document.getElementById('cedit-' + cid).classList.add('open');
+    const editForm = document.getElementById('cedit-' + cid);
+    if (!editForm) return;
+    editForm.classList.add('open');
     const bodyEl = document.getElementById('cbody-' + cid);
     if (bodyEl) bodyEl.style.display = 'none';
     const actionsEl = document.querySelector('#ci-' + cid + ' .comment-actions');
     if (actionsEl) actionsEl.style.display = 'none';
 }
 function cancelEditComment(cid) {
-    document.getElementById('cedit-' + cid).classList.remove('open');
+    const editForm = document.getElementById('cedit-' + cid);
+    if (!editForm) return;
+    editForm.classList.remove('open');
     const bodyEl = document.getElementById('cbody-' + cid);
     if (bodyEl) bodyEl.style.display = '';
     const actionsEl = document.querySelector('#ci-' + cid + ' .comment-actions');
@@ -4109,7 +4113,7 @@ function submitEditComment(cid, reportId) {
         if (!d.ok) { alert(d.error || '保存に失敗しました'); return; }
         const bodyEl = document.getElementById('cbody-' + cid);
         if (bodyEl) {
-            bodyEl.innerHTML = d.html || d.text.replace(/\n/g, '<br>');
+            bodyEl.innerHTML = d.html || d.text.split('\\n').join('<br>');
             bodyEl.style.display = '';
         }
         // 「編集済み」バッジを追加
@@ -4123,7 +4127,8 @@ function submitEditComment(cid, reportId) {
         }
         const actionsEl = document.querySelector('#ci-' + cid + ' .comment-actions');
         if (actionsEl) actionsEl.style.display = '';
-        document.getElementById('cedit-' + cid).classList.remove('open');
+        const editForm = document.getElementById('cedit-' + cid);
+        if (editForm) editForm.classList.remove('open');
     })
     .catch(() => alert('通信エラーが発生しました'));
 }
