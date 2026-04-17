@@ -1,4 +1,4 @@
-// ==============================
+﻿// ==============================
 // routes/hr.js - 人事・給与管理
 // ==============================
 const router = require("express").Router();
@@ -17,7 +17,7 @@ const {
   DailyReport,
 } = require("../models");
 const { requireLogin, isAdmin } = require("../middleware/auth");
-const { escapeHtml } = require("../lib/helpers");
+const { escapeHtml, buildAttachmentsAfterEdit } = require("../lib/helpers");
 const { renderPage } = require("../lib/renderPage");
 const { createNotification } = require("./notifications");
 
@@ -3577,20 +3577,6 @@ router.post(
   upload.array("attachments", 10),
   async (req, res) => {
     try {
-      console.log("[POST /hr/daily-report/new] リクエスト到達 - 処理開始");
-      console.log(
-        "[POST /hr/daily-report/new] req.body:",
-        JSON.stringify(req.body),
-      );
-      console.log(
-        "[POST /hr/daily-report/new] req.files:",
-        req.files
-          ? JSON.stringify(
-              req.files.map((f) => ({ name: f.originalname, size: f.size })),
-            )
-          : "none",
-      );
-
       const user = await User.findById(req.session.userId);
       const employee = await Employee.findOne({ userId: user._id });
       const { reportDate, content, achievements, issues, tomorrow } = req.body;
@@ -3606,25 +3592,12 @@ router.post(
       const mentionIds = mentionedUsers.map((e) => e.userId);
 
       // 添付ファイル
-      console.log(
-        `[POST /hr/daily-report/new] req.files: ${req.files ? req.files.length : 0} files`,
-      );
-      if (req.files && req.files.length > 0) {
-        req.files.forEach((f) =>
-          console.log(`  - ${f.originalname} (${f.size} bytes)`),
-        );
-      }
-
       const attachments = (req.files || []).map((f) => ({
         originalName: f.originalname,
         filename: f.filename,
         mimetype: f.mimetype,
         size: f.size,
       }));
-
-      console.log(
-        `[POST /hr/daily-report/new] attachments to save: ${JSON.stringify(attachments)}`,
-      );
 
       const report = await DailyReport.create({
         employeeId: employee._id,
@@ -3637,13 +3610,6 @@ router.post(
         mentions: mentionIds,
         attachments,
       });
-
-      console.log(
-        `[POST /hr/daily-report/new] Report created. ID: ${report._id}`,
-      );
-      console.log(
-        `[POST /hr/daily-report/new] Saved attachments: ${JSON.stringify(report.attachments)}`,
-      );
 
       // メンション通知
       for (const emp of mentionedUsers) {
@@ -3706,7 +3672,12 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
           a.size > 1024 * 1024
             ? (a.size / 1024 / 1024).toFixed(1) + "MB"
             : Math.round((a.size || 0) / 1024) + "KB";
-        return `<div class="attach-chip">${icon} ${escapeHtml(a.originalName || a.filename)} <span style="color:#9ca3af">(${size})</span></div>`;
+        return `<div class="attach-chip existing-chip" data-attach-id="${String(a._id)}">
+                <button type="button" class="rm rm-float" onclick="removeExistingAttachment('${String(a._id)}')">✕</button>
+                <span>${icon}</span>
+                <span>${escapeHtml(a.originalName || a.filename)}</span>
+                <span style="color:#9ca3af">(${size})</span>
+            </div>`;
       })
       .join("");
 
@@ -3732,9 +3703,10 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
                 .attach-area:hover,.attach-area.drag-over{border-color:#2563eb;background:#eff6ff}
                 .attach-label{font-size:13px;color:#94a3b8;display:flex;align-items:center;gap:8px;pointer-events:none}
                 .attach-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
-                .attach-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:#f1f5f9;border-radius:7px;font-size:12px;color:#374151}
-                .attach-chip .rm{background:none;border:none;cursor:pointer;color:#9ca3af;padding:0;font-size:14px;line-height:1}
-                .attach-chip .rm:hover{color:#ef4444}
+                .attach-chip{display:inline-flex;align-items:center;gap:6px;padding:8px 28px 8px 10px;background:#f1f5f9;border-radius:7px;font-size:12px;color:#374151;position:relative}
+                .attach-chip .rm{background:#fff;border:1px solid #d1d5db;cursor:pointer;color:#9ca3af;padding:0;font-size:11px;line-height:1;width:18px;height:18px;border-radius:999px;display:flex;align-items:center;justify-content:center}
+                .attach-chip .rm:hover{color:#ef4444;border-color:#ef4444;background:#fff5f5}
+                .attach-chip .rm-float{position:absolute;top:-6px;right:-6px}
             </style>
             <div style="max-width:860px;margin:0 auto">
                 <div style="margin-bottom:16px">
@@ -3787,9 +3759,13 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
                         </div>
                         <div style="margin-bottom:24px">
                             <label class="field-label">ファイル添付（追加）</label>
-                            <span class="field-hint">既存ファイルに追加できます。既存ファイルの削除は詳細画面から行ってください</span>
+                            <span class="field-hint">既存ファイルも右上の×で削除できます</span>
+                            <input type="hidden" name="removeAttachmentIds" id="removeAttachmentIds" value="">
                             ${existingAttachHtml ? `<div class="attach-list" style="margin-bottom:8px">${existingAttachHtml}</div>` : ""}
-                            <label for="fileInput" class="attach-area" id="dropArea">
+                            <label for="fileInput" class="attach-area" id="dropArea"
+                                ondragover="event.preventDefault();this.classList.add('drag-over')"
+                                ondragleave="this.classList.remove('drag-over')"
+                                ondrop="event.preventDefault();this.classList.remove('drag-over');handleFileDrop(event)">
                                 <span style="font-size:20px">📎</span>
                                 <span>ここをクリックまたはファイルをドラッグ&ドロップ</span>
                                 <input type="file" name="attachments" id="fileInput" multiple
@@ -3858,7 +3834,25 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
             ['content','achievements','issues','tomorrow'].forEach(function(k) { setupMention('f_' + k, 'ms_' + k); });
             var fileInput = document.getElementById('fileInput');
             var attachList = document.getElementById('attachList');
+            var removeAttachmentIdsInput = document.getElementById('removeAttachmentIds');
+            var removedExistingAttachmentIds = [];
             var selectedFiles = [];
+
+            function syncRemovedAttachmentIds() {
+                if (removeAttachmentIdsInput) {
+                    removeAttachmentIdsInput.value = removedExistingAttachmentIds.join(',');
+                }
+            }
+
+            function removeExistingAttachment(id) {
+                if (removedExistingAttachmentIds.indexOf(id) === -1) {
+                    removedExistingAttachmentIds.push(id);
+                }
+                var chip = document.querySelector('.existing-chip[data-attach-id="' + id + '"]');
+                if (chip) chip.style.display = 'none';
+                syncRemovedAttachmentIds();
+            }
+            window.removeExistingAttachment = removeExistingAttachment;
 
             function handleFileChange(input) {
                 if (!input || !input.files) return;
@@ -4037,7 +4031,14 @@ router.post(
         return res.redirect("/hr/daily-report/" + req.params.id);
       }
 
-      const { reportDate, content, achievements, issues, tomorrow } = req.body;
+      const {
+        reportDate,
+        content,
+        achievements,
+        issues,
+        tomorrow,
+        removeAttachmentIds,
+      } = req.body;
 
       // メンション解析
       const allText = [content, achievements, issues, tomorrow].join(" ");
@@ -4049,23 +4050,19 @@ router.post(
         : [];
       const mentionIds = mentionedUsers.map((e) => e.userId);
 
-      // 新規添付ファイル（既存に追加）
-      const newAttachments = (req.files || []).map((f) => ({
-        originalName: f.originalname,
-        filename: f.filename,
-        mimetype: f.mimetype,
-        size: f.size,
-      }));
+      report.reportDate = new Date(reportDate);
+      report.content = content || "";
+      report.achievements = achievements || "";
+      report.issues = issues || "";
+      report.tomorrow = tomorrow || "";
+      report.mentions = mentionIds;
+      report.attachments = buildAttachmentsAfterEdit(
+        report.attachments,
+        removeAttachmentIds,
+        req.files,
+      );
 
-      await DailyReport.findByIdAndUpdate(req.params.id, {
-        reportDate: new Date(reportDate),
-        content: content || "",
-        achievements: achievements || "",
-        issues: issues || "",
-        tomorrow: tomorrow || "",
-        mentions: mentionIds,
-        $push: { attachments: { $each: newAttachments } },
-      });
+      await report.save();
       res.redirect("/hr/daily-report/" + req.params.id);
     } catch (error) {
       console.error(error);
@@ -4104,16 +4101,6 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
     );
 
     if (!report) return res.redirect("/hr/daily-report");
-
-    console.log(`[GET /hr/daily-report/:id] Report ID: ${req.params.id}`);
-    console.log(
-      `[GET /hr/daily-report/:id] Attachments: ${report.attachments ? report.attachments.length : 0}`,
-    );
-    if (report.attachments && report.attachments.length > 0) {
-      console.log(
-        `[GET /hr/daily-report/:id] Attachments data: ${JSON.stringify(report.attachments)}`,
-      );
-    }
 
     const emp = report.employeeId || {};
     const dateStr = report.reportDate
