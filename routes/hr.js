@@ -1,130 +1,167 @@
 // ==============================
 // routes/hr.js - 人事・給与管理
 // ==============================
-const router = require('express').Router();
-const moment = require('moment-timezone');
-const pdf = require('html-pdf');
-const multer = require('multer');
-const path = require('path');
-const { User, Employee, Attendance, PayrollSlip, PayrollRun, LeaveRequest, Goal, DailyReport } = require('../models');
-const { requireLogin, isAdmin } = require('../middleware/auth');
-const { escapeHtml } = require('../lib/helpers');
-const { renderPage } = require('../lib/renderPage');
-const { createNotification } = require('./notifications');
+const router = require("express").Router();
+const moment = require("moment-timezone");
+const pdf = require("html-pdf");
+const multer = require("multer");
+const path = require("path");
+const {
+  User,
+  Employee,
+  Attendance,
+  PayrollSlip,
+  PayrollRun,
+  LeaveRequest,
+  Goal,
+  DailyReport,
+} = require("../models");
+const { requireLogin, isAdmin } = require("../middleware/auth");
+const { escapeHtml } = require("../lib/helpers");
+const { renderPage } = require("../lib/renderPage");
+const { createNotification } = require("./notifications");
 
 // ─── 日報スタンプ定義（一覧・詳細・APIで共通使用）────────────────
 const STAMPS = [
-    { key: 'like',       emoji: '👍',  label: 'いいね'     },
-    { key: 'great',      emoji: '✨',  label: 'すごい'     },
-    { key: 'nice',       emoji: '👏',  label: 'ナイス'     },
-    { key: 'hard',       emoji: '💪',  label: 'お疲れ様'   },
-    { key: 'check',      emoji: '✅',  label: '確認OK'     },
-    { key: 'idea',       emoji: '💡',  label: 'なるほど'   },
-    { key: 'smile',      emoji: '😊',  label: 'ありがとう' },
-    { key: 'love',       emoji: '❤️',  label: '最高'       },
-    { key: 'clap',       emoji: '🎉',  label: 'おめでとう' },
-    { key: 'fire',       emoji: '🔥',  label: '熱い！'     },
-    { key: 'eyes',       emoji: '👀',  label: '見てるよ'   },
-    { key: 'think',      emoji: '🤔',  label: '考え中'     },
-    { key: 'pray',       emoji: '🙏',  label: 'よろしく'   },
-    { key: 'muscle',     emoji: '💯',  label: '満点'       },
-    { key: 'star',       emoji: '⭐',  label: 'スター'     },
-    { key: 'rocket',     emoji: '🚀',  label: '爆速'       },
-    { key: 'cry',        emoji: '😢',  label: '大変だね'   },
-    { key: 'support',    emoji: '🤝',  label: 'サポート'   },
+  { key: "like", emoji: "👍", label: "いいね" },
+  { key: "great", emoji: "✨", label: "すごい" },
+  { key: "nice", emoji: "👏", label: "ナイス" },
+  { key: "hard", emoji: "💪", label: "お疲れ様" },
+  { key: "check", emoji: "✅", label: "確認OK" },
+  { key: "idea", emoji: "💡", label: "なるほど" },
+  { key: "smile", emoji: "😊", label: "ありがとう" },
+  { key: "love", emoji: "❤️", label: "最高" },
+  { key: "clap", emoji: "🎉", label: "おめでとう" },
+  { key: "fire", emoji: "🔥", label: "熱い！" },
+  { key: "eyes", emoji: "👀", label: "見てるよ" },
+  { key: "think", emoji: "🤔", label: "考え中" },
+  { key: "pray", emoji: "🙏", label: "よろしく" },
+  { key: "muscle", emoji: "💯", label: "満点" },
+  { key: "star", emoji: "⭐", label: "スター" },
+  { key: "rocket", emoji: "🚀", label: "爆速" },
+  { key: "cry", emoji: "😢", label: "大変だね" },
+  { key: "support", emoji: "🤝", label: "サポート" },
 ];
-const STAMP_KEYS = STAMPS.map(s => s.key);
-const STAMP_MAP  = Object.fromEntries(STAMPS.map(s => [s.key, s]));
+const STAMP_KEYS = STAMPS.map((s) => s.key);
+const STAMP_MAP = Object.fromEntries(STAMPS.map((s) => [s.key, s]));
 
 // ファイルアップロード設定（日報用：uploads/daily/ サブフォルダ）
 const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        const dir = path.join('uploads', 'daily');
-        require('fs').mkdirSync(dir, { recursive: true });
-        cb(null, dir);
-    },
-    filename: function (req, file, cb) {
-        const ext = path.extname(file.originalname) || '';
-        cb(null, Date.now() + '-' + Math.round(Math.random() * 1e9) + ext);
-    }
+  destination: function (req, file, cb) {
+    const dir = path.join("uploads", "daily");
+    require("fs").mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname) || "";
+    cb(null, Date.now() + "-" + Math.round(Math.random() * 1e9) + ext);
+  },
 });
 const upload = multer({
-    storage,
-    defParamCharset: 'utf8',  // ファイル名を UTF-8 として正しく受け取る
-    limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
-    fileFilter: function (req, file, cb) {
-        // 画像・PDF・Office系ドキュメントを許可
-        const allowed = /\.(jpe?g|png|gif|webp|pdf|docx?|xlsx?|pptx?|txt|csv|zip)$/i;
-        if (allowed.test(file.originalname)) return cb(null, true);
-        cb(new Error('許可されていないファイル形式です'));
-    }
+  storage,
+  defParamCharset: "utf8", // ファイル名を UTF-8 として正しく受け取る
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+  fileFilter: function (req, file, cb) {
+    // 画像・PDF・Office系ドキュメントを許可
+    const allowed =
+      /\.(jpe?g|png|gif|webp|pdf|docx?|xlsx?|pptx?|txt|csv|zip)$/i;
+    if (allowed.test(file.originalname)) return cb(null, true);
+    cb(new Error("許可されていないファイル形式です"));
+  },
 });
 
-router.get('/hr', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        req.session.user = user;
-        req.session.employee = employee;
+router.get("/hr", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
+    const employee = await Employee.findOne({ userId: user._id });
+    req.session.user = user;
+    req.session.employee = employee;
 
-        const isAdminUser = req.session.isAdmin;
+    const isAdminUser = req.session.isAdmin;
 
-        const { LeaveBalance } = require('../models');
+    const { LeaveBalance } = require("../models");
 
-        // ===== 本人データ =====
-        // 有給残日数（本人）
-        const myBalance = await LeaveBalance.findOne({ employeeId: employee._id });
-        const myPaidLeave = myBalance?.paid ?? 0;
+    // ===== 本人データ =====
+    // 有給残日数（本人）
+    const myBalance = await LeaveBalance.findOne({ employeeId: employee._id });
+    const myPaidLeave = myBalance?.paid ?? 0;
 
-        // 今月の出勤日数（本人）
-        const nowMoment = moment().tz('Asia/Tokyo');
-        const startOfMonth = nowMoment.clone().startOf('month').toDate();
-        const endOfMonth   = nowMoment.clone().endOf('month').toDate();
-        const myAttendanceCount = await Attendance.countDocuments({
-            userId: user._id,
-            date: { $gte: startOfMonth, $lte: endOfMonth }
-        });
+    // 今月の出勤日数（本人）
+    const nowMoment = moment().tz("Asia/Tokyo");
+    const startOfMonth = nowMoment.clone().startOf("month").toDate();
+    const endOfMonth = nowMoment.clone().endOf("month").toDate();
+    const myAttendanceCount = await Attendance.countDocuments({
+      userId: user._id,
+      date: { $gte: startOfMonth, $lte: endOfMonth },
+    });
 
-        // 今月の残業時間（本人の最新PayrollSlip）
-        const myLatestSlip = await PayrollSlip.findOne({ employeeId: employee._id })
-            .populate('runId').sort({ createdAt: -1 });
-        const myOvertimeHours = myLatestSlip?.overtimeHours ?? 0;
+    // 今月の残業時間（本人の最新PayrollSlip）
+    const myLatestSlip = await PayrollSlip.findOne({ employeeId: employee._id })
+      .populate("runId")
+      .sort({ createdAt: -1 });
+    const myOvertimeHours = myLatestSlip?.overtimeHours ?? 0;
 
-        // 本人の未完了目標数
-        const myGoalsIncomplete = await Goal.countDocuments({
-            ownerId: employee._id,
-            status: { $nin: ['completed', 'rejected'] }
-        });
+    // 本人の未完了目標数
+    const myGoalsIncomplete = await Goal.countDocuments({
+      ownerId: employee._id,
+      status: { $nin: ["completed", "rejected"] },
+    });
 
-        // 本人の休暇申請（申請中のもの）
-        const myPendingLeaves = await LeaveRequest.countDocuments({
-            userId: user._id,
-            status: 'pending'
-        });
+    // 本人の休暇申請（申請中のもの）
+    const myPendingLeaves = await LeaveRequest.countDocuments({
+      userId: user._id,
+      status: "pending",
+    });
 
-        // ===== 管理者用データ =====
-        const teamSize = await Employee.countDocuments();
-        const allPendingLeaves = isAdminUser
-            ? await LeaveRequest.countDocuments({ status: 'pending' }) : 0;
+    // ===== 管理者用データ =====
+    const teamSize = await Employee.countDocuments();
+    const allPendingLeaves = isAdminUser
+      ? await LeaveRequest.countDocuments({ status: "pending" })
+      : 0;
 
-        // 有給残日数マップ（管理者の社員一覧用）
-        const allBals = isAdminUser ? await LeaveBalance.find() : [];
-        const balMap = {};
-        allBals.forEach(b => { balMap[b.employeeId.toString()] = b.paid || 0; });
+    // 有給残日数マップ（管理者の社員一覧用）
+    const allBals = isAdminUser ? await LeaveBalance.find() : [];
+    const balMap = {};
+    allBals.forEach((b) => {
+      balMap[b.employeeId.toString()] = b.paid || 0;
+    });
 
-        // 直近の休暇申請（管理者：全体5件、一般：本人5件）
-        const recentLeaveQuery = isAdminUser ? {} : { userId: user._id };
-        const recentLeaves = await LeaveRequest.find(recentLeaveQuery)
-            .sort({ createdAt: -1 }).limit(5);
+    // 直近の休暇申請（管理者：全体5件、一般：本人5件）
+    const recentLeaveQuery = isAdminUser ? {} : { userId: user._id };
+    const recentLeaves = await LeaveRequest.find(recentLeaveQuery)
+      .sort({ createdAt: -1 })
+      .limit(5);
 
-        // 社員一覧（管理者のみ）
-        const allEmployees = isAdminUser ? await Employee.find().sort({ name: 1 }) : [];
+    // 社員一覧（管理者のみ）
+    const allEmployees = isAdminUser
+      ? await Employee.find().sort({ name: 1 })
+      : [];
 
-        const leaveStatusLabel = { pending:'申請中', approved:'承認済み', rejected:'却下', canceled:'取消' };
-        const leaveStatusColor = { pending:'#ca8a04', approved:'#16a34a', rejected:'#ef4444', canceled:'#9ca3af' };
-        const leaveStatusBg    = { pending:'#fef9c3', approved:'#dcfce7', rejected:'#fee2e2', canceled:'#f3f4f6' };
+    const leaveStatusLabel = {
+      pending: "申請中",
+      approved: "承認済み",
+      rejected: "却下",
+      canceled: "取消",
+    };
+    const leaveStatusColor = {
+      pending: "#ca8a04",
+      approved: "#16a34a",
+      rejected: "#ef4444",
+      canceled: "#9ca3af",
+    };
+    const leaveStatusBg = {
+      pending: "#fef9c3",
+      approved: "#dcfce7",
+      rejected: "#fee2e2",
+      canceled: "#f3f4f6",
+    };
 
-        renderPage(req, res, '人事管理', `${escapeHtml(employee.name)} さん、こんにちは`, `
+    renderPage(
+      req,
+      res,
+      "人事管理",
+      `${escapeHtml(employee.name)} さん、こんにちは`,
+      `
             <style>
                 /* ===== HR Portal — Enterprise Design ===== */
                 *{box-sizing:border-box}
@@ -407,11 +444,11 @@ router.get('/hr', requireLogin, async (req, res) => {
                         <div class="hrp-hero-eyebrow">Human Resources Portal</div>
                         <div class="hrp-hero-name">👋 ${escapeHtml(employee.name)} さん</div>
                         <div class="hrp-hero-meta">
-                            <span>${escapeHtml(employee.department||'—')}</span>
+                            <span>${escapeHtml(employee.department || "—")}</span>
                             <span class="hrp-hero-meta-sep">|</span>
-                            <span>${escapeHtml(employee.position||'—')}</span>
+                            <span>${escapeHtml(employee.position || "—")}</span>
                             <span class="hrp-hero-meta-sep">|</span>
-                            <span>ID: ${escapeHtml(employee.employeeId||'—')}</span>
+                            <span>ID: ${escapeHtml(employee.employeeId || "—")}</span>
                         </div>
                     </div>
                     <div class="hrp-hero-stats">
@@ -432,7 +469,7 @@ router.get('/hr', requireLogin, async (req, res) => {
 
                 <!-- ═══ 個人KPIカード ═══ -->
                 <div class="hrp-section-label">あなたのステータス</div>
-                <div class="hrp-kpi-grid" style="margin-bottom:${isAdminUser ? '20px' : '28px'}">
+                <div class="hrp-kpi-grid" style="margin-bottom:${isAdminUser ? "20px" : "28px"}">
                     <div class="hrp-kpi">
                         <div class="hrp-kpi-icon" style="background:#e8faf0;color:#16a34a">📅</div>
                         <div class="hrp-kpi-body">
@@ -443,7 +480,7 @@ router.get('/hr', requireLogin, async (req, res) => {
                     <div class="hrp-kpi">
                         <div class="hrp-kpi-icon" style="background:#eff6ff;color:#0b5fff">💴</div>
                         <div class="hrp-kpi-body">
-                            <div class="hrp-kpi-val" style="font-size:18px">¥${(myLatestSlip?.net||0).toLocaleString()}</div>
+                            <div class="hrp-kpi-val" style="font-size:18px">¥${(myLatestSlip?.net || 0).toLocaleString()}</div>
                             <div class="hrp-kpi-lbl">直近の差引支給額</div>
                         </div>
                     </div>
@@ -463,7 +500,9 @@ router.get('/hr', requireLogin, async (req, res) => {
                     </div>
                 </div>
 
-                ${isAdminUser ? `
+                ${
+                  isAdminUser
+                    ? `
                 <!-- ═══ 管理者KPI ═══ -->
                 <div class="hrp-section-label">組織サマリー（管理者）</div>
                 <div class="hrp-admin-kpi" style="margin-bottom:28px">
@@ -479,7 +518,7 @@ router.get('/hr', requireLogin, async (req, res) => {
                         <div class="hrp-kpi-body">
                             <div class="hrp-kpi-val">${allPendingLeaves}<span style="font-size:14px;font-weight:600;color:#8896a8">件</span></div>
                             <div class="hrp-kpi-lbl">未承認の休暇申請</div>
-                            ${allPendingLeaves > 0 ? `<a href="/admin/leave-requests" style="font-size:11px;color:#ef4444;font-weight:700;text-decoration:none;margin-top:4px;display:block">→ 今すぐ確認</a>` : ''}
+                            ${allPendingLeaves > 0 ? `<a href="/admin/leave-requests" style="font-size:11px;color:#ef4444;font-weight:700;text-decoration:none;margin-top:4px;display:block">→ 今すぐ確認</a>` : ""}
                         </div>
                     </div>
                     <div class="hrp-kpi" style="border-left:4px solid #16a34a">
@@ -490,14 +529,18 @@ router.get('/hr', requireLogin, async (req, res) => {
                         </div>
                     </div>
                 </div>
-                ` : ''}
+                `
+                    : ""
+                }
 
                 <!-- ═══ メインレイアウト ═══ -->
                 <div class="hrp-layout">
 
                     <!-- ── 左カラム ── -->
                     <div>
-                        ${isAdminUser ? `
+                        ${
+                          isAdminUser
+                            ? `
                         <!-- 社員一覧テーブル -->
                         <div class="hrp-card">
                             <div class="hrp-card-head">
@@ -527,16 +570,18 @@ router.get('/hr', requireLogin, async (req, res) => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        ${allEmployees.map(e => `
-                                        <tr data-search="${escapeHtml(e.name)} ${escapeHtml(e.department||'')} ${escapeHtml(e.position||'')} ${escapeHtml(e.employeeId||'')}">
+                                        ${allEmployees
+                                          .map(
+                                            (e) => `
+                                        <tr data-search="${escapeHtml(e.name)} ${escapeHtml(e.department || "")} ${escapeHtml(e.position || "")} ${escapeHtml(e.employeeId || "")}">
                                             <td style="padding:8px 10px;width:46px">
-                                                <div class="hrp-avatar">${escapeHtml((e.name||'?').charAt(0))}</div>
+                                                <div class="hrp-avatar">${escapeHtml((e.name || "?").charAt(0))}</div>
                                             </td>
                                             <td><div class="hrp-emp-name">${escapeHtml(e.name)}</div></td>
-                                            <td><span class="hrp-dept-tag">${escapeHtml(e.department||'—')}</span></td>
-                                            <td><span class="hrp-pos-tag">${escapeHtml(e.position||'—')}</span></td>
-                                            <td style="font-size:11.5px;color:#a0aec0;font-family:monospace">${escapeHtml(e.employeeId||'—')}</td>
-                                            <td style="font-size:12px;color:#6b7280">${e.joinDate ? moment.tz(e.joinDate,'Asia/Tokyo').format('YYYY/MM/DD') : '—'}</td>
+                                            <td><span class="hrp-dept-tag">${escapeHtml(e.department || "—")}</span></td>
+                                            <td><span class="hrp-pos-tag">${escapeHtml(e.position || "—")}</span></td>
+                                            <td style="font-size:11.5px;color:#a0aec0;font-family:monospace">${escapeHtml(e.employeeId || "—")}</td>
+                                            <td style="font-size:12px;color:#6b7280">${e.joinDate ? moment.tz(e.joinDate, "Asia/Tokyo").format("YYYY/MM/DD") : "—"}</td>
                                             <td><span class="hrp-leave-pill">🌴 ${balMap[e._id.toString()] ?? 0}日</span></td>
                                             <td>
                                                 <div class="hrp-action-row">
@@ -545,37 +590,40 @@ router.get('/hr', requireLogin, async (req, res) => {
                                                 </div>
                                             </td>
                                         </tr>
-                                        `).join('')}
+                                        `,
+                                          )
+                                          .join("")}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
-                        ` : `
+                        `
+                            : `
                         <!-- 一般ユーザー：プロフィールカード -->
                         <div class="hrp-card hrp-profile">
                             <div class="hrp-profile-banner"></div>
                             <div class="hrp-profile-body">
                                 <div class="hrp-profile-avatar-wrap">
-                                    <div class="hrp-profile-avatar">${escapeHtml((employee.name||'?').charAt(0))}</div>
+                                    <div class="hrp-profile-avatar">${escapeHtml((employee.name || "?").charAt(0))}</div>
                                 </div>
                                 <div class="hrp-profile-fullname">${escapeHtml(employee.name)}</div>
-                                <div class="hrp-profile-dept">${escapeHtml(employee.department||'—')} / ${escapeHtml(employee.position||'—')}</div>
+                                <div class="hrp-profile-dept">${escapeHtml(employee.department || "—")} / ${escapeHtml(employee.position || "—")}</div>
                                 <div class="hrp-profile-divider"></div>
                                 <div class="hrp-info-row">
                                     <span class="hrp-info-label">社員ID</span>
-                                    <span class="hrp-info-val" style="font-family:monospace;color:#4f6ef7">${escapeHtml(employee.employeeId||'—')}</span>
+                                    <span class="hrp-info-val" style="font-family:monospace;color:#4f6ef7">${escapeHtml(employee.employeeId || "—")}</span>
                                 </div>
                                 <div class="hrp-info-row">
                                     <span class="hrp-info-label">部署</span>
-                                    <span class="hrp-info-val">${escapeHtml(employee.department||'—')}</span>
+                                    <span class="hrp-info-val">${escapeHtml(employee.department || "—")}</span>
                                 </div>
                                 <div class="hrp-info-row">
                                     <span class="hrp-info-label">役職</span>
-                                    <span class="hrp-info-val">${escapeHtml(employee.position||'—')}</span>
+                                    <span class="hrp-info-val">${escapeHtml(employee.position || "—")}</span>
                                 </div>
                                 <div class="hrp-info-row">
                                     <span class="hrp-info-label">入社日</span>
-                                    <span class="hrp-info-val">${employee.joinDate ? moment.tz(employee.joinDate,'Asia/Tokyo').format('YYYY年MM月DD日') : '—'}</span>
+                                    <span class="hrp-info-val">${employee.joinDate ? moment.tz(employee.joinDate, "Asia/Tokyo").format("YYYY年MM月DD日") : "—"}</span>
                                 </div>
                                 <div class="hrp-info-row">
                                     <span class="hrp-info-label">有給残日数</span>
@@ -584,9 +632,11 @@ router.get('/hr', requireLogin, async (req, res) => {
                                 <div class="hrp-info-row">
                                     <span class="hrp-info-label">申請中の休暇</span>
                                     <span class="hrp-info-val">
-                                        ${myPendingLeaves > 0
+                                        ${
+                                          myPendingLeaves > 0
                                             ? `<span style="color:#d97706;font-weight:800">${myPendingLeaves} 件</span>`
-                                            : `<span style="color:#8896a8;font-weight:500">なし</span>`}
+                                            : `<span style="color:#8896a8;font-weight:500">なし</span>`
+                                        }
                                     </span>
                                 </div>
                             </div>
@@ -602,25 +652,30 @@ router.get('/hr', requireLogin, async (req, res) => {
                                 <a href="/hr/payroll" class="hrp-btn hrp-btn-ghost" style="font-size:12px;padding:6px 14px">すべて見る →</a>
                             </div>
                             <div style="padding:20px 22px">
-                                ${myLatestSlip ? `
+                                ${
+                                  myLatestSlip
+                                    ? `
                                 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
                                     <div style="text-align:center;padding:16px;background:#f8fafc;border-radius:12px">
                                         <div style="font-size:11px;color:#8896a8;font-weight:600;margin-bottom:6px">差引支給</div>
-                                        <div style="font-size:20px;font-weight:900;color:#0b5fff">¥${(myLatestSlip.net||0).toLocaleString()}</div>
+                                        <div style="font-size:20px;font-weight:900;color:#0b5fff">¥${(myLatestSlip.net || 0).toLocaleString()}</div>
                                     </div>
                                     <div style="text-align:center;padding:16px;background:#f8fafc;border-radius:12px">
                                         <div style="font-size:11px;color:#8896a8;font-weight:600;margin-bottom:6px">総支給</div>
-                                        <div style="font-size:20px;font-weight:900;color:#1f2937">¥${(myLatestSlip.gross||0).toLocaleString()}</div>
+                                        <div style="font-size:20px;font-weight:900;color:#1f2937">¥${(myLatestSlip.gross || 0).toLocaleString()}</div>
                                     </div>
                                     <div style="text-align:center;padding:16px;background:#f8fafc;border-radius:12px">
                                         <div style="font-size:11px;color:#8896a8;font-weight:600;margin-bottom:6px">残業時間</div>
                                         <div style="font-size:20px;font-weight:900;color:#d97706">${myOvertimeHours}h</div>
                                     </div>
                                 </div>
-                                ` : `<div style="color:#a0aec0;font-size:13px;text-align:center;padding:24px 0">給与明細データがありません</div>`}
+                                `
+                                    : `<div style="color:#a0aec0;font-size:13px;text-align:center;padding:24px 0">給与明細データがありません</div>`
+                                }
                             </div>
                         </div>
-                        `}
+                        `
+                        }
                     </div>
 
                     <!-- ── 右サイドバー ── -->
@@ -632,7 +687,9 @@ router.get('/hr', requireLogin, async (req, res) => {
                                 <span>⚡ クイックアクション</span>
                             </div>
                             <div class="hrp-side-body">
-                                ${isAdminUser ? `
+                                ${
+                                  isAdminUser
+                                    ? `
                                 <a href="/hr/add" class="hrp-qa-btn">
                                     <div class="hrp-qa-icon" style="background:#eff6ff;color:#0b5fff">➕</div>
                                     <span class="hrp-qa-label">社員を追加する</span>
@@ -645,7 +702,7 @@ router.get('/hr', requireLogin, async (req, res) => {
                                 </a>
                                 <a href="/admin/leave-requests" class="hrp-qa-btn">
                                     <div class="hrp-qa-icon" style="background:#fff1f2;color:#ef4444">📋</div>
-                                    <span class="hrp-qa-label">休暇申請を承認する${allPendingLeaves > 0 ? ` <span style="background:#ef4444;color:#fff;padding:1px 6px;border-radius:10px;font-size:10px">${allPendingLeaves}</span>` : ''}</span>
+                                    <span class="hrp-qa-label">休暇申請を承認する${allPendingLeaves > 0 ? ` <span style="background:#ef4444;color:#fff;padding:1px 6px;border-radius:10px;font-size:10px">${allPendingLeaves}</span>` : ""}</span>
                                     <span class="hrp-qa-arrow">›</span>
                                 </a>
                                 <a href="/admin/leave-balance" class="hrp-qa-btn">
@@ -659,7 +716,9 @@ router.get('/hr', requireLogin, async (req, res) => {
                                     <span class="hrp-qa-arrow">›</span>
                                 </a>
                                 <div style="height:1px;background:#f0f4ff;margin:8px 0"></div>
-                                ` : ''}
+                                `
+                                    : ""
+                                }
                                 <a href="/hr/payroll" class="hrp-qa-btn">
                                     <div class="hrp-qa-icon" style="background:#fffbeb;color:#d97706">📊</div>
                                     <span class="hrp-qa-label">給与明細を見る</span>
@@ -686,30 +745,38 @@ router.get('/hr', requireLogin, async (req, res) => {
                         <!-- 直近の休暇申請 -->
                         <div class="hrp-side-card">
                             <div class="hrp-side-head">
-                                <span>✈️ ${isAdminUser ? '最近の休暇申請' : '自分の休暇申請'}</span>
-                                ${allPendingLeaves > 0 && isAdminUser ? `<span style="background:#fff1f2;color:#ef4444;font-size:11px;font-weight:800;padding:2px 8px;border-radius:10px">${allPendingLeaves}件 未承認</span>` : ''}
+                                <span>✈️ ${isAdminUser ? "最近の休暇申請" : "自分の休暇申請"}</span>
+                                ${allPendingLeaves > 0 && isAdminUser ? `<span style="background:#fff1f2;color:#ef4444;font-size:11px;font-weight:800;padding:2px 8px;border-radius:10px">${allPendingLeaves}件 未承認</span>` : ""}
                             </div>
                             <div style="padding:6px 16px 4px">
-                                ${recentLeaves.length ? recentLeaves.map(l => `
+                                ${
+                                  recentLeaves.length
+                                    ? recentLeaves
+                                        .map(
+                                          (l) => `
                                 <div class="hrp-leave-item">
                                     <div style="min-width:0;flex:1">
-                                        <div class="hrp-leave-name">${isAdminUser ? escapeHtml(l.name||'—') : escapeHtml(l.leaveType||'—')}</div>
+                                        <div class="hrp-leave-name">${isAdminUser ? escapeHtml(l.name || "—") : escapeHtml(l.leaveType || "—")}</div>
                                         <div class="hrp-leave-date">
-                                            ${l.startDate ? moment(l.startDate).format('MM/DD') : '—'} 〜
-                                            ${l.endDate ? moment(l.endDate).format('MM/DD') : '—'}
-                                            <span style="margin-left:4px">(${l.days||'?'}日間)</span>
+                                            ${l.startDate ? moment(l.startDate).format("MM/DD") : "—"} 〜
+                                            ${l.endDate ? moment(l.endDate).format("MM/DD") : "—"}
+                                            <span style="margin-left:4px">(${l.days || "?"}日間)</span>
                                         </div>
                                     </div>
-                                    <span class="hrp-status-badge" style="background:${leaveStatusBg[l.status]||'#f3f4f6'};color:${leaveStatusColor[l.status]||'#6b7280'};margin-left:10px">
-                                        ${leaveStatusLabel[l.status]||l.status}
+                                    <span class="hrp-status-badge" style="background:${leaveStatusBg[l.status] || "#f3f4f6"};color:${leaveStatusColor[l.status] || "#6b7280"};margin-left:10px">
+                                        ${leaveStatusLabel[l.status] || l.status}
                                     </span>
                                 </div>
-                                `).join('') : `
+                                `,
+                                        )
+                                        .join("")
+                                    : `
                                 <div style="color:#a0aec0;font-size:13px;text-align:center;padding:20px 0">
                                     <div style="font-size:28px;margin-bottom:8px">📭</div>
                                     休暇申請はありません
-                                </div>`}
-                                <a href="${isAdminUser ? '/admin/leave-requests' : '/leave/my-requests'}" class="hrp-see-all">すべて見る →</a>
+                                </div>`
+                                }
+                                <a href="${isAdminUser ? "/admin/leave-requests" : "/leave/my-requests"}" class="hrp-see-all">すべて見る →</a>
                             </div>
                         </div>
 
@@ -728,17 +795,17 @@ router.get('/hr', requireLogin, async (req, res) => {
                 });
             }
             </script>
-        `);
-
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('サーバーエラー');
-    }
+        `,
+    );
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("サーバーエラー");
+  }
 });
 
 // 社員追加
-router.get('/hr/add', requireLogin, (req, res) => {
-    const html = `
+router.get("/hr/add", requireLogin, (req, res) => {
+  const html = `
         <style>
             /* ── ページ全体ラッパー ── */
             .hradd-wrap {
@@ -1046,31 +1113,40 @@ router.get('/hr/add', requireLogin, (req, res) => {
             </form>
         </div>
     `;
-    renderPage(req, res, '社員追加', '新しい社員を追加', html);
+  renderPage(req, res, "社員追加", "新しい社員を追加", html);
 });
 
-router.post('/hr/add', requireLogin, async (req, res) => {
-    const { name, department, position, joinDate, email } = req.body;
-    await Employee.create({ name, department, position, joinDate, email, paidLeave: 10 });
-    res.redirect('/hr');
+router.post("/hr/add", requireLogin, async (req, res) => {
+  const { name, department, position, joinDate, email } = req.body;
+  await Employee.create({
+    name,
+    department,
+    position,
+    joinDate,
+    email,
+    paidLeave: 10,
+  });
+  res.redirect("/hr");
 });
 
 // 社員編集
-router.get('/hr/edit/:id', requireLogin, async (req, res) => {
-    const id = req.params.id;
-    const employee = await Employee.findById(id);
-    if (!employee) return res.redirect('/hr');
+router.get("/hr/edit/:id", requireLogin, async (req, res) => {
+  const id = req.params.id;
+  const employee = await Employee.findById(id);
+  if (!employee) return res.redirect("/hr");
 
-    // joinDate を YYYY-MM-DD 形式に変換
-    const joinDateStr = employee.joinDate
-        ? new Date(employee.joinDate).toISOString().split('T')[0]
-        : '';
+  // joinDate を YYYY-MM-DD 形式に変換
+  const joinDateStr = employee.joinDate
+    ? new Date(employee.joinDate).toISOString().split("T")[0]
+    : "";
 
-    // LeaveBalance から有給残日数を取得
-    const { LeaveBalance } = require('../models');
-    const bal = await LeaveBalance.findOne({ employeeId: employee._id }) || { paid: 0 };
+  // LeaveBalance から有給残日数を取得
+  const { LeaveBalance } = require("../models");
+  const bal = (await LeaveBalance.findOne({ employeeId: employee._id })) || {
+    paid: 0,
+  };
 
-    const html = `
+  const html = `
         <style>
             .hr-form-card{background:#fff;border-radius:14px;padding:32px 36px;box-shadow:0 4px 18px rgba(11,36,48,.07);max-width:600px;margin:0 auto}
             .hr-form-title{font-size:20px;font-weight:800;color:#0b2540;margin:0 0 4px}
@@ -1114,7 +1190,7 @@ router.get('/hr/edit/:id', requireLogin, async (req, res) => {
                     </div>
                     <div class="hr-form-field">
                         <label>メールアドレス</label>
-                        <input type="email" name="email" value="${escapeHtml(employee.email || '')}" placeholder="example@company.com">
+                        <input type="email" name="email" value="${escapeHtml(employee.email || "")}" placeholder="example@company.com">
                     </div>
                 </div>
                 <div class="hr-form-field">
@@ -1132,123 +1208,163 @@ router.get('/hr/edit/:id', requireLogin, async (req, res) => {
             </form>
         </div>
     `;
-    renderPage(req, res, '社員編集', '社員情報を編集', html);
+  renderPage(req, res, "社員編集", "社員情報を編集", html);
 });
 
-router.post('/hr/edit/:id', requireLogin, async (req, res) => {
-    try {
-        const id = req.params.id;
-        const { name, department, position, joinDate, email, paidLeave } = req.body;
+router.post("/hr/edit/:id", requireLogin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { name, department, position, joinDate, email, paidLeave } = req.body;
 
-        // Employee を更新（paidLeave はスキーマにないので除外）
-        await Employee.findByIdAndUpdate(id, {
-            $set: {
-                name,
-                department,
-                position,
-                joinDate: joinDate ? new Date(joinDate) : undefined,
-                email: email || ''
-            }
-        });
+    // Employee を更新（paidLeave はスキーマにないので除外）
+    await Employee.findByIdAndUpdate(id, {
+      $set: {
+        name,
+        department,
+        position,
+        joinDate: joinDate ? new Date(joinDate) : undefined,
+        email: email || "",
+      },
+    });
 
-        // 有給残日数は LeaveBalance に保存
-        const { LeaveBalance } = require('../models');
-        const paid = parseInt(paidLeave) || 0;
-        await LeaveBalance.findOneAndUpdate(
-            { employeeId: id },
-            { $set: { paid } },
-            { upsert: true, new: true }
-        );
+    // 有給残日数は LeaveBalance に保存
+    const { LeaveBalance } = require("../models");
+    const paid = parseInt(paidLeave) || 0;
+    await LeaveBalance.findOneAndUpdate(
+      { employeeId: id },
+      { $set: { paid } },
+      { upsert: true, new: true },
+    );
 
-        res.redirect('/hr');
-    } catch (error) {
-        console.error('社員更新エラー:', error);
-        res.status(500).send('更新に失敗しました');
-    }
+    res.redirect("/hr");
+  } catch (error) {
+    console.error("社員更新エラー:", error);
+    res.status(500).send("更新に失敗しました");
+  }
 });
 
 // 社員削除
-router.get('/hr/delete/:id', requireLogin, async (req, res) => {
-    await Employee.findByIdAndDelete(req.params.id);
-    res.redirect('/hr');
+router.get("/hr/delete/:id", requireLogin, async (req, res) => {
+  await Employee.findByIdAndDelete(req.params.id);
+  res.redirect("/hr");
 });
 
 // 統計
-router.get('/hr/statistics', requireLogin, async (req, res) => {
-    const employees = await Employee.find();
-    const deptCount = {};
-    const posCount = {};
-    employees.forEach(e => {
-        deptCount[e.department] = (deptCount[e.department] || 0) + 1;
-        posCount[e.position] = (posCount[e.position] || 0) + 1;
-    });
+router.get("/hr/statistics", requireLogin, async (req, res) => {
+  const employees = await Employee.find();
+  const deptCount = {};
+  const posCount = {};
+  employees.forEach((e) => {
+    deptCount[e.department] = (deptCount[e.department] || 0) + 1;
+    posCount[e.position] = (posCount[e.position] || 0) + 1;
+  });
 
-    const html = `
+  const html = `
         <h3>部署別人数</h3>
-        <ul>${Object.entries(deptCount).map(([k,v]) => `<li>${k}: ${v}名</li>`).join('')}</ul>
+        <ul>${Object.entries(deptCount)
+          .map(([k, v]) => `<li>${k}: ${v}名</li>`)
+          .join("")}</ul>
         <h3>役職別人数</h3>
-        <ul>${Object.entries(posCount).map(([k,v]) => `<li>${k}: ${v}名</li>`).join('')}</ul>
+        <ul>${Object.entries(posCount)
+          .map(([k, v]) => `<li>${k}: ${v}名</li>`)
+          .join("")}</ul>
         <a href="/hr">社員一覧に戻る</a>
     `;
-    renderPage(req, res, '統計', '部署・役職統計', html);
+  renderPage(req, res, "統計", "部署・役職統計", html);
 });
 
 // 有給更新
-router.post('/hr/leave/:id', requireLogin, async (req, res) => {
-    const { remainingDays } = req.body;
-    await Employee.findByIdAndUpdate(req.params.id, { paidLeave: Number(remainingDays) });
-    res.redirect('/hr');
+router.post("/hr/leave/:id", requireLogin, async (req, res) => {
+  const { remainingDays } = req.body;
+  await Employee.findByIdAndUpdate(req.params.id, {
+    paidLeave: Number(remainingDays),
+  });
+  res.redirect("/hr");
 });
 
 // CSVエクスポート
-router.get('/hr/export', requireLogin, async (req, res) => {
-    const employees = await Employee.find();
-    const csv = [
-        ['氏名','部署','役職','入社日','メール','有給残日数'],
-        ...employees.map(e => [e.name, e.department, e.position, e.joinDate, e.email, e.paidLeave || 0])
-    ].map(r => r.join(',')).join('\n');
+router.get("/hr/export", requireLogin, async (req, res) => {
+  const employees = await Employee.find();
+  const csv = [
+    ["氏名", "部署", "役職", "入社日", "メール", "有給残日数"],
+    ...employees.map((e) => [
+      e.name,
+      e.department,
+      e.position,
+      e.joinDate,
+      e.email,
+      e.paidLeave || 0,
+    ]),
+  ]
+    .map((r) => r.join(","))
+    .join("\n");
 
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="employees.csv"');
-    res.send(csv);
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", 'attachment; filename="employees.csv"');
+  res.send(csv);
 });
 
 // 社員写真アップロード
-router.post('/hr/photo/:id', requireLogin, upload.single('photo'), async (req, res) => {
+router.post(
+  "/hr/photo/:id",
+  requireLogin,
+  upload.single("photo"),
+  async (req, res) => {
     const filename = req.file.filename;
     await Employee.findByIdAndUpdate(req.params.id, { photo: filename });
-    res.redirect('/hr');
-});
-
-
-
+    res.redirect("/hr");
+  },
+);
 
 // 給与管理メイン（管理者用）
-router.get('/hr/payroll/admin', requireLogin, async (req, res) => {
-    if (!req.session.isAdmin) return res.redirect('/hr/payroll');
+router.get("/hr/payroll/admin", requireLogin, async (req, res) => {
+  if (!req.session.isAdmin) return res.redirect("/hr/payroll");
 
-    const employees = await Employee.find().sort({ name: 1 });
+  const employees = await Employee.find().sort({ name: 1 });
 
-    // 各社員の直近給与明細を取得
-    const slipMap = {};
-    for (const emp of employees) {
-        const latest = await PayrollSlip.findOne({ employeeId: emp._id })
-            .populate('runId')
-            .sort({ createdAt: -1 });
-        slipMap[emp._id.toString()] = latest;
-    }
+  // 各社員の直近給与明細を取得
+  const slipMap = {};
+  for (const emp of employees) {
+    const latest = await PayrollSlip.findOne({ employeeId: emp._id })
+      .populate("runId")
+      .sort({ createdAt: -1 });
+    slipMap[emp._id.toString()] = latest;
+  }
 
-    // 全体サマリ
-    const allSlips = await PayrollSlip.find({});
-    const totalGross = allSlips.reduce((s, x) => s + (x.gross || 0), 0);
-    const totalNet   = allSlips.reduce((s, x) => s + (x.net   || 0), 0);
-    const issuedCount = allSlips.filter(s => s.status === 'issued' || s.status === 'locked' || s.status === 'paid').length;
+  // 全体サマリ
+  const allSlips = await PayrollSlip.find({});
+  const totalGross = allSlips.reduce((s, x) => s + (x.gross || 0), 0);
+  const totalNet = allSlips.reduce((s, x) => s + (x.net || 0), 0);
+  const issuedCount = allSlips.filter(
+    (s) =>
+      s.status === "issued" || s.status === "locked" || s.status === "paid",
+  ).length;
 
-    const statusLabel = { draft:'下書き', issued:'発行済み', locked:'確定', paid:'支払済み' };
-    const statusColor = { draft:'#ca8a04', issued:'#16a34a', locked:'#4f46e5', paid:'#0b5fff' };
-    const statusBg    = { draft:'#fef9c3', issued:'#dcfce7', locked:'#e0e7ff', paid:'#dbeafe' };
+  const statusLabel = {
+    draft: "下書き",
+    issued: "発行済み",
+    locked: "確定",
+    paid: "支払済み",
+  };
+  const statusColor = {
+    draft: "#ca8a04",
+    issued: "#16a34a",
+    locked: "#4f46e5",
+    paid: "#0b5fff",
+  };
+  const statusBg = {
+    draft: "#fef9c3",
+    issued: "#dcfce7",
+    locked: "#e0e7ff",
+    paid: "#dbeafe",
+  };
 
-    renderPage(req, res, '給与管理', '給与管理 — 管理者メニュー', `
+  renderPage(
+    req,
+    res,
+    "給与管理",
+    "給与管理 — 管理者メニュー",
+    `
         <style>
             .pa-page{max-width:1100px;margin:0 auto}
             .pa-topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px}
@@ -1333,39 +1449,46 @@ router.get('/hr/payroll/admin', requireLogin, async (req, res) => {
 
             <!-- 社員カード一覧 -->
             <div class="pa-grid" id="empGrid">
-                ${employees.map(emp => {
+                ${employees
+                  .map((emp) => {
                     const s = slipMap[emp._id.toString()];
                     const st = s?.status || null;
                     const mo = s?.runId?.periodFrom
-                        ? `${s.runId.periodFrom.getFullYear()}年${s.runId.periodFrom.getMonth()+1}月`
-                        : null;
-                    const initial = emp.name ? emp.name.charAt(0) : '?';
+                      ? `${s.runId.periodFrom.getFullYear()}年${s.runId.periodFrom.getMonth() + 1}月`
+                      : null;
+                    const initial = emp.name ? emp.name.charAt(0) : "?";
                     return `
-                    <div class="pa-card" data-name="${escapeHtml(emp.name)}" data-dept="${escapeHtml(emp.department||'')} ${escapeHtml(emp.position||'')}">
+                    <div class="pa-card" data-name="${escapeHtml(emp.name)}" data-dept="${escapeHtml(emp.department || "")} ${escapeHtml(emp.position || "")}">
                         <div class="pa-card-head">
                             <div class="pa-avatar">${escapeHtml(initial)}</div>
                             <div>
                                 <div class="pa-name">${escapeHtml(emp.name)}</div>
-                                <div class="pa-dept">${escapeHtml(emp.department||'—')} / ${escapeHtml(emp.position||'—')}</div>
+                                <div class="pa-dept">${escapeHtml(emp.department || "—")} / ${escapeHtml(emp.position || "—")}</div>
                             </div>
                         </div>
                         <div class="pa-card-body">
-                            ${s ? `
+                            ${
+                              s
+                                ? `
                                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
                                     <span style="font-size:12px;color:#9ca3af">${mo} 最新明細</span>
-                                    <span style="background:${statusBg[st]};color:${statusColor[st]};padding:2px 10px;border-radius:999px;font-size:11px;font-weight:700">${statusLabel[st]||st}</span>
+                                    <span style="background:${statusBg[st]};color:${statusColor[st]};padding:2px 10px;border-radius:999px;font-size:11px;font-weight:700">${statusLabel[st] || st}</span>
                                 </div>
-                                <div class="pa-net">¥${(s.net||0).toLocaleString()}</div>
-                                <div class="pa-info-row"><span>総支給</span><span>¥${(s.gross||0).toLocaleString()}</span></div>
-                                <div class="pa-info-row"><span>基本給</span><span>¥${(s.baseSalary||0).toLocaleString()}</span></div>
-                            ` : `<div class="pa-empty" style="padding:18px 0">📭 明細未登録</div>`}
+                                <div class="pa-net">¥${(s.net || 0).toLocaleString()}</div>
+                                <div class="pa-info-row"><span>総支給</span><span>¥${(s.gross || 0).toLocaleString()}</span></div>
+                                <div class="pa-info-row"><span>基本給</span><span>¥${(s.baseSalary || 0).toLocaleString()}</span></div>
+                            `
+                                : `<div class="pa-empty" style="padding:18px 0">📭 明細未登録</div>`
+                            }
                         </div>
                         <div class="pa-card-foot">
                             <a href="/hr/payroll/${emp._id}" class="pa-card-btn pa-card-btn-view">📋 明細を見る</a>
                             <a href="/hr/payroll/admin/new?employeeId=${emp._id}" class="pa-card-btn pa-card-btn-new">＋ 登録</a>
                         </div>
                     </div>
-                `}).join('')}
+                `;
+                  })
+                  .join("")}
             </div>
         </div>
 
@@ -1378,107 +1501,118 @@ router.get('/hr/payroll/admin', requireLogin, async (req, res) => {
             });
         }
         </script>
-    `);
+    `,
+  );
 });
 
-router.post('/hr/payroll/admin/add', requireLogin, async (req, res) => {
-    if (!req.session.isAdmin) return res.status(403).send('アクセス権限がありません');
+router.post("/hr/payroll/admin/add", requireLogin, async (req, res) => {
+  if (!req.session.isAdmin)
+    return res.status(403).send("アクセス権限がありません");
 
-    const { employeeId, payMonth } = req.body;
+  const { employeeId, payMonth } = req.body;
 
-    // payMonthは "YYYY-MM" 形式のバリデーション
-    if (!payMonth || !/^\d{4}-\d{2}$/.test(payMonth)) {
-        return res.status(400).send('対象月が正しくありません');
+  // payMonthは "YYYY-MM" 形式のバリデーション
+  if (!payMonth || !/^\d{4}-\d{2}$/.test(payMonth)) {
+    return res.status(400).send("対象月が正しくありません");
+  }
+
+  const [yearStr, monthStr] = payMonth.split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+
+  if (isNaN(year) || isNaN(month)) {
+    return res.status(400).send("対象月が無効です");
+  }
+
+  // 月初・月末
+  const periodFrom = new Date(year, month - 1, 1);
+  const periodTo = new Date(year, month, 0);
+
+  // 4月始まりの年度計算
+  const fiscalYear = month >= 4 ? year : year - 1;
+
+  // PayrollRun 作成
+  const payrollRun = await PayrollRun.create({
+    periodFrom,
+    periodTo,
+    fiscalYear,
+    createdBy: req.session.userId, // session.employee ではなく user._id
+  });
+
+  // PayrollSlip 作成
+  await PayrollSlip.create({
+    employeeId,
+    runId: payrollRun._id,
+    workDays: Number(req.body.workDays || 0),
+    absentDays: Number(req.body.absentDays || 0),
+    lateCount: Number(req.body.lateCount || 0),
+    earlyLeaveCount: Number(req.body.earlyLeaveCount || 0),
+    overtimeHours: Number(req.body.overtimeHours || 0),
+    nightHours: Number(req.body.nightHours || 0),
+    holidayHours: Number(req.body.holidayHours || 0),
+    holidayNightHours: Number(req.body.holidayNightHours || 0),
+    baseSalary: Number(req.body.baseSalary || 0),
+    gross: Number(req.body.gross || 0),
+    net: Number(req.body.net || 0),
+    status: req.body.status || "draft",
+
+    // 手当
+    allowances: Object.entries(req.body.allowances || {}).map(
+      ([name, amount]) => ({
+        name,
+        amount: Number(amount),
+      }),
+    ),
+
+    // 控除
+    deductions: Object.entries(req.body.deductions || {}).map(
+      ([name, amount]) => {
+        const nameMap = {
+          健康保険: "健康保険料",
+          厚生年金: "厚生年金保険料",
+          雇用保険: "雇用保険料",
+          その他社会保険: "その他社会保険料",
+        };
+        return { name: nameMap[name] || name, amount: Number(amount) };
+      },
+    ),
+
+    // 所得税
+    incomeTax: Number(req.body.incomeTax || 0),
+
+    // 通勤費
+    commute: {
+      nonTax: Number(req.body.commute?.nonTax || 0),
+      tax: Number(req.body.commute?.tax || 0),
+    },
+  });
+
+  // 給与明細発行通知（issued / locked / paid のとき）
+  const newStatus = req.body.status || "draft";
+  if (["issued", "locked", "paid"].includes(newStatus)) {
+    const targetEmp = await Employee.findOne({ employeeId });
+    if (targetEmp && targetEmp.userId) {
+      const [y, m] = payMonth.split("-");
+      await createNotification({
+        userId: targetEmp.userId,
+        type: "payslip_issued",
+        title: `💴 給与明細が発行されました`,
+        body: `${y}年${m}月分の給与明細が確認できます`,
+        link: "/hr/payroll",
+      });
     }
+  }
 
-    const [yearStr, monthStr] = payMonth.split('-');
-    const year = Number(yearStr);
-    const month = Number(monthStr);
-
-    if (isNaN(year) || isNaN(month)) {
-        return res.status(400).send('対象月が無効です');
-    }
-
-    // 月初・月末
-    const periodFrom = new Date(year, month - 1, 1);
-    const periodTo = new Date(year, month, 0);
-
-    // 4月始まりの年度計算
-    const fiscalYear = (month >= 4) ? year : year - 1;
-
-    // PayrollRun 作成
-    const payrollRun = await PayrollRun.create({
-        periodFrom,
-        periodTo,
-        fiscalYear,
-        createdBy: req.session.userId, // session.employee ではなく user._id
-    });
-
-    // PayrollSlip 作成
-    await PayrollSlip.create({
-        employeeId,
-        runId: payrollRun._id,
-        workDays: Number(req.body.workDays || 0),
-        absentDays: Number(req.body.absentDays || 0),
-        lateCount: Number(req.body.lateCount || 0),
-        earlyLeaveCount: Number(req.body.earlyLeaveCount || 0),
-        overtimeHours: Number(req.body.overtimeHours || 0),
-        nightHours: Number(req.body.nightHours || 0),
-        holidayHours: Number(req.body.holidayHours || 0),
-        holidayNightHours: Number(req.body.holidayNightHours || 0),
-        baseSalary: Number(req.body.baseSalary || 0),
-        gross: Number(req.body.gross || 0),
-        net: Number(req.body.net || 0),
-        status: req.body.status || 'draft',
-
-        // 手当
-        allowances: Object.entries(req.body.allowances || {}).map(([name, amount]) => ({
-            name,
-            amount: Number(amount)
-        })),
-
-        // 控除
-        deductions: Object.entries(req.body.deductions || {}).map(([name, amount]) => {
-            const nameMap = { '健康保険': '健康保険料', '厚生年金': '厚生年金保険料', '雇用保険': '雇用保険料', 'その他社会保険': 'その他社会保険料' };
-            return { name: nameMap[name] || name, amount: Number(amount) };
-        }),
-
-        // 所得税
-        incomeTax: Number(req.body.incomeTax || 0),
-
-        // 通勤費
-        commute: {
-            nonTax: Number(req.body.commute?.nonTax || 0),
-            tax: Number(req.body.commute?.tax || 0)
-        }
-    });
-
-    // 給与明細発行通知（issued / locked / paid のとき）
-    const newStatus = req.body.status || 'draft';
-    if (['issued', 'locked', 'paid'].includes(newStatus)) {
-        const targetEmp = await Employee.findOne({ employeeId });
-        if (targetEmp && targetEmp.userId) {
-            const [y, m] = payMonth.split('-');
-            await createNotification({
-                userId: targetEmp.userId,
-                type: 'payslip_issued',
-                title: `💴 給与明細が発行されました`,
-                body: `${y}年${m}月分の給与明細が確認できます`,
-                link: '/hr/payroll',
-            });
-        }
-    }
-
-    res.redirect('/hr/payroll/admin');
+  res.redirect("/hr/payroll/admin");
 });
 
-router.get('/hr/payroll/admin/new', requireLogin, async (req, res) => {
-    if (!req.session.isAdmin) return res.redirect('/hr/payroll');
+router.get("/hr/payroll/admin/new", requireLogin, async (req, res) => {
+  if (!req.session.isAdmin) return res.redirect("/hr/payroll");
 
-    const employees = await Employee.find();
-    const preselect = req.query.employeeId || '';
+  const employees = await Employee.find();
+  const preselect = req.query.employeeId || "";
 
-    const html = `
+  const html = `
         <style>
             .pf-card{background:#fff;border-radius:14px;padding:30px 32px;box-shadow:0 4px 18px rgba(11,36,48,.07);max-width:760px;margin:0 auto}
             .pf-title{font-size:19px;font-weight:800;color:#0b2540;margin:0 0 4px}
@@ -1512,7 +1646,7 @@ router.get('/hr/payroll/admin/new', requireLogin, async (req, res) => {
                         <div class="pf-field">
                             <label>社員 <span style="color:#ef4444">*</span></label>
                             <select name="employeeId" required>
-                                ${employees.map(emp => `<option value="${emp._id}" ${emp._id.toString()===preselect?'selected':''}>${emp.name}</option>`).join('')}
+                                ${employees.map((emp) => `<option value="${emp._id}" ${emp._id.toString() === preselect ? "selected" : ""}>${emp.name}</option>`).join("")}
                             </select>
                         </div>
                     </div>
@@ -1544,16 +1678,48 @@ router.get('/hr/payroll/admin/new', requireLogin, async (req, res) => {
                 <div class="pf-section">
                     <div class="pf-section-title">🎁 手当</div>
                     <div class="pf-grid">
-                        ${['役職手当','家族手当','現場手当','手当-2','手当-3','手当-4','手当-5','手当-6','手当-7','手当-8','手当-9','手当-10']
-                          .map(n=>`<div class="pf-field"><label>${n}</label><input type="number" name="allowances[${n}]" value="0" min="0"></div>`).join('')}
+                        ${[
+                          "役職手当",
+                          "家族手当",
+                          "現場手当",
+                          "手当-2",
+                          "手当-3",
+                          "手当-4",
+                          "手当-5",
+                          "手当-6",
+                          "手当-7",
+                          "手当-8",
+                          "手当-9",
+                          "手当-10",
+                        ]
+                          .map(
+                            (n) =>
+                              `<div class="pf-field"><label>${n}</label><input type="number" name="allowances[${n}]" value="0" min="0"></div>`,
+                          )
+                          .join("")}
                     </div>
                 </div>
 
                 <div class="pf-section">
                     <div class="pf-section-title">📉 控除</div>
                     <div class="pf-grid">
-                        ${['健康保険料','厚生年金保険料','その他社会保険料','雇用保険料','住民税','控除-1','控除-2','控除-3','控除-4','控除-5']
-                          .map(n=>`<div class="pf-field"><label>${n}</label><input type="number" name="deductions[${n}]" value="0" min="0"></div>`).join('')}
+                        ${[
+                          "健康保険料",
+                          "厚生年金保険料",
+                          "その他社会保険料",
+                          "雇用保険料",
+                          "住民税",
+                          "控除-1",
+                          "控除-2",
+                          "控除-3",
+                          "控除-4",
+                          "控除-5",
+                        ]
+                          .map(
+                            (n) =>
+                              `<div class="pf-field"><label>${n}</label><input type="number" name="deductions[${n}]" value="0" min="0"></div>`,
+                          )
+                          .join("")}
                         <div class="pf-field"><label>所得税</label><input type="number" name="incomeTax" value="0" required min="0"></div>
                     </div>
                 </div>
@@ -1587,28 +1753,62 @@ router.get('/hr/payroll/admin/new', requireLogin, async (req, res) => {
             </form>
         </div>
     `;
-    renderPage(req, res, "給与管理", "新規給与登録", html);
+  renderPage(req, res, "給与管理", "新規給与登録", html);
 });
 
 // 管理者用 給与明細編集画面
-router.get('/hr/payroll/admin/edit/:slipId', requireLogin, async (req, res) => {
-    if (!req.session.isAdmin) return res.status(403).send('アクセス権限がありません');
+router.get("/hr/payroll/admin/edit/:slipId", requireLogin, async (req, res) => {
+  if (!req.session.isAdmin)
+    return res.status(403).send("アクセス権限がありません");
 
-    const slip = await PayrollSlip.findById(req.params.slipId).populate('employeeId runId');
-    if (!slip) return res.status(404).send('給与明細が見つかりません');
+  const slip = await PayrollSlip.findById(req.params.slipId).populate(
+    "employeeId runId",
+  );
+  if (!slip) return res.status(404).send("給与明細が見つかりません");
 
-    const aMap = {};
-    (slip.allowances||[]).forEach(a => {
-        const key = a.name === '手当-1' ? '現場手当' : a.name;
-        aMap[key] = a.amount;
-    });
-    const dMap = {};
-    (slip.deductions||[]).forEach(d => { dMap[d.name] = d.amount; });
+  const aMap = {};
+  (slip.allowances || []).forEach((a) => {
+    const key = a.name === "手当-1" ? "現場手当" : a.name;
+    aMap[key] = a.amount;
+  });
+  const dMap = {};
+  (slip.deductions || []).forEach((d) => {
+    dMap[d.name] = d.amount;
+  });
 
-    const allowanceFields = ['役職手当','家族手当','現場手当','手当-2','手当-3','手当-4','手当-5','手当-6','手当-7','手当-8','手当-9','手当-10'];
-    const deductionFields = ['健康保険料','厚生年金保険料','その他社会保険料','雇用保険料','住民税','控除-1','控除-2','控除-3','控除-4','控除-5','控除-6','控除-7','控除-8','控除-9','控除-10'];
+  const allowanceFields = [
+    "役職手当",
+    "家族手当",
+    "現場手当",
+    "手当-2",
+    "手当-3",
+    "手当-4",
+    "手当-5",
+    "手当-6",
+    "手当-7",
+    "手当-8",
+    "手当-9",
+    "手当-10",
+  ];
+  const deductionFields = [
+    "健康保険料",
+    "厚生年金保険料",
+    "その他社会保険料",
+    "雇用保険料",
+    "住民税",
+    "控除-1",
+    "控除-2",
+    "控除-3",
+    "控除-4",
+    "控除-5",
+    "控除-6",
+    "控除-7",
+    "控除-8",
+    "控除-9",
+    "控除-10",
+  ];
 
-    const html = `
+  const html = `
         <style>
             .pf-card{background:#fff;border-radius:14px;padding:30px 32px;box-shadow:0 4px 18px rgba(11,36,48,.07);max-width:760px;margin:0 auto}
             .pf-title{font-size:19px;font-weight:800;color:#0b2540;margin:0 0 4px}
@@ -1644,15 +1844,15 @@ router.get('/hr/payroll/admin/edit/:slipId', requireLogin, async (req, res) => {
                 <div class="pf-section">
                     <div class="pf-section-title">🎁 手当</div>
                     <div class="pf-grid">
-                        ${allowanceFields.map(n=>`<div class="pf-field"><label>${n}</label><input type="number" name="allowances[${n}]" value="${aMap[n]||0}" min="0"></div>`).join('')}
+                        ${allowanceFields.map((n) => `<div class="pf-field"><label>${n}</label><input type="number" name="allowances[${n}]" value="${aMap[n] || 0}" min="0"></div>`).join("")}
                     </div>
                 </div>
 
                 <div class="pf-section">
                     <div class="pf-section-title">📉 控除</div>
                     <div class="pf-grid">
-                        ${deductionFields.map(n=>`<div class="pf-field"><label>${n}</label><input type="number" name="deductions[${n}]" value="${dMap[n]||0}" min="0"></div>`).join('')}
-                        <div class="pf-field"><label>所得税</label><input type="number" name="incomeTax" value="${slip.incomeTax||0}" min="0"></div>
+                        ${deductionFields.map((n) => `<div class="pf-field"><label>${n}</label><input type="number" name="deductions[${n}]" value="${dMap[n] || 0}" min="0"></div>`).join("")}
+                        <div class="pf-field"><label>所得税</label><input type="number" name="incomeTax" value="${slip.incomeTax || 0}" min="0"></div>
                     </div>
                 </div>
 
@@ -1670,9 +1870,9 @@ router.get('/hr/payroll/admin/edit/:slipId', requireLogin, async (req, res) => {
                         <div class="pf-field">
                             <label>ステータス</label>
                             <select name="status">
-                                <option value="draft" ${slip.status === 'draft' ? 'selected' : ''}>下書き</option>
-                                <option value="issued" ${slip.status === 'issued' ? 'selected' : ''}>発行済み</option>
-                                <option value="locked" ${slip.status === 'locked' ? 'selected' : ''}>確定</option>
+                                <option value="draft" ${slip.status === "draft" ? "selected" : ""}>下書き</option>
+                                <option value="issued" ${slip.status === "issued" ? "selected" : ""}>発行済み</option>
+                                <option value="locked" ${slip.status === "locked" ? "selected" : ""}>確定</option>
                             </select>
                         </div>
                     </div>
@@ -1685,15 +1885,21 @@ router.get('/hr/payroll/admin/edit/:slipId', requireLogin, async (req, res) => {
             </form>
         </div>
     `;
-    renderPage(req, res, "給与管理", "給与明細編集", html);
+  renderPage(req, res, "給与管理", "給与明細編集", html);
 });
 
 // 管理者用 給与明細更新
-router.post('/hr/payroll/admin/edit/:slipId', requireLogin, async (req, res) => {
-    if (!req.session.isAdmin) return res.status(403).send('アクセス権限がありません');
+router.post(
+  "/hr/payroll/admin/edit/:slipId",
+  requireLogin,
+  async (req, res) => {
+    if (!req.session.isAdmin)
+      return res.status(403).send("アクセス権限がありません");
 
-    const slip = await PayrollSlip.findById(req.params.slipId).populate('employeeId');
-    if (!slip) return res.status(404).send('給与明細が見つかりません');
+    const slip = await PayrollSlip.findById(req.params.slipId).populate(
+      "employeeId",
+    );
+    if (!slip) return res.status(404).send("給与明細が見つかりません");
 
     // 管理者は「locked でも修正OK」
     slip.baseSalary = Number(req.body.baseSalary || 0);
@@ -1702,85 +1908,116 @@ router.post('/hr/payroll/admin/edit/:slipId', requireLogin, async (req, res) => 
     const prevStatus = slip.status;
     slip.status = req.body.status || slip.status;
 
-    slip.allowances = Object.entries(req.body.allowances || {}).map(([name, amount]) => ({
+    slip.allowances = Object.entries(req.body.allowances || {}).map(
+      ([name, amount]) => ({
         name,
-        amount: Number(amount)
-    }));
+        amount: Number(amount),
+      }),
+    );
 
-    slip.deductions = Object.entries(req.body.deductions || {}).map(([name, amount]) => {
+    slip.deductions = Object.entries(req.body.deductions || {}).map(
+      ([name, amount]) => {
         // キー名の揺れを正規化（「料」なし → 「料」付き）
-        const nameMap = { '健康保険': '健康保険料', '厚生年金': '厚生年金保険料', '雇用保険': '雇用保険料', 'その他社会保険': 'その他社会保険料' };
+        const nameMap = {
+          健康保険: "健康保険料",
+          厚生年金: "厚生年金保険料",
+          雇用保険: "雇用保険料",
+          その他社会保険: "その他社会保険料",
+        };
         return { name: nameMap[name] || name, amount: Number(amount) };
-    });
+      },
+    );
 
     slip.incomeTax = Number(req.body.incomeTax || 0);
     slip.commute = {
-        nonTax: Number(req.body.commute?.nonTax || 0),
-        tax: Number(req.body.commute?.tax || 0)
+      nonTax: Number(req.body.commute?.nonTax || 0),
+      tax: Number(req.body.commute?.tax || 0),
     };
 
     await slip.save();
 
     // draft → issued/locked/paid に変更されたとき通知
-    const isNowIssued = ['issued', 'locked', 'paid'].includes(slip.status);
-    const wasNotIssued = !['issued', 'locked', 'paid'].includes(prevStatus);
-    if (isNowIssued && wasNotIssued && slip.employeeId && slip.employeeId.userId) {
-        const run = slip.runId ? await require('../models').PayrollRun.findById(slip.runId).lean() : null;
-        const label = run
-            ? `${new Date(run.periodFrom).getFullYear()}年${new Date(run.periodFrom).getMonth()+1}月分`
-            : '最新';
-        await createNotification({
-            userId: slip.employeeId.userId,
-            type: 'payslip_issued',
-            title: `💴 給与明細が発行されました`,
-            body: `${label}の給与明細が確認できます`,
-            link: '/hr/payroll',
-        });
+    const isNowIssued = ["issued", "locked", "paid"].includes(slip.status);
+    const wasNotIssued = !["issued", "locked", "paid"].includes(prevStatus);
+    if (
+      isNowIssued &&
+      wasNotIssued &&
+      slip.employeeId &&
+      slip.employeeId.userId
+    ) {
+      const run = slip.runId
+        ? await require("../models").PayrollRun.findById(slip.runId).lean()
+        : null;
+      const label = run
+        ? `${new Date(run.periodFrom).getFullYear()}年${new Date(run.periodFrom).getMonth() + 1}月分`
+        : "最新";
+      await createNotification({
+        userId: slip.employeeId.userId,
+        type: "payslip_issued",
+        title: `💴 給与明細が発行されました`,
+        body: `${label}の給与明細が確認できます`,
+        link: "/hr/payroll",
+      });
     }
 
     res.redirect(`/hr/payroll/${slip.employeeId._id}`);
-});
+  },
+);
 
-router.get('/hr/payroll', requireLogin, async (req, res) => {
-    const employee = await Employee.findOne({ userId: req.session.userId });
-    req.session.employee = employee;
+router.get("/hr/payroll", requireLogin, async (req, res) => {
+  const employee = await Employee.findOne({ userId: req.session.userId });
+  req.session.employee = employee;
 
-    const isAdmin = req.session.isAdmin;
+  const isAdmin = req.session.isAdmin;
 
-    // 直近12件の給与明細を取得
-    const slips = await PayrollSlip.find({ employeeId: employee._id })
-        .populate('runId')
-        .sort({ createdAt: -1 })
-        .limit(12);
+  // 直近12件の給与明細を取得
+  const slips = await PayrollSlip.find({ employeeId: employee._id })
+    .populate("runId")
+    .sort({ createdAt: -1 })
+    .limit(12);
 
-    // グラフ用データ（昇順）
-    const chartSlips = [...slips].reverse();
-    const chartLabels = chartSlips.map(s => s.runId?.periodFrom
-        ? `${s.runId.periodFrom.getFullYear()}/${s.runId.periodFrom.getMonth()+1}月`
-        : '');
-    const chartGross = chartSlips.map(s => s.gross || 0);
-    const chartNet   = chartSlips.map(s => s.net   || 0);
+  // グラフ用データ（昇順）
+  const chartSlips = [...slips].reverse();
+  const chartLabels = chartSlips.map((s) =>
+    s.runId?.periodFrom
+      ? `${s.runId.periodFrom.getFullYear()}/${s.runId.periodFrom.getMonth() + 1}月`
+      : "",
+  );
+  const chartGross = chartSlips.map((s) => s.gross || 0);
+  const chartNet = chartSlips.map((s) => s.net || 0);
 
-    // 管理者用サマリ
-    let summary = null;
-    if (isAdmin) {
-        const now = new Date();
-        const from = new Date(now.getFullYear(), now.getMonth(), 1);
-        const to   = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-        const runIds = await PayrollRun.find({ periodFrom: { $gte: from, $lte: to } }).distinct('_id');
-        const allSlips = await PayrollSlip.find({ runId: { $in: runIds } });
-        const totalGross = allSlips.reduce((s, x) => s + (x.gross || 0), 0);
-        const totalNet   = allSlips.reduce((s, x) => s + (x.net   || 0), 0);
-        summary = { totalGross, totalNet, count: allSlips.length };
-    }
+  // 管理者用サマリ
+  let summary = null;
+  if (isAdmin) {
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth(), 1);
+    const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const runIds = await PayrollRun.find({
+      periodFrom: { $gte: from, $lte: to },
+    }).distinct("_id");
+    const allSlips = await PayrollSlip.find({ runId: { $in: runIds } });
+    const totalGross = allSlips.reduce((s, x) => s + (x.gross || 0), 0);
+    const totalNet = allSlips.reduce((s, x) => s + (x.net || 0), 0);
+    summary = { totalGross, totalNet, count: allSlips.length };
+  }
 
-    const latestSlip = slips[0];
-    const totalNet6  = slips.reduce((s, x) => s + (x.net || 0), 0);
-    const avgNet     = slips.length ? Math.round(totalNet6 / slips.length) : 0;
+  const latestSlip = slips[0];
+  const totalNet6 = slips.reduce((s, x) => s + (x.net || 0), 0);
+  const avgNet = slips.length ? Math.round(totalNet6 / slips.length) : 0;
 
-    const statusLabel = { draft:'下書き', issued:'発行済み', locked:'確定', paid:'支払済み' };
+  const statusLabel = {
+    draft: "下書き",
+    issued: "発行済み",
+    locked: "確定",
+    paid: "支払済み",
+  };
 
-    renderPage(req, res, '給与管理', '給与明細', `
+  renderPage(
+    req,
+    res,
+    "給与管理",
+    "給与明細",
+    `
         <style>
             .py-page{max-width:1000px;margin:0 auto}
             .py-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;flex-wrap:wrap;gap:12px}
@@ -1820,7 +2057,7 @@ router.get('/hr/payroll', requireLogin, async (req, res) => {
                     <div class="py-sub">${escapeHtml(employee.name)} さんの給与ダッシュボード</div>
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap">
-                    ${isAdmin ? `<a href="/hr/payroll/admin" class="py-btn py-btn-warn">⚙️ 管理者メニュー</a>` : ''}
+                    ${isAdmin ? `<a href="/hr/payroll/admin" class="py-btn py-btn-warn">⚙️ 管理者メニュー</a>` : ""}
                     <a href="/hr/payroll/${employee._id}" class="py-btn py-btn-primary">📋 明細一覧</a>
                     <a href="/hr" class="py-btn py-btn-ghost">← 人事一覧</a>
                 </div>
@@ -1830,12 +2067,12 @@ router.get('/hr/payroll', requireLogin, async (req, res) => {
             <div class="py-kpi-row">
                 <div class="py-kpi">
                     <div class="py-kpi-label">💰 最新 差引支給</div>
-                    <div class="py-kpi-value">${latestSlip ? '¥'+latestSlip.net.toLocaleString() : '—'}</div>
-                    <div class="py-kpi-sub">${latestSlip && latestSlip.runId?.periodFrom ? latestSlip.runId.periodFrom.getFullYear()+'年'+( latestSlip.runId.periodFrom.getMonth()+1)+'月分' : '明細なし'}</div>
+                    <div class="py-kpi-value">${latestSlip ? "¥" + latestSlip.net.toLocaleString() : "—"}</div>
+                    <div class="py-kpi-sub">${latestSlip && latestSlip.runId?.periodFrom ? latestSlip.runId.periodFrom.getFullYear() + "年" + (latestSlip.runId.periodFrom.getMonth() + 1) + "月分" : "明細なし"}</div>
                 </div>
                 <div class="py-kpi">
                     <div class="py-kpi-label">📊 平均手取り</div>
-                    <div class="py-kpi-value">${slips.length ? '¥'+avgNet.toLocaleString() : '—'}</div>
+                    <div class="py-kpi-value">${slips.length ? "¥" + avgNet.toLocaleString() : "—"}</div>
                     <div class="py-kpi-sub">直近${slips.length}件の平均</div>
                 </div>
                 <div class="py-kpi">
@@ -1858,65 +2095,97 @@ router.get('/hr/payroll', requireLogin, async (req, res) => {
                         <div class="py-card-title">🗂 給与明細一覧
                             <a href="/hr/payroll/${employee._id}" style="margin-left:auto;font-size:12px;color:#0b5fff;text-decoration:none;font-weight:600">すべて見る →</a>
                         </div>
-                        ${slips.length ? slips.slice(0,6).map(s => `
-                            <a href="/hr/payroll/${employee._id}?payMonth=${s.runId?.periodFrom ? s.runId.periodFrom.getFullYear()+'-'+(s.runId.periodFrom.getMonth()+1).toString().padStart(2,'0') : ''}" class="py-slip-row">
+                        ${
+                          slips.length
+                            ? slips
+                                .slice(0, 6)
+                                .map(
+                                  (s) => `
+                            <a href="/hr/payroll/${employee._id}?payMonth=${s.runId?.periodFrom ? s.runId.periodFrom.getFullYear() + "-" + (s.runId.periodFrom.getMonth() + 1).toString().padStart(2, "0") : ""}" class="py-slip-row">
                                 <div>
-                                    <div class="py-slip-month">${s.runId?.periodFrom ? s.runId.periodFrom.getFullYear()+'年'+(s.runId.periodFrom.getMonth()+1)+'月分' : '—'}</div>
-                                    <div class="py-slip-gross">総支給 ¥${(s.gross||0).toLocaleString()} / 基本給 ¥${(s.baseSalary||0).toLocaleString()}</div>
+                                    <div class="py-slip-month">${s.runId?.periodFrom ? s.runId.periodFrom.getFullYear() + "年" + (s.runId.periodFrom.getMonth() + 1) + "月分" : "—"}</div>
+                                    <div class="py-slip-gross">総支給 ¥${(s.gross || 0).toLocaleString()} / 基本給 ¥${(s.baseSalary || 0).toLocaleString()}</div>
                                 </div>
                                 <div style="text-align:right">
-                                    <div class="py-slip-net">¥${(s.net||0).toLocaleString()}</div>
-                                    <span class="py-badge badge-${s.status||'draft'}">${statusLabel[s.status]||s.status}</span>
+                                    <div class="py-slip-net">¥${(s.net || 0).toLocaleString()}</div>
+                                    <span class="py-badge badge-${s.status || "draft"}">${statusLabel[s.status] || s.status}</span>
                                 </div>
                             </a>
-                        `).join('') : `<div style="color:#9ca3af;text-align:center;padding:24px">給与明細がまだありません</div>`}
+                        `,
+                                )
+                                .join("")
+                            : `<div style="color:#9ca3af;text-align:center;padding:24px">給与明細がまだありません</div>`
+                        }
                     </div>
                 </div>
 
                 <div>
                     <!-- 最新明細サマリ -->
-                    ${latestSlip ? `
+                    ${
+                      latestSlip
+                        ? `
                     <div class="py-card">
                         <div class="py-card-title">📄 最新明細サマリ</div>
-                        <div style="font-size:13px;color:#6b7280;margin-bottom:10px">${latestSlip.runId?.periodFrom ? latestSlip.runId.periodFrom.getFullYear()+'年'+(latestSlip.runId.periodFrom.getMonth()+1)+'月分' : ''}</div>
+                        <div style="font-size:13px;color:#6b7280;margin-bottom:10px">${latestSlip.runId?.periodFrom ? latestSlip.runId.periodFrom.getFullYear() + "年" + (latestSlip.runId.periodFrom.getMonth() + 1) + "月分" : ""}</div>
                         ${[
-                            ['基本給', latestSlip.baseSalary],
-                            ['総支給額', latestSlip.gross],
-                            ...( latestSlip.allowances||[]).map(a=>[a.name, a.amount]),
-                        ].map(([k,v])=>`
+                          ["基本給", latestSlip.baseSalary],
+                          ["総支給額", latestSlip.gross],
+                          ...(latestSlip.allowances || []).map((a) => [
+                            a.name,
+                            a.amount,
+                          ]),
+                        ]
+                          .map(
+                            ([k, v]) => `
                             <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px">
                                 <span style="color:#374151">${escapeHtml(k)}</span>
-                                <span style="font-weight:600">¥${(v||0).toLocaleString()}</span>
+                                <span style="font-weight:600">¥${(v || 0).toLocaleString()}</span>
                             </div>
-                        `).join('')}
+                        `,
+                          )
+                          .join("")}
                         <div style="margin:10px 0;padding:4px 0;border-top:2px solid #e5e7eb"></div>
                         ${[
-                            ...(latestSlip.deductions||[]).map(d=>[d.name, d.amount]),
-                            latestSlip.incomeTax ? ['所得税', latestSlip.incomeTax] : null,
-                        ].filter(Boolean).map(([k,v])=>`
+                          ...(latestSlip.deductions || []).map((d) => [
+                            d.name,
+                            d.amount,
+                          ]),
+                          latestSlip.incomeTax
+                            ? ["所得税", latestSlip.incomeTax]
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .map(
+                            ([k, v]) => `
                             <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px">
                                 <span style="color:#ef4444">${escapeHtml(k)}</span>
-                                <span style="font-weight:600;color:#ef4444">-¥${(v||0).toLocaleString()}</span>
+                                <span style="font-weight:600;color:#ef4444">-¥${(v || 0).toLocaleString()}</span>
                             </div>
-                        `).join('')}
+                        `,
+                          )
+                          .join("")}
                         <div style="display:flex;justify-content:space-between;margin-top:12px;padding:10px 12px;background:#f0f4ff;border-radius:10px">
                             <span style="font-weight:700;color:#0b2540">差引支給額</span>
-                            <span style="font-weight:800;font-size:18px;color:#0b5fff">¥${(latestSlip.net||0).toLocaleString()}</span>
+                            <span style="font-weight:800;font-size:18px;color:#0b5fff">¥${(latestSlip.net || 0).toLocaleString()}</span>
                         </div>
                         <div style="margin-top:12px">
                             <a href="/hr/payroll/${employee._id}" class="py-btn py-btn-primary" style="width:100%;justify-content:center">📋 明細一覧を開く</a>
                         </div>
                     </div>
-                    ` : `
+                    `
+                        : `
                     <div class="py-card" style="text-align:center;color:#9ca3af;padding:36px">
                         <div style="font-size:32px;margin-bottom:10px">📭</div>
                         <div style="font-weight:600">明細データがありません</div>
-                        ${isAdmin ? `<a href="/hr/payroll/admin/new" class="py-btn py-btn-primary" style="margin-top:14px">＋ 給与を登録する</a>` : ''}
+                        ${isAdmin ? `<a href="/hr/payroll/admin/new" class="py-btn py-btn-primary" style="margin-top:14px">＋ 給与を登録する</a>` : ""}
                     </div>
-                    `}
+                    `
+                    }
 
                     <!-- 管理者サマリ -->
-                    ${isAdmin && summary ? `
+                    ${
+                      isAdmin && summary
+                        ? `
                     <div class="py-card" style="margin-top:16px">
                         <div class="py-card-title">⚙️ 今月の管理者サマリ</div>
                         <div style="font-size:13px;display:flex;flex-direction:column;gap:8px">
@@ -1937,7 +2206,9 @@ router.get('/hr/payroll', requireLogin, async (req, res) => {
                             <a href="/hr/payroll/admin" class="py-btn py-btn-warn" style="width:100%;justify-content:center">⚙️ 管理者メニューへ</a>
                         </div>
                     </div>
-                    ` : ''}
+                    `
+                        : ""
+                    }
                 </div>
             </div>
         </div>
@@ -1960,37 +2231,66 @@ router.get('/hr/payroll', requireLogin, async (req, res) => {
             }
         });
         </script>
-    `);
+    `,
+  );
 });
 
-router.get('/hr/payroll/:id', requireLogin, async (req, res) => {
-    const employee = await Employee.findById(req.params.id);
-    if (!employee) return res.redirect('/hr/payroll');
+router.get("/hr/payroll/:id", requireLogin, async (req, res) => {
+  const employee = await Employee.findById(req.params.id);
+  if (!employee) return res.redirect("/hr/payroll");
 
-    if (employee.userId.toString() !== req.session.userId.toString() && !req.session.isAdmin) {
-        return res.status(403).send('アクセス権限がありません');
-    }
+  if (
+    employee.userId.toString() !== req.session.userId.toString() &&
+    !req.session.isAdmin
+  ) {
+    return res.status(403).send("アクセス権限がありません");
+  }
 
-    const { payMonth } = req.query;
-    let runIds = [];
-    if (payMonth) {
-        const [year, month] = payMonth.split('-').map(Number);
-        runIds = await PayrollRun.find({
-            periodFrom: { $gte: new Date(year, month-1, 1), $lte: new Date(year, month, 0) }
-        }).distinct('_id');
-    }
+  const { payMonth } = req.query;
+  let runIds = [];
+  if (payMonth) {
+    const [year, month] = payMonth.split("-").map(Number);
+    runIds = await PayrollRun.find({
+      periodFrom: {
+        $gte: new Date(year, month - 1, 1),
+        $lte: new Date(year, month, 0),
+      },
+    }).distinct("_id");
+  }
 
-    const slips = await PayrollSlip.find({
-        employeeId: employee._id,
-        ...(payMonth ? { runId: { $in: runIds } } : {})
-    }).populate('runId').sort({ createdAt: -1 });
+  const slips = await PayrollSlip.find({
+    employeeId: employee._id,
+    ...(payMonth ? { runId: { $in: runIds } } : {}),
+  })
+    .populate("runId")
+    .sort({ createdAt: -1 });
 
-    const isAdminUser = req.session.isAdmin;
-    const statusLabel = { draft:'下書き', issued:'発行済み', locked:'確定', paid:'支払済み' };
-    const statusColor = { draft:'#ca8a04', issued:'#16a34a', locked:'#4f46e5', paid:'#0b5fff' };
-    const statusBg    = { draft:'#fef9c3', issued:'#dcfce7', locked:'#e0e7ff', paid:'#dbeafe' };
+  const isAdminUser = req.session.isAdmin;
+  const statusLabel = {
+    draft: "下書き",
+    issued: "発行済み",
+    locked: "確定",
+    paid: "支払済み",
+  };
+  const statusColor = {
+    draft: "#ca8a04",
+    issued: "#16a34a",
+    locked: "#4f46e5",
+    paid: "#0b5fff",
+  };
+  const statusBg = {
+    draft: "#fef9c3",
+    issued: "#dcfce7",
+    locked: "#e0e7ff",
+    paid: "#dbeafe",
+  };
 
-    renderPage(req, res, '給与管理', `${employee.name} の給与明細`, `
+  renderPage(
+    req,
+    res,
+    "給与管理",
+    `${employee.name} の給与明細`,
+    `
         <style>
             .sp-page{max-width:1000px;margin:0 auto}
             .sp-topbar{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;flex-wrap:wrap;gap:10px}
@@ -2030,10 +2330,10 @@ router.get('/hr/payroll/:id', requireLogin, async (req, res) => {
             <div class="sp-topbar">
                 <div>
                     <div class="sp-title">📋 ${escapeHtml(employee.name)} の給与明細</div>
-                    <div class="sp-sub">${escapeHtml(employee.department||'')} / ${escapeHtml(employee.position||'')}</div>
+                    <div class="sp-sub">${escapeHtml(employee.department || "")} / ${escapeHtml(employee.position || "")}</div>
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap">
-                    <a href="/hr/payroll/${employee._id}/export${payMonth?'?payMonth='+payMonth:''}" class="py-btn" style="background:#f0fdf4;color:#16a34a">📥 CSV</a>
+                    <a href="/hr/payroll/${employee._id}/export${payMonth ? "?payMonth=" + payMonth : ""}" class="py-btn" style="background:#f0fdf4;color:#16a34a">📥 CSV</a>
                     <a href="/hr/payroll" class="py-btn py-btn-ghost">← ダッシュボード</a>
                 </div>
             </div>
@@ -2041,76 +2341,151 @@ router.get('/hr/payroll/:id', requireLogin, async (req, res) => {
             <!-- 月別検索 -->
             <form method="GET" action="/hr/payroll/${employee._id}" class="sp-search">
                 <label>対象月:</label>
-                <input type="month" name="payMonth" value="${payMonth||''}">
+                <input type="month" name="payMonth" value="${payMonth || ""}">
                 <button type="submit" class="sp-btn" style="background:#0b5fff;color:#fff">🔍 検索</button>
-                ${payMonth ? `<a href="/hr/payroll/${employee._id}" class="sp-btn" style="background:#f3f4f6;color:#374151">✕ クリア</a>` : ''}
+                ${payMonth ? `<a href="/hr/payroll/${employee._id}" class="sp-btn" style="background:#f3f4f6;color:#374151">✕ クリア</a>` : ""}
                 <span style="margin-left:auto;font-size:13px;color:#9ca3af">${slips.length} 件</span>
             </form>
 
-            ${slips.length ? slips.map(s => {
-                const yr  = s.runId?.periodFrom ? s.runId.periodFrom.getFullYear() : '—';
-                const mo  = s.runId?.periodFrom ? s.runId.periodFrom.getMonth()+1 : '—';
-                const st  = s.status || 'draft';
+            ${
+              slips.length
+                ? slips
+                    .map((s) => {
+                      const yr = s.runId?.periodFrom
+                        ? s.runId.periodFrom.getFullYear()
+                        : "—";
+                      const mo = s.runId?.periodFrom
+                        ? s.runId.periodFrom.getMonth() + 1
+                        : "—";
+                      const st = s.status || "draft";
 
-                // allowances ヘルパー
-                const getA = name => {
-                    const a = (s.allowances||[]).find(x=>x.name===name);
-                    return (a && a.amount) ? a.amount.toLocaleString() : '';
-                };
-                // deductions ヘルパー
-                const getD = name => {
-                    const d = (s.deductions||[]).find(x=>x.name===name);
-                    return (d && d.amount) ? d.amount.toLocaleString() : '';
-                };
+                      // allowances ヘルパー
+                      const getA = (name) => {
+                        const a = (s.allowances || []).find(
+                          (x) => x.name === name,
+                        );
+                        return a && a.amount ? a.amount.toLocaleString() : "";
+                      };
+                      // deductions ヘルパー
+                      const getD = (name) => {
+                        const d = (s.deductions || []).find(
+                          (x) => x.name === name,
+                        );
+                        return d && d.amount ? d.amount.toLocaleString() : "";
+                      };
 
-                // 時間外手当などを allowances から取得
-                const overtimePay  = getA('時間外手当');
-                const nightPay     = getA('深夜手当');
-                const holidayPay   = getA('休日手当');
-                const holidayNightPay = getA('休日深夜手当');
-                const dailySalaryFmt = (s.dailySalary && s.dailySalary>0) ? s.dailySalary.toLocaleString() : '';
-                const absentDeductFmt = (s.absentDeduction && s.absentDeduction>0) ? s.absentDeduction.toLocaleString() : '';
-                const lateDeductFmt   = (s.lateDeduction && s.lateDeduction>0) ? s.lateDeduction.toLocaleString() : '';
-                const earlyDeductFmt  = (s.earlyLeaveDeduction && s.earlyLeaveDeduction>0) ? s.earlyLeaveDeduction.toLocaleString() : '';
-                const overtimeUnitFmt = (s.overtimeUnit && s.overtimeUnit>0) ? s.overtimeUnit.toLocaleString() : '';
-                const nightUnitFmt    = (s.nightUnit && s.nightUnit>0) ? s.nightUnit.toLocaleString() : '';
-                const holidayUnitFmt  = (s.holidayUnit && s.holidayUnit>0) ? s.holidayUnit.toLocaleString() : '';
-                const commuteNonTax   = (s.commute?.nonTax && s.commute.nonTax>0) ? s.commute.nonTax.toLocaleString() : '';
-                const commuteTax      = (s.commute?.tax && s.commute.tax>0) ? s.commute.tax.toLocaleString() : '';
+                      // 時間外手当などを allowances から取得
+                      const overtimePay = getA("時間外手当");
+                      const nightPay = getA("深夜手当");
+                      const holidayPay = getA("休日手当");
+                      const holidayNightPay = getA("休日深夜手当");
+                      const dailySalaryFmt =
+                        s.dailySalary && s.dailySalary > 0
+                          ? s.dailySalary.toLocaleString()
+                          : "";
+                      const absentDeductFmt =
+                        s.absentDeduction && s.absentDeduction > 0
+                          ? s.absentDeduction.toLocaleString()
+                          : "";
+                      const lateDeductFmt =
+                        s.lateDeduction && s.lateDeduction > 0
+                          ? s.lateDeduction.toLocaleString()
+                          : "";
+                      const earlyDeductFmt =
+                        s.earlyLeaveDeduction && s.earlyLeaveDeduction > 0
+                          ? s.earlyLeaveDeduction.toLocaleString()
+                          : "";
+                      const overtimeUnitFmt =
+                        s.overtimeUnit && s.overtimeUnit > 0
+                          ? s.overtimeUnit.toLocaleString()
+                          : "";
+                      const nightUnitFmt =
+                        s.nightUnit && s.nightUnit > 0
+                          ? s.nightUnit.toLocaleString()
+                          : "";
+                      const holidayUnitFmt =
+                        s.holidayUnit && s.holidayUnit > 0
+                          ? s.holidayUnit.toLocaleString()
+                          : "";
+                      const commuteNonTax =
+                        s.commute?.nonTax && s.commute.nonTax > 0
+                          ? s.commute.nonTax.toLocaleString()
+                          : "";
+                      const commuteTax =
+                        s.commute?.tax && s.commute.tax > 0
+                          ? s.commute.tax.toLocaleString()
+                          : "";
 
-                // deductions
-                // 「料」あり・なし両方に対応（DBのキー名の揺れを吸収）
-                const getD2 = (...names) => {
-                    for (const n of names) {
-                        const d = (s.deductions||[]).find(x=>x.name===n);
-                        if (d && d.amount) return d.amount.toLocaleString();
-                    }
-                    return '';
-                };
-                const kenpo    = getD2('健康保険料', '健康保険');
-                const kousei   = getD2('厚生年金保険料', '厚生年金');
-                const sonota   = getD2('その他社会保険料', 'その他社会保険');
-                const koyou    = getD2('雇用保険料', '雇用保険');
-                const shotokuFmt = (s.incomeTax && s.incomeTax>0) ? s.incomeTax.toLocaleString() : '';
-                const jumin    = getD2('住民税');
-                const suminoneFmt = getD2('既払い定期代');
+                      // deductions
+                      // 「料」あり・なし両方に対応（DBのキー名の揺れを吸収）
+                      const getD2 = (...names) => {
+                        for (const n of names) {
+                          const d = (s.deductions || []).find(
+                            (x) => x.name === n,
+                          );
+                          if (d && d.amount) return d.amount.toLocaleString();
+                        }
+                        return "";
+                      };
+                      const kenpo = getD2("健康保険料", "健康保険");
+                      const kousei = getD2("厚生年金保険料", "厚生年金");
+                      const sonota = getD2(
+                        "その他社会保険料",
+                        "その他社会保険",
+                      );
+                      const koyou = getD2("雇用保険料", "雇用保険");
+                      const shotokuFmt =
+                        s.incomeTax && s.incomeTax > 0
+                          ? s.incomeTax.toLocaleString()
+                          : "";
+                      const jumin = getD2("住民税");
+                      const suminoneFmt = getD2("既払い定期代");
 
-                const totalDeductAll = (s.deductions||[]).reduce((a,x)=>a+(x.amount||0),0) + (s.incomeTax||0);
-                const totalDeductFmt = totalDeductAll > 0 ? totalDeductAll.toLocaleString() : '';
+                      const totalDeductAll =
+                        (s.deductions || []).reduce(
+                          (a, x) => a + (x.amount || 0),
+                          0,
+                        ) + (s.incomeTax || 0);
+                      const totalDeductFmt =
+                        totalDeductAll > 0
+                          ? totalDeductAll.toLocaleString()
+                          : "";
 
-                // 控除1-10
-                const dItems = ['控除-1','控除-2','控除-3','控除-4','控除-5','控除-6','控除-7','控除-8','控除-9','控除-10'].map(n=>getD(n));
-                // 手当1-10
-                const aItems = ['現場手当','手当-2','手当-3','手当-4','手当-5','手当-6','手当-7','手当-8','手当-9','手当-10'].map(n=>getA(n));
+                      // 控除1-10
+                      const dItems = [
+                        "控除-1",
+                        "控除-2",
+                        "控除-3",
+                        "控除-4",
+                        "控除-5",
+                        "控除-6",
+                        "控除-7",
+                        "控除-8",
+                        "控除-9",
+                        "控除-10",
+                      ].map((n) => getD(n));
+                      // 手当1-10
+                      const aItems = [
+                        "現場手当",
+                        "手当-2",
+                        "手当-3",
+                        "手当-4",
+                        "手当-5",
+                        "手当-6",
+                        "手当-7",
+                        "手当-8",
+                        "手当-9",
+                        "手当-10",
+                      ].map((n) => getA(n));
 
-                // 勤怠数値フォーマット
-                const fmt0 = v => (v && v!==0) ? String(v) : '';
+                      // 勤怠数値フォーマット
+                      const fmt0 = (v) => (v && v !== 0 ? String(v) : "");
 
-                return `
+                      return `
                 <div class="meisai-wrap">
                     <div class="meisai-topbar">
                         <span style="font-weight:800;font-size:15px;color:#005f5f">給与明細書 — ${yr}年${mo}月分</span>
-                        <span class="meisai-status" style="background:${statusBg[st]};color:${statusColor[st]}">${statusLabel[st]||st}</span>
+                        <span class="meisai-status" style="background:${statusBg[st]};color:${statusColor[st]}">${statusLabel[st] || st}</span>
                     </div>
                     <div style="overflow-x:auto;padding:12px 14px">
                     <table class="meisai">
@@ -2148,7 +2523,7 @@ router.get('/hr/payroll/:id', requireLogin, async (req, res) => {
                             <td class="amt">${overtimeUnitFmt}</td>
                             <td class="amt">${nightUnitFmt}</td>
                             <td class="amt">${holidayUnitFmt}</td>
-                            <td class="amt">${(s.holidayNightUnit && s.holidayNightUnit>0) ? s.holidayNightUnit.toLocaleString() : ''}</td>
+                            <td class="amt">${s.holidayNightUnit && s.holidayNightUnit > 0 ? s.holidayNightUnit.toLocaleString() : ""}</td>
                             <td class="amt">${lateDeductFmt}</td>
                             <td class="amt">${earlyDeductFmt}</td>
                             <td colspan="8"></td>
@@ -2164,9 +2539,9 @@ router.get('/hr/payroll/:id', requireLogin, async (req, res) => {
                         </tr>
                         <tr>
                             <td colspan="2" style="font-weight:700">${escapeHtml(employee.name)}</td>
-                            <td colspan="2">${escapeHtml(employee.department||'—')}</td>
-                            <td colspan="2">${escapeHtml(employee.position||'—')}</td>
-                            <td colspan="4">${escapeHtml(employee.employeeId||'—')}</td>
+                            <td colspan="2">${escapeHtml(employee.department || "—")}</td>
+                            <td colspan="2">${escapeHtml(employee.position || "—")}</td>
+                            <td colspan="4">${escapeHtml(employee.employeeId || "—")}</td>
                             <td colspan="4">${yr}年${mo}月</td>
                         </tr>
 
@@ -2181,9 +2556,9 @@ router.get('/hr/payroll/:id', requireLogin, async (req, res) => {
                         </tr>
                         <!-- 支給 行1数値 -->
                         <tr>
-                            <td class="amt">${(s.baseSalary && s.baseSalary>0) ? s.baseSalary.toLocaleString() : ''}</td>
-                            <td class="amt">${getA('役職手当')}</td>
-                            <td class="amt">${getA('家族手当')}</td>
+                            <td class="amt">${s.baseSalary && s.baseSalary > 0 ? s.baseSalary.toLocaleString() : ""}</td>
+                            <td class="amt">${getA("役職手当")}</td>
+                            <td class="amt">${getA("家族手当")}</td>
                             <td class="amt">${aItems[0]}</td><td class="amt">${aItems[1]}</td>
                             <td class="amt">${aItems[2]}</td><td class="amt">${aItems[3]}</td>
                             <td class="amt">${aItems[4]}</td><td class="amt">${aItems[5]}</td>
@@ -2209,7 +2584,7 @@ router.get('/hr/payroll/:id', requireLogin, async (req, res) => {
                             <td class="amt">${absentDeductFmt}</td>
                             <td class="amt">${lateDeductFmt}</td>
                             <td class="amt">${earlyDeductFmt}</td>
-                            <td colspan="4" class="total-amt" style="font-size:14px">${(s.gross && s.gross>0) ? s.gross.toLocaleString() : ''}</td>
+                            <td colspan="4" class="total-amt" style="font-size:14px">${s.gross && s.gross > 0 ? s.gross.toLocaleString() : ""}</td>
                         </tr>
 
                         <!-- ===== 控除セクション ===== -->
@@ -2227,7 +2602,7 @@ router.get('/hr/payroll/:id', requireLogin, async (req, res) => {
                             <td class="deduct-amt">${kousei}</td>
                             <td class="deduct-amt">${sonota}</td>
                             <td class="deduct-amt">${koyou}</td>
-                            <td class="amt">${getD('課税対象額')}</td>
+                            <td class="amt">${getD("課税対象額")}</td>
                             <td class="deduct-amt">${shotokuFmt}</td>
                             <td class="deduct-amt">${jumin}</td>
                             <td class="deduct-amt">${suminoneFmt}</td>
@@ -2250,45 +2625,61 @@ router.get('/hr/payroll/:id', requireLogin, async (req, res) => {
                             <td class="deduct-amt">${dItems[9]}</td>
                             <td colspan="4"></td>
                             <td colspan="2" class="deduct-amt" style="font-size:14px">${totalDeductFmt}</td>
-                            <td colspan="2" class="net-amt" style="font-size:15px">${(s.net && s.net>0) ? s.net.toLocaleString() : ''}</td>
+                            <td colspan="2" class="net-amt" style="font-size:15px">${s.net && s.net > 0 ? s.net.toLocaleString() : ""}</td>
                         </tr>
 
                         <!-- 備考行 -->
-                        ${s.notes ? `
+                        ${
+                          s.notes
+                            ? `
                         <tr class="header-row"><td colspan="14">備考</td></tr>
                         <tr><td colspan="14" style="text-align:left;padding:6px 10px">${escapeHtml(s.notes)}</td></tr>
-                        ` : ''}
+                        `
+                            : ""
+                        }
                     </table>
                     </div>
 
-                    ${isAdminUser ? `
+                    ${
+                      isAdminUser
+                        ? `
                     <div class="meisai-actions">
                         <a href="/hr/payroll/admin/edit/${s._id}" class="sp-btn" style="background:#f0f4ff;color:#0b5fff">✏️ 修正</a>
                         <form action="/hr/payroll/admin/delete/${s._id}" method="POST" onsubmit="return confirm('削除しますか？')" style="margin:0">
                             <button type="submit" class="sp-btn" style="background:#fee2e2;color:#ef4444">🗑 削除</button>
                         </form>
-                    </div>` : ''}
+                    </div>`
+                        : ""
+                    }
                 </div>
-            `}).join('') : `
+            `;
+                    })
+                    .join("")
+                : `
                 <div style="background:#fff;border-radius:14px;padding:48px;text-align:center;color:#6b7280;box-shadow:0 4px 14px rgba(11,36,48,.06)">
                     <div style="font-size:36px;margin-bottom:12px">📭</div>
                     <div style="font-weight:600;font-size:16px">対象の給与明細はありません</div>
-                    ${payMonth ? `<div style="font-size:13px;margin-top:6px">${payMonth} の明細が見つかりません</div>` : ''}
+                    ${payMonth ? `<div style="font-size:13px;margin-top:6px">${payMonth} の明細が見つかりません</div>` : ""}
                 </div>
-            `}
+            `
+            }
         </div>
-    `);
+    `,
+  );
 });
 
-router.post('/hr/payroll/admin/delete/:slipId', requireLogin, async (req, res) => {
+router.post(
+  "/hr/payroll/admin/delete/:slipId",
+  requireLogin,
+  async (req, res) => {
     if (!req.session.isAdmin) {
-        return res.status(403).send('アクセス権限がありません');
+      return res.status(403).send("アクセス権限がありません");
     }
 
     const slipId = req.params.slipId;
     const slip = await PayrollSlip.findById(slipId);
     if (!slip) {
-        return res.status(404).send('給与明細が見つかりません');
+      return res.status(404).send("給与明細が見つかりません");
     }
 
     // runId を保持して削除
@@ -2298,96 +2689,118 @@ router.post('/hr/payroll/admin/delete/:slipId', requireLogin, async (req, res) =
     // runId にまだ他の給与明細があるかチェック
     const count = await PayrollSlip.countDocuments({ runId });
     if (count === 0) {
-        await PayrollRun.deleteOne({ _id: runId });
+      await PayrollRun.deleteOne({ _id: runId });
     }
 
-    res.redirect('/hr/payroll/' + slip.employeeId);
-});
+    res.redirect("/hr/payroll/" + slip.employeeId);
+  },
+);
 
 // CSVエクスポート（社員別・月別対応）
-router.get('/hr/payroll/:id/export', requireLogin, async (req, res) => {
-    const employee = await Employee.findById(req.params.id);
-    if (!employee) return res.redirect('/hr/payroll');
+router.get("/hr/payroll/:id/export", requireLogin, async (req, res) => {
+  const employee = await Employee.findById(req.params.id);
+  if (!employee) return res.redirect("/hr/payroll");
 
-    // 自分か管理者しか見れない
-    if (employee.userId.toString() !== req.session.userId.toString() && !req.session.isAdmin) {
-        return res.status(403).send('アクセス権限がありません');
-    }
+  // 自分か管理者しか見れない
+  if (
+    employee.userId.toString() !== req.session.userId.toString() &&
+    !req.session.isAdmin
+  ) {
+    return res.status(403).send("アクセス権限がありません");
+  }
 
-    const { payMonth } = req.query;
-    let filter = { employeeId: employee._id };
+  const { payMonth } = req.query;
+  let filter = { employeeId: employee._id };
 
-    if (payMonth) {
-        const [year, month] = payMonth.split('-').map(Number);
-        const periodFrom = new Date(year, month - 1, 1);
-        const periodTo = new Date(year, month, 0);
-        filter = {
-            ...filter,
-            runId: {
-                $in: await PayrollRun.find({
-                    periodFrom: { $gte: periodFrom },
-                    periodTo: { $lte: periodTo }
-                }).distinct('_id')
-            }
-        };
-    }
+  if (payMonth) {
+    const [year, month] = payMonth.split("-").map(Number);
+    const periodFrom = new Date(year, month - 1, 1);
+    const periodTo = new Date(year, month, 0);
+    filter = {
+      ...filter,
+      runId: {
+        $in: await PayrollRun.find({
+          periodFrom: { $gte: periodFrom },
+          periodTo: { $lte: periodTo },
+        }).distinct("_id"),
+      },
+    };
+  }
 
-    const slips = await PayrollSlip.find(filter).populate('runId').sort({ 'runId.periodFrom': -1 });
+  const slips = await PayrollSlip.find(filter)
+    .populate("runId")
+    .sort({ "runId.periodFrom": -1 });
 
-    // CSVヘッダ
-    const csvHeader = [
-        '年','月','期間','基本給','総支給','差引支給','ステータス','所得税',
-        '通勤費（非課税）','通勤費（課税）','手当','控除'
+  // CSVヘッダ
+  const csvHeader = [
+    "年",
+    "月",
+    "期間",
+    "基本給",
+    "総支給",
+    "差引支給",
+    "ステータス",
+    "所得税",
+    "通勤費（非課税）",
+    "通勤費（課税）",
+    "手当",
+    "控除",
+  ];
+
+  const csvRows = slips.map((s) => {
+    const allowancesStr = s.allowances
+      .map((a) => `${a.name}:${a.amount}`)
+      .join("; ");
+    const deductionsStr = [
+      ...s.deductions.map((d) => `${d.name}:${d.amount}`),
+      s.incomeTax ? `所得税:${s.incomeTax}` : "",
+    ]
+      .filter(Boolean)
+      .join("; ");
+
+    const runDate = s.runId?.periodFrom || new Date();
+    const year = runDate.getFullYear();
+    const month = runDate.getMonth() + 1;
+
+    return [
+      year,
+      month,
+      `${s.runId?.periodFrom?.toLocaleDateString() || "-"}〜${s.runId?.periodTo?.toLocaleDateString() || "-"}`,
+      s.baseSalary || 0,
+      s.gross || 0,
+      s.net || 0,
+      s.status || "-",
+      s.incomeTax || 0,
+      s.commute?.nonTax || 0,
+      s.commute?.tax || 0,
+      allowancesStr,
+      deductionsStr,
     ];
+  });
 
-    const csvRows = slips.map(s => {
-        const allowancesStr = s.allowances.map(a => `${a.name}:${a.amount}`).join('; ');
-        const deductionsStr = [
-            ...s.deductions.map(d => `${d.name}:${d.amount}`),
-            s.incomeTax ? `所得税:${s.incomeTax}` : ''
-        ].filter(Boolean).join('; ');
+  const csvContent =
+    "\uFEFF" + [csvHeader, ...csvRows].map((r) => r.join(",")).join("\n");
 
-        const runDate = s.runId?.periodFrom || new Date();
-        const year = runDate.getFullYear();
-        const month = runDate.getMonth() + 1;
+  // ファイル名に「年・月」を反映
+  // 指定があれば payMonth、無ければ最新の runId.periodFrom から取得
+  let fileYear = "";
+  let fileMonth = "";
+  if (payMonth) {
+    [fileYear, fileMonth] = payMonth.split("-");
+  } else if (slips.length) {
+    const latest = slips[0].runId?.periodFrom || new Date();
+    fileYear = latest.getFullYear();
+    fileMonth = String(latest.getMonth() + 1).padStart(2, "0");
+  }
+  const filename = `${employee.name}_給与明細_${fileYear}年${fileMonth}月.csv`;
 
-        return [
-            year,
-            month,
-            `${s.runId?.periodFrom?.toLocaleDateString() || '-'}〜${s.runId?.periodTo?.toLocaleDateString() || '-'}`,
-            s.baseSalary || 0,
-            s.gross || 0,
-            s.net || 0,
-            s.status || '-',
-            s.incomeTax || 0,
-            s.commute?.nonTax || 0,
-            s.commute?.tax || 0,
-            allowancesStr,
-            deductionsStr
-        ];
-    });
-
-    const csvContent = '\uFEFF' + [csvHeader, ...csvRows].map(r => r.join(',')).join('\n');
-
-    // ファイル名に「年・月」を反映
-    // 指定があれば payMonth、無ければ最新の runId.periodFrom から取得
-    let fileYear = '';
-    let fileMonth = '';
-    if (payMonth) {
-        [fileYear, fileMonth] = payMonth.split('-');
-    } else if (slips.length) {
-        const latest = slips[0].runId?.periodFrom || new Date();
-        fileYear = latest.getFullYear();
-        fileMonth = String(latest.getMonth() + 1).padStart(2, '0');
-    }
-    const filename = `${employee.name}_給与明細_${fileYear}年${fileMonth}月.csv`;
-
-    res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
-    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
-    res.send(csvContent);
+  res.setHeader("Content-Type", "text/csv; charset=UTF-8");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+  );
+  res.send(csvContent);
 });
-
-
 
 // ログアウト
 
@@ -2396,38 +2809,46 @@ router.get('/hr/payroll/:id/export', requireLogin, async (req, res) => {
 // ==============================
 
 // 日報一覧
-router.get('/hr/daily-report', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        req.session.employee = employee;
+router.get("/hr/daily-report", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
+    const employee = await Employee.findOne({ userId: user._id });
+    req.session.employee = employee;
 
-        const page = parseInt(req.query.page) || 1;
-        const limit = 20;
-        const filter = {};
-        if (!req.session.isAdmin) {
-            filter.employeeId = employee._id;
-        }
-        if (req.query.emp && req.session.isAdmin) {
-            filter.employeeId = req.query.emp;
-        }
-        if (req.query.date) {
-            const d = new Date(req.query.date);
-            const next = new Date(d); next.setDate(next.getDate() + 1);
-            filter.reportDate = { $gte: d, $lt: next };
-        }
+    const page = parseInt(req.query.page) || 1;
+    const limit = 20;
+    const filter = {};
+    if (!req.session.isAdmin) {
+      filter.employeeId = employee._id;
+    }
+    if (req.query.emp && req.session.isAdmin) {
+      filter.employeeId = req.query.emp;
+    }
+    if (req.query.date) {
+      const d = new Date(req.query.date);
+      const next = new Date(d);
+      next.setDate(next.getDate() + 1);
+      filter.reportDate = { $gte: d, $lt: next };
+    }
 
-        const total = await DailyReport.countDocuments(filter);
-        const reports = await DailyReport.find(filter)
-            .populate('employeeId', 'name department')
-            .sort({ reportDate: -1 })
-            .skip((page - 1) * limit)
-            .limit(limit);
+    const total = await DailyReport.countDocuments(filter);
+    const reports = await DailyReport.find(filter)
+      .populate("employeeId", "name department")
+      .sort({ reportDate: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
 
-        const allEmployees = req.session.isAdmin ? await Employee.find().sort({ name: 1 }) : [];
-        const totalPages = Math.ceil(total / limit);
+    const allEmployees = req.session.isAdmin
+      ? await Employee.find().sort({ name: 1 })
+      : [];
+    const totalPages = Math.ceil(total / limit);
 
-        renderPage(req, res, '日報', '日報一覧', `
+    renderPage(
+      req,
+      res,
+      "日報",
+      "日報一覧",
+      `
             <style>
                 .report-card{background:#fff;border-radius:14px;box-shadow:0 4px 14px rgba(11,36,48,.06);margin-bottom:14px;padding:18px 22px}
                 .report-meta{display:flex;gap:14px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
@@ -2469,48 +2890,65 @@ router.get('/hr/daily-report', requireLogin, async (req, res) => {
                 </div>
 
                 <form method="GET" action="/hr/daily-report" class="filters-row">
-                    ${allEmployees.length > 0 ? `
+                    ${
+                      allEmployees.length > 0
+                        ? `
                     <div>
                         <label>社員で絞り込み</label>
                         <select name="emp">
                             <option value="">全員</option>
-                            ${allEmployees.map(e => `<option value="${e._id}" ${req.query.emp === String(e._id) ? 'selected' : ''}>${escapeHtml(e.name)}</option>`).join('')}
+                            ${allEmployees.map((e) => `<option value="${e._id}" ${req.query.emp === String(e._id) ? "selected" : ""}>${escapeHtml(e.name)}</option>`).join("")}
                         </select>
-                    </div>` : ''}
+                    </div>`
+                        : ""
+                    }
                     <div>
                         <label>日付</label>
-                        <input type="date" name="date" value="${req.query.date || ''}">
+                        <input type="date" name="date" value="${req.query.date || ""}">
                     </div>
                     <button type="submit" style="padding:8px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer">絞り込み</button>
                     <a href="/hr/daily-report" style="padding:8px 14px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-weight:600">クリア</a>
                 </form>
 
-                ${reports.length === 0 ? `
+                ${
+                  reports.length === 0
+                    ? `
                     <div style="background:#f8fafc;border-radius:14px;padding:40px;text-align:center;color:#6b7280">
                         <div style="font-size:32px;margin-bottom:10px">📋</div>
                         <div style="font-weight:600">日報がまだありません</div>
                         <a href="/hr/daily-report/new" style="display:inline-block;margin-top:14px;padding:9px 22px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">日報を投稿する</a>
                     </div>
-                ` : ''}
+                `
+                    : ""
+                }
 
-                ${reports.map(r => {
+                ${reports
+                  .map((r) => {
                     const emp = r.employeeId || {};
-                    const dateStr = r.reportDate ? new Date(r.reportDate).toLocaleDateString('ja-JP') : '-';
+                    const dateStr = r.reportDate
+                      ? new Date(r.reportDate).toLocaleDateString("ja-JP")
+                      : "-";
                     const myUid = String(req.session.userId);
 
                     // スタンプ集計（件数あるもののみ表示）
                     const rMap = {};
-                    (r.reactions || []).forEach(rx => {
-                        if (!rMap[rx.emoji]) rMap[rx.emoji] = { count: 0, users: [] };
-                        rMap[rx.emoji].count++;
-                        rMap[rx.emoji].users.push(rx.userName || '?');
-                        rMap[rx.emoji].isMine = rMap[rx.emoji].isMine || String(rx.userId) === myUid;
+                    (r.reactions || []).forEach((rx) => {
+                      if (!rMap[rx.emoji])
+                        rMap[rx.emoji] = { count: 0, users: [] };
+                      rMap[rx.emoji].count++;
+                      rMap[rx.emoji].users.push(rx.userName || "?");
+                      rMap[rx.emoji].isMine =
+                        rMap[rx.emoji].isMine || String(rx.userId) === myUid;
                     });
 
-                    const activeStamps = Object.entries(rMap).map(([key, v]) => {
-                        const def = STAMP_MAP[key] || { emoji: key, label: key };
-                        const namesStr = escapeHtml(v.users.join(', '));
-                        return `<button class="cr-btn${v.isMine ? ' cr-on' : ''}"
+                    const activeStamps = Object.entries(rMap)
+                      .map(([key, v]) => {
+                        const def = STAMP_MAP[key] || {
+                          emoji: key,
+                          label: key,
+                        };
+                        const namesStr = escapeHtml(v.users.join(", "));
+                        return `<button class="cr-btn${v.isMine ? " cr-on" : ""}"
                             data-key="${key}" data-report="${r._id}"
                             data-names="${namesStr}" title="${namesStr}"
                             onclick="toggleCardStamp(this)">
@@ -2518,25 +2956,28 @@ router.get('/hr/daily-report', requireLogin, async (req, res) => {
                             <span>${def.label}</span>
                             <span class="cr-count">${v.count}</span>
                         </button>`;
-                    }).join('');
+                      })
+                      .join("");
 
-                    const pickerBtns = STAMPS.map(s => `
+                    const pickerBtns = STAMPS.map(
+                      (s) => `
                         <button class="crp-btn" onclick="pickCardStamp('${s.key}','${r._id}',this)" title="${s.label}">
                             <span class="crp-emoji">${s.emoji}</span>
                             <span class="crp-lbl">${s.label}</span>
-                        </button>`).join('');
+                        </button>`,
+                    ).join("");
 
                     return `
                     <div class="report-card" id="card-${r._id}">
                         <div class="report-meta">
                             <span class="report-date">${dateStr}</span>
-                            <span class="report-name">${escapeHtml(emp.name || '不明')}</span>
-                            <span class="report-dept">${escapeHtml(emp.department || '')}</span>
+                            <span class="report-name">${escapeHtml(emp.name || "不明")}</span>
+                            <span class="report-dept">${escapeHtml(emp.department || "")}</span>
                             <span style="background:#f1f5f9;border-radius:999px;padding:2px 10px;font-size:12px;color:#374151;font-weight:600">💬 ${r.comments ? r.comments.length : 0}</span>
                             <a href="/hr/daily-report/${r._id}" style="margin-left:auto;padding:5px 14px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600">詳細 →</a>
                         </div>
                         <div class="section-label">本日の業務内容</div>
-                        <div class="section-body">${escapeHtml((r.content || '').substring(0, 160))}${(r.content || '').length > 160 ? '…' : ''}</div>
+                        <div class="section-body">${escapeHtml((r.content || "").substring(0, 160))}${(r.content || "").length > 160 ? "…" : ""}</div>
                         <div class="card-reactions" id="cr-${r._id}">
                             ${activeStamps}
                             <div style="position:relative;display:inline-block">
@@ -2550,14 +2991,23 @@ router.get('/hr/daily-report', requireLogin, async (req, res) => {
                             </div>
                         </div>
                     </div>`;
-                }).join('')}
+                  })
+                  .join("")}
 
-                ${totalPages > 1 ? `
+                ${
+                  totalPages > 1
+                    ? `
                 <div class="pagination">
-                    ${Array.from({length: totalPages}, (_, i) => i + 1).map(p => `
-                        <a href="?page=${p}${req.query.emp ? '&emp=' + req.query.emp : ''}${req.query.date ? '&date=' + req.query.date : ''}" class="${p === page ? 'active' : ''}">${p}</a>
-                    `).join('')}
-                </div>` : ''}
+                    ${Array.from({ length: totalPages }, (_, i) => i + 1)
+                      .map(
+                        (p) => `
+                        <a href="?page=${p}${req.query.emp ? "&emp=" + req.query.emp : ""}${req.query.date ? "&date=" + req.query.date : ""}" class="${p === page ? "active" : ""}">${p}</a>
+                    `,
+                      )
+                      .join("")}
+                </div>`
+                    : ""
+                }
             </div>
 
             <script>
@@ -2655,23 +3105,29 @@ router.get('/hr/daily-report', requireLogin, async (req, res) => {
                 }).catch(console.error);
             }
             <\/script>
-        `);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('エラーが発生しました');
-    }
+        `,
+    );
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("エラーが発生しました");
+  }
 });
 
 // 日報投稿フォーム
-router.get('/hr/daily-report/new', requireLogin, async (req, res) => {
-    try {
-        const today = new Date().toISOString().split('T')[0];
-        // メンション候補（全従業員）
-        const allEmps = await Employee.find({}, 'name userId').lean();
-        const mentionUsersJson = JSON.stringify(
-            allEmps.map(e => ({ id: String(e.userId), name: e.name }))
-        );
-        renderPage(req, res, '日報投稿', '日報を投稿', `
+router.get("/hr/daily-report/new", requireLogin, async (req, res) => {
+  try {
+    const today = new Date().toISOString().split("T")[0];
+    // メンション候補（全従業員）
+    const allEmps = await Employee.find({}, "name userId").lean();
+    const mentionUsersJson = JSON.stringify(
+      allEmps.map((e) => ({ id: String(e.userId), name: e.name })),
+    );
+    renderPage(
+      req,
+      res,
+      "日報投稿",
+      "日報を投稿",
+      `
             <style>
                 .form-card{background:#fff;border-radius:14px;padding:28px;box-shadow:0 4px 14px rgba(11,36,48,.06);max-width:860px;margin:0 auto}
                 .field-label{font-weight:700;font-size:14px;display:block;margin-bottom:6px;color:#0b2540}
@@ -2828,10 +3284,7 @@ router.get('/hr/daily-report/new', requireLogin, async (req, res) => {
                         <div style="margin-bottom:24px">
                             <label class="field-label">ファイル添付（任意）</label>
                             <span class="field-hint">画像・PDF・Officeファイルなど。複数選択可。最大20MB/ファイル</span>
-                            <label for="fileInput" class="attach-area" id="dropArea"
-                                ondragover="event.preventDefault();this.classList.add('drag-over')"
-                                ondragleave="this.classList.remove('drag-over')"
-                                ondrop="event.preventDefault();this.classList.remove('drag-over');handleFileDrop(event)">
+                            <label for="fileInput" class="attach-area" id="dropArea">
                                 <span style="font-size:20px">📎</span>
                                 <span>ここをクリックまたはファイルをドラッグ&ドロップ</span>
                                 <input type="file" name="attachments" id="fileInput" multiple
@@ -2994,9 +3447,75 @@ router.get('/hr/daily-report/new', requireLogin, async (req, res) => {
             }
 
             function syncFilesToInput() {
-                var dt = new DataTransfer();
-                selectedFiles.forEach(function(f) { dt.items.add(f); });
-                fileInput.files = dt.files;
+                // FormData 経由で送信するため、入力フィールド同期は不要
+                // ただし念のため試みる
+                try {
+                    var dt = new DataTransfer();
+                    selectedFiles.forEach(function(f) { dt.items.add(f); });
+                    fileInput.files = dt.files;
+                } catch(e) {
+                    console.warn('DataTransfer assignment failed:', e);
+                }
+            }
+
+            // ─── フォーム送信時にFormDataでファイルを追加 ───
+            var reportForm = document.getElementById('reportForm');
+            if (reportForm) {
+                // ボタンの submit をオーバーライド
+                var submitBtn = reportForm.querySelector('button[type="submit"]');
+                if (submitBtn) {
+                    submitBtn.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        console.log('[FORM SUBMIT] Click detected. selectedFiles.length =', selectedFiles.length);
+                        
+                        if (selectedFiles.length > 0) {
+                            console.log('[FORM SUBMIT] Files found, using fetch...');
+                            var formData = new FormData(reportForm);
+                            selectedFiles.forEach(function(f) {
+                                console.log('[FORM SUBMIT] Adding file:', f.name);
+                                formData.append('attachments', f);
+                            });
+                            
+                            fetch(reportForm.action, {
+                                method: 'POST',
+                                body: formData
+                            }).then(function(res) {
+                                console.log('[FORM SUBMIT] Response:', res.status);
+                                window.location.href = '/hr/daily-report';
+                            }).catch(function(err) {
+                                console.error('[FORM SUBMIT] Error:', err);
+                                alert('エラーが発生しました');
+                            });
+                        } else {
+                            console.log('[FORM SUBMIT] No files, using normal submit');
+                            reportForm.submit();
+                        }
+                    });
+                }
+            }
+
+            // ─── ドラッグ&ドロップのイベントハンドラー ───
+            var dropArea = document.getElementById('dropArea');
+            if (dropArea) {
+                dropArea.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropArea.style.borderColor = '#3b82f6';
+                    dropArea.style.background = '#eff6ff';
+                });
+                dropArea.addEventListener('dragleave', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropArea.style.borderColor = '';
+                    dropArea.style.background = '';
+                });
+                dropArea.addEventListener('drop', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropArea.style.borderColor = '';
+                    dropArea.style.background = '';
+                    handleFileDrop(e);
+                });
             }
 
             // ─── 記入例を挿入 ───
@@ -3044,93 +3563,159 @@ router.get('/hr/daily-report/new', requireLogin, async (req, res) => {
                 });
             }
             </script>
-        `);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('エラーが発生しました');
-    }
+        `,
+    );
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("エラーが発生しました");
+  }
 });
 
-router.post('/hr/daily-report/new', requireLogin, upload.array('attachments', 10), async (req, res) => {
+router.post(
+  "/hr/daily-report/new",
+  requireLogin,
+  upload.array("attachments", 10),
+  async (req, res) => {
     try {
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        const { reportDate, content, achievements, issues, tomorrow } = req.body;
+      console.log("[POST /hr/daily-report/new] リクエスト到達 - 処理開始");
+      console.log(
+        "[POST /hr/daily-report/new] req.body:",
+        JSON.stringify(req.body),
+      );
+      console.log(
+        "[POST /hr/daily-report/new] req.files:",
+        req.files
+          ? JSON.stringify(
+              req.files.map((f) => ({ name: f.originalname, size: f.size })),
+            )
+          : "none",
+      );
 
-        // メンション解析（@名前 → userId 解決）
-        const allText = [content, achievements, issues, tomorrow].join(' ');
-        const mentionNames = [...new Set((allText.match(/@([^\s@]+)/g) || []).map(m => m.slice(1)))];
-        const mentionedUsers = mentionNames.length
-            ? await Employee.find({ name: { $in: mentionNames } }, 'name userId')
-            : [];
-        const mentionIds = mentionedUsers.map(e => e.userId);
+      const user = await User.findById(req.session.userId);
+      const employee = await Employee.findOne({ userId: user._id });
+      const { reportDate, content, achievements, issues, tomorrow } = req.body;
 
-        // 添付ファイル
-        const attachments = (req.files || []).map(f => ({
-            originalName: f.originalname,
-            filename:     f.filename,
-            mimetype:     f.mimetype,
-            size:         f.size
-        }));
+      // メンション解析（@名前 → userId 解決）
+      const allText = [content, achievements, issues, tomorrow].join(" ");
+      const mentionNames = [
+        ...new Set((allText.match(/@([^\s@]+)/g) || []).map((m) => m.slice(1))),
+      ];
+      const mentionedUsers = mentionNames.length
+        ? await Employee.find({ name: { $in: mentionNames } }, "name userId")
+        : [];
+      const mentionIds = mentionedUsers.map((e) => e.userId);
 
-        const report = await DailyReport.create({
-            employeeId: employee._id,
-            userId:     user._id,
-            reportDate: new Date(reportDate),
-            content:      content      || '',
-            achievements: achievements || '',
-            issues:       issues       || '',
-            tomorrow:     tomorrow     || '',
-            mentions:     mentionIds,
-            attachments
-        });
+      // 添付ファイル
+      console.log(
+        `[POST /hr/daily-report/new] req.files: ${req.files ? req.files.length : 0} files`,
+      );
+      if (req.files && req.files.length > 0) {
+        req.files.forEach((f) =>
+          console.log(`  - ${f.originalname} (${f.size} bytes)`),
+        );
+      }
 
-        // メンション通知
-        for (const emp of mentionedUsers) {
-            if (String(emp.userId) !== String(user._id)) {
-                await createNotification({
-                    userId:     emp.userId,
-                    type:       'mention',
-                    title:      `${employee.name} さんが日報であなたをメンションしました`,
-                    body:       (content || '').slice(0, 80),
-                    link:       `/hr/daily-report/${report._id}`,
-                    fromUserId: user._id,
-                    fromName:   employee.name
-                });
-            }
+      const attachments = (req.files || []).map((f) => ({
+        originalName: f.originalname,
+        filename: f.filename,
+        mimetype: f.mimetype,
+        size: f.size,
+      }));
+
+      console.log(
+        `[POST /hr/daily-report/new] attachments to save: ${JSON.stringify(attachments)}`,
+      );
+
+      const report = await DailyReport.create({
+        employeeId: employee._id,
+        userId: user._id,
+        reportDate: new Date(reportDate),
+        content: content || "",
+        achievements: achievements || "",
+        issues: issues || "",
+        tomorrow: tomorrow || "",
+        mentions: mentionIds,
+        attachments,
+      });
+
+      console.log(
+        `[POST /hr/daily-report/new] Report created. ID: ${report._id}`,
+      );
+      console.log(
+        `[POST /hr/daily-report/new] Saved attachments: ${JSON.stringify(report.attachments)}`,
+      );
+
+      // メンション通知
+      for (const emp of mentionedUsers) {
+        if (String(emp.userId) !== String(user._id)) {
+          await createNotification({
+            userId: emp.userId,
+            type: "mention",
+            title: `${employee.name} さんが日報であなたをメンションしました`,
+            body: (content || "").slice(0, 80),
+            link: `/hr/daily-report/${report._id}`,
+            fromUserId: user._id,
+            fromName: employee.name,
+          });
         }
+      }
 
-        res.redirect('/hr/daily-report');
+      res.redirect("/hr/daily-report");
     } catch (error) {
-        console.error(error);
-        res.status(500).send('エラーが発生しました');
+      console.error(error);
+      res.status(500).send("エラーが発生しました");
     }
-});
+  },
+);
 
 // 日報編集ページ
-router.get('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
-    try {
-        const report = await DailyReport.findById(req.params.id).populate('employeeId', 'name');
-        if (!report) return res.redirect('/hr/daily-report');
+router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
+  try {
+    const report = await DailyReport.findById(req.params.id).populate(
+      "employeeId",
+      "name",
+    );
+    if (!report) return res.redirect("/hr/daily-report");
 
-        // 本人または管理者のみ
-        if (String(report.userId) !== String(req.session.userId) && !req.session.isAdmin) {
-            return res.redirect('/hr/daily-report/' + req.params.id);
-        }
+    // 本人または管理者のみ
+    if (
+      String(report.userId) !== String(req.session.userId) &&
+      !req.session.isAdmin
+    ) {
+      return res.redirect("/hr/daily-report/" + req.params.id);
+    }
 
-        const dateVal = report.reportDate ? new Date(report.reportDate).toISOString().split('T')[0] : '';
-        const emp = report.employeeId || {};
-        const allEmps = await Employee.find({}, 'name userId').lean();
-        const mentionUsersJson = JSON.stringify(allEmps.map(e => ({ id: String(e.userId), name: e.name })));
+    const dateVal = report.reportDate
+      ? new Date(report.reportDate).toISOString().split("T")[0]
+      : "";
+    const emp = report.employeeId || {};
+    const allEmps = await Employee.find({}, "name userId").lean();
+    const mentionUsersJson = JSON.stringify(
+      allEmps.map((e) => ({ id: String(e.userId), name: e.name })),
+    );
 
-        // 既存添付ファイルの表示
-        const existingAttachHtml = (report.attachments || []).map(a => {
-            const icon = (a.mimetype || '').startsWith('image/') ? '🖼️' : a.originalName && a.originalName.endsWith('.pdf') ? '📄' : '📎';
-            const size = a.size > 1024*1024 ? (a.size/1024/1024).toFixed(1)+'MB' : Math.round((a.size||0)/1024)+'KB';
-            return `<div class="attach-chip">${icon} ${escapeHtml(a.originalName||a.filename)} <span style="color:#9ca3af">(${size})</span></div>`;
-        }).join('');
+    // 既存添付ファイルの表示
+    const existingAttachHtml = (report.attachments || [])
+      .map((a) => {
+        const icon = (a.mimetype || "").startsWith("image/")
+          ? "🖼️"
+          : a.originalName && a.originalName.endsWith(".pdf")
+            ? "📄"
+            : "📎";
+        const size =
+          a.size > 1024 * 1024
+            ? (a.size / 1024 / 1024).toFixed(1) + "MB"
+            : Math.round((a.size || 0) / 1024) + "KB";
+        return `<div class="attach-chip">${icon} ${escapeHtml(a.originalName || a.filename)} <span style="color:#9ca3af">(${size})</span></div>`;
+      })
+      .join("");
 
-        renderPage(req, res, '日報編集', '日報を編集', `
+    renderPage(
+      req,
+      res,
+      "日報編集",
+      "日報を編集",
+      `
             <style>
                 .form-card{background:#fff;border-radius:14px;padding:28px;box-shadow:0 4px 14px rgba(11,36,48,.06);max-width:860px;margin:0 auto}
                 .field-label{font-weight:700;font-size:14px;display:block;margin-bottom:6px;color:#0b2540}
@@ -3160,7 +3745,7 @@ router.get('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
                 <div class="form-card">
                     <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
                         <h3 style="margin:0;font-size:18px;color:#0b2540">日報を編集</h3>
-                        <span style="padding:2px 12px;background:#eff6ff;color:#2563eb;border-radius:999px;font-size:13px;font-weight:700">${escapeHtml(emp.name || '')}</span>
+                        <span style="padding:2px 12px;background:#eff6ff;color:#2563eb;border-radius:999px;font-size:13px;font-weight:700">${escapeHtml(emp.name || "")}</span>
                     </div>
                     <form action="/hr/daily-report/${report._id}/edit" method="POST" id="editForm" enctype="multipart/form-data">
                         <div style="margin-bottom:18px">
@@ -3171,7 +3756,7 @@ router.get('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
                             <label class="field-label">本日の業務内容 <span style="color:#ef4444">*</span></label>
                             <span class="field-hint">@名前 でメンションできます</span>
                             <div class="mention-wrap">
-                                <textarea id="f_content" name="content" rows="8" required class="form-textarea">${escapeHtml(report.content || '')}</textarea>
+                                <textarea id="f_content" name="content" rows="8" required class="form-textarea">${escapeHtml(report.content || "")}</textarea>
                                 <div class="mention-suggest" id="ms_content"></div>
                             </div>
                             <div class="char-count"><span id="cnt_content">0</span> 文字</div>
@@ -3179,7 +3764,7 @@ router.get('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
                         <div style="margin-bottom:18px">
                             <label class="field-label">本日の成果・進捗</label>
                             <div class="mention-wrap">
-                                <textarea id="f_achievements" name="achievements" rows="5" class="form-textarea">${escapeHtml(report.achievements || '')}</textarea>
+                                <textarea id="f_achievements" name="achievements" rows="5" class="form-textarea">${escapeHtml(report.achievements || "")}</textarea>
                                 <div class="mention-suggest" id="ms_achievements"></div>
                             </div>
                             <div class="char-count"><span id="cnt_achievements">0</span> 文字</div>
@@ -3187,7 +3772,7 @@ router.get('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
                         <div style="margin-bottom:18px">
                             <label class="field-label">課題・問題点</label>
                             <div class="mention-wrap">
-                                <textarea id="f_issues" name="issues" rows="5" class="form-textarea">${escapeHtml(report.issues || '')}</textarea>
+                                <textarea id="f_issues" name="issues" rows="5" class="form-textarea">${escapeHtml(report.issues || "")}</textarea>
                                 <div class="mention-suggest" id="ms_issues"></div>
                             </div>
                             <div class="char-count"><span id="cnt_issues">0</span> 文字</div>
@@ -3195,7 +3780,7 @@ router.get('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
                         <div style="margin-bottom:18px">
                             <label class="field-label">明日の予定</label>
                             <div class="mention-wrap">
-                                <textarea id="f_tomorrow" name="tomorrow" rows="5" class="form-textarea">${escapeHtml(report.tomorrow || '')}</textarea>
+                                <textarea id="f_tomorrow" name="tomorrow" rows="5" class="form-textarea">${escapeHtml(report.tomorrow || "")}</textarea>
                                 <div class="mention-suggest" id="ms_tomorrow"></div>
                             </div>
                             <div class="char-count"><span id="cnt_tomorrow">0</span> 文字</div>
@@ -3203,11 +3788,8 @@ router.get('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
                         <div style="margin-bottom:24px">
                             <label class="field-label">ファイル添付（追加）</label>
                             <span class="field-hint">既存ファイルに追加できます。既存ファイルの削除は詳細画面から行ってください</span>
-                            ${existingAttachHtml ? `<div class="attach-list" style="margin-bottom:8px">${existingAttachHtml}</div>` : ''}
-                            <label for="fileInput" class="attach-area" id="dropArea"
-                                ondragover="event.preventDefault();this.classList.add('drag-over')"
-                                ondragleave="this.classList.remove('drag-over')"
-                                ondrop="event.preventDefault();this.classList.remove('drag-over');handleFileDrop(event)">
+                            ${existingAttachHtml ? `<div class="attach-list" style="margin-bottom:8px">${existingAttachHtml}</div>` : ""}
+                            <label for="fileInput" class="attach-area" id="dropArea">
                                 <span style="font-size:20px">📎</span>
                                 <span>ここをクリックまたはファイルをドラッグ&ドロップ</span>
                                 <input type="file" name="attachments" id="fileInput" multiple
@@ -3279,173 +3861,332 @@ router.get('/hr/daily-report/:id/edit', requireLogin, async (req, res) => {
             var selectedFiles = [];
 
             function handleFileChange(input) {
-                Array.from(input.files).forEach(function(f) { selectedFiles.push(f); });
+                if (!input || !input.files) return;
+                Array.from(input.files).forEach(function(f) {
+                    selectedFiles.push(f);
+                });
                 renderAttachList();
                 syncFilesToInput();
                 input.value = '';
             }
+            window.handleFileChange = handleFileChange;
 
             function handleFileDrop(event) {
-                Array.from(event.dataTransfer.files).forEach(function(f) { selectedFiles.push(f); });
+                if (!event || !event.dataTransfer || !event.dataTransfer.files) return;
+                Array.from(event.dataTransfer.files).forEach(function(f) {
+                    selectedFiles.push(f);
+                });
+                renderAttachList();
+                syncFilesToInput();
+            }
+            window.handleFileDrop = handleFileDrop;
+
+            function renderAttachList() {
+                if (!attachList) return;
+                attachList.innerHTML = '';
+                selectedFiles.forEach(function(f, i) {
+                    var icon = '[FILE]';
+                    if (f.type && f.type.indexOf('image/') === 0) {
+                        icon = '[IMG]';
+                    } else if (/\.pdf$/i.test(f.name)) {
+                        icon = '[PDF]';
+                    }
+
+                    var size = f.size > 1024 * 1024
+                        ? (f.size / 1024 / 1024).toFixed(1) + 'MB'
+                        : Math.round(f.size / 1024) + 'KB';
+
+                    var chip = document.createElement('div');
+                    chip.className = 'attach-chip';
+
+                    var iconSpan = document.createElement('span');
+                    iconSpan.textContent = icon + ' ';
+
+                    var nameSpan = document.createElement('span');
+                    nameSpan.textContent = f.name;
+
+                    var sizeSpan = document.createElement('span');
+                    sizeSpan.style.color = '#9ca3af';
+                    sizeSpan.textContent = '(' + size + ')';
+
+                    var rmBtn = document.createElement('button');
+                    rmBtn.type = 'button';
+                    rmBtn.className = 'rm';
+                    rmBtn.textContent = 'x';
+                    rmBtn.setAttribute('data-idx', i);
+                    rmBtn.onclick = function() {
+                        removeFile(parseInt(this.getAttribute('data-idx')));
+                    };
+
+                    chip.appendChild(iconSpan);
+                    chip.appendChild(nameSpan);
+                    chip.appendChild(sizeSpan);
+                    chip.appendChild(rmBtn);
+                    attachList.appendChild(chip);
+                });
+            }
+
+            function removeFile(idx) {
+                selectedFiles.splice(idx, 1);
                 renderAttachList();
                 syncFilesToInput();
             }
 
-            function addFiles(files) { files.forEach(function(f) { selectedFiles.push(f); }); renderAttachList(); syncFilesToInput(); }
-            function renderAttachList() {
-                attachList.innerHTML = '';
-                selectedFiles.forEach(function(f, i) {
-                    var icon = f.type.startsWith('image/') ? '🖼️' : f.name.endsWith('.pdf') ? '📄' : '📎';
-                    var size = f.size > 1024*1024 ? (f.size/1024/1024).toFixed(1)+'MB' : Math.round(f.size/1024)+'KB';
-                    var chip = document.createElement('div');
-                    chip.className = 'attach-chip';
-                    var iconSpan = document.createElement('span'); iconSpan.textContent = icon + ' ';
-                    var nameSpan = document.createElement('span'); nameSpan.textContent = f.name;
-                    var sizeSpan = document.createElement('span'); sizeSpan.style.color = '#9ca3af'; sizeSpan.textContent = '(' + size + ')';
-                    var rmBtn = document.createElement('button'); rmBtn.type = 'button'; rmBtn.className = 'rm'; rmBtn.textContent = '✕';
-                    rmBtn.setAttribute('data-idx', i);
-                    rmBtn.onclick = function() { removeFile(parseInt(this.getAttribute('data-idx'))); };
-                    chip.appendChild(iconSpan); chip.appendChild(nameSpan); chip.appendChild(sizeSpan); chip.appendChild(rmBtn);
-                    attachList.appendChild(chip);
+            function syncFilesToInput() {
+                try {
+                    var dt = new DataTransfer();
+                    selectedFiles.forEach(function(f) {
+                        dt.items.add(f);
+                    });
+                    if (fileInput) fileInput.files = dt.files;
+                } catch (e) {
+                    console.warn('DataTransfer assignment failed:', e);
+                }
+            }
+
+            if (fileInput) {
+                fileInput.onchange = function() {
+                    handleFileChange(this);
+                };
+            }
+
+            // ─── ドラッグ&ドロップのイベントハンドラー ───
+            var dropArea = document.getElementById('dropArea');
+            if (dropArea) {
+                dropArea.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropArea.style.borderColor = '#3b82f6';
+                    dropArea.style.background = '#eff6ff';
+                });
+                dropArea.addEventListener('dragleave', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropArea.style.borderColor = '';
+                    dropArea.style.background = '';
+                });
+                dropArea.addEventListener('drop', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropArea.style.borderColor = '';
+                    dropArea.style.background = '';
+                    handleFileDrop(e);
                 });
             }
-            function removeFile(idx) { selectedFiles.splice(idx, 1); renderAttachList(); syncFilesToInput(); }
-            function syncFilesToInput() {
-                var dt = new DataTransfer();
-                selectedFiles.forEach(function(f) { dt.items.add(f); });
-                fileInput.files = dt.files;
+
+            // 編集画面の保存
+            var editForm = document.getElementById('editForm');
+            if (editForm) {
+                editForm.addEventListener('submit', function(e) {
+                    if (selectedFiles.length === 0) {
+                        return;
+                    }
+
+                    e.preventDefault();
+
+                    var formData = new FormData(editForm);
+                    formData.delete('attachments');
+                    selectedFiles.forEach(function(f) {
+                        formData.append('attachments', f);
+                    });
+
+                    fetch(editForm.action, {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(function(res) {
+                        if (!res.ok) {
+                            throw new Error('save failed: ' + res.status);
+                        }
+
+                        var detailUrl = editForm.getAttribute('action') || '';
+                        if (detailUrl.slice(-5) === '/edit') {
+                            detailUrl = detailUrl.slice(0, -5);
+                        }
+                        window.location.href = detailUrl;
+                    })
+                    .catch(function(err) {
+                        console.error('[EDIT SAVE] Error:', err);
+                        alert('保存に失敗しました');
+                    });
+                });
             }
             </script>
-        `);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('エラーが発生しました');
-    }
+        `,
+    );
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("エラーが発生しました");
+  }
 });
 
 // 日報編集保存
-router.post('/hr/daily-report/:id/edit', requireLogin, upload.array('attachments', 10), async (req, res) => {
+router.post(
+  "/hr/daily-report/:id/edit",
+  requireLogin,
+  upload.array("attachments", 10),
+  async (req, res) => {
     try {
-        const report = await DailyReport.findById(req.params.id);
-        if (!report) return res.redirect('/hr/daily-report');
+      const report = await DailyReport.findById(req.params.id);
+      if (!report) return res.redirect("/hr/daily-report");
 
-        if (String(report.userId) !== String(req.session.userId) && !req.session.isAdmin) {
-            return res.redirect('/hr/daily-report/' + req.params.id);
-        }
+      if (
+        String(report.userId) !== String(req.session.userId) &&
+        !req.session.isAdmin
+      ) {
+        return res.redirect("/hr/daily-report/" + req.params.id);
+      }
 
-        const { reportDate, content, achievements, issues, tomorrow } = req.body;
+      const { reportDate, content, achievements, issues, tomorrow } = req.body;
 
-        // メンション解析
-        const allText = [content, achievements, issues, tomorrow].join(' ');
-        const mentionNames = [...new Set((allText.match(/@([^\s@]+)/g) || []).map(m => m.slice(1)))];
-        const mentionedUsers = mentionNames.length
-            ? await Employee.find({ name: { $in: mentionNames } }, 'name userId')
-            : [];
-        const mentionIds = mentionedUsers.map(e => e.userId);
+      // メンション解析
+      const allText = [content, achievements, issues, tomorrow].join(" ");
+      const mentionNames = [
+        ...new Set((allText.match(/@([^\s@]+)/g) || []).map((m) => m.slice(1))),
+      ];
+      const mentionedUsers = mentionNames.length
+        ? await Employee.find({ name: { $in: mentionNames } }, "name userId")
+        : [];
+      const mentionIds = mentionedUsers.map((e) => e.userId);
 
-        // 新規添付ファイル（既存に追加）
-        const newAttachments = (req.files || []).map(f => ({
-            originalName: f.originalname,
-            filename:     f.filename,
-            mimetype:     f.mimetype,
-            size:         f.size
-        }));
+      // 新規添付ファイル（既存に追加）
+      const newAttachments = (req.files || []).map((f) => ({
+        originalName: f.originalname,
+        filename: f.filename,
+        mimetype: f.mimetype,
+        size: f.size,
+      }));
 
-        await DailyReport.findByIdAndUpdate(req.params.id, {
-            reportDate:   new Date(reportDate),
-            content:      content      || '',
-            achievements: achievements || '',
-            issues:       issues       || '',
-            tomorrow:     tomorrow     || '',
-            mentions:     mentionIds,
-            $push: { attachments: { $each: newAttachments } }
-        });
-        res.redirect('/hr/daily-report/' + req.params.id);
+      await DailyReport.findByIdAndUpdate(req.params.id, {
+        reportDate: new Date(reportDate),
+        content: content || "",
+        achievements: achievements || "",
+        issues: issues || "",
+        tomorrow: tomorrow || "",
+        mentions: mentionIds,
+        $push: { attachments: { $each: newAttachments } },
+      });
+      res.redirect("/hr/daily-report/" + req.params.id);
     } catch (error) {
-        console.error(error);
-        res.status(500).send('エラーが発生しました');
+      console.error(error);
+      res.status(500).send("エラーが発生しました");
     }
-});
+  },
+);
 
 // 日報削除
-router.post('/hr/daily-report/:id/delete', requireLogin, async (req, res) => {
-    try {
-        const report = await DailyReport.findById(req.params.id);
-        if (!report) return res.redirect('/hr/daily-report');
+router.post("/hr/daily-report/:id/delete", requireLogin, async (req, res) => {
+  try {
+    const report = await DailyReport.findById(req.params.id);
+    if (!report) return res.redirect("/hr/daily-report");
 
-        if (String(report.userId) !== String(req.session.userId) && !req.session.isAdmin) {
-            return res.redirect('/hr/daily-report/' + req.params.id);
-        }
-
-        await DailyReport.findByIdAndDelete(req.params.id);
-        res.redirect('/hr/daily-report');
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('エラーが発生しました');
+    if (
+      String(report.userId) !== String(req.session.userId) &&
+      !req.session.isAdmin
+    ) {
+      return res.redirect("/hr/daily-report/" + req.params.id);
     }
+
+    await DailyReport.findByIdAndDelete(req.params.id);
+    res.redirect("/hr/daily-report");
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("エラーが発生しました");
+  }
 });
 
 // 日報詳細・コメント
-router.get('/hr/daily-report/:id', requireLogin, async (req, res) => {
-    try {
-        const report = await DailyReport.findById(req.params.id)
-            .populate('employeeId', 'name department');
+router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
+  try {
+    const report = await DailyReport.findById(req.params.id).populate(
+      "employeeId",
+      "name department",
+    );
 
-        if (!report) return res.redirect('/hr/daily-report');
+    if (!report) return res.redirect("/hr/daily-report");
 
-        const emp = report.employeeId || {};
-        const dateStr = report.reportDate ? new Date(report.reportDate).toLocaleDateString('ja-JP') : '-';
+    console.log(`[GET /hr/daily-report/:id] Report ID: ${req.params.id}`);
+    console.log(
+      `[GET /hr/daily-report/:id] Attachments: ${report.attachments ? report.attachments.length : 0}`,
+    );
+    if (report.attachments && report.attachments.length > 0) {
+      console.log(
+        `[GET /hr/daily-report/:id] Attachments data: ${JSON.stringify(report.attachments)}`,
+      );
+    }
 
-        // メンションハイライト付きnl2br
-        const nl2br = (str) => {
-            return escapeHtml(str || '')
-                .replace(/@([^\s@]+)/g, '<span style="color:#2563eb;font-weight:700;background:#eff6ff;border-radius:4px;padding:0 3px">@$1</span>')
-                .replace(/\n/g, '<br>');
-        };
+    const emp = report.employeeId || {};
+    const dateStr = report.reportDate
+      ? new Date(report.reportDate).toLocaleDateString("ja-JP")
+      : "-";
 
-        // 添付ファイル表示HTML生成
-        const makeAttachHtml = (attachments) => {
-            if (!attachments || !attachments.length) return '';
-            return `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">` +
-                attachments.map(a => {
-                    const isImage = (a.mimetype || '').startsWith('image/');
-                    const url = `/uploads/daily/${a.filename}`;
-                    if (isImage) {
-                        return `<a href="${url}" target="_blank" style="display:block">
-                            <img src="${url}" alt="${escapeHtml(a.originalName||a.filename)}"
+    // メンションハイライト付きnl2br
+    const nl2br = (str) => {
+      return escapeHtml(str || "")
+        .replace(
+          /@([^\s@]+)/g,
+          '<span style="color:#2563eb;font-weight:700;background:#eff6ff;border-radius:4px;padding:0 3px">@$1</span>',
+        )
+        .replace(/\n/g, "<br>");
+    };
+
+    // 添付ファイル表示HTML生成
+    const makeAttachHtml = (attachments) => {
+      if (!attachments || !attachments.length) return "";
+      return (
+        `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">` +
+        attachments
+          .map((a) => {
+            const isImage = (a.mimetype || "").startsWith("image/");
+            const url = `/uploads/daily/${a.filename}`;
+            if (isImage) {
+              return `<a href="${url}" target="_blank" style="display:block">
+                            <img src="${url}" alt="${escapeHtml(a.originalName || a.filename)}"
                                 style="max-width:160px;max-height:120px;border-radius:8px;border:1px solid #e2e8f0;object-fit:cover">
                         </a>`;
-                    }
-                    const icon = (a.originalName||'').endsWith('.pdf') ? '📄' : '📎';
-                    const size = a.size > 1024*1024 ? (a.size/1024/1024).toFixed(1)+'MB' : Math.round((a.size||0)/1024)+'KB';
-                    return `<a href="${url}" target="_blank" download="${escapeHtml(a.originalName||a.filename)}"
+            }
+            const icon = (a.originalName || "").endsWith(".pdf") ? "📄" : "📎";
+            const size =
+              a.size > 1024 * 1024
+                ? (a.size / 1024 / 1024).toFixed(1) + "MB"
+                : Math.round((a.size || 0) / 1024) + "KB";
+            return `<a href="${url}" target="_blank" download="${escapeHtml(a.originalName || a.filename)}"
                         style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#f1f5f9;border-radius:8px;font-size:13px;color:#374151;text-decoration:none;border:1px solid #e2e8f0">
-                        ${icon} ${escapeHtml(a.originalName||a.filename)} <span style="color:#9ca3af;font-size:11px">${size}</span>
+                        ${icon} ${escapeHtml(a.originalName || a.filename)} <span style="color:#9ca3af;font-size:11px">${size}</span>
                     </a>`;
-                }).join('') + `</div>`;
-        };
+          })
+          .join("") +
+        `</div>`
+      );
+    };
 
-        // メンション候補（コメント用）
-        const allEmps = await Employee.find({}, 'name userId').lean();
-        const mentionUsersJson = JSON.stringify(allEmps.map(e => ({ id: String(e.userId), name: e.name })));
+    // メンション候補（コメント用）
+    const allEmps = await Employee.find({}, "name userId").lean();
+    const mentionUsersJson = JSON.stringify(
+      allEmps.map((e) => ({ id: String(e.userId), name: e.name })),
+    );
 
-        // スタンプ集計（key → [{userId, userName}]）
-        const reactionMap = {};
-        (report.reactions || []).forEach(r => {
-            if (!reactionMap[r.emoji]) reactionMap[r.emoji] = [];
-            reactionMap[r.emoji].push({ userId: String(r.userId), userName: r.userName || '?' });
-        });
+    // スタンプ集計（key → [{userId, userName}]）
+    const reactionMap = {};
+    (report.reactions || []).forEach((r) => {
+      if (!reactionMap[r.emoji]) reactionMap[r.emoji] = [];
+      reactionMap[r.emoji].push({
+        userId: String(r.userId),
+        userName: r.userName || "?",
+      });
+    });
 
-        const myUserId = String(req.session.userId);
+    const myUserId = String(req.session.userId);
 
-        // リアクションが1件以上あるもののみバッジ表示（Slack方式）
-        const stampHtml = Object.entries(reactionMap).map(([key, users]) => {
-            const def = STAMP_MAP[key] || { emoji: key, label: key };
-            const count = users.length;
-            const reacted = users.some(u => u.userId === myUserId);
-            const names = users.map(u => escapeHtml(u.userName)).join(', ');
-            return `<button
-                class="stamp-btn${reacted ? ' stamp-on' : ''}"
+    // リアクションが1件以上あるもののみバッジ表示（Slack方式）
+    const stampHtml = Object.entries(reactionMap)
+      .map(([key, users]) => {
+        const def = STAMP_MAP[key] || { emoji: key, label: key };
+        const count = users.length;
+        const reacted = users.some((u) => u.userId === myUserId);
+        const names = users.map((u) => escapeHtml(u.userName)).join(", ");
+        return `<button
+                class="stamp-btn${reacted ? " stamp-on" : ""}"
                 data-key="${key}"
                 data-report="${report._id}"
                 data-names="${names}"
@@ -3455,9 +4196,15 @@ router.get('/hr/daily-report/:id', requireLogin, async (req, res) => {
                 <span class="stamp-label">${def.label}</span>
                 <span class="stamp-count">${count}</span>
             </button>`;
-        }).join('');
+      })
+      .join("");
 
-        renderPage(req, res, '日報詳細', `${escapeHtml(emp.name || '')} の日報`, `
+    renderPage(
+      req,
+      res,
+      "日報詳細",
+      `${escapeHtml(emp.name || "")} の日報`,
+      `
 <style>
 .report-detail { background:#fff;border-radius:14px;padding:28px 32px;box-shadow:0 4px 14px rgba(11,36,48,.06);max-width:860px;margin:0 auto }
 .section-block { margin-bottom:22px;padding-bottom:22px;border-bottom:1px solid #f1f5f9 }
@@ -3588,9 +4335,12 @@ router.get('/hr/daily-report/:id', requireLogin, async (req, res) => {
         <!-- ヘッダー -->
         <div style="display:flex;gap:12px;align-items:center;margin-bottom:24px;flex-wrap:wrap;border-bottom:2px solid #f1f5f9;padding-bottom:18px">
             <span style="font-size:20px;font-weight:800;color:#0f172a">${dateStr}</span>
-            <span style="padding:3px 14px;background:#eff6ff;color:#2563eb;border-radius:999px;font-weight:700;font-size:13px">${escapeHtml(emp.name || '不明')}</span>
-            <span style="font-size:13px;color:#64748b">${escapeHtml(emp.department || '')}</span>
-            ${(String(report.userId) === String(req.session.userId) || req.session.isAdmin) ? `
+            <span style="padding:3px 14px;background:#eff6ff;color:#2563eb;border-radius:999px;font-weight:700;font-size:13px">${escapeHtml(emp.name || "不明")}</span>
+            <span style="font-size:13px;color:#64748b">${escapeHtml(emp.department || "")}</span>
+            ${
+              String(report.userId) === String(req.session.userId) ||
+              req.session.isAdmin
+                ? `
             <div style="margin-left:auto;display:flex;gap:8px">
                 <a href="/hr/daily-report/${report._id}/edit" style="padding:6px 16px;background:#f1f5f9;color:#374151;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:5px">
                     <i class="fa-solid fa-pen" style="font-size:11px"></i> 編集
@@ -3600,36 +4350,54 @@ router.get('/hr/daily-report/:id', requireLogin, async (req, res) => {
                         <i class="fa-solid fa-trash" style="font-size:11px"></i> 削除
                     </button>
                 </form>
-            </div>` : ''}
+            </div>`
+                : ""
+            }
         </div>
 
         <!-- 本文セクション -->
         <div class="section-block">
             <div class="section-label"><i class="fa-solid fa-pen-to-square" style="color:#3b82f6"></i>本日の業務内容</div>
-            <div class="section-body">${nl2br(report.content || '-')}</div>
+            <div class="section-body">${nl2br(report.content || "-")}</div>
         </div>
-        ${report.achievements ? `
+        ${
+          report.achievements
+            ? `
         <div class="section-block">
             <div class="section-label"><i class="fa-solid fa-trophy" style="color:#f59e0b"></i>本日の成果・進捗</div>
             <div class="section-body">${nl2br(report.achievements)}</div>
-        </div>` : ''}
-        ${report.issues ? `
+        </div>`
+            : ""
+        }
+        ${
+          report.issues
+            ? `
         <div class="section-block">
             <div class="section-label"><i class="fa-solid fa-triangle-exclamation" style="color:#ef4444"></i>課題・問題点</div>
             <div class="section-body">${nl2br(report.issues)}</div>
-        </div>` : ''}
-        ${report.tomorrow ? `
+        </div>`
+            : ""
+        }
+        ${
+          report.tomorrow
+            ? `
         <div class="section-block">
             <div class="section-label"><i class="fa-solid fa-calendar-check" style="color:#10b981"></i>明日の予定</div>
             <div class="section-body">${nl2br(report.tomorrow)}</div>
-        </div>` : ''}
+        </div>`
+            : ""
+        }
 
         <!-- 本文添付ファイル -->
-        ${(report.attachments && report.attachments.length) ? `
+        ${
+          report.attachments && report.attachments.length
+            ? `
         <div class="section-block">
             <div class="section-label"><i class="fa-solid fa-paperclip" style="color:#64748b"></i>添付ファイル</div>
             ${makeAttachHtml(report.attachments)}
-        </div>` : ''}
+        </div>`
+            : ""
+        }
 
         <!-- スタンプ -->
         <div style="margin-top:10px;padding-top:20px;border-top:1px solid #f1f5f9">
@@ -3645,11 +4413,13 @@ router.get('/hr/daily-report/:id', requireLogin, async (req, res) => {
                     <div class="stamp-picker" id="picker-${report._id}">
                         <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;font-weight:600">リアクションを選択</div>
                         <div class="stamp-picker-grid">
-                            ${STAMPS.map(s => `
+                            ${STAMPS.map(
+                              (s) => `
                             <button class="sp-btn" onclick="pickStamp('${s.key}','${report._id}',this)" title="${s.label}">
                                 <span class="sp-emoji">${s.emoji}</span>
                                 <span class="sp-lbl">${s.label}</span>
-                            </button>`).join('')}
+                            </button>`,
+                            ).join("")}
                         </div>
                     </div>
                 </div>
@@ -3664,61 +4434,82 @@ router.get('/hr/daily-report/:id', requireLogin, async (req, res) => {
                 <span style="background:#f1f5f9;color:#64748b;font-size:11.5px;border-radius:999px;padding:1px 9px;font-weight:600">${(report.comments || []).length}</span>
             </div>
             <div class="comment-list">
-                ${(report.comments || []).map(c => {
-                    const authorName = c.authorName || '不明';
-                    const commentDate = c.at ? new Date(c.at).toLocaleString('ja-JP') : '';
+                ${(report.comments || [])
+                  .map((c) => {
+                    const authorName = c.authorName || "不明";
+                    const commentDate = c.at
+                      ? new Date(c.at).toLocaleString("ja-JP")
+                      : "";
                     const initial = authorName.charAt(0);
                     const cid = String(c._id);
-                    const canEdit = (String(c.authorId) === myUserId || req.session.isAdmin);
+                    const canEdit =
+                      String(c.authorId) === myUserId || req.session.isAdmin;
 
                     // コメントのリアクション集計
                     const cRMap = {};
-                    (c.reactions || []).forEach(rx => {
-                        if (!cRMap[rx.emoji]) cRMap[rx.emoji] = { count: 0, users: [], isMine: false };
-                        cRMap[rx.emoji].count++;
-                        cRMap[rx.emoji].users.push(rx.userName || '?');
-                        if (String(rx.userId) === myUserId) cRMap[rx.emoji].isMine = true;
+                    (c.reactions || []).forEach((rx) => {
+                      if (!cRMap[rx.emoji])
+                        cRMap[rx.emoji] = {
+                          count: 0,
+                          users: [],
+                          isMine: false,
+                        };
+                      cRMap[rx.emoji].count++;
+                      cRMap[rx.emoji].users.push(rx.userName || "?");
+                      if (String(rx.userId) === myUserId)
+                        cRMap[rx.emoji].isMine = true;
                     });
 
-                    const cStampHtml = Object.entries(cRMap).map(([key, v]) => {
-                        const def = STAMP_MAP[key] || { emoji: key, label: key };
-                        const namesStr = escapeHtml(v.users.join(', '));
-                        return `<button class="c-stamp-btn${v.isMine ? ' stamp-on' : ''}"
+                    const cStampHtml = Object.entries(cRMap)
+                      .map(([key, v]) => {
+                        const def = STAMP_MAP[key] || {
+                          emoji: key,
+                          label: key,
+                        };
+                        const namesStr = escapeHtml(v.users.join(", "));
+                        return `<button class="c-stamp-btn${v.isMine ? " stamp-on" : ""}"
                             data-key="${key}" data-comment="${cid}" data-report="${report._id}"
                             data-names="${namesStr}" title="${namesStr}"
                             onclick="toggleCStamp(this)">
                             <span>${def.emoji}</span><span>${def.label}</span>
                             <span class="stamp-count">${v.count}</span>
                         </button>`;
-                    }).join('');
+                      })
+                      .join("");
 
-                    const cPickerBtns = STAMPS.map(s => `
+                    const cPickerBtns = STAMPS.map(
+                      (s) => `
                         <button class="sp-btn" onclick="pickCStamp('${s.key}','${cid}','${report._id}',this)" title="${s.label}">
                             <span class="sp-emoji">${s.emoji}</span>
                             <span class="sp-lbl">${s.label}</span>
-                        </button>`).join('');
+                        </button>`,
+                    ).join("");
 
                     return `<div class="comment-item" id="ci-${cid}">
                         <div class="comment-avatar">${escapeHtml(initial)}</div>
                         <div style="flex:1;min-width:0">
                             <div class="comment-meta">
                                 ${escapeHtml(authorName)} · ${commentDate}
-                                ${c.editedAt ? `<span style="font-size:11px;color:#9ca3af;margin-left:4px">（編集済み）</span>` : ''}
+                                ${c.editedAt ? `<span style="font-size:11px;color:#9ca3af;margin-left:4px">（編集済み）</span>` : ""}
                             </div>
-                            <div class="comment-body" id="cbody-${cid}">${nl2br(c.text || '')}</div>
+                            <div class="comment-body" id="cbody-${cid}">${nl2br(c.text || "")}</div>
                             ${makeAttachHtml(c.attachments)}
-                            ${canEdit ? `<div class="comment-actions">
-                                <button class="c-action-btn edit" onclick="startEditComment('${cid}')">✏️ 編集</button>
+                            ${
+                              canEdit
+                                ? `<div class="comment-actions">
+                                <button type="button" class="c-action-btn edit" onclick="startEditComment('${cid}')">✏️ 編集</button>
                                 <form method="POST" action="/hr/daily-report/${report._id}/comment/${cid}/delete"
                                     onsubmit="return confirm('このコメントを削除しますか？')" style="margin:0">
                                     <button type="submit" class="c-action-btn del">🗑 削除</button>
                                 </form>
-                            </div>` : ''}
+                            </div>`
+                                : ""
+                            }
                             <div class="comment-edit-form" id="cedit-${cid}">
-                                <textarea id="cedit-text-${cid}" rows="3" style="width:100%;padding:9px 12px;border:1.5px solid #3b82f6;border-radius:9px;font-size:13.5px;resize:vertical;box-sizing:border-box;font-family:inherit;line-height:1.6;outline:none">${escapeHtml(c.text || '')}</textarea>
+                                <textarea id="cedit-text-${cid}" rows="3" style="width:100%;padding:9px 12px;border:1.5px solid #3b82f6;border-radius:9px;font-size:13.5px;resize:vertical;box-sizing:border-box;font-family:inherit;line-height:1.6;outline:none">${escapeHtml(c.text || "")}</textarea>
                                 <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
-                                    <button class="c-action-btn" onclick="cancelEditComment('${cid}')">キャンセル</button>
-                                    <button class="c-action-btn edit" onclick="submitEditComment('${cid}','${report._id}')">💾 保存</button>
+                                    <button type="button" class="c-action-btn" onclick="cancelEditComment('${cid}')">キャンセル</button>
+                                    <button type="button" class="c-action-btn edit" onclick="submitEditComment('${cid}','${report._id}')">💾 保存</button>
                                 </div>
                             </div>
                             <div class="c-reaction-row" id="cr-${cid}">
@@ -3733,7 +4524,8 @@ router.get('/hr/daily-report/:id', requireLogin, async (req, res) => {
                             </div>
                         </div>
                     </div>`;
-                }).join('')}
+                  })
+                  .join("")}
             </div>
 
             <!-- コメント投稿フォーム（メンション＋添付） -->
@@ -4081,14 +4873,18 @@ function syncCFilesToInput() {
 
 // ── コメント編集 ──
 function startEditComment(cid) {
-    document.getElementById('cedit-' + cid).classList.add('open');
+    const editForm = document.getElementById('cedit-' + cid);
+    if (!editForm) return;
+    editForm.classList.add('open');
     const bodyEl = document.getElementById('cbody-' + cid);
     if (bodyEl) bodyEl.style.display = 'none';
     const actionsEl = document.querySelector('#ci-' + cid + ' .comment-actions');
     if (actionsEl) actionsEl.style.display = 'none';
 }
 function cancelEditComment(cid) {
-    document.getElementById('cedit-' + cid).classList.remove('open');
+    const editForm = document.getElementById('cedit-' + cid);
+    if (!editForm) return;
+    editForm.classList.remove('open');
     const bodyEl = document.getElementById('cbody-' + cid);
     if (bodyEl) bodyEl.style.display = '';
     const actionsEl = document.querySelector('#ci-' + cid + ' .comment-actions');
@@ -4109,7 +4905,7 @@ function submitEditComment(cid, reportId) {
         if (!d.ok) { alert(d.error || '保存に失敗しました'); return; }
         const bodyEl = document.getElementById('cbody-' + cid);
         if (bodyEl) {
-            bodyEl.innerHTML = d.html || d.text.replace(/\n/g, '<br>');
+            bodyEl.innerHTML = d.html || d.text.split('\\n').join('<br>');
             bodyEl.style.display = '';
         }
         // 「編集済み」バッジを追加
@@ -4123,248 +4919,297 @@ function submitEditComment(cid, reportId) {
         }
         const actionsEl = document.querySelector('#ci-' + cid + ' .comment-actions');
         if (actionsEl) actionsEl.style.display = '';
-        document.getElementById('cedit-' + cid).classList.remove('open');
+        const editForm = document.getElementById('cedit-' + cid);
+        if (editForm) editForm.classList.remove('open');
     })
     .catch(() => alert('通信エラーが発生しました'));
 }
 </script>
-        `);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('エラーが発生しました');
-    }
+        `,
+    );
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("エラーが発生しました");
+  }
 });
 
 // スタンプ（リアクション）API
-router.post('/hr/daily-report/:id/reaction', requireLogin, async (req, res) => {
-    try {
-        const { emoji } = req.body;
-        if (!STAMP_KEYS.includes(emoji)) return res.json({ ok: false });
+router.post("/hr/daily-report/:id/reaction", requireLogin, async (req, res) => {
+  try {
+    const { emoji } = req.body;
+    if (!STAMP_KEYS.includes(emoji)) return res.json({ ok: false });
 
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        const userName = employee ? employee.name : user.username;
+    const user = await User.findById(req.session.userId);
+    const employee = await Employee.findOne({ userId: user._id });
+    const userName = employee ? employee.name : user.username;
 
-        const report = await DailyReport.findById(req.params.id);
-        if (!report) return res.json({ ok: false });
+    const report = await DailyReport.findById(req.params.id);
+    if (!report) return res.json({ ok: false });
 
-        const alreadyReacted = (report.reactions || []).some(
-            r => r.emoji === emoji && String(r.userId) === String(user._id)
-        );
+    const alreadyReacted = (report.reactions || []).some(
+      (r) => r.emoji === emoji && String(r.userId) === String(user._id),
+    );
 
-        if (alreadyReacted) {
-            // トグル OFF（自分のリアクションのみ削除）
-            await DailyReport.findByIdAndUpdate(req.params.id, {
-                $pull: { reactions: { emoji, userId: user._id } }
-            });
-        } else {
-            // トグル ON（追加）
-            await DailyReport.findByIdAndUpdate(req.params.id, {
-                $push: { reactions: { emoji, userId: user._id, userName } }
-            });
-            // 日報の所有者に通知（自分へのリアクションは除く）
-            if (String(report.userId) !== String(user._id)) {
-                const stamp = STAMP_MAP[emoji];
-                await createNotification({
-                    userId: report.userId,
-                    type: 'reaction',
-                    title: `${userName} さんが ${stamp ? stamp.emoji : emoji} を押しました`,
-                    body: '',
-                    link: `/hr/daily-report/${report._id}`,
-                    fromUserId: user._id,
-                    fromName: userName
-                });
-            }
-        }
-
-        // 常に最新データで返す
-        const updated = await DailyReport.findById(req.params.id);
-        const reactors = (updated.reactions || []).filter(r => r.emoji === emoji);
-        const reacted = reactors.some(r => String(r.userId) === String(user._id));
-        const names = reactors.map(r => r.userName || '?').join(', ');
-        return res.json({ ok: true, reacted, count: reactors.length, names });
-    } catch (e) {
-        console.error(e);
-        res.json({ ok: false });
+    if (alreadyReacted) {
+      // トグル OFF（自分のリアクションのみ削除）
+      await DailyReport.findByIdAndUpdate(req.params.id, {
+        $pull: { reactions: { emoji, userId: user._id } },
+      });
+    } else {
+      // トグル ON（追加）
+      await DailyReport.findByIdAndUpdate(req.params.id, {
+        $push: { reactions: { emoji, userId: user._id, userName } },
+      });
+      // 日報の所有者に通知（自分へのリアクションは除く）
+      if (String(report.userId) !== String(user._id)) {
+        const stamp = STAMP_MAP[emoji];
+        await createNotification({
+          userId: report.userId,
+          type: "reaction",
+          title: `${userName} さんが ${stamp ? stamp.emoji : emoji} を押しました`,
+          body: "",
+          link: `/hr/daily-report/${report._id}`,
+          fromUserId: user._id,
+          fromName: userName,
+        });
+      }
     }
+
+    // 常に最新データで返す
+    const updated = await DailyReport.findById(req.params.id);
+    const reactors = (updated.reactions || []).filter((r) => r.emoji === emoji);
+    const reacted = reactors.some((r) => String(r.userId) === String(user._id));
+    const names = reactors.map((r) => r.userName || "?").join(", ");
+    return res.json({ ok: true, reacted, count: reactors.length, names });
+  } catch (e) {
+    console.error(e);
+    res.json({ ok: false });
+  }
 });
 
 // コメントリアクションAPI
-router.post('/hr/daily-report/:reportId/comment/:commentId/reaction', requireLogin, async (req, res) => {
+router.post(
+  "/hr/daily-report/:reportId/comment/:commentId/reaction",
+  requireLogin,
+  async (req, res) => {
     try {
-        const { emoji } = req.body;
-        if (!STAMP_KEYS.includes(emoji)) return res.json({ ok: false });
+      const { emoji } = req.body;
+      if (!STAMP_KEYS.includes(emoji)) return res.json({ ok: false });
 
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        const userName = employee ? employee.name : user.username;
+      const user = await User.findById(req.session.userId);
+      const employee = await Employee.findOne({ userId: user._id });
+      const userName = employee ? employee.name : user.username;
 
-        const report = await DailyReport.findById(req.params.reportId);
-        if (!report) return res.json({ ok: false });
+      const report = await DailyReport.findById(req.params.reportId);
+      if (!report) return res.json({ ok: false });
 
-        const comment = (report.comments || []).id(req.params.commentId);
-        if (!comment) return res.json({ ok: false });
+      const comment = (report.comments || []).id(req.params.commentId);
+      if (!comment) return res.json({ ok: false });
 
-        const alreadyReacted = (comment.reactions || []).some(
-            r => r.emoji === emoji && String(r.userId) === String(user._id)
+      const alreadyReacted = (comment.reactions || []).some(
+        (r) => r.emoji === emoji && String(r.userId) === String(user._id),
+      );
+
+      if (alreadyReacted) {
+        // 自分のリアクションのみ削除
+        const idx = comment.reactions.findIndex(
+          (r) => r.emoji === emoji && String(r.userId) === String(user._id),
         );
-
-        if (alreadyReacted) {
-            // 自分のリアクションのみ削除
-            const idx = comment.reactions.findIndex(
-                r => r.emoji === emoji && String(r.userId) === String(user._id)
-            );
-            comment.reactions.splice(idx, 1);
-        } else {
-            if (!comment.reactions) comment.reactions = [];
-            comment.reactions.push({ emoji, userId: user._id, userName });
-            // コメント投稿者に通知（自分へのリアクションは除く）
-            if (comment.authorId && String(comment.authorId) !== String(user._id)) {
-                const stamp = STAMP_MAP[emoji];
-                await createNotification({
-                    userId: comment.authorId,
-                    type: 'reaction',
-                    title: `${userName} さんがコメントに ${stamp ? stamp.emoji : emoji} を押しました`,
-                    body: comment.text ? comment.text.substring(0, 60) : '',
-                    link: `/hr/daily-report/${report._id}`,
-                    fromUserId: user._id,
-                    fromName: userName
-                });
-            }
+        comment.reactions.splice(idx, 1);
+      } else {
+        if (!comment.reactions) comment.reactions = [];
+        comment.reactions.push({ emoji, userId: user._id, userName });
+        // コメント投稿者に通知（自分へのリアクションは除く）
+        if (comment.authorId && String(comment.authorId) !== String(user._id)) {
+          const stamp = STAMP_MAP[emoji];
+          await createNotification({
+            userId: comment.authorId,
+            type: "reaction",
+            title: `${userName} さんがコメントに ${stamp ? stamp.emoji : emoji} を押しました`,
+            body: comment.text ? comment.text.substring(0, 60) : "",
+            link: `/hr/daily-report/${report._id}`,
+            fromUserId: user._id,
+            fromName: userName,
+          });
         }
+      }
 
-        await report.save();
+      await report.save();
 
-        // 常に最新データで返す
-        const reactors = (comment.reactions || []).filter(r => r.emoji === emoji);
-        const reacted = reactors.some(r => String(r.userId) === String(user._id));
-        const names = reactors.map(r => r.userName || '?').join(', ');
-        return res.json({ ok: true, reacted, count: reactors.length, names });
+      // 常に最新データで返す
+      const reactors = (comment.reactions || []).filter(
+        (r) => r.emoji === emoji,
+      );
+      const reacted = reactors.some(
+        (r) => String(r.userId) === String(user._id),
+      );
+      const names = reactors.map((r) => r.userName || "?").join(", ");
+      return res.json({ ok: true, reacted, count: reactors.length, names });
     } catch (e) {
-        console.error(e);
-        res.json({ ok: false });
+      console.error(e);
+      res.json({ ok: false });
     }
-});
+  },
+);
 
 // コメント投稿
-router.post('/hr/daily-report/:id/comment', requireLogin, upload.array('commentFiles', 5), async (req, res) => {
+router.post(
+  "/hr/daily-report/:id/comment",
+  requireLogin,
+  upload.array("commentFiles", 5),
+  async (req, res) => {
     try {
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        const authorName = employee ? employee.name : user.username;
-        const { text } = req.body;
-        if (!text || !text.trim()) return res.redirect(`/hr/daily-report/${req.params.id}`);
+      const user = await User.findById(req.session.userId);
+      const employee = await Employee.findOne({ userId: user._id });
+      const authorName = employee ? employee.name : user.username;
+      const { text } = req.body;
+      if (!text || !text.trim())
+        return res.redirect(`/hr/daily-report/${req.params.id}`);
 
-        // メンション解析
-        const mentionNames = [];
-        const mentionRe = /@([^\s@]+)/g;
-        let m2;
-        while ((m2 = mentionRe.exec(text)) !== null) mentionNames.push(m2[1]);
-        let mentionIds = [];
-        const mentionedEmps = mentionNames.length
-            ? await Employee.find({ name: { $in: mentionNames } }, 'name userId').lean()
-            : [];
-        mentionIds = mentionedEmps.map(e => e.userId);
+      // メンション解析
+      const mentionNames = [];
+      const mentionRe = /@([^\s@]+)/g;
+      let m2;
+      while ((m2 = mentionRe.exec(text)) !== null) mentionNames.push(m2[1]);
+      let mentionIds = [];
+      const mentionedEmps = mentionNames.length
+        ? await Employee.find(
+            { name: { $in: mentionNames } },
+            "name userId",
+          ).lean()
+        : [];
+      mentionIds = mentionedEmps.map((e) => e.userId);
 
-        // 添付ファイル
-        const attachments = (req.files || []).map(f => ({
-            originalName: f.originalname, filename: f.filename,
-            mimetype: f.mimetype, size: f.size
-        }));
+      // 添付ファイル
+      const attachments = (req.files || []).map((f) => ({
+        originalName: f.originalname,
+        filename: f.filename,
+        mimetype: f.mimetype,
+        size: f.size,
+      }));
 
-        await DailyReport.findByIdAndUpdate(req.params.id, {
-            $push: { comments: {
-                authorId: user._id, authorName, text: text.trim(),
-                mentions: mentionIds, attachments
-            } }
+      await DailyReport.findByIdAndUpdate(req.params.id, {
+        $push: {
+          comments: {
+            authorId: user._id,
+            authorName,
+            text: text.trim(),
+            mentions: mentionIds,
+            attachments,
+          },
+        },
+      });
+
+      const report = await DailyReport.findById(req.params.id).lean();
+
+      // 日報オーナーへの通知
+      if (report && String(report.userId) !== String(user._id)) {
+        await createNotification({
+          userId: report.userId,
+          type: "comment",
+          title: `${authorName} さんがコメントしました`,
+          body: text.trim().substring(0, 80),
+          link: `/hr/daily-report/${report._id}`,
+          fromUserId: user._id,
+          fromName: authorName,
         });
+      }
 
-        const report = await DailyReport.findById(req.params.id).lean();
-
-        // 日報オーナーへの通知
-        if (report && String(report.userId) !== String(user._id)) {
-            await createNotification({
-                userId: report.userId,
-                type: 'comment',
-                title: `${authorName} さんがコメントしました`,
-                body: text.trim().substring(0, 80),
-                link: `/hr/daily-report/${report._id}`,
-                fromUserId: user._id, fromName: authorName
-            });
+      // メンション通知
+      for (const emp of mentionedEmps) {
+        if (String(emp.userId) !== String(user._id)) {
+          await createNotification({
+            userId: emp.userId,
+            type: "mention",
+            title: `${authorName} さんがコメントでメンションしました`,
+            body: text.trim().substring(0, 80),
+            link: `/hr/daily-report/${req.params.id}`,
+            fromUserId: user._id,
+            fromName: authorName,
+          });
         }
+      }
 
-        // メンション通知
-        for (const emp of mentionedEmps) {
-            if (String(emp.userId) !== String(user._id)) {
-                await createNotification({
-                    userId: emp.userId,
-                    type: 'mention',
-                    title: `${authorName} さんがコメントでメンションしました`,
-                    body: text.trim().substring(0, 80),
-                    link: `/hr/daily-report/${req.params.id}`,
-                    fromUserId: user._id, fromName: authorName
-                });
-            }
-        }
-
-        res.redirect(`/hr/daily-report/${req.params.id}`);
+      res.redirect(`/hr/daily-report/${req.params.id}`);
     } catch (error) {
-        console.error(error);
-        res.redirect('/hr/daily-report');
+      console.error(error);
+      res.redirect("/hr/daily-report");
     }
-});
+  },
+);
 
 // コメント編集API
-router.post('/hr/daily-report/:reportId/comment/:commentId/edit', requireLogin, async (req, res) => {
+router.post(
+  "/hr/daily-report/:reportId/comment/:commentId/edit",
+  requireLogin,
+  async (req, res) => {
     try {
-        const { text } = req.body;
-        if (!text || !text.trim()) return res.json({ ok: false, error: 'テキストが空です' });
+      const { text } = req.body;
+      if (!text || !text.trim())
+        return res.json({ ok: false, error: "テキストが空です" });
 
-        const report = await DailyReport.findById(req.params.reportId);
-        if (!report) return res.json({ ok: false, error: '日報が見つかりません' });
+      const report = await DailyReport.findById(req.params.reportId);
+      if (!report)
+        return res.json({ ok: false, error: "日報が見つかりません" });
 
-        const comment = report.comments.id(req.params.commentId);
-        if (!comment) return res.json({ ok: false, error: 'コメントが見つかりません' });
+      const comment = report.comments.id(req.params.commentId);
+      if (!comment)
+        return res.json({ ok: false, error: "コメントが見つかりません" });
 
-        if (String(comment.authorId) !== String(req.session.userId) && !req.session.isAdmin) {
-            return res.json({ ok: false, error: '権限がありません' });
-        }
+      if (
+        String(comment.authorId) !== String(req.session.userId) &&
+        !req.session.isAdmin
+      ) {
+        return res.json({ ok: false, error: "権限がありません" });
+      }
 
-        comment.text = text.trim();
-        comment.editedAt = new Date();
-        await report.save();
+      comment.text = text.trim();
+      comment.editedAt = new Date();
+      await report.save();
 
-        const { escapeHtml: esc } = require('../lib/helpers');
-        const html = esc(comment.text)
-            .replace(/@([^\s@]+)/g, '<span style="color:#2563eb;font-weight:700;background:#eff6ff;border-radius:4px;padding:0 3px">@$1</span>')
-            .replace(/\n/g, '<br>');
-        res.json({ ok: true, text: comment.text, html });
+      const { escapeHtml: esc } = require("../lib/helpers");
+      const html = esc(comment.text)
+        .replace(
+          /@([^\s@]+)/g,
+          '<span style="color:#2563eb;font-weight:700;background:#eff6ff;border-radius:4px;padding:0 3px">@$1</span>',
+        )
+        .replace(/\n/g, "<br>");
+      res.json({ ok: true, text: comment.text, html });
     } catch (e) {
-        console.error(e);
-        res.json({ ok: false, error: 'サーバーエラー' });
+      console.error(e);
+      res.json({ ok: false, error: "サーバーエラー" });
     }
-});
+  },
+);
 
 // コメント削除
-router.post('/hr/daily-report/:reportId/comment/:commentId/delete', requireLogin, async (req, res) => {
+router.post(
+  "/hr/daily-report/:reportId/comment/:commentId/delete",
+  requireLogin,
+  async (req, res) => {
     try {
-        const report = await DailyReport.findById(req.params.reportId);
-        if (!report) return res.redirect('/hr/daily-report');
+      const report = await DailyReport.findById(req.params.reportId);
+      if (!report) return res.redirect("/hr/daily-report");
 
-        const comment = report.comments.id(req.params.commentId);
-        if (!comment) return res.redirect(`/hr/daily-report/${req.params.reportId}`);
+      const comment = report.comments.id(req.params.commentId);
+      if (!comment)
+        return res.redirect(`/hr/daily-report/${req.params.reportId}`);
 
-        if (String(comment.authorId) !== String(req.session.userId) && !req.session.isAdmin) {
-            return res.status(403).send('権限がありません');
-        }
+      if (
+        String(comment.authorId) !== String(req.session.userId) &&
+        !req.session.isAdmin
+      ) {
+        return res.status(403).send("権限がありません");
+      }
 
-        comment.deleteOne();
-        await report.save();
-        res.redirect(`/hr/daily-report/${req.params.reportId}`);
+      comment.deleteOne();
+      await report.save();
+      res.redirect(`/hr/daily-report/${req.params.reportId}`);
     } catch (e) {
-        console.error(e);
-        res.redirect('/hr/daily-report');
+      console.error(e);
+      res.redirect("/hr/daily-report");
     }
-});
+  },
+);
 
 module.exports = router;
