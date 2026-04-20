@@ -57,6 +57,11 @@ router.get('/admin', requireLogin, isAdmin, async (req, res) => {
                         <div class="admin-desc">GPS打刻で使用する承認済み場所（本社・テレワーク等）を登録・管理します。</div>
                     </a>
 
+                    <a class="admin-card" href="/admin/pretest-config">
+                        <div class="admin-head"><div class="admin-icon">📝</div><div class="admin-title">入社前テスト 採点設定</div></div>
+                        <div class="admin-desc">合否ライン・採用担当への自動レポートメール送信を設定します。</div>
+                    </a>
+
                     <a class="admin-card" href="/admin/register-employee">
                         <div class="admin-head"><div class="admin-icon">👥</div><div class="admin-title">従業員登録</div></div>
                         <div class="admin-desc">新しい社員アカウント・従業員情報を作成します。</div>

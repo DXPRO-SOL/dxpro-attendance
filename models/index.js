@@ -230,6 +230,16 @@ const PretestSubmissionSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 
+// 入社前テスト合否設定スキーマ
+const PretestConfigSchema = new mongoose.Schema({
+    passScore:       { type: Number, default: 60 },   // 合格ライン（点数）
+    passPercent:     { type: Number, default: 60 },   // 合格ライン（%）
+    usePercent:      { type: Boolean, default: true }, // true=% で判定、false=点数で判定
+    notifyEmails:    [{ type: String }],               // 採用担当メールアドレス
+    autoSendReport:  { type: Boolean, default: true }, // 自動メール送信ON/OFF
+    updatedAt:       { type: Date, default: Date.now }
+});
+
 // 休暇残日数スキーマ
 const LeaveBalanceSchema = new mongoose.Schema({
     employeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee', required: true, unique: true },
@@ -406,6 +416,7 @@ const SkillSheet      = mongoose.model('SkillSheet', SkillSheetSchema);
 const Notification    = mongoose.model('Notification', NotificationSchema);
 const OvertimeRequest = mongoose.model('OvertimeRequest', OvertimeRequestSchema);
 const ApprovedLocation = mongoose.model('ApprovedLocation', ApprovedLocationSchema);
+const PretestConfig    = mongoose.model('PretestConfig', PretestConfigSchema);
 
 module.exports = {
     User,
@@ -426,5 +437,6 @@ module.exports = {
     SkillSheet,
     Notification,
     OvertimeRequest,
-    ApprovedLocation
+    ApprovedLocation,
+    PretestConfig
 };
