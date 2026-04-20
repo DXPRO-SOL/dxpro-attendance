@@ -91,13 +91,7 @@ router.get('/admin/payroll/master', requireLogin, isAdmin, async (req, res) => {
   </table>
 </div>`;
 
-    res.send(renderPage({
-        title: '給与マスタ管理',
-        currentPath: '/admin/payroll/master',
-        employee: null,
-        isAdmin: true,
-        body: html
-    }));
+    renderPage(req, res, '給与マスタ管理', '給与マスタ管理', html);
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -185,13 +179,7 @@ document.querySelector('[name=autoCalcInsurance]').addEventListener('change', fu
 });
 </script>`;
 
-    res.send(renderPage({
-        title: '給与マスタ設定',
-        currentPath: '/admin/payroll/master',
-        employee: null,
-        isAdmin: true,
-        body: html
-    }));
+    renderPage(req, res, '給与マスタ設定', '給与マスタ設定', html);
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -365,13 +353,7 @@ router.get('/admin/payroll/run/:runId', requireLogin, isAdmin, async (req, res) 
   </table>
 </div>`;
 
-    res.send(renderPage({
-        title: `${month} 給与計算結果`,
-        currentPath: '/admin/payroll/master',
-        employee: null,
-        isAdmin: true,
-        body: html
-    }));
+    renderPage(req, res, `${month} 給与計算結果`, `${month} 給与計算結果`, html);
 });
 
 // ─────────────────────────────────────────────────────────────
