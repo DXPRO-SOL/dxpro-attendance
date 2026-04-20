@@ -4472,6 +4472,16 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                         </button>`,
                     ).join("");
 
+                    // 編集フォーム用：既存添付ファイルの削除ボタン付きリスト
+                    const ceditAttHtml = (c.attachments || []).map(a => {
+                      const icon = (a.mimetype||'').startsWith('image/') ? '🖼️'
+                        : (a.originalName||'').toLowerCase().endsWith('.pdf') ? '📄' : '📎';
+                      return `<div class="cedit-att-item" id="catt-${a._id}" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:#f1f5f9;border-radius:8px;font-size:12px;color:#374151;border:1px solid #e2e8f0">`
+                        + `${icon} ${escapeHtml(a.originalName||a.filename)}`
+                        + `<button type="button" onclick="removeCEditAttachment('${cid}','${a._id}',this)" style="background:none;border:none;cursor:pointer;color:#ef4444;font-size:16px;line-height:1;padding:0 2px" title="削除">×</button>`
+                        + `</div>`;
+                    }).join('');
+
                     return `<div class="comment-item" id="ci-${cid}">
                         <div class="comment-avatar">${escapeHtml(initial)}</div>
                         <div style="flex:1;min-width:0">
@@ -4480,7 +4490,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                                 ${c.editedAt ? `<span style="font-size:11px;color:#9ca3af;margin-left:4px">（編集済み）</span>` : ""}
                             </div>
                             <div class="comment-body" id="cbody-${cid}">${nl2br(c.text || "")}</div>
-                            ${makeAttachHtml(c.attachments)}
+                            <div id="cattach-${cid}">${makeAttachHtml(c.attachments)}</div>
                             ${
                               canEdit
                                 ? `<div class="comment-actions">
@@ -4494,6 +4504,15 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                             }
                             <div class="comment-edit-form" id="cedit-${cid}">
                                 <textarea id="cedit-text-${cid}" rows="3" style="width:100%;padding:9px 12px;border:1.5px solid #3b82f6;border-radius:9px;font-size:13.5px;resize:vertical;box-sizing:border-box;font-family:inherit;line-height:1.6;outline:none">${escapeHtml(c.text || "")}</textarea>
+                                ${ceditAttHtml ? `<div id="cedit-att-list-${cid}" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${ceditAttHtml}</div>` : `<div id="cedit-att-list-${cid}" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>`}
+                                <input type="hidden" id="cedit-remove-${cid}" value="">
+                                <div style="margin-top:8px">
+                                    <label style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:#f8fafc;border:1.5px dashed #cbd5e1;border-radius:8px;font-size:12px;color:#64748b;cursor:pointer">
+                                        📎 ファイルを追加
+                                        <input type="file" id="cedit-files-${cid}" multiple style="display:none" onchange="handleCEditFiles('${cid}',this)">
+                                    </label>
+                                    <div id="cedit-newfiles-${cid}" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
+                                </div>
                                 <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
                                     <button type="button" class="c-action-btn" onclick="cancelEditComment('${cid}')">キャンセル</button>
                                     <button type="button" class="c-action-btn edit" onclick="submitEditComment('${cid}','${report._id}')">💾 保存</button>
@@ -4866,6 +4885,9 @@ function startEditComment(cid) {
     editForm.classList.add('open');
     const bodyEl = document.getElementById('cbody-' + cid);
     if (bodyEl) bodyEl.style.display = 'none';
+    // 既存添付も非表示
+    const attachEl = document.getElementById('cattach-' + cid);
+    if (attachEl) attachEl.style.display = 'none';
     const actionsEl = document.querySelector('#ci-' + cid + ' .comment-actions');
     if (actionsEl) actionsEl.style.display = 'none';
 }
@@ -4875,18 +4897,54 @@ function cancelEditComment(cid) {
     editForm.classList.remove('open');
     const bodyEl = document.getElementById('cbody-' + cid);
     if (bodyEl) bodyEl.style.display = '';
+    const attachEl = document.getElementById('cattach-' + cid);
+    if (attachEl) attachEl.style.display = '';
     const actionsEl = document.querySelector('#ci-' + cid + ' .comment-actions');
     if (actionsEl) actionsEl.style.display = '';
+}
+// 編集フォーム内の既存添付を削除マーク
+function removeCEditAttachment(cid, attId, btn) {
+    // 削除IDリストに追加
+    const removeInput = document.getElementById('cedit-remove-' + cid);
+    if (removeInput) {
+        const cur = removeInput.value ? removeInput.value.split(',') : [];
+        if (!cur.includes(attId)) cur.push(attId);
+        removeInput.value = cur.join(',');
+    }
+    // 該当アイテムを即座に削除（DOM から除去）
+    const item = document.getElementById('catt-' + attId);
+    if (item) item.remove();
+}
+// 編集フォームへの新規ファイル追加プレビュー（ファイル名＋サイズを表示）
+function handleCEditFiles(cid, input) {
+    const container = document.getElementById('cedit-newfiles-' + cid);
+    if (!container) return;
+    container.innerHTML = '';
+    Array.from(input.files).forEach(f => {
+        const icon = f.type.startsWith('image/') ? '🖼️' : f.name.endsWith('.pdf') ? '📄' : '📎';
+        const size = f.size > 1024*1024 ? (f.size/1024/1024).toFixed(1)+'MB' : Math.round(f.size/1024)+'KB';
+        const el = document.createElement('div');
+        el.style.cssText = 'display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:#eff6ff;border-radius:8px;font-size:12px;color:#374151;border:1px solid #bfdbfe';
+        el.textContent = icon + ' ' + f.name + ' (' + size + ')';
+        container.appendChild(el);
+    });
 }
 function submitEditComment(cid, reportId) {
     const ta = document.getElementById('cedit-text-' + cid);
     if (!ta) return;
     const text = ta.value.trim();
     if (!text) return;
+    const removeInput = document.getElementById('cedit-remove-' + cid);
+    const filesInput = document.getElementById('cedit-files-' + cid);
+    const fd = new FormData();
+    fd.append('text', text);
+    if (removeInput && removeInput.value) fd.append('removeAttachmentIds', removeInput.value);
+    if (filesInput && filesInput.files.length) {
+        Array.from(filesInput.files).forEach(f => fd.append('commentFiles', f));
+    }
     fetch('/hr/daily-report/' + reportId + '/comment/' + cid + '/edit', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text })
+        body: fd
     })
     .then(r => r.json())
     .then(d => {
@@ -4895,6 +4953,23 @@ function submitEditComment(cid, reportId) {
         if (bodyEl) {
             bodyEl.innerHTML = d.html || d.text.split('\\n').join('<br>');
             bodyEl.style.display = '';
+        }
+        // 添付ファイル表示を更新
+        const attachEl = document.getElementById('cattach-' + cid);
+        if (attachEl) {
+            attachEl.innerHTML = d.attachHtml || '';
+            attachEl.style.display = '';
+        }
+        // 編集フォームの添付リストを保存後の状態に再構築（次回編集時に正しく表示するため）
+        const attListEl = document.getElementById('cedit-att-list-' + cid);
+        if (attListEl) {
+            attListEl.innerHTML = (d.attachments || []).map(a => {
+                const icon = (a.mimetype || '').startsWith('image/') ? '🖼️' : (a.originalName || '').toLowerCase().endsWith('.pdf') ? '📄' : '📎';
+                return '<div class="cedit-att-item" id="catt-' + a._id + '" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:#f1f5f9;border-radius:8px;font-size:12px;color:#374151;border:1px solid #e2e8f0">'
+                    + icon + ' ' + a.originalName
+                    + '<button type="button" onclick="removeCEditAttachment(\\'' + cid + '\\',\\'' + a._id + '\\',this)" style="background:none;border:none;cursor:pointer;color:#ef4444;font-size:16px;line-height:1;padding:0 2px" title="削除">×</button>'
+                    + '</div>';
+            }).join('');
         }
         // 「編集済み」バッジを追加
         const metaEl = document.querySelector('#ci-' + cid + ' .comment-meta');
@@ -4909,6 +4984,11 @@ function submitEditComment(cid, reportId) {
         if (actionsEl) actionsEl.style.display = '';
         const editForm = document.getElementById('cedit-' + cid);
         if (editForm) editForm.classList.remove('open');
+        // 編集フォームのファイル入力・新規ファイルプレビューをリセット
+        if (removeInput) removeInput.value = '';
+        if (filesInput) filesInput.value = '';
+        const newFilesEl = document.getElementById('cedit-newfiles-' + cid);
+        if (newFilesEl) newFilesEl.innerHTML = '';
     })
     .catch(() => alert('通信エラーが発生しました'));
 }
@@ -5130,9 +5210,10 @@ router.post(
 router.post(
   "/hr/daily-report/:reportId/comment/:commentId/edit",
   requireLogin,
+  upload.array("commentFiles"),
   async (req, res) => {
     try {
-      const { text } = req.body;
+      const { text, removeAttachmentIds } = req.body;
       if (!text || !text.trim())
         return res.json({ ok: false, error: "テキストが空です" });
 
@@ -5153,6 +5234,14 @@ router.post(
 
       comment.text = text.trim();
       comment.editedAt = new Date();
+
+      // 添付ファイルの更新（削除＋新規追加）
+      comment.attachments = buildAttachmentsAfterEdit(
+        comment.attachments,
+        removeAttachmentIds,
+        req.files,
+      );
+
       await report.save();
 
       const { escapeHtml: esc } = require("../lib/helpers");
@@ -5162,7 +5251,27 @@ router.post(
           '<span style="color:#2563eb;font-weight:700;background:#eff6ff;border-radius:4px;padding:0 3px">@$1</span>',
         )
         .replace(/\n/g, "<br>");
-      res.json({ ok: true, text: comment.text, html });
+
+      // 添付ファイル表示HTMLを生成してフロントエンドへ返す
+      const updatedComment = report.comments.id(req.params.commentId);
+      const atts = updatedComment ? updatedComment.attachments || [] : [];
+      let attachHtml = '';
+      if (atts.length) {
+        attachHtml = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">'
+          + atts.map(a => {
+              const isImage = (a.mimetype || '').startsWith('image/');
+              const url = '/uploads/daily/' + a.filename;
+              if (isImage) {
+                return `<a href="${url}" target="_blank" style="display:block"><img src="${url}" alt="${esc(a.originalName || a.filename)}" style="max-width:160px;max-height:120px;border-radius:8px;border:1px solid #e2e8f0;object-fit:cover"></a>`;
+              }
+              const icon = (a.originalName || '').endsWith('.pdf') ? '📄' : '📎';
+              const size = a.size > 1024*1024 ? (a.size/1024/1024).toFixed(1)+'MB' : Math.round((a.size||0)/1024)+'KB';
+              return `<a href="${url}" target="_blank" download="${esc(a.originalName || a.filename)}" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#f1f5f9;border-radius:8px;font-size:13px;color:#374151;text-decoration:none;border:1px solid #e2e8f0">${icon} ${esc(a.originalName || a.filename)} <span style="color:#9ca3af;font-size:11px">${size}</span></a>`;
+            }).join('')
+          + '</div>';
+      }
+
+      res.json({ ok: true, text: comment.text, html, attachHtml, attachments: atts.map(a => ({ _id: String(a._id), originalName: a.originalName || a.filename, filename: a.filename, mimetype: a.mimetype || '', size: a.size || 0 })) });
     } catch (e) {
       console.error(e);
       res.json({ ok: false, error: "サーバーエラー" });
