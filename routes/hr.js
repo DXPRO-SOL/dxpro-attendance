@@ -2,6 +2,7 @@
 // routes/hr.js - 人事・給与管理
 // ==============================
 const router = require("express").Router();
+const bcrypt = require("bcryptjs");
 const moment = require("moment-timezone");
 const pdf = require("html-pdf");
 const multer = require("multer");
@@ -805,6 +806,10 @@ router.get("/hr", requireLogin, async (req, res) => {
 
 // 社員追加
 router.get("/hr/add", requireLogin, (req, res) => {
+  const errorMsg =
+    req.query.error === "server"
+      ? decodeURIComponent(req.query.detail || "サーバーエラーが発生しました。")
+      : "";
   const html = `
         <style>
             /* ── ページ全体ラッパー ── */
@@ -1022,6 +1027,7 @@ router.get("/hr/add", requireLogin, (req, res) => {
         </style>
 
         <div class="hradd-wrap">
+            ${errorMsg ? `<div style="background:#fef2f2;border:1.5px solid #fca5a5;color:#b91c1c;border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:13px;display:flex;align-items:center;gap:8px"><i class="fa fa-exclamation-circle"></i>${errorMsg}</div>` : ""}
             <!-- パンくず -->
             <nav class="hradd-breadcrumb">
                 <a href="/hr"><i class="fa fa-users"></i> 人事管理</a>
@@ -1117,19 +1123,58 @@ router.get("/hr/add", requireLogin, (req, res) => {
 });
 
 router.post("/hr/add", requireLogin, async (req, res) => {
-  const { name, department, position, joinDate, email } = req.body;
-  await Employee.create({
-    name,
-    department,
-    position,
-    joinDate,
-    email,
-    paidLeave: 10,
-  });
-  res.redirect("/hr");
-});
+  let newUser = null;
+  try {
+    const { name, department, position, joinDate, email } = req.body;
 
-// 社員編集
+    // employeeId の自動採番（EmployeeとUser両方で重複しない番号を探す）
+    const lastEmployee = await Employee.findOne().sort({ _id: -1 });
+    let nextNum = 1;
+    if (lastEmployee && lastEmployee.employeeId) {
+      const match = lastEmployee.employeeId.match(/(\d+)$/);
+      if (match) nextNum = parseInt(match[1], 10) + 1;
+    }
+    // すでに同名Userが存在する場合はさらに番号をインクリメント
+    let employeeId;
+    while (true) {
+      employeeId = "EMP-" + String(nextNum).padStart(3, "0");
+      const existing = await User.findOne({
+        username: employeeId.toLowerCase(),
+      });
+      if (!existing) break;
+      nextNum++;
+    }
+
+    // Userアカウントを自動生成（ユーザー名: emp-001形式、初期PW: password1234）
+    const defaultPassword = await bcrypt.hash("password1234", 10);
+    newUser = await User.create({
+      username: employeeId.toLowerCase(),
+      password: defaultPassword,
+    });
+
+    // Employee作成
+    await Employee.create({
+      userId: newUser._id,
+      employeeId,
+      name,
+      department,
+      position,
+      joinDate,
+      email,
+    });
+
+    res.redirect("/hr");
+  } catch (err) {
+    console.error("社員追加エラー:", err);
+    if (newUser) {
+      await User.deleteOne({ _id: newUser._id }).catch((e) =>
+        console.error("ロールバックエラー:", e),
+      );
+    }
+    const detail = encodeURIComponent(err.message || String(err));
+    res.redirect(`/hr/add?error=server&detail=${detail}`);
+  }
+});
 router.get("/hr/edit/:id", requireLogin, async (req, res) => {
   const id = req.params.id;
   const employee = await Employee.findById(id);
