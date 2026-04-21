@@ -839,9 +839,9 @@ function buildEditPage(emp, sheet, req, isAdminView = false) {
             </div>
             <div>
                 <label class="ss-label">終了年月</label>
-                <div style="display:flex;align-items:center;gap:6px;">
+                <div style="display:flex;align-items:flex-start;gap:6px;">
                   <input type="month" name="pTo" value="${p.periodTo && p.periodTo !== "現在" ? p.periodTo : ""}" class="ss-input" style="flex:1;">
-                  <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap;cursor:pointer;">
+                  <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap;cursor:pointer;padding-top:9px;">
                       <input type="checkbox" onchange="setCurrentProj(this)" ${p.periodTo === "現在" ? "checked" : ""} style="margin:0;cursor:pointer;"> 現在
                   </label>
                 </div>
@@ -906,7 +906,7 @@ function buildEditPage(emp, sheet, req, isAdminView = false) {
 .ss-textarea:focus { border-color:#3b82f6; }
 .ss-grid2  { display:grid;grid-template-columns:1fr 1fr;gap:14px 20px; }
 .ss-grid3  { display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px 20px; }
-.ss-grid4  { display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:14px 20px; }
+.ss-grid4  { display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:14px 20px;align-items:start; }
 .ss-skill-table { width:100%;border-collapse:collapse; }
 .ss-skill-table th { background:#f8fafc;padding:7px 10px;font-size:11.5px;font-weight:700;color:#64748b;border-bottom:1px solid #e2e8f0;text-align:left; }
 .ss-skill-table td { padding:5px 6px;border-bottom:1px solid #f1f5f9;vertical-align:middle; }
@@ -1151,9 +1151,9 @@ function addProject() {
         <div><label class="ss-label">開始年月</label><input type="month" name="pFrom" class="ss-input"></div>
         <div>
             <label class="ss-label">終了年月</label>
-            <div style="display:flex;align-items:center;gap:6px;">
+            <div style="display:flex;align-items:flex-start;gap:6px;">
               <input type="month" name="pTo" class="ss-input" style="flex:1;">
-              <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap;cursor:pointer;"><input type="checkbox" onchange="setCurrentProj(this)" style="margin:0;cursor:pointer;"> 現在</label>
+              <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap;cursor:pointer;padding-top:9px;"><input type="checkbox" onchange="setCurrentProj(this)" style="margin:0;cursor:pointer;"> 現在</label>
             </div>
         </div>
         <div style="grid-column:3/5;"><label class="ss-label">案件名</label><input type="text" name="pName" placeholder="案件名" class="ss-input"></div>
