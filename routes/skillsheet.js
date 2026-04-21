@@ -1,476 +1,744 @@
 // ==============================
 // routes/skillsheet.js — スキルシート管理
 // ==============================
-const router    = require('express').Router();
-const ExcelJS   = require('exceljs');
-const { requireLogin } = require('../middleware/auth');
-const { Employee, SkillSheet } = require('../models');
-const { renderPage } = require('../lib/renderPage');
+const router = require("express").Router();
+const ExcelJS = require("exceljs");
+const { requireLogin } = require("../middleware/auth");
+const { Employee, SkillSheet } = require("../models");
+const { renderPage } = require("../lib/renderPage");
 
 // ─── 共通ヘルパー ────────────────────────────────
-const LEVEL_LABELS = ['', '★', '★★', '★★★', '★★★★', '★★★★★'];
+const LEVEL_LABELS = ["", "★", "★★", "★★★", "★★★★", "★★★★★"];
 const SKILL_CATS = [
-    { key: 'languages',  label: 'プログラミング言語' },
-    { key: 'frameworks', label: 'FW / ライブラリ' },
-    { key: 'databases',  label: 'データベース' },
-    { key: 'infra',      label: 'インフラ / クラウド' },
-    { key: 'tools',      label: 'ツール' },
+  { key: "languages", label: "プログラミング言語" },
+  { key: "frameworks", label: "FW / ライブラリ" },
+  { key: "databases", label: "データベース" },
+  { key: "infra", label: "インフラ / クラウド" },
+  { key: "tools", label: "ツール" },
 ];
 const TASK_LABELS = [
-    { key: 'requirement',  label: '要件定義' },
-    { key: 'basicDesign',  label: '基本設計' },
-    { key: 'detailDesign', label: '詳細設計' },
-    { key: 'development',  label: '開発・実装' },
-    { key: 'testing',      label: 'テスト' },
-    { key: 'operation',    label: '運用・保守' },
-    { key: 'management',   label: 'PM / リーダー' },
+  { key: "requirement", label: "要件定義" },
+  { key: "basicDesign", label: "基本設計" },
+  { key: "detailDesign", label: "詳細設計" },
+  { key: "development", label: "開発・実装" },
+  { key: "testing", label: "テスト" },
+  { key: "operation", label: "運用・保守" },
+  { key: "management", label: "PM / リーダー" },
 ];
 
 async function getOrCreate(employeeId, userId) {
-    let sheet = await SkillSheet.findOne({ employeeId });
-    if (!sheet) {
-        sheet = await SkillSheet.create({
-            employeeId, userId,
-            skills: { languages:[], frameworks:[], databases:[], infra:[], tools:[] },
-            certifications: [],
-            projects: []
-        });
-    }
-    return sheet;
+  let sheet = await SkillSheet.findOne({ employeeId });
+  if (!sheet) {
+    sheet = await SkillSheet.create({
+      employeeId,
+      userId,
+      skills: {
+        languages: [],
+        frameworks: [],
+        databases: [],
+        infra: [],
+        tools: [],
+      },
+      certifications: [],
+      projects: [],
+    });
+  }
+  return sheet;
 }
 
 // ─── GET /skillsheet ─────────────────────────────
-router.get('/skillsheet', requireLogin, async (req, res) => {
-    try {
-        // 管理者 → 従業員一覧を表示
-        if (req.session.isAdmin) {
-            const employees = await Employee.find().sort({ employeeId: 1 });
-            // 各従業員のスキルシート有無を確認
-            const sheets = await SkillSheet.find({}, { employeeId: 1 });
-            const sheetSet = new Set(sheets.map(s => String(s.employeeId)));
-            const html = buildAdminListPage(employees, sheetSet);
-            return renderPage(req, res, 'スキルシート管理', 'スキルシート管理', html);
-        }
-
-        // 一般ユーザー → 自分のシートを表示
-        const emp = await Employee.findOne({ userId: req.session.userId });
-        if (!emp) return res.redirect('/dashboard');
-
-        const sheet = await getOrCreate(emp._id, req.session.userId);
-        const html  = buildEditPage(emp, sheet, req);
-        renderPage(req, res, 'スキルシート', 'スキルシート管理', html);
-    } catch (e) {
-        console.error(e);
-        res.status(500).send('エラーが発生しました');
+router.get("/skillsheet", requireLogin, async (req, res) => {
+  try {
+    // 管理者 → 従業員一覧を表示
+    if (req.session.isAdmin) {
+      const employees = await Employee.find().sort({ employeeId: 1 });
+      // 各従業員のスキルシート有無を確認
+      const sheets = await SkillSheet.find({}, { employeeId: 1 });
+      const sheetSet = new Set(sheets.map((s) => String(s.employeeId)));
+      const html = buildAdminListPage(employees, sheetSet);
+      return renderPage(req, res, "スキルシート管理", "スキルシート管理", html);
     }
+
+    // 一般ユーザー → 自分のシートを表示
+    const emp = await Employee.findOne({ userId: req.session.userId });
+    if (!emp) return res.redirect("/dashboard");
+
+    const sheet = await getOrCreate(emp._id, req.session.userId);
+    const html = buildEditPage(emp, sheet, req);
+    renderPage(req, res, "スキルシート", "スキルシート管理", html);
+  } catch (e) {
+    console.error(e);
+    res.status(500).send("エラーが発生しました");
+  }
 });
 
 // ─── GET /skillsheet/admin/:employeeId ───────────
-router.get('/skillsheet/admin/:employeeId', requireLogin, async (req, res) => {
-    try {
-        if (!req.session.isAdmin) return res.status(403).send('権限がありません');
-        const emp = await Employee.findById(req.params.employeeId);
-        if (!emp) return res.redirect('/skillsheet');
-        const sheet = await getOrCreate(emp._id, emp.userId);
-        const html  = buildEditPage(emp, sheet, req, true);
-        renderPage(req, res, 'スキルシート編集', 'スキルシート管理', html);
-    } catch (e) {
-        console.error(e);
-        res.status(500).send('エラーが発生しました');
-    }
+router.get("/skillsheet/admin/:employeeId", requireLogin, async (req, res) => {
+  try {
+    if (!req.session.isAdmin) return res.status(403).send("権限がありません");
+    const emp = await Employee.findById(req.params.employeeId);
+    if (!emp) return res.redirect("/skillsheet");
+    const sheet = await getOrCreate(emp._id, emp.userId);
+    const html = buildEditPage(emp, sheet, req, true);
+    renderPage(req, res, "スキルシート編集", "スキルシート管理", html);
+  } catch (e) {
+    console.error(e);
+    res.status(500).send("エラーが発生しました");
+  }
 });
 
 // ─── POST /skillsheet/admin/:employeeId/save ─────
-router.post('/skillsheet/admin/:employeeId/save', requireLogin, async (req, res) => {
+router.post(
+  "/skillsheet/admin/:employeeId/save",
+  requireLogin,
+  async (req, res) => {
     try {
-        if (!req.session.isAdmin) return res.status(403).send('権限がありません');
-        const emp = await Employee.findById(req.params.employeeId);
-        if (!emp) return res.redirect('/skillsheet');
-        await saveSheetFromBody(req.body, emp);
-        res.redirect(`/skillsheet/admin/${emp._id}?saved=1`);
+      if (!req.session.isAdmin) return res.status(403).send("権限がありません");
+      const emp = await Employee.findById(req.params.employeeId);
+      if (!emp) return res.redirect("/skillsheet");
+      await saveSheetFromBody(req.body, emp);
+      res.redirect(`/skillsheet/admin/${emp._id}?saved=1`);
     } catch (e) {
-        console.error(e);
-        res.redirect(`/skillsheet/admin/${req.params.employeeId}?error=1`);
+      console.error(e);
+      res.redirect(`/skillsheet/admin/${req.params.employeeId}?error=1`);
     }
-});
+  },
+);
 
 // ─── GET /skillsheet/admin/:employeeId/export ────
-router.get('/skillsheet/admin/:employeeId/export', requireLogin, async (req, res) => {
+router.get(
+  "/skillsheet/admin/:employeeId/export",
+  requireLogin,
+  async (req, res) => {
     try {
-        if (!req.session.isAdmin) return res.status(403).send('権限がありません');
-        const emp = await Employee.findById(req.params.employeeId);
-        if (!emp) return res.redirect('/skillsheet');
-        const sheet = await SkillSheet.findOne({ employeeId: emp._id });
-        if (!sheet) return res.redirect(`/skillsheet/admin/${emp._id}`);
-        await exportExcel(res, emp, sheet);
+      if (!req.session.isAdmin) return res.status(403).send("権限がありません");
+      const emp = await Employee.findById(req.params.employeeId);
+      if (!emp) return res.redirect("/skillsheet");
+      const sheet = await SkillSheet.findOne({ employeeId: emp._id });
+      if (!sheet) return res.redirect(`/skillsheet/admin/${emp._id}`);
+      await exportExcel(res, emp, sheet);
     } catch (e) {
-        console.error(e);
-        res.status(500).send('Excel出力中にエラーが発生しました');
+      console.error(e);
+      res.status(500).send("Excel出力中にエラーが発生しました");
     }
-});
+  },
+);
 
 // ─── POST /skillsheet/save ───────────────────────
-router.post('/skillsheet/save', requireLogin, async (req, res) => {
-    try {
-        const emp = await Employee.findOne({ userId: req.session.userId });
-        if (!emp) return res.redirect('/dashboard');
-        await saveSheetFromBody(req.body, emp);
-        res.redirect('/skillsheet?saved=1');
-    } catch (e) {
-        console.error(e);
-        res.redirect('/skillsheet?error=1');
-    }
+router.post("/skillsheet/save", requireLogin, async (req, res) => {
+  try {
+    const emp = await Employee.findOne({ userId: req.session.userId });
+    if (!emp) return res.redirect("/dashboard");
+    await saveSheetFromBody(req.body, emp);
+    res.redirect("/skillsheet?saved=1");
+  } catch (e) {
+    console.error(e);
+    res.redirect("/skillsheet?error=1");
+  }
 });
 
 // ─── GET /skillsheet/export ─────────────────────
-router.get('/skillsheet/export', requireLogin, async (req, res) => {
-    try {
-        const emp = await Employee.findOne({ userId: req.session.userId });
-        if (!emp) return res.redirect('/dashboard');
-        const sheet = await SkillSheet.findOne({ employeeId: emp._id });
-        if (!sheet) return res.redirect('/skillsheet');
-        await exportExcel(res, emp, sheet);
-    } catch (e) {
-        console.error(e);
-        res.status(500).send('Excel出力中にエラーが発生しました');
-    }
+router.get("/skillsheet/export", requireLogin, async (req, res) => {
+  try {
+    const emp = await Employee.findOne({ userId: req.session.userId });
+    if (!emp) return res.redirect("/dashboard");
+    const sheet = await SkillSheet.findOne({ employeeId: emp._id });
+    if (!sheet) return res.redirect("/skillsheet");
+    await exportExcel(res, emp, sheet);
+  } catch (e) {
+    console.error(e);
+    res.status(500).send("Excel出力中にエラーが発生しました");
+  }
 });
 
 // ─── 共通：シート保存 ────────────────────────────
 async function saveSheetFromBody(b, emp) {
-    const parseSkills = (nameArr, levelArr) => {
-        const names  = [].concat(nameArr  || []);
-        const levels = [].concat(levelArr || []);
-        return names
-            .map((n, i) => ({ name: n.trim(), level: parseInt(levels[i]||0) }))
-            .filter(s => s.name);
-    };
+  const parseSkills = (nameArr, levelArr) => {
+    const names = [].concat(nameArr || []);
+    const levels = [].concat(levelArr || []);
+    return names
+      .map((n, i) => ({ name: n.trim(), level: parseInt(levels[i] || 0) }))
+      .filter((s) => s.name);
+  };
 
-    const certNames  = [].concat(b.certName  || []);
-    const certDates  = [].concat(b.certDate  || []);
-    const certifications = certNames
-        .map((n, i) => ({ name: n.trim(), acquiredDate: certDates[i]||'' }))
-        .filter(c => c.name);
+  const certNames = [].concat(b.certName || []);
+  const certDates = [].concat(b.certDate || []);
+  const certifications = certNames
+    .map((n, i) => ({ name: n.trim(), acquiredDate: certDates[i] || "" }))
+    .filter((c) => c.name);
 
-    const pFrom   = [].concat(b.pFrom   || []);
-    const pTo     = [].concat(b.pTo     || []);
-    const pName   = [].concat(b.pName   || []);
-    const pClient = [].concat(b.pClient || []);
-    const pIndust = [].concat(b.pIndust || []);
-    const pTeam   = [].concat(b.pTeam   || []);
-    const pRole   = [].concat(b.pRole   || []);
-    const pDesc   = [].concat(b.pDesc   || []);
-    const pTech   = [].concat(b.pTech   || []);
+  const pFrom = [].concat(b.pFrom || []);
+  const pTo = [].concat(b.pTo || []);
+  const pName = [].concat(b.pName || []);
+  const pClient = [].concat(b.pClient || []);
+  const pIndust = [].concat(b.pIndust || []);
+  const pTeam = [].concat(b.pTeam || []);
+  const pRole = [].concat(b.pRole || []);
+  const pDesc = [].concat(b.pDesc || []);
+  const pTech = [].concat(b.pTech || []);
 
-    const projects = pFrom.map((_, i) => {
-        const tasks = {};
-        TASK_LABELS.forEach(t => {
-            const val = [].concat(b[`pTask_${t.key}`] || []);
-            tasks[t.key] = val[i] === 'on';
-        });
-        return {
-            periodFrom:  pFrom[i]   || '',
-            periodTo:    pTo[i]     || '',
-            projectName: pName[i]   || '',
-            client:      pClient[i] || '',
-            industry:    pIndust[i] || '',
-            team:        parseInt(pTeam[i]) || 0,
-            role:        pRole[i]   || '',
-            description: pDesc[i]  || '',
-            techStack:   pTech[i]  || '',
-            tasks
-        };
-    }).filter(p => p.projectName);
+  const projects = pFrom
+    .map((_, i) => {
+      const tasks = {};
+      TASK_LABELS.forEach((t) => {
+        const val = [].concat(b[`pTask_${t.key}`] || []);
+        tasks[t.key] = val[i] === "on";
+      });
+      return {
+        periodFrom: pFrom[i] || "",
+        periodTo: pTo[i] || "",
+        projectName: pName[i] || "",
+        client: pClient[i] || "",
+        industry: pIndust[i] || "",
+        team: parseInt(pTeam[i]) || 0,
+        role: pRole[i] || "",
+        description: pDesc[i] || "",
+        techStack: pTech[i] || "",
+        tasks,
+      };
+    })
+    .filter((p) => p.projectName);
 
-    await SkillSheet.findOneAndUpdate(
-        { employeeId: emp._id },
-        {
-            userId: emp.userId,
-            nameKana:   b.nameKana   || '',
-            birthDate:  b.birthDate  || '',
-            gender:     b.gender     || '',
-            nearestStation: b.nearestStation || '',
-            experience: parseInt(b.experience) || 0,
-            selfPR:     b.selfPR     || '',
-            certifications,
-            skills: {
-                languages:  parseSkills(b.skillLangName,  b.skillLangLevel),
-                frameworks: parseSkills(b.skillFwName,    b.skillFwLevel),
-                databases:  parseSkills(b.skillDbName,    b.skillDbLevel),
-                infra:      parseSkills(b.skillInfraName, b.skillInfraLevel),
-                tools:      parseSkills(b.skillToolName,  b.skillToolLevel),
-            },
-            projects
-        },
-        { upsert: true, new: true }
-    );
+  await SkillSheet.findOneAndUpdate(
+    { employeeId: emp._id },
+    {
+      userId: emp.userId,
+      nameKana: b.nameKana || "",
+      birthDate: b.birthDate || "",
+      gender: b.gender || "",
+      nearestStation: b.nearestStation || "",
+      experience: parseInt(b.experience) || 0,
+      selfPR: b.selfPR || "",
+      certifications,
+      skills: {
+        languages: parseSkills(b.skillLangName, b.skillLangLevel),
+        frameworks: parseSkills(b.skillFwName, b.skillFwLevel),
+        databases: parseSkills(b.skillDbName, b.skillDbLevel),
+        infra: parseSkills(b.skillInfraName, b.skillInfraLevel),
+        tools: parseSkills(b.skillToolName, b.skillToolLevel),
+      },
+      projects,
+    },
+    { upsert: true, new: true },
+  );
 }
 
 // ─── 共通：Excel出力 ─────────────────────────────
 async function exportExcel(res, emp, sheet) {
-        // ── Workbook / Worksheet 初期化 ──
-        const wb = new ExcelJS.Workbook();
-        wb.creator  = 'DXPro Attendance';
-        wb.created  = new Date();
-        const ws = wb.addWorksheet('スキルシート', {
-            pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1 },
-            views: [{ showGridLines: false }],
-        });
+  // ── Workbook / Worksheet 初期化 ──
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "DXPro Attendance";
+  wb.created = new Date();
+  const ws = wb.addWorksheet("スキルシート", {
+    pageSetup: {
+      paperSize: 9,
+      orientation: "portrait",
+      fitToPage: true,
+      fitToWidth: 1,
+    },
+    views: [{ showGridLines: false }],
+  });
 
-        // ── 列幅設定 ──
-        ws.columns = [
-            { width: 14 }, { width: 14 }, { width: 12 }, { width: 12 },
-            { width: 12 }, { width: 12 }, { width: 12 }, { width: 12 },
-            { width: 12 }, { width: 12 }, { width: 12 }, { width: 12 },
-        ];
+  // ── 列幅設定 ──
+  ws.columns = [
+    { width: 14 },
+    { width: 14 },
+    { width: 12 },
+    { width: 12 },
+    { width: 12 },
+    { width: 12 },
+    { width: 12 },
+    { width: 12 },
+    { width: 12 },
+    { width: 12 },
+    { width: 12 },
+    { width: 12 },
+  ];
 
-        // ── スタイル定義 ──
-        const hFill  = { type:'pattern', pattern:'solid', fgColor:{ argb:'FF1E3A5F' } };
-        const sh1Fill= { type:'pattern', pattern:'solid', fgColor:{ argb:'FF2563EB' } };
-        const sh2Fill= { type:'pattern', pattern:'solid', fgColor:{ argb:'FF3B82F6' } };
-        const sh3Fill= { type:'pattern', pattern:'solid', fgColor:{ argb:'FFE0EAFF' } };
-        const altFill= { type:'pattern', pattern:'solid', fgColor:{ argb:'FFF8FAFC' } };
-        const whtFill= { type:'pattern', pattern:'solid', fgColor:{ argb:'FFFFFFFF' } };
-        const thin   = { style:'thin',  color:{ argb:'FFD1D5DB' } };
-        const med    = { style:'medium', color:{ argb:'FF94A3B8' } };
-        const bold   = { style:'medium', color:{ argb:'FF1E3A5F' } };
-        const brd    = b => ({ top:b, bottom:b, left:b, right:b });
-        const whtTxt = { bold:true,  color:{ argb:'FFFFFFFF' }, size:11 };
-        const navTxt = { bold:true,  color:{ argb:'FFFFFFFF' }, size:10 };
-        const bodyTxt= { color:{ argb:'FF1E293B' }, size:10 };
-        const center = { horizontal:'center', vertical:'middle', wrapText:true };
-        const left   = { horizontal:'left',   vertical:'middle', wrapText:true };
+  // ── スタイル定義 ──
+  const hFill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF1E3A5F" },
+  };
+  const sh1Fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF2563EB" },
+  };
+  const sh2Fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF3B82F6" },
+  };
+  const sh3Fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFE0EAFF" },
+  };
+  const altFill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFF8FAFC" },
+  };
+  const whtFill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFFFFFFF" },
+  };
+  const thin = { style: "thin", color: { argb: "FFD1D5DB" } };
+  const med = { style: "medium", color: { argb: "FF94A3B8" } };
+  const bold = { style: "medium", color: { argb: "FF1E3A5F" } };
+  const brd = (b) => ({ top: b, bottom: b, left: b, right: b });
+  const whtTxt = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+  const navTxt = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
+  const bodyTxt = { color: { argb: "FF1E293B" }, size: 10 };
+  const center = { horizontal: "center", vertical: "middle", wrapText: true };
+  const left = { horizontal: "left", vertical: "middle", wrapText: true };
 
-        const cell = (r,c,v,font,align,fill,border) => {
-            const cl = ws.getCell(r,c);
-            cl.value  = v;
-            if (font)   cl.font      = font;
-            if (align)  cl.alignment = align;
-            if (fill)   cl.fill      = fill;
-            if (border) cl.border    = border;
-            return cl;
-        };
-        const merge = (r1,c1,r2,c2) => ws.mergeCells(r1,c1,r2,c2);
+  const cell = (r, c, v, font, align, fill, border) => {
+    const cl = ws.getCell(r, c);
+    cl.value = v;
+    if (font) cl.font = font;
+    if (align) cl.alignment = align;
+    if (fill) cl.fill = fill;
+    if (border) cl.border = border;
+    return cl;
+  };
+  const merge = (r1, c1, r2, c2) => ws.mergeCells(r1, c1, r2, c2);
 
-        let row = 1;
+  let row = 1;
 
-        // ═══════════════════════════════════════
-        // タイトルバー
-        // ═══════════════════════════════════════
-        ws.getRow(row).height = 36;
-        merge(row,1, row,12);
-        cell(row,1,'スキルシート',
-            { bold:true, color:{ argb:'FFFFFFFF' }, size:16 },
-            center, hFill, brd(bold));
-        row++;
+  // ═══════════════════════════════════════
+  // タイトルバー
+  // ═══════════════════════════════════════
+  ws.getRow(row).height = 36;
+  merge(row, 1, row, 12);
+  cell(
+    row,
+    1,
+    "スキルシート",
+    { bold: true, color: { argb: "FFFFFFFF" }, size: 16 },
+    center,
+    hFill,
+    brd(bold),
+  );
+  row++;
 
-        // ═══════════════════════════════════════
-        // 基本情報
-        // ═══════════════════════════════════════
-        ws.getRow(row).height = 22;
-        merge(row,1, row,12);
-        cell(row,1,'■ 基本情報', navTxt, left, sh1Fill, brd(bold));
-        row++;
+  // ═══════════════════════════════════════
+  // 基本情報
+  // ═══════════════════════════════════════
+  ws.getRow(row).height = 22;
+  merge(row, 1, row, 12);
+  cell(row, 1, "■ 基本情報", navTxt, left, sh1Fill, brd(bold));
+  row++;
 
-        const info = [
-            ['氏名',       emp.name,               '氏名（カナ）', sheet.nameKana],
-            ['部署',       emp.department,          '職位',         emp.position],
-            ['生年月日',   sheet.birthDate||'',     '性別',         sheet.gender||''],
-            ['最寄り駅',   sheet.nearestStation||'','IT経験年数',   (sheet.experience||0)+'年'],
-        ];
-        info.forEach(([l1,v1,l2,v2]) => {
-            ws.getRow(row).height = 20;
-            merge(row,1, row,2); cell(row,1,l1,{bold:true,color:{argb:'FF475569'},size:10}, center, sh3Fill, brd(thin));
-            merge(row,3, row,6); cell(row,3,v1, bodyTxt, left, whtFill, brd(thin));
-            merge(row,7, row,8); cell(row,7,l2, {bold:true,color:{argb:'FF475569'},size:10}, center, sh3Fill, brd(thin));
-            merge(row,9, row,12);cell(row,9,v2, bodyTxt, left, whtFill, brd(thin));
-            row++;
-        });
+  const info = [
+    ["氏名", emp.name, "氏名（カナ）", sheet.nameKana],
+    ["部署", emp.department, "職位", emp.position],
+    ["生年月日", sheet.birthDate || "", "性別", sheet.gender || ""],
+    [
+      "最寄り駅",
+      sheet.nearestStation || "",
+      "IT経験年数",
+      (sheet.experience || 0) + "年",
+    ],
+  ];
+  info.forEach(([l1, v1, l2, v2]) => {
+    ws.getRow(row).height = 20;
+    merge(row, 1, row, 2);
+    cell(
+      row,
+      1,
+      l1,
+      { bold: true, color: { argb: "FF475569" }, size: 10 },
+      center,
+      sh3Fill,
+      brd(thin),
+    );
+    merge(row, 3, row, 6);
+    cell(row, 3, v1, bodyTxt, left, whtFill, brd(thin));
+    merge(row, 7, row, 8);
+    cell(
+      row,
+      7,
+      l2,
+      { bold: true, color: { argb: "FF475569" }, size: 10 },
+      center,
+      sh3Fill,
+      brd(thin),
+    );
+    merge(row, 9, row, 12);
+    cell(row, 9, v2, bodyTxt, left, whtFill, brd(thin));
+    row++;
+  });
 
-        // ═══════════════════════════════════════
-        // 資格・免許
-        // ═══════════════════════════════════════
-        ws.getRow(row).height = 22;
-        merge(row,1, row,12);
-        cell(row,1,'■ 資格・免許', navTxt, left, sh1Fill, brd(bold));
-        row++;
+  // ═══════════════════════════════════════
+  // 資格・免許
+  // ═══════════════════════════════════════
+  ws.getRow(row).height = 22;
+  merge(row, 1, row, 12);
+  cell(row, 1, "■ 資格・免許", navTxt, left, sh1Fill, brd(bold));
+  row++;
 
-        if (sheet.certifications && sheet.certifications.length > 0) {
-            ws.getRow(row).height = 18;
-            merge(row,1, row,6); cell(row,1,'資格名', {bold:true,color:{argb:'FF475569'},size:10}, center, sh3Fill, brd(thin));
-            merge(row,7, row,12);cell(row,7,'取得年月', {bold:true,color:{argb:'FF475569'},size:10}, center, sh3Fill, brd(thin));
-            row++;
-            sheet.certifications.forEach((c, i) => {
-                ws.getRow(row).height = 18;
-                merge(row,1, row,6); cell(row,1,c.name||'', bodyTxt, left, i%2?altFill:whtFill, brd(thin));
-                merge(row,7, row,12);cell(row,7,c.acquiredDate||'', bodyTxt, center, i%2?altFill:whtFill, brd(thin));
-                row++;
-            });
-        } else {
-            ws.getRow(row).height = 18;
-            merge(row,1, row,12); cell(row,1,'（なし）', {color:{argb:'FF94A3B8'},size:10}, center, whtFill, brd(thin));
-            row++;
-        }
+  if (sheet.certifications && sheet.certifications.length > 0) {
+    ws.getRow(row).height = 18;
+    merge(row, 1, row, 6);
+    cell(
+      row,
+      1,
+      "資格名",
+      { bold: true, color: { argb: "FF475569" }, size: 10 },
+      center,
+      sh3Fill,
+      brd(thin),
+    );
+    merge(row, 7, row, 12);
+    cell(
+      row,
+      7,
+      "取得年月",
+      { bold: true, color: { argb: "FF475569" }, size: 10 },
+      center,
+      sh3Fill,
+      brd(thin),
+    );
+    row++;
+    sheet.certifications.forEach((c, i) => {
+      ws.getRow(row).height = 18;
+      merge(row, 1, row, 6);
+      cell(
+        row,
+        1,
+        c.name || "",
+        bodyTxt,
+        left,
+        i % 2 ? altFill : whtFill,
+        brd(thin),
+      );
+      merge(row, 7, row, 12);
+      cell(
+        row,
+        7,
+        c.acquiredDate || "",
+        bodyTxt,
+        center,
+        i % 2 ? altFill : whtFill,
+        brd(thin),
+      );
+      row++;
+    });
+  } else {
+    ws.getRow(row).height = 18;
+    merge(row, 1, row, 12);
+    cell(
+      row,
+      1,
+      "（なし）",
+      { color: { argb: "FF94A3B8" }, size: 10 },
+      center,
+      whtFill,
+      brd(thin),
+    );
+    row++;
+  }
 
-        // ═══════════════════════════════════════
-        // スキルマップ
-        // ═══════════════════════════════════════
-        ws.getRow(row).height = 22;
-        merge(row,1, row,12);
-        cell(row,1,'■ スキルマップ', navTxt, left, sh1Fill, brd(bold));
-        row++;
+  // ═══════════════════════════════════════
+  // スキルマップ
+  // ═══════════════════════════════════════
+  ws.getRow(row).height = 22;
+  merge(row, 1, row, 12);
+  cell(row, 1, "■ スキルマップ", navTxt, left, sh1Fill, brd(bold));
+  row++;
 
-        SKILL_CATS.forEach(cat => {
-            const items = (sheet.skills && sheet.skills[cat.key]) || [];
-            if (items.length === 0) return;
+  SKILL_CATS.forEach((cat) => {
+    const items = (sheet.skills && sheet.skills[cat.key]) || [];
+    if (items.length === 0) return;
 
-            ws.getRow(row).height = 18;
-            merge(row,1, row,12);
-            cell(row,1, cat.label, {bold:true,color:{argb:'FF1E3A5F'},size:10}, left, sh2Fill, brd(thin));
-            row++;
+    ws.getRow(row).height = 18;
+    merge(row, 1, row, 12);
+    cell(
+      row,
+      1,
+      cat.label,
+      { bold: true, color: { argb: "FF1E3A5F" }, size: 10 },
+      left,
+      sh2Fill,
+      brd(thin),
+    );
+    row++;
 
-            // ヘッダ行
-            ws.getRow(row).height = 16;
-            merge(row,1, row,6); cell(row,1,'名称', {bold:true,color:{argb:'FF475569'},size:9}, center, sh3Fill, brd(thin));
-            merge(row,7, row,12);cell(row,7,'レベル（★1〜5）', {bold:true,color:{argb:'FF475569'},size:9}, center, sh3Fill, brd(thin));
-            row++;
+    // ヘッダ行
+    ws.getRow(row).height = 16;
+    merge(row, 1, row, 6);
+    cell(
+      row,
+      1,
+      "名称",
+      { bold: true, color: { argb: "FF475569" }, size: 9 },
+      center,
+      sh3Fill,
+      brd(thin),
+    );
+    merge(row, 7, row, 12);
+    cell(
+      row,
+      7,
+      "レベル（★1〜5）",
+      { bold: true, color: { argb: "FF475569" }, size: 9 },
+      center,
+      sh3Fill,
+      brd(thin),
+    );
+    row++;
 
-            items.forEach((sk, i) => {
-                ws.getRow(row).height = 17;
-                merge(row,1, row,6); cell(row,1, sk.name||'', bodyTxt, left, i%2?altFill:whtFill, brd(thin));
-                merge(row,7, row,12);cell(row,7, LEVEL_LABELS[sk.level]||'', {size:12,color:{argb:'FFD97706'}}, center, i%2?altFill:whtFill, brd(thin));
-                row++;
-            });
-        });
+    items.forEach((sk, i) => {
+      ws.getRow(row).height = 17;
+      merge(row, 1, row, 6);
+      cell(
+        row,
+        1,
+        sk.name || "",
+        bodyTxt,
+        left,
+        i % 2 ? altFill : whtFill,
+        brd(thin),
+      );
+      merge(row, 7, row, 12);
+      cell(
+        row,
+        7,
+        LEVEL_LABELS[sk.level] || "",
+        { size: 12, color: { argb: "FFD97706" } },
+        center,
+        i % 2 ? altFill : whtFill,
+        brd(thin),
+      );
+      row++;
+    });
+  });
 
-        // ═══════════════════════════════════════
-        // 自己PR
-        // ═══════════════════════════════════════
-        ws.getRow(row).height = 22;
-        merge(row,1, row,12);
-        cell(row,1,'■ 自己PR・強み', navTxt, left, sh1Fill, brd(bold));
-        row++;
+  // ═══════════════════════════════════════
+  // 自己PR
+  // ═══════════════════════════════════════
+  ws.getRow(row).height = 22;
+  merge(row, 1, row, 12);
+  cell(row, 1, "■ 自己PR・強み", navTxt, left, sh1Fill, brd(bold));
+  row++;
 
-        ws.getRow(row).height = 60;
-        merge(row,1, row,12);
-        cell(row,1, sheet.selfPR||'', bodyTxt, left, whtFill, brd(thin));
-        row++;
+  ws.getRow(row).height = 60;
+  merge(row, 1, row, 12);
+  cell(row, 1, sheet.selfPR || "", bodyTxt, left, whtFill, brd(thin));
+  row++;
 
-        // ═══════════════════════════════════════
-        // 職務経歴
-        // ═══════════════════════════════════════
-        ws.getRow(row).height = 22;
-        merge(row,1, row,12);
-        cell(row,1,'■ 職務経歴', navTxt, left, sh1Fill, brd(bold));
-        row++;
+  // ═══════════════════════════════════════
+  // 職務経歴
+  // ═══════════════════════════════════════
+  ws.getRow(row).height = 22;
+  merge(row, 1, row, 12);
+  cell(row, 1, "■ 職務経歴", navTxt, left, sh1Fill, brd(bold));
+  row++;
 
-        if (!sheet.projects || sheet.projects.length === 0) {
-            merge(row,1, row,12); cell(row,1,'（なし）', {color:{argb:'FF94A3B8'},size:10}, center, whtFill, brd(thin));
-            row++;
-        } else {
-            sheet.projects.forEach((p, idx) => {
-                // プロジェクトヘッダ
-                ws.getRow(row).height = 20;
-                merge(row,1, row,12);
-                cell(row,1, `No.${idx+1}　${p.projectName||''}`,
-                    {bold:true, color:{argb:'FFFFFFFF'}, size:10}, left, sh2Fill, brd(med));
-                row++;
+  if (!sheet.projects || sheet.projects.length === 0) {
+    merge(row, 1, row, 12);
+    cell(
+      row,
+      1,
+      "（なし）",
+      { color: { argb: "FF94A3B8" }, size: 10 },
+      center,
+      whtFill,
+      brd(thin),
+    );
+    row++;
+  } else {
+    sheet.projects.forEach((p, idx) => {
+      // プロジェクトヘッダ
+      ws.getRow(row).height = 20;
+      merge(row, 1, row, 12);
+      cell(
+        row,
+        1,
+        `No.${idx + 1}　${p.projectName || ""}`,
+        { bold: true, color: { argb: "FFFFFFFF" }, size: 10 },
+        left,
+        sh2Fill,
+        brd(med),
+      );
+      row++;
 
-                // 期間・クライアント・チーム規模
-                ws.getRow(row).height = 18;
-                ['期間','顧客・業界','チーム規模','役割'].forEach((lbl, ci) => {
-                    cell(row, ci*3+1, lbl, {bold:true,color:{argb:'FF475569'},size:9}, center, sh3Fill, brd(thin));
-                    if (ci < 3) merge(row, ci*3+1, row, ci*3+1);
-                });
-                row++;
+      // 期間・クライアント・チーム規模
+      ws.getRow(row).height = 18;
+      ["期間", "顧客・業界", "チーム規模", "役割"].forEach((lbl, ci) => {
+        cell(
+          row,
+          ci * 3 + 1,
+          lbl,
+          { bold: true, color: { argb: "FF475569" }, size: 9 },
+          center,
+          sh3Fill,
+          brd(thin),
+        );
+        if (ci < 3) merge(row, ci * 3 + 1, row, ci * 3 + 1);
+      });
+      row++;
 
-                ws.getRow(row).height = 18;
-                const period = `${p.periodFrom||''} 〜 ${p.periodTo||''}`;
-                const client = `${p.client||''} ／ ${p.industry||''}`;
-                const team   = p.team ? `${p.team}名` : '-';
-                [period, client, team, p.role||''].forEach((v, ci) => {
-                    merge(row, ci*3+1, row, ci*3+3);
-                    cell(row, ci*3+1, v, bodyTxt, center, whtFill, brd(thin));
-                });
-                row++;
+      ws.getRow(row).height = 18;
+      const period = `${p.periodFrom || ""} 〜 ${p.periodTo || ""}`;
+      const client = `${p.client || ""} ／ ${p.industry || ""}`;
+      const team = p.team ? `${p.team}名` : "-";
+      [period, client, team, p.role || ""].forEach((v, ci) => {
+        merge(row, ci * 3 + 1, row, ci * 3 + 3);
+        cell(row, ci * 3 + 1, v, bodyTxt, center, whtFill, brd(thin));
+      });
+      row++;
 
-                // 担当工程
-                ws.getRow(row).height = 18;
-                merge(row,1, row,1);
-                cell(row,1,'担当工程', {bold:true,color:{argb:'FF475569'},size:9}, center, sh3Fill, brd(thin));
-                TASK_LABELS.forEach((t, ci) => {
-                    cell(row, ci+2, t.label, {size:8,color:{argb:'FF475569'},bold:true}, center, sh3Fill, brd(thin));
-                });
-                row++;
+      // 担当工程
+      ws.getRow(row).height = 18;
+      merge(row, 1, row, 1);
+      cell(
+        row,
+        1,
+        "担当工程",
+        { bold: true, color: { argb: "FF475569" }, size: 9 },
+        center,
+        sh3Fill,
+        brd(thin),
+      );
+      TASK_LABELS.forEach((t, ci) => {
+        cell(
+          row,
+          ci + 2,
+          t.label,
+          { size: 8, color: { argb: "FF475569" }, bold: true },
+          center,
+          sh3Fill,
+          brd(thin),
+        );
+      });
+      row++;
 
-                ws.getRow(row).height = 18;
-                merge(row,1, row,1); cell(row,1,'', bodyTxt, center, whtFill, brd(thin));
-                TASK_LABELS.forEach((t, ci) => {
-                    const checked = p.tasks && p.tasks[t.key];
-                    cell(row, ci+2, checked ? '✓' : '', {size:12, color:{argb: checked ? 'FF2563EB':'FFCBD5E1'}, bold:checked}, center, checked?{type:'pattern',pattern:'solid',fgColor:{argb:'FFDBEAFE'}}:whtFill, brd(thin));
-                });
-                row++;
+      ws.getRow(row).height = 18;
+      merge(row, 1, row, 1);
+      cell(row, 1, "", bodyTxt, center, whtFill, brd(thin));
+      TASK_LABELS.forEach((t, ci) => {
+        const checked = p.tasks && p.tasks[t.key];
+        cell(
+          row,
+          ci + 2,
+          checked ? "✓" : "",
+          {
+            size: 12,
+            color: { argb: checked ? "FF2563EB" : "FFCBD5E1" },
+            bold: checked,
+          },
+          center,
+          checked
+            ? {
+                type: "pattern",
+                pattern: "solid",
+                fgColor: { argb: "FFDBEAFE" },
+              }
+            : whtFill,
+          brd(thin),
+        );
+      });
+      row++;
 
-                // 案件概要
-                ws.getRow(row).height = 18;
-                merge(row,1, row,12); cell(row,1,'案件概要', {bold:true,color:{argb:'FF475569'},size:9}, left, sh3Fill, brd(thin));
-                row++;
-                ws.getRow(row).height = 50;
-                merge(row,1, row,12); cell(row,1, p.description||'', bodyTxt, left, whtFill, brd(thin));
-                row++;
+      // 案件概要
+      ws.getRow(row).height = 18;
+      merge(row, 1, row, 12);
+      cell(
+        row,
+        1,
+        "案件概要",
+        { bold: true, color: { argb: "FF475569" }, size: 9 },
+        left,
+        sh3Fill,
+        brd(thin),
+      );
+      row++;
+      ws.getRow(row).height = 50;
+      merge(row, 1, row, 12);
+      cell(row, 1, p.description || "", bodyTxt, left, whtFill, brd(thin));
+      row++;
 
-                // 使用技術
-                ws.getRow(row).height = 18;
-                merge(row,1, row,12); cell(row,1,'使用技術・環境', {bold:true,color:{argb:'FF475569'},size:9}, left, sh3Fill, brd(thin));
-                row++;
-                ws.getRow(row).height = 30;
-                merge(row,1, row,12); cell(row,1, p.techStack||'', bodyTxt, left, whtFill, brd(thin));
-                row++;
+      // 使用技術
+      ws.getRow(row).height = 18;
+      merge(row, 1, row, 12);
+      cell(
+        row,
+        1,
+        "使用技術・環境",
+        { bold: true, color: { argb: "FF475569" }, size: 9 },
+        left,
+        sh3Fill,
+        brd(thin),
+      );
+      row++;
+      ws.getRow(row).height = 30;
+      merge(row, 1, row, 12);
+      cell(row, 1, p.techStack || "", bodyTxt, left, whtFill, brd(thin));
+      row++;
 
-                // プロジェクト間スペース
-                ws.getRow(row).height = 6;
-                row++;
-            });
-        }
+      // プロジェクト間スペース
+      ws.getRow(row).height = 6;
+      row++;
+    });
+  }
 
-        // ── ダウンロード ──
-        const filename = encodeURIComponent(`スキルシート_${emp.name}.xlsx`);
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${filename}`);
-        await wb.xlsx.write(res);
-        res.end();
+  // ── ダウンロード ──
+  const filename = encodeURIComponent(`スキルシート_${emp.name}.xlsx`);
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  );
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename*=UTF-8''${filename}`,
+  );
+  await wb.xlsx.write(res);
+  res.end();
 }
 
 // ─── 管理者：従業員一覧ページ ─────────────────────
 function buildAdminListPage(employees, sheetSet) {
-    const rows = employees.map(emp => {
-        const hasSheet = sheetSet.has(String(emp._id));
-        return `
+  const rows = employees
+    .map((emp) => {
+      const hasSheet = sheetSet.has(String(emp._id));
+      return `
         <tr>
             <td class="ss-adm-td ss-adm-id">${emp.employeeId}</td>
             <td class="ss-adm-td ss-adm-name">${emp.name}</td>
-            <td class="ss-adm-td ss-adm-dept">${emp.department || '—'}</td>
-            <td class="ss-adm-td ss-adm-pos">${emp.position || '—'}</td>
+            <td class="ss-adm-td ss-adm-dept">${emp.department || "—"}</td>
+            <td class="ss-adm-td ss-adm-pos">${emp.position || "—"}</td>
             <td class="ss-adm-td ss-adm-status">
-                ${hasSheet
+                ${
+                  hasSheet
                     ? `<span class="ss-badge ss-badge-ok">✅ 作成済み</span>`
-                    : `<span class="ss-badge ss-badge-none">未作成</span>`}
+                    : `<span class="ss-badge ss-badge-none">未作成</span>`
+                }
             </td>
             <td class="ss-adm-td ss-adm-action">
                 <div style="display:flex;gap:6px;justify-content:center">
                     <a href="/skillsheet/admin/${emp._id}" class="ss-adm-btn ss-adm-btn-edit">
                         <i class="fa-solid fa-pen-to-square"></i> 編集
                     </a>
-                    ${hasSheet ? `
+                    ${
+                      hasSheet
+                        ? `
                     <a href="/skillsheet/admin/${emp._id}/export" class="ss-adm-btn ss-adm-btn-export">
                         <i class="fa-solid fa-file-excel"></i> Excel
-                    </a>` : ''}
+                    </a>`
+                        : ""
+                    }
                 </div>
             </td>
         </tr>`;
-    }).join('');
+    })
+    .join("");
 
-    return `
+  return `
 <style>
 .ss-adm-page{max-width:1100px;margin:0 auto}
 .ss-adm-header{margin-bottom:22px}
@@ -525,93 +793,107 @@ function buildAdminListPage(employees, sheetSet) {
 
 // ─── ページHTML構築 ──────────────────────────────
 function buildEditPage(emp, sheet, req, isAdminView = false) {
-    const saved = req && req.query && req.query.saved;
-    const saveAction  = isAdminView ? `/skillsheet/admin/${emp._id}/save` : '/skillsheet/save';
-    const exportHref  = isAdminView ? `/skillsheet/admin/${emp._id}/export` : '/skillsheet/export';
-    const backHref    = isAdminView ? '/skillsheet' : null;
-    const skills = sheet.skills || {};
+  const saved = req && req.query && req.query.saved;
+  const saveAction = isAdminView
+    ? `/skillsheet/admin/${emp._id}/save`
+    : "/skillsheet/save";
+  const exportHref = isAdminView
+    ? `/skillsheet/admin/${emp._id}/export`
+    : "/skillsheet/export";
+  const backHref = isAdminView ? "/skillsheet" : null;
+  const skills = sheet.skills || {};
 
-    // スキルカテゴリのレンダー
-    const renderSkillCat = (catKey, inputNameBase, items) => {
-        const rows = [...(items||[]), { name:'', level:0 }]; // 末尾に空行を1つ
-        return rows.map((sk, i) => `
+  // スキルカテゴリのレンダー
+  const renderSkillCat = (catKey, inputNameBase, items) => {
+    const rows = [...(items || []), { name: "", level: 0 }]; // 末尾に空行を1つ
+    return rows
+      .map(
+        (sk, i) => `
         <tr class="skill-row">
-            <td><input type="text" name="${inputNameBase}Name" value="${sk.name||''}"
+            <td><input type="text" name="${inputNameBase}Name" value="${sk.name || ""}"
                 placeholder="例: JavaScript" class="ss-input"></td>
             <td style="width:160px;">
                 <select name="${inputNameBase}Level" class="ss-select">
-                    ${[0,1,2,3,4,5].map(n=>`<option value="${n}" ${sk.level===n?'selected':''}>${n===0?'—':LEVEL_LABELS[n]}</option>`).join('')}
+                    ${[0, 1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${sk.level === n ? "selected" : ""}>${n === 0 ? "—" : LEVEL_LABELS[n]}</option>`).join("")}
                 </select>
             </td>
             <td style="width:36px;">
-                ${i < rows.length-1 ? `<button type="button" class="ss-del-btn" onclick="delRow(this)">✕</button>` : ''}
+                ${i < rows.length - 1 ? `<button type="button" class="ss-del-btn" onclick="delRow(this)">✕</button>` : ""}
             </td>
-        </tr>`).join('');
-    };
+        </tr>`,
+      )
+      .join("");
+  };
 
-    // プロジェクト行のレンダー
-    const renderProject = (p, idx) => `
+  // プロジェクト行のレンダー
+  const renderProject = (p, idx) => `
     <div class="ss-proj-card" data-idx="${idx}">
         <div class="ss-proj-header">
-            <span class="ss-proj-num">案件 ${idx+1}</span>
+            <span class="ss-proj-num">案件 ${idx + 1}</span>
             <button type="button" class="ss-del-proj" onclick="delProj(this)">削除</button>
         </div>
         <div class="ss-grid4">
             <div>
                 <label class="ss-label">開始年月</label>
-                <input type="month" name="pFrom" value="${p.periodFrom||''}" class="ss-input">
+                <input type="month" name="pFrom" value="${p.periodFrom || ""}" class="ss-input">
             </div>
             <div>
                 <label class="ss-label">終了年月</label>
-                <input type="month" name="pTo" value="${p.periodTo&&p.periodTo!=='現在'?p.periodTo:''}" class="ss-input">
-                <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;margin-left:6px;cursor:pointer;vertical-align:middle;">
-                    <input type="checkbox" onchange="setCurrentProj(this)" ${p.periodTo==='現在'?'checked':''} style="margin:0;cursor:pointer;"> 現在
-                </label>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <input type="month" name="pTo" value="${p.periodTo && p.periodTo !== "現在" ? p.periodTo : ""}" class="ss-input" style="flex:1;">
+                  <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap;cursor:pointer;">
+                      <input type="checkbox" onchange="setCurrentProj(this)" ${p.periodTo === "現在" ? "checked" : ""} style="margin:0;cursor:pointer;"> 現在
+                  </label>
+                </div>
             </div>
             <div style="grid-column:3/5;">
                 <label class="ss-label">案件名</label>
-                <input type="text" name="pName" value="${p.projectName||''}" placeholder="案件名" class="ss-input">
+                <input type="text" name="pName" value="${p.projectName || ""}" placeholder="案件名" class="ss-input">
             </div>
             <div>
                 <label class="ss-label">顧客名</label>
-                <input type="text" name="pClient" value="${p.client||''}" placeholder="顧客名" class="ss-input">
+                <input type="text" name="pClient" value="${p.client || ""}" placeholder="顧客名" class="ss-input">
             </div>
             <div>
                 <label class="ss-label">業種</label>
-                <input type="text" name="pIndust" value="${p.industry||''}" placeholder="IT / 金融 等" class="ss-input">
+                <input type="text" name="pIndust" value="${p.industry || ""}" placeholder="IT / 金融 等" class="ss-input">
             </div>
             <div>
                 <label class="ss-label">チーム規模</label>
-                <input type="number" name="pTeam" value="${p.team||''}" placeholder="人数" class="ss-input" min="1">
+                <input type="number" name="pTeam" value="${p.team || ""}" placeholder="人数" class="ss-input" min="1">
             </div>
             <div>
                 <label class="ss-label">役割</label>
-                <input type="text" name="pRole" value="${p.role||''}" placeholder="PL / 開発 等" class="ss-input">
+                <input type="text" name="pRole" value="${p.role || ""}" placeholder="PL / 開発 等" class="ss-input">
             </div>
         </div>
         <div style="margin-top:12px;">
             <label class="ss-label">担当工程</label>
             <div class="ss-tasks">
-                ${TASK_LABELS.map(t => `
+                ${TASK_LABELS.map(
+                  (t) => `
                 <label class="ss-task-chk">
-                    <input type="checkbox" name="pTask_${t.key}" ${p.tasks&&p.tasks[t.key]?'checked':''}>
-                    ${t.label}
-                </label>`).join('')}
+                    <span>${t.label}</span><input type="checkbox" name="pTask_${t.key}" ${p.tasks && p.tasks[t.key] ? "checked" : ""}>
+                </label>`,
+                ).join("")}
             </div>
         </div>
         <div style="margin-top:12px;">
             <label class="ss-label">案件概要</label>
-            <textarea name="pDesc" rows="3" class="ss-textarea" placeholder="システム概要・担当業務など">${p.description||''}</textarea>
+            <textarea name="pDesc" rows="3" class="ss-textarea" placeholder="システム概要・担当業務など">${p.description || ""}</textarea>
         </div>
         <div style="margin-top:10px;">
             <label class="ss-label">使用技術・環境</label>
-            <textarea name="pTech" rows="2" class="ss-textarea" placeholder="Java, Spring Boot, MySQL, AWS 等">${p.techStack||''}</textarea>
+            <textarea name="pTech" rows="2" class="ss-textarea" placeholder="Java, Spring Boot, MySQL, AWS 等">${p.techStack || ""}</textarea>
         </div>
     </div>`;
 
-    const certs = [...(sheet.certifications||[]), { name:'', acquiredDate:'' }];
+  const certs = [
+    ...(sheet.certifications || []),
+    { name: "", acquiredDate: "" },
+  ];
 
-    return `
+  return `
 <style>
 .ss-card   { background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:24px 28px;margin-bottom:20px; }
 .ss-sec    { font-size:13px;font-weight:700;color:#1e3a5f;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e0eaff;display:flex;align-items:center;gap:8px; }
@@ -636,8 +918,9 @@ function buildEditPage(emp, sheet, req, isAdminView = false) {
 .ss-proj-num { font-size:13px;font-weight:700;color:#1e3a5f; }
 .ss-del-proj { background:#fef2f2;color:#ef4444;border:1px solid #fecaca;border-radius:5px;padding:4px 12px;font-size:12px;cursor:pointer; }
 .ss-tasks { display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:6px; }
-.ss-task-chk { display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:#374151;cursor:pointer;line-height:1; }
-.ss-task-chk input[type="checkbox"] { margin:0;flex-shrink:0;cursor:pointer;vertical-align:middle; }
+.ss-task-chk { display:inline-flex !important;flex-direction:row !important;flex-wrap:nowrap !important;align-items:center !important;gap:5px;font-size:12.5px;color:#374151;cursor:pointer;line-height:1.4;margin-bottom:0;white-space:nowrap;writing-mode:horizontal-tb !important; }
+.ss-task-chk input[type="checkbox"] { display:inline-block !important;width:auto !important;flex-shrink:0;margin:0;cursor:pointer; }
+.ss-task-chk span, .ss-task-chk > *:not(input) { white-space:nowrap;writing-mode:horizontal-tb; }
 .ss-save-bar { position:sticky;bottom:0;background:#fff;border-top:1px solid #e2e8f0;padding:14px 0;margin-top:10px;display:flex;gap:12px;z-index:10; }
 .ss-page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;flex-wrap:wrap;gap:12px}
 .ss-page-header-left{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
@@ -653,13 +936,13 @@ function buildEditPage(emp, sheet, req, isAdminView = false) {
 
 <div class="ss-page-header">
     <div class="ss-page-header-left">
-        ${backHref ? `<a href="${backHref}" class="ss-back-btn"><i class="fa-solid fa-arrow-left"></i> 一覧に戻る</a>` : ''}
+        ${backHref ? `<a href="${backHref}" class="ss-back-btn"><i class="fa-solid fa-arrow-left"></i> 一覧に戻る</a>` : ""}
         <div>
             <p class="ss-page-title">📄 スキルシート編集</p>
             <p class="ss-page-meta">
                 <span><i class="fa-solid fa-user" style="color:#3b82f6"></i><strong>${emp.name}</strong></span>
-                <span><i class="fa-solid fa-building" style="color:#6b7280"></i>${emp.department || '—'}</span>
-                <span><i class="fa-solid fa-briefcase" style="color:#6b7280"></i>${emp.position || '—'}</span>
+                <span><i class="fa-solid fa-building" style="color:#6b7280"></i>${emp.department || "—"}</span>
+                <span><i class="fa-solid fa-briefcase" style="color:#6b7280"></i>${emp.position || "—"}</span>
             </p>
         </div>
     </div>
@@ -668,7 +951,7 @@ function buildEditPage(emp, sheet, req, isAdminView = false) {
     </a>
 </div>
 
-${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保存しました。</div>` : ''}
+${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保存しました。</div>` : ""}
 
 <form method="POST" action="${saveAction}" id="ssForm">
 
@@ -678,26 +961,26 @@ ${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保
     <div class="ss-grid3" style="margin-bottom:14px;">
         <div>
             <label class="ss-label">氏名（カナ）</label>
-            <input type="text" name="nameKana" value="${sheet.nameKana||''}" placeholder="ヤマダ タロウ" class="ss-input">
+            <input type="text" name="nameKana" value="${sheet.nameKana || ""}" placeholder="ヤマダ タロウ" class="ss-input">
         </div>
         <div>
             <label class="ss-label">生年月日</label>
-            <input type="date" name="birthDate" value="${sheet.birthDate||''}" class="ss-input">
+            <input type="date" name="birthDate" value="${sheet.birthDate || ""}" class="ss-input">
         </div>
         <div>
             <label class="ss-label">性別</label>
             <select name="gender" class="ss-select">
                 <option value="">—</option>
-                ${['男性','女性','その他'].map(g=>`<option value="${g}" ${sheet.gender===g?'selected':''}>${g}</option>`).join('')}
+                ${["男性", "女性", "その他"].map((g) => `<option value="${g}" ${sheet.gender === g ? "selected" : ""}>${g}</option>`).join("")}
             </select>
         </div>
         <div>
             <label class="ss-label">最寄り駅</label>
-            <input type="text" name="nearestStation" value="${sheet.nearestStation||''}" placeholder="渋谷駅" class="ss-input">
+            <input type="text" name="nearestStation" value="${sheet.nearestStation || ""}" placeholder="渋谷駅" class="ss-input">
         </div>
         <div>
             <label class="ss-label">IT経験年数</label>
-            <input type="number" name="experience" value="${sheet.experience||0}" min="0" max="50" class="ss-input">
+            <input type="number" name="experience" value="${sheet.experience || 0}" min="0" max="50" class="ss-input">
         </div>
     </div>
 </div>
@@ -708,12 +991,16 @@ ${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保
     <table class="ss-skill-table" id="certTable">
         <thead><tr><th style="width:60%">資格名</th><th>取得年月</th><th style="width:36px;"></th></tr></thead>
         <tbody>
-            ${certs.map((c,i)=>`
+            ${certs
+              .map(
+                (c, i) => `
             <tr class="cert-row">
-                <td><input type="text" name="certName" value="${c.name||''}" placeholder="基本情報技術者 等" class="ss-input"></td>
-                <td><input type="month" name="certDate" value="${c.acquiredDate||''}" class="ss-input"></td>
-                <td>${i<certs.length-1?`<button type="button" class="ss-del-btn" onclick="delRow(this)">✕</button>`:''}</td>
-            </tr>`).join('')}
+                <td><input type="text" name="certName" value="${c.name || ""}" placeholder="基本情報技術者 等" class="ss-input"></td>
+                <td><input type="month" name="certDate" value="${c.acquiredDate || ""}" class="ss-input"></td>
+                <td>${i < certs.length - 1 ? `<button type="button" class="ss-del-btn" onclick="delRow(this)">✕</button>` : ""}</td>
+            </tr>`,
+              )
+              .join("")}
         </tbody>
     </table>
     <button type="button" class="ss-add-btn" style="margin-top:10px;" onclick="addCertRow()">
@@ -724,16 +1011,31 @@ ${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保
 <!-- スキルマップ -->
 <div class="ss-card">
     <div class="ss-sec"><i class="fa-solid fa-code"></i>スキルマップ</div>
-    ${SKILL_CATS.map(cat => {
-        const nameBase = { languages:'skillLangName', frameworks:'skillFwName', databases:'skillDbName', infra:'skillInfraName', tools:'skillToolName' }[cat.key] + '/' + { languages:'skillLangLevel', frameworks:'skillFwLevel', databases:'skillDbLevel', infra:'skillInfraLevel', tools:'skillToolLevel' }[cat.key];
-        const [nameKey, levelKey] = nameBase.split('/');
-        return `
+    ${SKILL_CATS.map((cat) => {
+      const nameBase =
+        {
+          languages: "skillLangName",
+          frameworks: "skillFwName",
+          databases: "skillDbName",
+          infra: "skillInfraName",
+          tools: "skillToolName",
+        }[cat.key] +
+        "/" +
+        {
+          languages: "skillLangLevel",
+          frameworks: "skillFwLevel",
+          databases: "skillDbLevel",
+          infra: "skillInfraLevel",
+          tools: "skillToolLevel",
+        }[cat.key];
+      const [nameKey, levelKey] = nameBase.split("/");
+      return `
     <div style="margin-bottom:18px;">
         <div style="font-size:12px;font-weight:700;color:#2563eb;margin-bottom:6px;">${cat.label}</div>
         <table class="ss-skill-table" data-cat="${cat.key}">
             <thead><tr><th>名称</th><th style="width:160px;">レベル</th><th style="width:36px;"></th></tr></thead>
             <tbody>
-                ${renderSkillCat(cat.key, nameKey.replace('Name',''), skills[cat.key])}
+                ${renderSkillCat(cat.key, nameKey.replace("Name", ""), skills[cat.key])}
             </tbody>
         </table>
         <button type="button" class="ss-add-btn" style="margin-top:8px;"
@@ -741,20 +1043,20 @@ ${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保
             <i class="fa-solid fa-plus"></i> 追加
         </button>
     </div>`;
-    }).join('')}
+    }).join("")}
 </div>
 
 <!-- 自己PR -->
 <div class="ss-card">
     <div class="ss-sec"><i class="fa-solid fa-star"></i>自己PR・強み</div>
-    <textarea name="selfPR" rows="5" class="ss-textarea" placeholder="自己PRや強みを自由に記述してください">${sheet.selfPR||''}</textarea>
+    <textarea name="selfPR" rows="5" class="ss-textarea" placeholder="自己PRや強みを自由に記述してください">${sheet.selfPR || ""}</textarea>
 </div>
 
 <!-- 職務経歴 -->
 <div class="ss-card">
     <div class="ss-sec"><i class="fa-solid fa-briefcase"></i>職務経歴</div>
     <div id="projContainer">
-        ${(sheet.projects||[]).map((p, i) => renderProject(p, i)).join('')}
+        ${(sheet.projects || []).map((p, i) => renderProject(p, i)).join("")}
     </div>
     <button type="button" class="ss-add-btn" onclick="addProject()">
         <i class="fa-solid fa-plus"></i> 案件を追加
@@ -834,9 +1136,9 @@ function setCurrentProj(chk) {
 function addProject() {
     const container = document.getElementById('projContainer');
     const idx = container.querySelectorAll('.ss-proj-card').length;
-    const taskChks = ${JSON.stringify(TASK_LABELS.map(t=>t.key))}.map(k => \`
+    const taskChks = ${JSON.stringify(TASK_LABELS.map((t) => t.key))}.map(k => \`
         <label class="ss-task-chk">
-            <input type="checkbox" name="pTask_\${k}"> \${{'requirement':'要件定義','basicDesign':'基本設計','detailDesign':'詳細設計','development':'開発・実装','testing':'テスト','operation':'運用・保守','management':'PM / リーダー'}[k]}
+            <span>\${{'requirement':'要件定義','basicDesign':'基本設計','detailDesign':'詳細設計','development':'開発・実装','testing':'テスト','operation':'運用・保守','management':'PM / リーダー'}[k]}</span><input type="checkbox" name="pTask_\${k}">
         </label>\`).join('');
     const div = document.createElement('div');
     div.className = 'ss-proj-card';
@@ -849,8 +1151,10 @@ function addProject() {
         <div><label class="ss-label">開始年月</label><input type="month" name="pFrom" class="ss-input"></div>
         <div>
             <label class="ss-label">終了年月</label>
-            <input type="month" name="pTo" class="ss-input">
-            <label style="font-size:11px;margin-left:4px;"><input type="checkbox" onchange="setCurrentProj(this)"> 現在</label>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <input type="month" name="pTo" class="ss-input" style="flex:1;">
+              <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap;cursor:pointer;"><input type="checkbox" onchange="setCurrentProj(this)" style="margin:0;cursor:pointer;"> 現在</label>
+            </div>
         </div>
         <div style="grid-column:3/5;"><label class="ss-label">案件名</label><input type="text" name="pName" placeholder="案件名" class="ss-input"></div>
         <div><label class="ss-label">顧客名</label><input type="text" name="pClient" placeholder="顧客名" class="ss-input"></div>
