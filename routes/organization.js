@@ -87,7 +87,8 @@ router.get('/organization', requireLogin, async (req, res) => {
 
     const content = `
     <style>
-        .org-wrap { max-width:960px;margin:0 auto;padding:24px 16px }
+        .page-content { max-width:100% !important; }
+        .org-wrap { width:100%;max-width:100%;margin:0 auto;padding:24px 16px }
         .org-hero { background:linear-gradient(135deg,#1e3a8a,#3b82f6);color:#fff;border-radius:14px;padding:22px 28px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:center }
         .org-hero h1 { margin:0;font-size:21px }
         .org-dept-node { margin-bottom:6px }
@@ -112,7 +113,7 @@ router.get('/organization', requireLogin, async (req, res) => {
         ${treeHtml}
     </div>`;
 
-    res.send(buildPageShell({ title: '組織図', currentPath: '/organization', employee, isAdmin: req.session.isAdmin }) + content + pageFooter());
+    res.send(buildPageShell({ title: '組織図', currentPath: '/organization', employee, isAdmin: req.session.isAdmin, role: req.session.orgRole || (req.session.isAdmin ? 'admin' : 'employee') }) + content + pageFooter());
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -146,7 +147,8 @@ router.get('/admin/departments', requireAdmin, async (req, res) => {
 
     const content = `
     <style>
-        .dept-wrap { max-width:900px;margin:0 auto;padding:24px 16px }
+        .page-content { max-width:100% !important; }
+        .dept-wrap { width:100%;max-width:100%;margin:0 auto;padding:24px 16px }
         .dept-hero { background:linear-gradient(135deg,#1e293b,#334155);color:#fff;border-radius:14px;padding:20px 28px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:center }
         .dept-hero h1 { margin:0;font-size:20px }
         .dept-add-btn { padding:9px 20px;background:#0f6fff;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:14px }
@@ -250,7 +252,7 @@ router.get('/admin/departments', requireAdmin, async (req, res) => {
     });
     </script>`;
 
-    res.send(buildPageShell({ title: '部署管理', currentPath: '/admin/departments', employee, isAdmin: true }) + content + pageFooter());
+    res.send(buildPageShell({ title: '部署管理', currentPath: '/admin/departments', employee, isAdmin: true, role: req.session.orgRole || 'admin' }) + content + pageFooter());
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -600,7 +602,7 @@ router.get('/admin/organization/roles', requireAdmin, async (req, res) => {
     document.getElementById('rmModal').addEventListener('click', e => { if(e.target === document.getElementById('rmModal')) closeModal(); });
     </script>`;
 
-    res.send(buildPageShell({ title: 'ロール・人事異動管理', currentPath: '/admin/organization/roles', employee, isAdmin: true }) + content + pageFooter());
+    res.send(buildPageShell({ title: 'ロール・人事異動管理', currentPath: '/admin/organization/roles', employee, isAdmin: true, role: req.session.orgRole || 'admin' }) + content + pageFooter());
 });
 
 // ─────────────────────────────────────────────────────────────
