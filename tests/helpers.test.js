@@ -92,15 +92,16 @@ test("computeAIRecommendations returns sorted recommendation results", () => {
 });
 
 test("computePretestScore scores keyword-based answers", () => {
+  // common テストは MC30問 + 記述10問 (q31-q40)
+  // q1=C, q2=C が正解（pretestQuestions.js の common.mc[0,1].ans 参照）
   const result = computePretestScore({
-    q1: "GC と heap メモリについて説明できます",
-    q2: "ガベージの自動回収です",
-    q21: "new ArrayList(); を使います",
-    q25: "fetch() でAPIを呼び出します",
-  });
+    q1: "C",   // 正解: HTTPステータスコード200はOK
+    q2: "C",   // 正解: DELETEコマンド
+    q3: "D",   // 正解: commitコマンド
+  }, "common");
 
   assert.equal(result.total, 40);
   assert.ok(result.score > 0);
   assert.ok(result.perQuestionScores.q1 > 0);
-  assert.ok(result.perQuestionScores.q21 > 0);
+  assert.ok(result.perQuestionScores.q2 > 0);
 });

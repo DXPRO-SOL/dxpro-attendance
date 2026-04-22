@@ -68,6 +68,7 @@ app.use('/', require('./routes/pretest'));
 app.use('/', require('./routes/rules'));
 app.use('/', require('./routes/chatbot'));
 app.use('/', require('./routes/skillsheet'));
+app.use('/', require('./routes/tasks'));
 app.use('/', require('./routes/notifications').router);
 app.use('/', require('./routes/overtime'));
 app.use('/', require('./routes/locations'));
@@ -143,6 +144,7 @@ app.listen(PORT, '0.0.0.0', async () => {
     });
 
     require('./lib/notificationScheduler').startScheduler();
+    require('./lib/githubSync').startSyncScheduler();
 
     // ── Renderスリープ防止（無料プランは15分でスリープするため自己pingで起動維持） ──
     if (process.env.RENDER_EXTERNAL_URL || process.env.RENDER) {

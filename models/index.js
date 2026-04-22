@@ -500,6 +500,96 @@ const IntegrationConfigSchema = new mongoose.Schema({
 });
 const IntegrationConfig = mongoose.model('IntegrationConfig', IntegrationConfigSchema);
 
+// ─── タスク管理: GitHubユーザーマッピング ─────────────────────────────────
+// NOKORIユーザー ↔ GitHubアカウントの紐付け＋アクセス設定
+const GitHubMappingSchema = new mongoose.Schema({
+    userId:          { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    githubUsername:  { type: String, required: true },          // GitHubのログインID
+    // Personal Access Token（暗号化推奨 / 最低限 repo:read + issues:read スコープ）
+    accessToken:     { type: String, default: '' },
+    // 連携リポジトリ一覧（複数可）
+    repositories: [{
+        owner: { type: String, required: true },                // 例: 'my-org'
+        repo:  { type: String, required: true },                // 例: 'my-project'
+        label: { type: String, default: '' },                   // 表示名（任意）
+        syncIssues: { type: Boolean, default: true },
+        syncPRs:    { type: Boolean, default: true },
+    }],
+    isActive:        { type: Boolean, default: true },
+    lastSyncedAt:    { type: Date },                             // 最終同期日時
+    updatedAt:       { type: Date, default: Date.now }
+}, { timestamps: true });
+
+// ─── タスク管理: GitHubタスク（Issue / PR キャッシュ） ───────────────────
+const GitHubTaskSchema = new mongoose.Schema({
+    // GitHubとの対応情報
+    owner:        { type: String, required: true },             // リポジトリオーナー
+    repo:         { type: String, required: true },             // リポジトリ名
+    githubId:     { type: Number, required: true },             // GitHub上のID（issue.id）
+    number:       { type: Number, required: true },             // Issue/PR番号（#123）
+    type:         { type: String, enum: ['issue', 'pr'], required: true },
+    title:        { type: String, required: true },
+    body:         { type: String, default: '' },
+    htmlUrl:      { type: String, default: '' },                // GitHub上のURL
+    // 状態
+    state:        { type: String, enum: ['open', 'closed'], default: 'open' },
+    merged:       { type: Boolean, default: false },            // PRのみ: マージ済みか
+    draft:        { type: Boolean, default: false },            // PRのみ: ドラフトか
+    // 担当者（複数可）
+    assignees: [{
+        githubLogin: { type: String },
+        // GitHubMappingで解決したNOKORIユーザーID
+        userId:      { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    }],
+    // ラベル・マイルストーン
+    labels:       [{ name: String, color: String }],
+    milestone:    { type: String, default: '' },
+    // 日付
+    githubCreatedAt: { type: Date },
+    githubUpdatedAt: { type: Date },
+    closedAt:        { type: Date },
+    mergedAt:        { type: Date },
+    dueDate:         { type: Date },                            // 期限（任意設定）
+    // AI分析結果（任意）
+    aiAnalysis: {
+        priority:    { type: String, enum: ['high', 'medium', 'low', ''], default: '' },
+        difficulty:  { type: String, enum: ['hard', 'medium', 'easy', ''], default: '' },
+        isStale:     { type: Boolean, default: false },         // 滞留タスクフラグ
+        suggestion:  { type: String, default: '' },             // AIコメント
+        analyzedAt:  { type: Date }
+    },
+    // 最終同期日時
+    lastSyncedAt: { type: Date, default: Date.now }
+}, { timestamps: true });
+// 複合ユニークインデックス（同リポジトリの同番号は1件のみ）
+GitHubTaskSchema.index({ owner: 1, repo: 1, number: 1, type: 1 }, { unique: true });
+
+// ─── タスク管理: タスクコメント ──────────────────────────────────────────
+// 日報コメントと同等機能（メンション・添付・リアクション）
+const TaskCommentSchema = new mongoose.Schema({
+    taskId:     { type: mongoose.Schema.Types.ObjectId, ref: 'GitHubTask', required: true },
+    authorId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    authorName: { type: String, required: true },
+    text:       { type: String, required: true },
+    mentions:   [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    attachments: [{
+        originalName: { type: String },
+        filename:     { type: String },
+        mimetype:     { type: String },
+        size:         { type: Number }
+    }],
+    editedAt:   { type: Date },
+    reactions: [{
+        emoji:    { type: String, required: true },
+        userId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+        userName: { type: String }
+    }]
+}, { timestamps: true });
+
+const GitHubMapping = mongoose.model('GitHubMapping', GitHubMappingSchema);
+const GitHubTask    = mongoose.model('GitHubTask', GitHubTaskSchema);
+const TaskComment   = mongoose.model('TaskComment', TaskCommentSchema);
+
 module.exports = {
     User,
     Attendance,
@@ -524,5 +614,8 @@ module.exports = {
     PretestConfig,
     IntegrationConfig,
     Department,
-    PayrollSetting
+    PayrollSetting,
+    GitHubMapping,
+    GitHubTask,
+    TaskComment
 };
