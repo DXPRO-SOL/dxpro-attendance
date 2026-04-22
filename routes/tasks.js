@@ -1,32 +1,38 @@
 // ==============================
 // routes/tasks.js — タスク管理
 // ==============================
-const router  = require('express').Router();
-const https   = require('https');
-const path    = require('path');
-const multer  = require('multer');
-const { requireLogin } = require('../middleware/auth');
-const { renderPage }   = require('../lib/renderPage');
-const { escapeHtml, buildAttachmentsAfterEdit } = require('../lib/helpers');
-const { GitHubMapping, GitHubTask, TaskComment, Employee, User } = require('../models');
-const { createNotification } = require('./notifications');
+const router = require("express").Router();
+const https = require("https");
+const path = require("path");
+const multer = require("multer");
+const { requireLogin } = require("../middleware/auth");
+const { renderPage } = require("../lib/renderPage");
+const { escapeHtml, buildAttachmentsAfterEdit } = require("../lib/helpers");
+const {
+  GitHubMapping,
+  GitHubTask,
+  TaskComment,
+  Employee,
+  User,
+} = require("../models");
+const { createNotification } = require("./notifications");
 
 // ─── ファイルアップロード設定（タスクコメント用）────────────
 const storage = multer.diskStorage({
-    destination(req, file, cb) {
-        const dir = path.join('uploads', 'tasks');
-        require('fs').mkdirSync(dir, { recursive: true });
-        cb(null, dir);
-    },
-    filename(req, file, cb) {
-        const ext = path.extname(file.originalname) || '';
-        cb(null, Date.now() + '-' + Math.round(Math.random() * 1e9) + ext);
-    }
+  destination(req, file, cb) {
+    const dir = path.join("uploads", "tasks");
+    require("fs").mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename(req, file, cb) {
+    const ext = path.extname(file.originalname) || "";
+    cb(null, Date.now() + "-" + Math.round(Math.random() * 1e9) + ext);
+  },
 });
 const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
 function taskCss() {
-    return `
+  return `
 <style>
 :root {
     --tk-bg: #f4f6f9;
@@ -107,69 +113,118 @@ body { margin: 0; font-family: 'Inter','Noto Sans JP',system-ui,sans-serif; back
 }
 
 // ─── タスク管理トップ（一覧）─────────────────────────────
-router.get('/tasks', requireLogin, async (req, res) => {
-    try {
-        const mapping = await GitHubMapping.findOne({ userId: req.session.userId }).lean();
-        const hasMapping = !!(mapping && mapping.githubUsername && mapping.accessToken);
+router.get("/tasks", requireLogin, async (req, res) => {
+  try {
+    const mapping = await GitHubMapping.findOne({
+      userId: req.session.userId,
+    }).lean();
+    const hasMapping = !!(
+      mapping &&
+      mapping.githubUsername &&
+      mapping.accessToken
+    );
 
-        // フィルター
-        const filterType  = req.query.type  || 'all';  // all / issue / pr
-        const filterState = req.query.state || 'open'; // open / closed / all
-        const filterRepo  = req.query.repo  || 'all';
+    // フィルター
+    const filterType = req.query.type || "all"; // all / issue / pr
+    const filterState = req.query.state || "open"; // open / closed / all
+    const filterRepo = req.query.repo || "all";
 
-        let tasks = [];
-        let kpi = { openIssues: 0, openPRs: 0, closedThisMonth: 0, stale: 0 };
+    let tasks = [];
+    let kpi = { openIssues: 0, openPRs: 0, closedThisMonth: 0, stale: 0 };
 
-        if (hasMapping) {
-            // 自分が担当のタスクを取得
-            const query = { 'assignees.userId': req.session.userId };
-            if (filterType  !== 'all')   query.type  = filterType;
-            if (filterState !== 'all')   query.state = filterState;
-            if (filterRepo  !== 'all') {
-                const [o, r] = filterRepo.split('/');
-                query.owner = o; query.repo = r;
-            }
-            tasks = await GitHubTask.find(query).sort({ githubUpdatedAt: -1 }).limit(200).lean();
+    if (hasMapping) {
+      // 自分が担当のタスクを取得
+      const query = { "assignees.userId": req.session.userId };
+      if (filterType !== "all") query.type = filterType;
+      if (filterState !== "all") query.state = filterState;
+      if (filterRepo !== "all") {
+        const [o, r] = filterRepo.split("/");
+        query.owner = o;
+        query.repo = r;
+      }
+      tasks = await GitHubTask.find(query)
+        .sort({ githubUpdatedAt: -1 })
+        .limit(200)
+        .lean();
 
-            // KPI集計（フィルターなしで全タスク）
-            const allMyTasks = await GitHubTask.find({ 'assignees.userId': req.session.userId }).lean();
-            const now = new Date();
-            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-            kpi.openIssues      = allMyTasks.filter(t => t.type === 'issue' && t.state === 'open').length;
-            kpi.openPRs         = allMyTasks.filter(t => t.type === 'pr'    && t.state === 'open' && !t.merged).length;
-            kpi.closedThisMonth = allMyTasks.filter(t => t.state === 'closed' && t.closedAt && new Date(t.closedAt) >= monthStart).length;
-            // 滞留: 30日以上更新なし & オープン
-            const staleThreshold = new Date(now - 30 * 24 * 60 * 60 * 1000);
-            kpi.stale = allMyTasks.filter(t => t.state === 'open' && t.githubUpdatedAt && new Date(t.githubUpdatedAt) < staleThreshold).length;
-        }
+      // KPI集計（フィルターなしで全タスク）
+      const allMyTasks = await GitHubTask.find({
+        "assignees.userId": req.session.userId,
+      }).lean();
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      kpi.openIssues = allMyTasks.filter(
+        (t) => t.type === "issue" && t.state === "open",
+      ).length;
+      kpi.openPRs = allMyTasks.filter(
+        (t) => t.type === "pr" && t.state === "open" && !t.merged,
+      ).length;
+      kpi.closedThisMonth = allMyTasks.filter(
+        (t) =>
+          t.state === "closed" &&
+          t.closedAt &&
+          new Date(t.closedAt) >= monthStart,
+      ).length;
+      // 滞留: 30日以上更新なし & オープン
+      const staleThreshold = new Date(now - 30 * 24 * 60 * 60 * 1000);
+      kpi.stale = allMyTasks.filter(
+        (t) =>
+          t.state === "open" &&
+          t.githubUpdatedAt &&
+          new Date(t.githubUpdatedAt) < staleThreshold,
+      ).length;
+    }
 
-        // リポジトリ一覧（フィルター用）
-        const repos = mapping ? (mapping.repositories || []) : [];
-        const lastSync = mapping && mapping.lastSyncedAt
-            ? new Date(mapping.lastSyncedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
-            : null;
+    // リポジトリ一覧（フィルター用）
+    const repos = mapping ? mapping.repositories || [] : [];
+    const lastSync =
+      mapping && mapping.lastSyncedAt
+        ? new Date(mapping.lastSyncedAt).toLocaleString("ja-JP", {
+            timeZone: "Asia/Tokyo",
+          })
+        : null;
 
-        // タスク行HTML生成
-        function taskRow(t) {
-            const typeIcon = t.type === 'pr'
-                ? `<span style="color:#7c3aed;font-size:13px" title="Pull Request"><i class="fa-solid fa-code-pull-request"></i></span>`
-                : `<span style="color:#059669;font-size:13px" title="Issue"><i class="fa-solid fa-circle-dot"></i></span>`;
-            const stateBadge = t.state === 'open'
-                ? (t.draft ? `<span class="tk-badge" style="background:#f1f5f9;color:#475569">Draft</span>` : `<span class="tk-badge tk-badge-open">Open</span>`)
-                : (t.merged ? `<span class="tk-badge tk-badge-pr">Merged</span>` : `<span class="tk-badge tk-badge-closed">Closed</span>`);
-            const labels = (t.labels || []).map(l =>
-                `<span style="background:#${l.color||'e2e8f0'};color:${parseInt(l.color||'ffffff',16)>0x888888?'#1e293b':'#fff'};padding:2px 7px;border-radius:999px;font-size:10px;font-weight:700">${escapeHtml(l.name)}</span>`
-            ).join(' ');
-            const updated = t.githubUpdatedAt
-                ? new Date(t.githubUpdatedAt).toLocaleDateString('ja-JP', { month:'short', day:'numeric' })
-                : '';
-            const repoLabel = `${t.owner}/${t.repo}`;
-            const aiPriority = t.aiAnalysis && t.aiAnalysis.priority
-                ? { high:'<span style="color:#dc2626;font-size:11px;font-weight:700">高</span>', medium:'<span style="color:#d97706;font-size:11px;font-weight:700">中</span>', low:'<span style="color:#64748b;font-size:11px">低</span>' }[t.aiAnalysis.priority] || ''
-                : '';
-            const staleFlag = t.aiAnalysis && t.aiAnalysis.isStale
-                ? `<span title="滞留タスク" style="color:#d97706"><i class="fa-solid fa-triangle-exclamation"></i></span>` : '';
-            return `
+    // タスク行HTML生成
+    function taskRow(t) {
+      const typeIcon =
+        t.type === "pr"
+          ? `<span style="color:#7c3aed;font-size:13px" title="Pull Request"><i class="fa-solid fa-code-pull-request"></i></span>`
+          : `<span style="color:#059669;font-size:13px" title="Issue"><i class="fa-solid fa-circle-dot"></i></span>`;
+      const stateBadge =
+        t.state === "open"
+          ? t.draft
+            ? `<span class="tk-badge" style="background:#f1f5f9;color:#475569">Draft</span>`
+            : `<span class="tk-badge tk-badge-open">Open</span>`
+          : t.merged
+            ? `<span class="tk-badge tk-badge-pr">Merged</span>`
+            : `<span class="tk-badge tk-badge-closed">Closed</span>`;
+      const labels = (t.labels || [])
+        .map(
+          (l) =>
+            `<span style="background:#${l.color || "e2e8f0"};color:${parseInt(l.color || "ffffff", 16) > 0x888888 ? "#1e293b" : "#fff"};padding:2px 7px;border-radius:999px;font-size:10px;font-weight:700">${escapeHtml(l.name)}</span>`,
+        )
+        .join(" ");
+      const updated = t.githubUpdatedAt
+        ? new Date(t.githubUpdatedAt).toLocaleDateString("ja-JP", {
+            month: "short",
+            day: "numeric",
+          })
+        : "";
+      const repoLabel = `${t.owner}/${t.repo}`;
+      const aiPriority =
+        t.aiAnalysis && t.aiAnalysis.priority
+          ? {
+              high: '<span style="color:#dc2626;font-size:11px;font-weight:700">高</span>',
+              medium:
+                '<span style="color:#d97706;font-size:11px;font-weight:700">中</span>',
+              low: '<span style="color:#64748b;font-size:11px">低</span>',
+            }[t.aiAnalysis.priority] || ""
+          : "";
+      const staleFlag =
+        t.aiAnalysis && t.aiAnalysis.isStale
+          ? `<span title="滞留タスク" style="color:#d97706"><i class="fa-solid fa-triangle-exclamation"></i></span>`
+          : "";
+      return `
             <tr onclick="location.href='/tasks/${t._id}'" style="cursor:pointer">
                 <td style="width:32px;text-align:center">${typeIcon}</td>
                 <td>
@@ -185,14 +240,18 @@ router.get('/tasks', requireLogin, async (req, res) => {
                     </a>
                 </td>
             </tr>`;
-        }
+    }
 
-        const repoOptions = repos.map(r => {
-            const val = `${r.owner}/${r.repo}`;
-            return `<option value="${escapeHtml(val)}" ${filterRepo===val?'selected':''}>${escapeHtml(r.label||val)}</option>`;
-        }).join('');
+    const repoOptions = repos
+      .map((r) => {
+        const val = `${r.owner}/${r.repo}`;
+        return `<option value="${escapeHtml(val)}" ${filterRepo === val ? "selected" : ""}>${escapeHtml(r.label || val)}</option>`;
+      })
+      .join("");
 
-        const html = taskCss() + `
+    const html =
+      taskCss() +
+      `
 <style>
 .tk-filter-bar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
 .tk-select { padding:6px 10px; border:1px solid var(--tk-border); border-radius:7px; font-size:13px; background:#fff; cursor:pointer; }
@@ -211,20 +270,26 @@ router.get('/tasks', requireLogin, async (req, res) => {
             <div class="page-title"><i class="fa-solid fa-list-check" style="color:#1d4ed8;margin-right:8px"></i>タスク管理</div>
         </div>
         <div class="right">
-            ${hasMapping ? `
+            ${
+              hasMapping
+                ? `
             <button class="tk-btn tk-btn-ghost tk-btn-sm" id="syncBtn" onclick="runSync()">
                 <i class="fa-solid fa-rotate" id="syncIcon"></i> 同期
             </button>
             <button class="tk-btn tk-btn-ghost tk-btn-sm" id="analyzeAllBtn" onclick="runAnalyzeAll()" title="担当タスク全件をAIで分析します">
                 <i class="fa-solid fa-robot" id="analyzeAllIcon" style="color:#7c3aed"></i> AI分析
-            </button>` : ''}
+            </button>`
+                : ""
+            }
             <a href="/tasks/settings" class="tk-btn tk-btn-ghost tk-btn-sm">
                 <i class="fa-brands fa-github"></i> GitHub連携設定
             </a>
         </div>
     </div>
 
-    ${!hasMapping ? `
+    ${
+      !hasMapping
+        ? `
     <div class="tk-setup-banner">
         <i class="fa-brands fa-github"></i>
         <div>
@@ -232,7 +297,9 @@ router.get('/tasks', requireLogin, async (req, res) => {
             <p>GitHubのIssue・PRをNOKORIで一元管理。まずはGitHub連携設定を行ってください。</p>
         </div>
         <a href="/tasks/settings" class="tk-btn tk-btn-primary" style="white-space:nowrap;flex-shrink:0">連携設定へ</a>
-    </div>` : ''}
+    </div>`
+        : ""
+    }
 
     <!-- KPI -->
     <div class="tk-kpi-grid">
@@ -266,30 +333,40 @@ router.get('/tasks', requireLogin, async (req, res) => {
         <!-- フィルターバー -->
         <form method="GET" action="/tasks" class="tk-filter-bar">
             <select name="type" class="tk-select" onchange="this.form.submit()">
-                <option value="all"   ${filterType==='all'   ?'selected':''}>すべて</option>
-                <option value="issue" ${filterType==='issue' ?'selected':''}>Issue</option>
-                <option value="pr"    ${filterType==='pr'    ?'selected':''}>Pull Request</option>
+                <option value="all"   ${filterType === "all" ? "selected" : ""}>すべて</option>
+                <option value="issue" ${filterType === "issue" ? "selected" : ""}>Issue</option>
+                <option value="pr"    ${filterType === "pr" ? "selected" : ""}>Pull Request</option>
             </select>
             <select name="state" class="tk-select" onchange="this.form.submit()">
-                <option value="open"   ${filterState==='open'  ?'selected':''}>Open</option>
-                <option value="closed" ${filterState==='closed'?'selected':''}>Closed / Merged</option>
-                <option value="all"    ${filterState==='all'   ?'selected':''}>すべて</option>
+                <option value="open"   ${filterState === "open" ? "selected" : ""}>Open</option>
+                <option value="closed" ${filterState === "closed" ? "selected" : ""}>Closed / Merged</option>
+                <option value="all"    ${filterState === "all" ? "selected" : ""}>すべて</option>
             </select>
-            ${repos.length > 1 ? `
+            ${
+              repos.length > 1
+                ? `
             <select name="repo" class="tk-select" onchange="this.form.submit()">
-                <option value="all" ${filterRepo==='all'?'selected':''}>全リポジトリ</option>
+                <option value="all" ${filterRepo === "all" ? "selected" : ""}>全リポジトリ</option>
                 ${repoOptions}
-            </select>` : ''}
+            </select>`
+                : ""
+            }
         </form>
 
-        ${tasks.length === 0 ? `
+        ${
+          tasks.length === 0
+            ? `
         <div class="tk-empty">
-            <i class="fa-${hasMapping ? 'solid fa-inbox' : 'brands fa-github'}"></i>
-            <h3>${hasMapping ? 'タスクがありません' : 'GitHub連携が設定されていません'}</h3>
-            <p>${hasMapping ? '「同期」ボタンを押してGitHubから最新データを取得してください。' : 'GitHubアカウントを連携すると、担当Issue・PRがここに表示されます。'}</p>
-            ${hasMapping ? `<button class="tk-btn tk-btn-primary" onclick="runSync()"><i class="fa-solid fa-rotate"></i> 今すぐ同期</button>`
-                        : `<a href="/tasks/settings" class="tk-btn tk-btn-primary"><i class="fa-brands fa-github"></i> 連携設定へ</a>`}
-        </div>` : `
+            <i class="fa-${hasMapping ? "solid fa-inbox" : "brands fa-github"}"></i>
+            <h3>${hasMapping ? "タスクがありません" : "GitHub連携が設定されていません"}</h3>
+            <p>${hasMapping ? "「同期」ボタンを押してGitHubから最新データを取得してください。" : "GitHubアカウントを連携すると、担当Issue・PRがここに表示されます。"}</p>
+            ${
+              hasMapping
+                ? `<button class="tk-btn tk-btn-primary" onclick="runSync()"><i class="fa-solid fa-rotate"></i> 今すぐ同期</button>`
+                : `<a href="/tasks/settings" class="tk-btn tk-btn-primary"><i class="fa-brands fa-github"></i> 連携設定へ</a>`
+            }
+        </div>`
+            : `
         <div style="overflow-x:auto">
             <table class="tk-table">
                 <thead>
@@ -303,10 +380,11 @@ router.get('/tasks', requireLogin, async (req, res) => {
                     </tr>
                 </thead>
                 <tbody>
-                    ${tasks.map(taskRow).join('')}
+                    ${tasks.map(taskRow).join("")}
                 </tbody>
             </table>
-        </div>`}
+        </div>`
+        }
     </div>
 </div>
 
@@ -357,85 +435,104 @@ async function runAnalyzeAll() {
     }
 }
 </script>`;
-        renderPage(req, res, 'タスク管理', 'タスク管理', html);
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('エラーが発生しました');
-    }
+    renderPage(req, res, "タスク管理", "タスク管理", html);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("エラーが発生しました");
+  }
 });
 
 // ─── 手動同期 POST ─────────────────────────────────────────
-router.post('/tasks/sync', requireLogin, async (req, res) => {
-    try {
-        const mapping = await GitHubMapping.findOne({ userId: req.session.userId }).lean();
-        if (!mapping) return res.json({ ok: false, message: 'GitHub連携が設定されていません' });
+router.post("/tasks/sync", requireLogin, async (req, res) => {
+  try {
+    const mapping = await GitHubMapping.findOne({
+      userId: req.session.userId,
+    }).lean();
+    if (!mapping)
+      return res.json({ ok: false, message: "GitHub連携が設定されていません" });
 
-        const { syncUser } = require('../lib/githubSync');
-        const allMappings = await GitHubMapping.find({ isActive: true }).lean();
-        const result = await syncUser(mapping, allMappings);
-        if (result.skipped) return res.json({ ok: false, message: '連携設定が無効です' });
-        res.json({ ok: true, issues: result.issues, prs: result.prs });
-    } catch (err) {
-        console.error('[TaskSync]', err);
-        res.json({ ok: false, message: err.message || 'サーバーエラー' });
-    }
+    const { syncUser } = require("../lib/githubSync");
+    const allMappings = await GitHubMapping.find({ isActive: true }).lean();
+    const result = await syncUser(mapping, allMappings);
+    if (result.skipped)
+      return res.json({ ok: false, message: "連携設定が無効です" });
+    res.json({ ok: true, issues: result.issues, prs: result.prs });
+  } catch (err) {
+    console.error("[TaskSync]", err);
+    res.json({ ok: false, message: err.message || "サーバーエラー" });
+  }
 });
 
 // ─── 全タスク一括AI分析 POST ──────────────────────────────
-router.post('/tasks/analyze-all', requireLogin, async (req, res) => {
-    try {
-        const { analyzeAllTasksForUser } = require('../lib/aiTaskAnalysis');
-        const count = await analyzeAllTasksForUser(req.session.userId);
-        res.json({ ok: true, count });
-    } catch (err) {
-        console.error('[AITaskAnalysis] analyze-all error:', err);
-        res.json({ ok: false, message: err.message || 'サーバーエラー' });
-    }
+router.post("/tasks/analyze-all", requireLogin, async (req, res) => {
+  try {
+    const { analyzeAllTasksForUser } = require("../lib/aiTaskAnalysis");
+    const count = await analyzeAllTasksForUser(req.session.userId);
+    res.json({ ok: true, count });
+  } catch (err) {
+    console.error("[AITaskAnalysis] analyze-all error:", err);
+    res.json({ ok: false, message: err.message || "サーバーエラー" });
+  }
 });
 
 // ─── 単体タスクAI分析 POST（JSON API）────────────────────
-router.post('/tasks/:id/analyze', requireLogin, async (req, res) => {
-    try {
-        const task = await GitHubTask.findById(req.params.id);
-        if (!task) return res.json({ ok: false, message: 'タスクが見つかりません' });
+router.post("/tasks/:id/analyze", requireLogin, async (req, res) => {
+  try {
+    const task = await GitHubTask.findById(req.params.id);
+    if (!task)
+      return res.json({ ok: false, message: "タスクが見つかりません" });
 
-        const isAssigned = task.assignees && task.assignees.some(a => String(a.userId) === String(req.session.userId));
-        if (!isAssigned && !req.session.isAdmin) return res.json({ ok: false, message: '権限がありません' });
+    const isAssigned =
+      task.assignees &&
+      task.assignees.some(
+        (a) => String(a.userId) === String(req.session.userId),
+      );
+    if (!isAssigned && !req.session.isAdmin)
+      return res.json({ ok: false, message: "権限がありません" });
 
-        const { analyzeTask } = require('../lib/aiTaskAnalysis');
-        const analysis = await analyzeTask(task.toObject());
-        task.aiAnalysis = analysis;
-        await task.save();
+    const { analyzeTask } = require("../lib/aiTaskAnalysis");
+    const analysis = await analyzeTask(task.toObject());
+    task.aiAnalysis = analysis;
+    await task.save();
 
-        res.json({ ok: true, aiAnalysis: analysis });
-    } catch (err) {
-        console.error('[AITaskAnalysis] single analyze error:', err);
-        res.json({ ok: false, message: err.message || 'サーバーエラー' });
-    }
+    res.json({ ok: true, aiAnalysis: analysis });
+  } catch (err) {
+    console.error("[AITaskAnalysis] single analyze error:", err);
+    res.json({ ok: false, message: err.message || "サーバーエラー" });
+  }
 });
 
 // ─── GitHub連携設定画面 GET ────────────────────────────────
-router.get('/tasks/settings', requireLogin, async (req, res) => {
-    try {
-        const mapping = await GitHubMapping.findOne({ userId: req.session.userId }).lean();
-        const repos = mapping ? mapping.repositories : [];
-        const tokenMasked = mapping && mapping.accessToken
-            ? '●'.repeat(8) + mapping.accessToken.slice(-4)
-            : '';
+router.get("/tasks/settings", requireLogin, async (req, res) => {
+  try {
+    const mapping = await GitHubMapping.findOne({
+      userId: req.session.userId,
+    }).lean();
+    const repos = mapping ? mapping.repositories : [];
+    const tokenMasked =
+      mapping && mapping.accessToken
+        ? "●".repeat(8) + mapping.accessToken.slice(-4)
+        : "";
 
-        const repoRows = repos.map((r, i) => `
+    const repoRows = repos
+      .map(
+        (r, i) => `
             <tr id="repo-row-${i}">
                 <td><input type="text" name="repoOwner[]" class="tk-input" value="${escapeHtml(r.owner)}" placeholder="owner" required></td>
                 <td><input type="text" name="repoName[]" class="tk-input" value="${escapeHtml(r.repo)}" placeholder="repository" required></td>
-                <td><input type="text" name="repoLabel[]" class="tk-input" value="${escapeHtml(r.label||'')}" placeholder="表示名（任意）"></td>
+                <td><input type="text" name="repoLabel[]" class="tk-input" value="${escapeHtml(r.label || "")}" placeholder="表示名（任意）"></td>
                 <td style="text-align:center">
-                    <label class="tk-chk"><input type="checkbox" name="repoIssues[${i}]" ${r.syncIssues!==false?'checked':''}> Issue</label>
-                    <label class="tk-chk"><input type="checkbox" name="repoPRs[${i}]" ${r.syncPRs!==false?'checked':''}> PR</label>
+                    <label class="tk-chk"><input type="checkbox" name="repoIssues[${i}]" ${r.syncIssues !== false ? "checked" : ""}> Issue</label>
+                    <label class="tk-chk"><input type="checkbox" name="repoPRs[${i}]" ${r.syncPRs !== false ? "checked" : ""}> PR</label>
                 </td>
                 <td><button type="button" class="tk-btn tk-btn-danger tk-btn-sm" onclick="removeRepo(this)"><i class="fa-solid fa-trash"></i></button></td>
-            </tr>`).join('');
+            </tr>`,
+      )
+      .join("");
 
-        const html = taskCss() + `
+    const html =
+      taskCss() +
+      `
 <style>
 .tk-input { width:100%; padding:7px 10px; border:1px solid var(--tk-border); border-radius:6px; font-size:13px; background:#fff; }
 .tk-input:focus { outline:none; border-color:var(--tk-primary); box-shadow:0 0 0 3px rgba(29,78,216,.12); }
@@ -476,7 +573,7 @@ router.get('/tasks/settings', requireLogin, async (req, res) => {
             <div class="tk-form-row">
                 <label class="tk-label" for="githubUsername">GitHubユーザー名</label>
                 <input type="text" id="githubUsername" name="githubUsername" class="tk-input"
-                    value="${escapeHtml(mapping ? mapping.githubUsername : '')}"
+                    value="${escapeHtml(mapping ? mapping.githubUsername : "")}"
                     placeholder="例: your-github-username" required>
             </div>
 
@@ -484,8 +581,8 @@ router.get('/tasks/settings', requireLogin, async (req, res) => {
                 <label class="tk-label" for="accessToken">Personal Access Token（PAT）</label>
                 <div class="tk-token-wrap">
                     <input type="password" id="accessToken" name="accessToken" class="tk-input"
-                        value="${escapeHtml(mapping && mapping.accessToken ? mapping.accessToken : '')}"
-                        placeholder="${tokenMasked || 'ghp_xxxxxxxxxxxxxxxxxxxx'}">
+                        value="${escapeHtml(mapping && mapping.accessToken ? mapping.accessToken : "")}"
+                        placeholder="${tokenMasked || "ghp_xxxxxxxxxxxxxxxxxxxx"}">
                     <button type="button" class="tk-token-toggle" onclick="toggleToken()">表示</button>
                 </div>
                 <div class="tk-hint">
@@ -523,7 +620,9 @@ router.get('/tasks/settings', requireLogin, async (req, res) => {
                         </tr>
                     </thead>
                     <tbody id="repoTableBody">
-                        ${repoRows || `<tr id="repo-row-0">
+                        ${
+                          repoRows ||
+                          `<tr id="repo-row-0">
                             <td><input type="text" name="repoOwner[]" class="tk-input" placeholder="owner" required></td>
                             <td><input type="text" name="repoName[]" class="tk-input" placeholder="repository" required></td>
                             <td><input type="text" name="repoLabel[]" class="tk-input" placeholder="表示名（任意）"></td>
@@ -532,7 +631,8 @@ router.get('/tasks/settings', requireLogin, async (req, res) => {
                                 <label class="tk-chk"><input type="checkbox" name="repoPRs[0]" checked> PR</label>
                             </td>
                             <td><button type="button" class="tk-btn tk-btn-danger tk-btn-sm" onclick="removeRepo(this)"><i class="fa-solid fa-trash"></i></button></td>
-                        </tr>`}
+                        </tr>`
+                        }
                     </tbody>
                 </table>
             </div>
@@ -666,171 +766,233 @@ async function saveSettings(e) {
     btn.disabled = false;
 }
 </script>`;
-        renderPage(req, res, 'GitHub連携設定', 'タスク管理', html);
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('エラーが発生しました');
-    }
+    renderPage(req, res, "GitHub連携設定", "タスク管理", html);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("エラーが発生しました");
+  }
 });
 
 // ─── GitHub連携設定 POST（保存）────────────────────────────
-router.post('/tasks/settings', requireLogin, async (req, res) => {
-    try {
-        const { githubUsername, accessToken, repositories } = req.body;
-        if (!githubUsername) return res.json({ ok: false, message: 'GitHubユーザー名は必須です' });
-        if (!Array.isArray(repositories) || repositories.length === 0)
-            return res.json({ ok: false, message: 'リポジトリを1件以上設定してください' });
+router.post("/tasks/settings", requireLogin, async (req, res) => {
+  try {
+    const { githubUsername, accessToken, repositories } = req.body;
+    if (!githubUsername)
+      return res.json({ ok: false, message: "GitHubユーザー名は必須です" });
+    if (!Array.isArray(repositories) || repositories.length === 0)
+      return res.json({
+        ok: false,
+        message: "リポジトリを1件以上設定してください",
+      });
 
-        // リポジトリのバリデーション
-        for (const r of repositories) {
-            if (!r.owner || !r.repo)
-                return res.json({ ok: false, message: 'Owner / Repository 名は必須です' });
-        }
-
-        const updateData = {
-            githubUsername: githubUsername.trim(),
-            repositories,
-            isActive: true,
-            updatedAt: new Date()
-        };
-        // トークンが空欄 = 前回値を保持
-        if (accessToken && accessToken.trim()) {
-            updateData.accessToken = accessToken.trim();
-        }
-
-        await GitHubMapping.findOneAndUpdate(
-            { userId: req.session.userId },
-            { $set: updateData },
-            { upsert: true, new: true }
-        );
-        res.json({ ok: true });
-    } catch (err) {
-        console.error(err);
-        res.json({ ok: false, message: 'サーバーエラーが発生しました' });
+    // リポジトリのバリデーション
+    for (const r of repositories) {
+      if (!r.owner || !r.repo)
+        return res.json({
+          ok: false,
+          message: "Owner / Repository 名は必須です",
+        });
     }
+
+    const updateData = {
+      githubUsername: githubUsername.trim(),
+      repositories,
+      isActive: true,
+      updatedAt: new Date(),
+    };
+    // トークンが空欄 = 前回値を保持
+    if (accessToken && accessToken.trim()) {
+      updateData.accessToken = accessToken.trim();
+    }
+
+    await GitHubMapping.findOneAndUpdate(
+      { userId: req.session.userId },
+      { $set: updateData },
+      { upsert: true, new: true },
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.json({ ok: false, message: "サーバーエラーが発生しました" });
+  }
 });
 
 // ─── GitHub接続テスト POST ──────────────────────────────────
-router.post('/tasks/settings/test', requireLogin, async (req, res) => {
-    try {
-        const { githubUsername, accessToken } = req.body;
-        if (!githubUsername) return res.json({ ok: false, message: 'ユーザー名を入力してください' });
+router.post("/tasks/settings/test", requireLogin, async (req, res) => {
+  try {
+    const { githubUsername, accessToken } = req.body;
+    if (!githubUsername)
+      return res.json({ ok: false, message: "ユーザー名を入力してください" });
 
-        // 既存トークンをフォールバックとして使用
-        let token = accessToken && accessToken.trim() ? accessToken.trim() : null;
-        if (!token) {
-            const mapping = await GitHubMapping.findOne({ userId: req.session.userId }).lean();
-            if (mapping && mapping.accessToken) token = mapping.accessToken;
-        }
-        if (!token) return res.json({ ok: false, message: 'アクセストークンを入力してください' });
-
-        // GitHub API /user を叩いて検証
-        const result = await new Promise((resolve) => {
-            const opts = {
-                hostname: 'api.github.com',
-                path: '/user',
-                method: 'GET',
-                headers: {
-                    'User-Agent': 'NOKORI-DXPro/1.0',
-                    'Authorization': `Bearer ${token}`,
-                    'Accept': 'application/vnd.github+json'
-                }
-            };
-            const req2 = https.request(opts, (r) => {
-                let body = '';
-                r.on('data', d => { body += d; });
-                r.on('end', () => {
-                    try {
-                        const json = JSON.parse(body);
-                        if (r.statusCode === 200) resolve({ ok: true, login: json.login });
-                        else resolve({ ok: false, message: json.message || `HTTP ${r.statusCode}` });
-                    } catch (e) {
-                        resolve({ ok: false, message: 'レスポンス解析エラー' });
-                    }
-                });
-            });
-            req2.on('error', (e) => resolve({ ok: false, message: e.message }));
-            req2.end();
-        });
-        res.json(result);
-    } catch (err) {
-        console.error(err);
-        res.json({ ok: false, message: 'サーバーエラー' });
+    // 既存トークンをフォールバックとして使用
+    let token = accessToken && accessToken.trim() ? accessToken.trim() : null;
+    if (!token) {
+      const mapping = await GitHubMapping.findOne({
+        userId: req.session.userId,
+      }).lean();
+      if (mapping && mapping.accessToken) token = mapping.accessToken;
     }
+    if (!token)
+      return res.json({
+        ok: false,
+        message: "アクセストークンを入力してください",
+      });
+
+    // GitHub API /user を叩いて検証
+    const result = await new Promise((resolve) => {
+      const opts = {
+        hostname: "api.github.com",
+        path: "/user",
+        method: "GET",
+        headers: {
+          "User-Agent": "NOKORI-DXPro/1.0",
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+        },
+      };
+      const req2 = https.request(opts, (r) => {
+        let body = "";
+        r.on("data", (d) => {
+          body += d;
+        });
+        r.on("end", () => {
+          try {
+            const json = JSON.parse(body);
+            if (r.statusCode === 200) resolve({ ok: true, login: json.login });
+            else
+              resolve({
+                ok: false,
+                message: json.message || `HTTP ${r.statusCode}`,
+              });
+          } catch (e) {
+            resolve({ ok: false, message: "レスポンス解析エラー" });
+          }
+        });
+      });
+      req2.on("error", (e) => resolve({ ok: false, message: e.message }));
+      req2.end();
+    });
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.json({ ok: false, message: "サーバーエラー" });
+  }
 });
 
 // ─── タスク詳細画面 GET ────────────────────────────────────
-router.get('/tasks/:id', requireLogin, async (req, res) => {
-    try {
-        const task = await GitHubTask.findById(req.params.id).lean();
-        if (!task) return res.redirect('/tasks');
+router.get("/tasks/:id", requireLogin, async (req, res) => {
+  try {
+    const task = await GitHubTask.findById(req.params.id).lean();
+    if (!task) return res.redirect("/tasks");
 
-        // 自分の担当か確認（管理者はすべて閲覧可）
-        const isAssigned = task.assignees && task.assignees.some(a => String(a.userId) === String(req.session.userId));
-        if (!isAssigned && !req.session.isAdmin) return res.redirect('/tasks');
+    // 自分の担当か確認（管理者はすべて閲覧可）
+    const isAssigned =
+      task.assignees &&
+      task.assignees.some(
+        (a) => String(a.userId) === String(req.session.userId),
+      );
+    if (!isAssigned && !req.session.isAdmin) return res.redirect("/tasks");
 
-        const comments = await TaskComment.find({ taskId: task._id }).sort({ createdAt: 1 }).lean();
-        const allEmps  = await Employee.find({}, 'name userId').lean();
-        const mentionUsersJson = JSON.stringify(allEmps.map(e => ({ id: String(e.userId), name: e.name })));
+    const comments = await TaskComment.find({ taskId: task._id })
+      .sort({ createdAt: 1 })
+      .lean();
+    const allEmps = await Employee.find({}, "name userId").lean();
+    const mentionUsersJson = JSON.stringify(
+      allEmps.map((e) => ({ id: String(e.userId), name: e.name })),
+    );
 
-        // 状態バッジ
-        function stateBadge(t) {
-            if (t.type === 'pr' && t.merged)   return `<span class="tk-badge tk-badge-pr">Merged</span>`;
-            if (t.state === 'closed')           return `<span class="tk-badge tk-badge-closed">Closed</span>`;
-            if (t.type === 'pr' && t.draft)     return `<span class="tk-badge" style="background:#f1f5f9;color:#475569">Draft</span>`;
-            return `<span class="tk-badge tk-badge-open">Open</span>`;
-        }
+    // 状態バッジ
+    function stateBadge(t) {
+      if (t.type === "pr" && t.merged)
+        return `<span class="tk-badge tk-badge-pr">Merged</span>`;
+      if (t.state === "closed")
+        return `<span class="tk-badge tk-badge-closed">Closed</span>`;
+      if (t.type === "pr" && t.draft)
+        return `<span class="tk-badge" style="background:#f1f5f9;color:#475569">Draft</span>`;
+      return `<span class="tk-badge tk-badge-open">Open</span>`;
+    }
 
-        // コメントHTML生成
-        function commentHtml(c) {
-            const isOwn = String(c.authorId) === String(req.session.userId);
-            const dateStr = new Date(c.createdAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-            const editedLabel = c.editedAt ? ' <span style="font-size:11px;color:#94a3b8">(編集済)</span>' : '';
+    // コメントHTML生成
+    function commentHtml(c) {
+      const isOwn = String(c.authorId) === String(req.session.userId);
+      const dateStr = new Date(c.createdAt).toLocaleString("ja-JP", {
+        timeZone: "Asia/Tokyo",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const editedLabel = c.editedAt
+        ? ' <span style="font-size:11px;color:#94a3b8">(編集済)</span>'
+        : "";
 
-            const bodyHtml = escapeHtml(c.text)
-                .replace(/@([^\s@]+)/g, '<span style="color:#2563eb;font-weight:700;background:#eff6ff;border-radius:4px;padding:0 3px">@$1</span>')
-                .replace(/\n/g, '<br>');
+      const bodyHtml = escapeHtml(c.text)
+        .replace(
+          /@([^\s@]+)/g,
+          '<span style="color:#2563eb;font-weight:700;background:#eff6ff;border-radius:4px;padding:0 3px">@$1</span>',
+        )
+        .replace(/\n/g, "<br>");
 
-            const attsHtml = (c.attachments || []).length ? `
+      const attsHtml = (c.attachments || []).length
+        ? `
             <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
-                ${(c.attachments || []).map(a => {
-                    const isImg = (a.mimetype || '').startsWith('image/');
-                    const url   = '/uploads/tasks/' + a.filename;
-                    if (isImg) return `<a href="${url}" target="_blank"><img src="${url}" alt="${escapeHtml(a.originalName||a.filename)}" style="max-width:160px;max-height:120px;border-radius:8px;border:1px solid #e2e8f0;object-fit:cover"></a>`;
-                    const icon = (a.originalName||'').endsWith('.pdf') ? '📄' : '📎';
-                    const sz = a.size > 1024*1024 ? (a.size/1024/1024).toFixed(1)+'MB' : Math.round((a.size||0)/1024)+'KB';
-                    return `<a href="${url}" target="_blank" download="${escapeHtml(a.originalName||a.filename)}" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#f1f5f9;border-radius:8px;font-size:13px;color:#374151;text-decoration:none;border:1px solid #e2e8f0">${icon} ${escapeHtml(a.originalName||a.filename)} <span style="color:#9ca3af;font-size:11px">${sz}</span></a>`;
-                }).join('')}
-            </div>` : '';
+                ${(c.attachments || [])
+                  .map((a) => {
+                    const isImg = (a.mimetype || "").startsWith("image/");
+                    const url = "/uploads/tasks/" + a.filename;
+                    if (isImg)
+                      return `<a href="${url}" target="_blank"><img src="${url}" alt="${escapeHtml(a.originalName || a.filename)}" style="max-width:160px;max-height:120px;border-radius:8px;border:1px solid #e2e8f0;object-fit:cover"></a>`;
+                    const icon = (a.originalName || "").endsWith(".pdf")
+                      ? "📄"
+                      : "📎";
+                    const sz =
+                      a.size > 1024 * 1024
+                        ? (a.size / 1024 / 1024).toFixed(1) + "MB"
+                        : Math.round((a.size || 0) / 1024) + "KB";
+                    return `<a href="${url}" target="_blank" download="${escapeHtml(a.originalName || a.filename)}" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#f1f5f9;border-radius:8px;font-size:13px;color:#374151;text-decoration:none;border:1px solid #e2e8f0">${icon} ${escapeHtml(a.originalName || a.filename)} <span style="color:#9ca3af;font-size:11px">${sz}</span></a>`;
+                  })
+                  .join("")}
+            </div>`
+        : "";
 
-            const reactionCounts = {};
-            (c.reactions || []).forEach(r => { reactionCounts[r.emoji] = (reactionCounts[r.emoji] || 0) + 1; });
-            const myReactions = new Set((c.reactions || []).filter(r => String(r.userId) === String(req.session.userId)).map(r => r.emoji));
-            const EMOJIS = ['👍','🎉','🚀','❤️','👀','😊'];
-            const reactionsHtml = `
+      const reactionCounts = {};
+      (c.reactions || []).forEach((r) => {
+        reactionCounts[r.emoji] = (reactionCounts[r.emoji] || 0) + 1;
+      });
+      const myReactions = new Set(
+        (c.reactions || [])
+          .filter((r) => String(r.userId) === String(req.session.userId))
+          .map((r) => r.emoji),
+      );
+      const EMOJIS = ["👍", "🎉", "🚀", "❤️", "👀", "😊"];
+      const reactionsHtml = `
             <div class="tk-reactions" data-comment="${c._id}">
-                ${EMOJIS.map(e => {
-                    const cnt = reactionCounts[e] || 0;
-                    const on  = myReactions.has(e) ? ' tk-react-on' : '';
-                    return `<button type="button" class="tk-react-btn${on}" onclick="toggleReaction('${c._id}','${e}',this)" title="${e}">${e}${cnt ? `<span class="tk-react-cnt">${cnt}</span>` : ''}</button>`;
-                }).join('')}
+                ${EMOJIS.map((e) => {
+                  const cnt = reactionCounts[e] || 0;
+                  const on = myReactions.has(e) ? " tk-react-on" : "";
+                  return `<button type="button" class="tk-react-btn${on}" onclick="toggleReaction('${c._id}','${e}',this)" title="${e}">${e}${cnt ? `<span class="tk-react-cnt">${cnt}</span>` : ""}</button>`;
+                }).join("")}
             </div>`;
 
-            return `
+      return `
             <div class="tk-comment" id="comment-${c._id}">
                 <div class="tk-comment-header">
                     <div style="display:flex;align-items:center;gap:8px">
-                        <div class="tk-avatar">${escapeHtml((c.authorName||'?')[0])}</div>
-                        <span style="font-weight:700;font-size:14px">${escapeHtml(c.authorName||'')}</span>
+                        <div class="tk-avatar">${escapeHtml((c.authorName || "?")[0])}</div>
+                        <span style="font-weight:700;font-size:14px">${escapeHtml(c.authorName || "")}</span>
                         <span style="font-size:12px;color:var(--tk-muted)">${dateStr}${editedLabel}</span>
                     </div>
-                    ${isOwn || req.session.isAdmin ? `
+                    ${
+                      isOwn || req.session.isAdmin
+                        ? `
                     <div style="display:flex;gap:6px">
                         <button type="button" class="tk-btn tk-btn-ghost tk-btn-sm" onclick="startEdit('${c._id}')"><i class="fa-solid fa-pen"></i></button>
                         <form method="POST" action="/tasks/${task._id}/comment/${c._id}/delete" onsubmit="return confirm('削除しますか？')">
                             <button type="submit" class="tk-btn tk-btn-danger tk-btn-sm"><i class="fa-solid fa-trash"></i></button>
                         </form>
-                    </div>` : ''}
+                    </div>`
+                        : ""
+                    }
                 </div>
                 <div class="tk-comment-body" id="body-${c._id}">${bodyHtml}${attsHtml}</div>
                 ${reactionsHtml}
@@ -846,43 +1008,54 @@ router.get('/tasks/:id', requireLogin, async (req, res) => {
                     </div>
                 </div>
             </div>`;
-        }
+    }
 
-        const labelsHtml = (task.labels || []).map(l =>
-            `<span style="background:#${l.color||'e2e8f0'};color:${parseInt(l.color||'ffffff',16)>0x888888?'#1e293b':'#fff'};padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700">${escapeHtml(l.name)}</span>`
-        ).join(' ');
+    const labelsHtml = (task.labels || [])
+      .map(
+        (l) =>
+          `<span style="background:#${l.color || "e2e8f0"};color:${parseInt(l.color || "ffffff", 16) > 0x888888 ? "#1e293b" : "#fff"};padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700">${escapeHtml(l.name)}</span>`,
+      )
+      .join(" ");
 
-        const aiHtml = `
+    const aiHtml = `
         <div class="tk-card" id="ai-card" style="margin-bottom:16px">
             <div class="tk-card-title" style="justify-content:space-between">
                 <span><i class="fa-solid fa-robot" style="color:#7c3aed"></i>AI分析</span>
                 <button type="button" class="tk-btn tk-btn-ghost tk-btn-sm" id="analyzeBtn" onclick="runAnalyze()">
                     <i class="fa-solid fa-robot" id="analyzeIcon" style="color:#7c3aed"></i>
-                    ${task.aiAnalysis && task.aiAnalysis.priority ? '再分析' : 'AI分析を実行'}
+                    ${task.aiAnalysis && task.aiAnalysis.priority ? "再分析" : "AI分析を実行"}
                 </button>
             </div>
             <div id="ai-content">
-            ${task.aiAnalysis && task.aiAnalysis.priority ? `
+            ${
+              task.aiAnalysis && task.aiAnalysis.priority
+                ? `
                 <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:13px;margin-bottom:8px">
-                    <div><span style="color:var(--tk-muted)">優先度:</span> <strong>${{high:'🔴 高',medium:'🟡 中',low:'⚪ 低'}[task.aiAnalysis.priority]||'—'}</strong></div>
-                    <div><span style="color:var(--tk-muted)">難易度:</span> <strong>${{hard:'★★★ 難',medium:'★★ 中',easy:'★ 易'}[task.aiAnalysis.difficulty]||'—'}</strong></div>
-                    ${task.aiAnalysis.isStale ? '<div><span style="color:#d97706;font-weight:700"><i class="fa-solid fa-triangle-exclamation"></i> 滞留タスク（30日以上更新なし）</span></div>' : ''}
-                    <div style="color:var(--tk-muted);font-size:11px;margin-left:auto">${task.aiAnalysis.analyzedAt ? '分析日時: '+new Date(task.aiAnalysis.analyzedAt).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''}</div>
+                    <div><span style="color:var(--tk-muted)">優先度:</span> <strong>${{ high: "🔴 高", medium: "🟡 中", low: "⚪ 低" }[task.aiAnalysis.priority] || "—"}</strong></div>
+                    <div><span style="color:var(--tk-muted)">難易度:</span> <strong>${{ hard: "★★★ 難", medium: "★★ 中", easy: "★ 易" }[task.aiAnalysis.difficulty] || "—"}</strong></div>
+                    ${task.aiAnalysis.isStale ? '<div><span style="color:#d97706;font-weight:700"><i class="fa-solid fa-triangle-exclamation"></i> 滞留タスク（30日以上更新なし）</span></div>' : ""}
+                    <div style="color:var(--tk-muted);font-size:11px;margin-left:auto">${task.aiAnalysis.analyzedAt ? "分析日時: " + new Date(task.aiAnalysis.analyzedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}</div>
                 </div>
-                ${task.aiAnalysis.suggestion ? `<div style="padding:10px 14px;background:#fdf4ff;border-radius:8px;font-size:13px;color:#581c87">${escapeHtml(task.aiAnalysis.suggestion)}</div>` : ''}
-            ` : `
+                ${task.aiAnalysis.suggestion ? `<div style="padding:10px 14px;background:#fdf4ff;border-radius:8px;font-size:13px;color:#581c87">${escapeHtml(task.aiAnalysis.suggestion)}</div>` : ""}
+            `
+                : `
                 <div style="text-align:center;padding:20px 0;color:var(--tk-muted);font-size:13px">
                     <i class="fa-solid fa-robot" style="font-size:28px;display:block;margin-bottom:10px;color:var(--tk-sub)"></i>
                     「AI分析を実行」ボタンを押すと、優先度・難易度・アドバイスを自動判定します
                 </div>
-            `}
+            `
+            }
             </div>
         </div>`;
 
-        const bodyHtml = escapeHtml(task.body || '（本文なし）')
-            .replace(/\n/g, '<br>');
+    const bodyHtml = escapeHtml(task.body || "（本文なし）").replace(
+      /\n/g,
+      "<br>",
+    );
 
-        const html = taskCss() + `
+    const html =
+      taskCss() +
+      `
 <style>
 .mention-wrap { position:relative; }
 .mention-suggest { position:absolute;z-index:500;background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:200px;max-height:220px;overflow-y:auto;display:none;margin-top:2px; }
@@ -911,9 +1084,11 @@ router.get('/tasks/:id', requireLogin, async (req, res) => {
         <div class="left">
             <div class="breadcrumb"><a href="/tasks" style="color:var(--tk-primary);text-decoration:none">タスク管理</a> / 詳細</div>
             <div class="page-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                ${task.type === 'pr'
+                ${
+                  task.type === "pr"
                     ? `<i class="fa-solid fa-code-pull-request" style="color:#7c3aed"></i>`
-                    : `<i class="fa-solid fa-circle-dot" style="color:#059669"></i>`}
+                    : `<i class="fa-solid fa-circle-dot" style="color:#059669"></i>`
+                }
                 ${escapeHtml(task.title)}
             </div>
         </div>
@@ -931,12 +1106,12 @@ router.get('/tasks/:id', requireLogin, async (req, res) => {
             ${stateBadge(task)}
             <span style="font-size:12px;color:var(--tk-muted)">${escapeHtml(task.owner)}/${escapeHtml(task.repo)} #${task.number}</span>
             ${labelsHtml}
-            ${task.milestone ? `<span style="font-size:12px;color:#7c3aed"><i class="fa-solid fa-map-pin"></i> ${escapeHtml(task.milestone)}</span>` : ''}
+            ${task.milestone ? `<span style="font-size:12px;color:#7c3aed"><i class="fa-solid fa-map-pin"></i> ${escapeHtml(task.milestone)}</span>` : ""}
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;font-size:12px;color:var(--tk-muted);margin-bottom:16px;flex-wrap:wrap">
-            <div><i class="fa-solid fa-clock" style="margin-right:4px"></i>作成: ${task.githubCreatedAt ? new Date(task.githubCreatedAt).toLocaleDateString('ja-JP') : '—'}</div>
-            <div><i class="fa-solid fa-rotate" style="margin-right:4px"></i>更新: ${task.githubUpdatedAt ? new Date(task.githubUpdatedAt).toLocaleDateString('ja-JP') : '—'}</div>
-            <div><i class="fa-solid fa-user-check" style="margin-right:4px"></i>担当: ${(task.assignees||[]).map(a=>escapeHtml(a.githubLogin||'')).join(', ')||'未割当'}</div>
+            <div><i class="fa-solid fa-clock" style="margin-right:4px"></i>作成: ${task.githubCreatedAt ? new Date(task.githubCreatedAt).toLocaleDateString("ja-JP") : "—"}</div>
+            <div><i class="fa-solid fa-rotate" style="margin-right:4px"></i>更新: ${task.githubUpdatedAt ? new Date(task.githubUpdatedAt).toLocaleDateString("ja-JP") : "—"}</div>
+            <div><i class="fa-solid fa-user-check" style="margin-right:4px"></i>担当: ${(task.assignees || []).map((a) => escapeHtml(a.githubLogin || "")).join(", ") || "未割当"}</div>
         </div>
         <div style="background:#f8fafc;border:1px solid var(--tk-border);border-radius:8px;padding:16px;font-size:14px;line-height:1.8;white-space:pre-wrap">${bodyHtml}</div>
     </div>
@@ -947,9 +1122,9 @@ router.get('/tasks/:id', requireLogin, async (req, res) => {
     <div class="tk-card">
         <div class="tk-card-title"><i class="fa-solid fa-comments"></i>コメント（${comments.length}件）</div>
 
-        ${comments.length === 0 ? `<div style="text-align:center;padding:24px;color:var(--tk-muted);font-size:13px"><i class="fa-solid fa-comment-slash" style="font-size:24px;display:block;margin-bottom:8px"></i>まだコメントがありません</div>` : ''}
+        ${comments.length === 0 ? `<div style="text-align:center;padding:24px;color:var(--tk-muted);font-size:13px"><i class="fa-solid fa-comment-slash" style="font-size:24px;display:block;margin-bottom:8px"></i>まだコメントがありません</div>` : ""}
         <div id="comments-wrap">
-            ${comments.map(commentHtml).join('')}
+            ${comments.map(commentHtml).join("")}
         </div>
 
         <!-- コメント投稿フォーム -->
@@ -1151,165 +1326,203 @@ async function toggleReaction(cid, emoji, btn) {
     } catch(e) {}
 }
 </script>`;
-        renderPage(req, res, `タスク詳細 - ${task.title}`, 'タスク管理', html);
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('エラーが発生しました');
-    }
+    renderPage(req, res, `タスク詳細 - ${task.title}`, "タスク管理", html);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("エラーが発生しました");
+  }
 });
 
 // ─── コメント投稿 POST ─────────────────────────────────────
-router.post('/tasks/:id/comment', requireLogin, upload.array('commentFiles', 5), async (req, res) => {
+router.post(
+  "/tasks/:id/comment",
+  requireLogin,
+  upload.array("commentFiles", 5),
+  async (req, res) => {
     try {
-        const task = await GitHubTask.findById(req.params.id).lean();
-        if (!task) return res.redirect('/tasks');
+      const task = await GitHubTask.findById(req.params.id).lean();
+      if (!task) return res.redirect("/tasks");
 
-        const user     = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        const authorName = employee ? employee.name : user.username;
-        const { text } = req.body;
-        if (!text || !text.trim()) return res.redirect(`/tasks/${req.params.id}`);
+      const user = await User.findById(req.session.userId);
+      const employee = await Employee.findOne({ userId: user._id });
+      const authorName = employee ? employee.name : user.username;
+      const { text } = req.body;
+      if (!text || !text.trim()) return res.redirect(`/tasks/${req.params.id}`);
 
-        // メンション解析
-        const mentionRe = /@([^\s@]+)/g;
-        const mentionNames = [];
-        let m;
-        while ((m = mentionRe.exec(text)) !== null) mentionNames.push(m[1]);
-        const mentionedEmps = mentionNames.length
-            ? await Employee.find({ name: { $in: mentionNames } }, 'name userId').lean()
-            : [];
-        const mentionIds = mentionedEmps.map(e => e.userId);
+      // メンション解析
+      const mentionRe = /@([^\s@]+)/g;
+      const mentionNames = [];
+      let m;
+      while ((m = mentionRe.exec(text)) !== null) mentionNames.push(m[1]);
+      const mentionedEmps = mentionNames.length
+        ? await Employee.find(
+            { name: { $in: mentionNames } },
+            "name userId",
+          ).lean()
+        : [];
+      const mentionIds = mentionedEmps.map((e) => e.userId);
 
-        // 添付ファイル
-        const attachments = (req.files || []).map(f => ({
-            originalName: f.originalname, filename: f.filename, mimetype: f.mimetype, size: f.size
-        }));
+      // 添付ファイル
+      const attachments = (req.files || []).map((f) => ({
+        originalName: f.originalname,
+        filename: f.filename,
+        mimetype: f.mimetype,
+        size: f.size,
+      }));
 
-        const comment = await TaskComment.create({
-            taskId: task._id,
-            authorId: user._id,
-            authorName,
-            text: text.trim(),
-            mentions: mentionIds,
-            attachments
-        });
+      const comment = await TaskComment.create({
+        taskId: task._id,
+        authorId: user._id,
+        authorName,
+        text: text.trim(),
+        mentions: mentionIds,
+        attachments,
+      });
 
-        // タスク担当者への通知（自分以外）
-        for (const a of (task.assignees || [])) {
-            if (a.userId && String(a.userId) !== String(user._id)) {
-                await createNotification({
-                    userId: a.userId, type: 'comment',
-                    title: `${authorName} さんがタスクにコメントしました`,
-                    body: text.trim().substring(0, 80),
-                    link: `/tasks/${task._id}`,
-                    fromUserId: user._id, fromName: authorName
-                });
-            }
+      // タスク担当者への通知（自分以外）
+      for (const a of task.assignees || []) {
+        if (a.userId && String(a.userId) !== String(user._id)) {
+          await createNotification({
+            userId: a.userId,
+            type: "comment",
+            title: `${authorName} さんがタスクにコメントしました`,
+            body: text.trim().substring(0, 80),
+            link: `/tasks/${task._id}`,
+            fromUserId: user._id,
+            fromName: authorName,
+          });
         }
+      }
 
-        // メンション通知
-        for (const emp of mentionedEmps) {
-            if (String(emp.userId) !== String(user._id)) {
-                await createNotification({
-                    userId: emp.userId, type: 'mention',
-                    title: `${authorName} さんがタスクコメントでメンションしました`,
-                    body: text.trim().substring(0, 80),
-                    link: `/tasks/${task._id}`,
-                    fromUserId: user._id, fromName: authorName
-                });
-            }
+      // メンション通知
+      for (const emp of mentionedEmps) {
+        if (String(emp.userId) !== String(user._id)) {
+          await createNotification({
+            userId: emp.userId,
+            type: "mention",
+            title: `${authorName} さんがタスクコメントでメンションしました`,
+            body: text.trim().substring(0, 80),
+            link: `/tasks/${task._id}`,
+            fromUserId: user._id,
+            fromName: authorName,
+          });
         }
+      }
 
-        res.redirect(`/tasks/${req.params.id}`);
+      res.redirect(`/tasks/${req.params.id}`);
     } catch (err) {
-        console.error(err);
-        res.redirect(`/tasks/${req.params.id}`);
+      console.error(err);
+      res.redirect(`/tasks/${req.params.id}`);
     }
-});
+  },
+);
 
 // ─── コメント編集 POST（JSON API）──────────────────────────
-router.post('/tasks/:taskId/comment/:commentId/edit', requireLogin, async (req, res) => {
+router.post(
+  "/tasks/:taskId/comment/:commentId/edit",
+  requireLogin,
+  async (req, res) => {
     try {
-        const { text } = req.body;
-        if (!text || !text.trim()) return res.json({ ok: false, error: 'テキストが空です' });
+      const { text } = req.body;
+      if (!text || !text.trim())
+        return res.json({ ok: false, error: "テキストが空です" });
 
-        const comment = await TaskComment.findById(req.params.commentId);
-        if (!comment) return res.json({ ok: false, error: 'コメントが見つかりません' });
-        if (String(comment.authorId) !== String(req.session.userId) && !req.session.isAdmin)
-            return res.json({ ok: false, error: '権限がありません' });
+      const comment = await TaskComment.findById(req.params.commentId);
+      if (!comment)
+        return res.json({ ok: false, error: "コメントが見つかりません" });
+      if (
+        String(comment.authorId) !== String(req.session.userId) &&
+        !req.session.isAdmin
+      )
+        return res.json({ ok: false, error: "権限がありません" });
 
-        comment.text     = text.trim();
-        comment.editedAt = new Date();
-        await comment.save();
+      comment.text = text.trim();
+      comment.editedAt = new Date();
+      await comment.save();
 
-        const html = escapeHtml(comment.text)
-            .replace(/@([^\s@]+)/g, '<span style="color:#2563eb;font-weight:700;background:#eff6ff;border-radius:4px;padding:0 3px">@$1</span>')
-            .replace(/\n/g, '<br>');
+      const html = escapeHtml(comment.text)
+        .replace(
+          /@([^\s@]+)/g,
+          '<span style="color:#2563eb;font-weight:700;background:#eff6ff;border-radius:4px;padding:0 3px">@$1</span>',
+        )
+        .replace(/\n/g, "<br>");
 
-        res.json({ ok: true, html });
+      res.json({ ok: true, html });
     } catch (err) {
-        console.error(err);
-        res.json({ ok: false, error: 'サーバーエラー' });
+      console.error(err);
+      res.json({ ok: false, error: "サーバーエラー" });
     }
-});
+  },
+);
 
 // ─── コメント削除 POST ─────────────────────────────────────
-router.post('/tasks/:taskId/comment/:commentId/delete', requireLogin, async (req, res) => {
+router.post(
+  "/tasks/:taskId/comment/:commentId/delete",
+  requireLogin,
+  async (req, res) => {
     try {
-        const comment = await TaskComment.findById(req.params.commentId);
-        if (!comment) return res.redirect(`/tasks/${req.params.taskId}`);
-        if (String(comment.authorId) !== String(req.session.userId) && !req.session.isAdmin)
-            return res.status(403).send('権限がありません');
+      const comment = await TaskComment.findById(req.params.commentId);
+      if (!comment) return res.redirect(`/tasks/${req.params.taskId}`);
+      if (
+        String(comment.authorId) !== String(req.session.userId) &&
+        !req.session.isAdmin
+      )
+        return res.status(403).send("権限がありません");
 
-        await TaskComment.findByIdAndDelete(req.params.commentId);
-        res.redirect(`/tasks/${req.params.taskId}`);
+      await TaskComment.findByIdAndDelete(req.params.commentId);
+      res.redirect(`/tasks/${req.params.taskId}`);
     } catch (err) {
-        console.error(err);
-        res.redirect(`/tasks/${req.params.taskId}`);
+      console.error(err);
+      res.redirect(`/tasks/${req.params.taskId}`);
     }
-});
+  },
+);
 
 // ─── リアクション POST（JSON API）──────────────────────────
-router.post('/tasks/:taskId/comment/:commentId/reaction', requireLogin, async (req, res) => {
+router.post(
+  "/tasks/:taskId/comment/:commentId/reaction",
+  requireLogin,
+  async (req, res) => {
     try {
-        const { emoji } = req.body;
-        if (!emoji) return res.json({ ok: false });
+      const { emoji } = req.body;
+      if (!emoji) return res.json({ ok: false });
 
-        const user    = await User.findById(req.session.userId).lean();
-        const employee = await Employee.findOne({ userId: user._id }).lean();
-        const userName = employee ? employee.name : user.username;
+      const user = await User.findById(req.session.userId).lean();
+      const employee = await Employee.findOne({ userId: user._id }).lean();
+      const userName = employee ? employee.name : user.username;
 
-        const comment = await TaskComment.findById(req.params.commentId);
-        if (!comment) return res.json({ ok: false, error: 'コメントが見つかりません' });
+      const comment = await TaskComment.findById(req.params.commentId);
+      if (!comment)
+        return res.json({ ok: false, error: "コメントが見つかりません" });
 
-        const existing = comment.reactions.find(
-            r => r.emoji === emoji && String(r.userId) === String(user._id)
+      const existing = comment.reactions.find(
+        (r) => r.emoji === emoji && String(r.userId) === String(user._id),
+      );
+      let reacted;
+      if (existing) {
+        comment.reactions = comment.reactions.filter(
+          (r) => !(r.emoji === emoji && String(r.userId) === String(user._id)),
         );
-        let reacted;
-        if (existing) {
-            comment.reactions = comment.reactions.filter(
-                r => !(r.emoji === emoji && String(r.userId) === String(user._id))
-            );
-            reacted = false;
-        } else {
-            comment.reactions.push({ emoji, userId: user._id, userName });
-            reacted = true;
-        }
-        await comment.save();
+        reacted = false;
+      } else {
+        comment.reactions.push({ emoji, userId: user._id, userName });
+        reacted = true;
+      }
+      await comment.save();
 
-        const count = comment.reactions.filter(r => r.emoji === emoji).length;
-        res.json({ ok: true, reacted, count });
+      const count = comment.reactions.filter((r) => r.emoji === emoji).length;
+      res.json({ ok: true, reacted, count });
     } catch (err) {
-        console.error(err);
-        res.json({ ok: false });
+      console.error(err);
+      res.json({ ok: false });
     }
-});
+  },
+);
 
 // ─── 添付ファイル配信 ─────────────────────────────────────
-router.get('/uploads/tasks/:filename', requireLogin, (req, res) => {
-    const safeName = path.basename(req.params.filename);
-    res.sendFile(path.resolve('uploads', 'tasks', safeName));
+router.get("/uploads/tasks/:filename", requireLogin, (req, res) => {
+  const safeName = path.basename(req.params.filename);
+  res.sendFile(path.resolve("uploads", "tasks", safeName));
 });
 
 module.exports = router;
-

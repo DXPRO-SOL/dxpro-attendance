@@ -94,11 +94,14 @@ test("computeAIRecommendations returns sorted recommendation results", () => {
 test("computePretestScore scores keyword-based answers", () => {
   // common テストは MC30問 + 記述10問 (q31-q40)
   // q1=C, q2=C が正解（pretestQuestions.js の common.mc[0,1].ans 参照）
-  const result = computePretestScore({
-    q1: "C",   // 正解: HTTPステータスコード200はOK
-    q2: "C",   // 正解: DELETEコマンド
-    q3: "D",   // 正解: commitコマンド
-  }, "common");
+  const result = computePretestScore(
+    {
+      q1: "C", // 正解: HTTPステータスコード200はOK
+      q2: "C", // 正解: DELETEコマンド
+      q3: "D", // 正解: commitコマンド
+    },
+    "common",
+  );
 
   assert.equal(result.total, 40);
   assert.ok(result.score > 0);
