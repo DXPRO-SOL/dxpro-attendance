@@ -911,6 +911,17 @@ router.get("/hr/add", requireLogin, isAdmin, (req, res) => {
                         <div class="hradd-label">メールアドレス</div>
                         <input class="hradd-input" type="email" name="email" placeholder="例：yamada@company.com">
                     </div>
+                    <div class="hradd-field">
+                        <div class="hradd-label">ロール <span class="hradd-required">必須</span></div>
+                        <select class="hradd-input" name="role" required>
+                            <option value="employee">一般社員</option>
+                            <option value="team_leader">チームリーダー</option>
+                            <option value="manager">部門長</option>
+                            <option value="admin">管理者</option>
+                            <option value="test_user">テストユーザー（閲覧のみ）</option>
+                        </select>
+                        <div class="hradd-hint">テストユーザーは読み取り専用です</div>
+                    </div>
                 </div>
             </div>
 
@@ -932,9 +943,10 @@ router.get("/hr/add", requireLogin, isAdmin, (req, res) => {
 
 router.post("/hr/add", requireLogin, isAdmin, async (req, res) => {
   try {
-    const { username, password, employeeId, name, department, position, joinDate, email } = req.body;
+    const { username, password, employeeId, name, department, position, joinDate, email, role } = req.body;
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({ username, password: hashedPassword });
+    const isAdminRole = role === 'admin';
+    const user = await User.create({ username, password: hashedPassword, role: role || 'employee', isAdmin: isAdminRole });
     await Employee.create({
       userId: user._id,
       employeeId,
@@ -943,6 +955,7 @@ router.post("/hr/add", requireLogin, isAdmin, async (req, res) => {
       position,
       joinDate,
       email,
+      orgRole: role || 'employee',
       paidLeave: 10,
     });
     res.redirect("/hr/add?success=1");

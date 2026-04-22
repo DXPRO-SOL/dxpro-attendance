@@ -7,7 +7,7 @@ const UserSchema = new mongoose.Schema({
     isAdmin: { type: Boolean, default: false },
     // Issue #19: 中間ロール拡張
     // 'admin' | 'manager' | 'team_leader' | 'employee'
-    role: { type: String, enum: ['admin', 'manager', 'team_leader', 'employee'], default: 'employee' },
+    role: { type: String, enum: ['admin', 'manager', 'team_leader', 'employee', 'test_user'], default: 'employee' },
     createdAt: { type: Date, default: Date.now }
 });
 

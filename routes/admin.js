@@ -1228,33 +1228,57 @@ router.get('/admin/view-attendance/:userId/:year/:month', requireLogin, isAdmin,
 // ユーザー権限管理
 router.get('/admin/users', requireLogin, isAdmin, async (req, res) => {
     try {
-        const users = await User.find({}, 'username isAdmin createdAt').lean();
+        const users = await User.find({}, 'username isAdmin role createdAt').lean();
 
-        const rows = users.map((u, idx) => `
+        const ROLE_OPTS = [
+            { val: 'admin',       label: '👑 管理者' },
+            { val: 'manager',     label: '🔵 部門長' },
+            { val: 'team_leader', label: '🟢 チームリーダー' },
+            { val: 'employee',    label: '⚪ 一般社員' },
+            { val: 'test_user',   label: '🧪 テストユーザー' },
+        ];
+        const ROLE_BADGE = {
+            admin:       { label: '👑 管理者',          bg: '#fffbeb', color: '#92400e', border: '#fcd34d' },
+            manager:     { label: '🔵 部門長',          bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
+            team_leader: { label: '🟢 チームリーダー',  bg: '#f0fdf4', color: '#15803d', border: '#86efac' },
+            employee:    { label: '⚪ 一般社員',         bg: '#f0f9ff', color: '#0369a1', border: '#bae6fd' },
+            test_user:   { label: '🧪 テストユーザー',  bg: '#faf5ff', color: '#7c3aed', border: '#d8b4fe' },
+        };
+
+        const rows = users.map((u, idx) => {
+            const role = u.role || (u.isAdmin ? 'admin' : 'employee');
+            const badge = ROLE_BADGE[role] || ROLE_BADGE.employee;
+            const opts = ROLE_OPTS.map(o =>
+                `<option value="${o.val}" ${role === o.val ? 'selected' : ''}>${o.label}</option>`
+            ).join('');
+            return `
             <tr class="uadm-row" style="animation-delay:${idx * 40}ms">
                 <td class="uadm-td uadm-td-user">
                     <div class="uadm-user-cell">
-                        <div class="uadm-avatar ${u.isAdmin ? 'uadm-avatar-admin' : 'uadm-avatar-user'}">
-                            ${u.isAdmin ? '<i class="fa fa-crown"></i>' : '<i class="fa fa-user"></i>'}
+                        <div class="uadm-avatar" style="background:${badge.bg};color:${badge.color};border:1.5px solid ${badge.border}">
+                            <i class="fa fa-user"></i>
                         </div>
                         <span class="uadm-username">${escapeHtml(u.username)}</span>
                     </div>
                 </td>
-                <td class="uadm-td uadm-td-role">
-                    <span class="uadm-badge ${u.isAdmin ? 'uadm-badge-admin' : 'uadm-badge-user'}">
-                        ${u.isAdmin ? '👑 管理者' : '一般ユーザー'}
+                <td class="uadm-td">
+                    <span class="uadm-badge" style="background:${badge.bg};color:${badge.color};border:1.5px solid ${badge.border}">
+                        ${badge.label}
                     </span>
                 </td>
                 <td class="uadm-td uadm-td-actions">
                     <div class="uadm-actions">
-                        <form method="POST" action="/admin/users/toggle-admin" class="uadm-form">
+                        <!-- ロール変更 -->
+                        <form method="POST" action="/admin/users/change-role" class="uadm-form uadm-role-form">
                             <input type="hidden" name="userId" value="${u._id}">
-                            <input type="hidden" name="isAdmin" value="${u.isAdmin ? '0' : '1'}">
-                            <button type="submit" class="uadm-btn ${u.isAdmin ? 'uadm-btn-revoke' : 'uadm-btn-promote'}">
-                                <i class="fa ${u.isAdmin ? 'fa-user-minus' : 'fa-user-shield'}"></i>
-                                ${u.isAdmin ? '権限を剥奪' : '管理者に昇格'}
-                            </button>
+                            <div class="uadm-role-row">
+                                <select name="role" class="uadm-select">${opts}</select>
+                                <button type="submit" class="uadm-btn uadm-btn-role">
+                                    <i class="fa fa-check"></i> 変更
+                                </button>
+                            </div>
                         </form>
+                        <!-- パスワードリセット -->
                         <form method="POST" action="/admin/users/reset-password" class="uadm-form uadm-pw-form"
                               onsubmit="return confirm('${escapeHtml(u.username)} のパスワードをリセットしますか？')">
                             <input type="hidden" name="userId" value="${u._id}">
@@ -1269,358 +1293,94 @@ router.get('/admin/users', requireLogin, isAdmin, async (req, res) => {
                         </form>
                     </div>
                 </td>
-            </tr>
-        `).join('');
+            </tr>`;
+        }).join('');
 
         const html = `
         <style>
-            /* ── ページ枠 ── */
-            .uadm-wrap {
-                max-width: 1000px;
-                margin: 0 auto;
-                padding: 0 0 60px;
-            }
-
-            /* ── パンくず ── */
-            .uadm-breadcrumb {
-                display: flex;
-                align-items: center;
-                gap: 6px;
-                font-size: 12px;
-                color: #94a3b8;
-                margin-bottom: 24px;
-            }
-            .uadm-breadcrumb a {
-                color: #64748b;
-                text-decoration: none;
-                transition: color .15s;
-            }
-            .uadm-breadcrumb a:hover { color: #3b82f6; }
-            .uadm-breadcrumb .sep { color: #cbd5e1; }
-
-            /* ── ヘッダー ── */
-            .uadm-header {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                margin-bottom: 28px;
-                gap: 12px;
-                flex-wrap: wrap;
-            }
-            .uadm-header-left {
-                display: flex;
-                align-items: center;
-                gap: 16px;
-            }
-            .uadm-icon {
-                width: 52px;
-                height: 52px;
-                border-radius: 14px;
-                background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 22px;
-                flex-shrink: 0;
-                box-shadow: 0 4px 14px rgba(245,158,11,.35);
-            }
-            .uadm-title-block h1 {
-                margin: 0 0 4px;
-                font-size: 22px;
-                font-weight: 800;
-                color: #0f172a;
-                letter-spacing: -.3px;
-            }
-            .uadm-title-block p {
-                margin: 0;
-                font-size: 13px;
-                color: #64748b;
-            }
-            .uadm-count-chip {
-                background: #f1f5f9;
-                color: #475569;
-                font-size: 12px;
-                font-weight: 700;
-                padding: 4px 12px;
-                border-radius: 999px;
-                border: 1px solid #e2e8f0;
-            }
-
-            /* ── アラート ── */
-            .uadm-alert {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                padding: 12px 16px;
-                border-radius: 10px;
-                font-size: 13px;
-                font-weight: 600;
-                margin-bottom: 18px;
-                animation: fadeSlideIn .3s ease;
-            }
-            .uadm-alert-success {
-                background: #f0fdf4;
-                color: #15803d;
-                border: 1px solid #bbf7d0;
-            }
-            .uadm-alert-error {
-                background: #fef2f2;
-                color: #dc2626;
-                border: 1px solid #fecaca;
-            }
-            @keyframes fadeSlideIn {
-                from { opacity:0; transform:translateY(-8px); }
-                to   { opacity:1; transform:translateY(0); }
-            }
-
-            /* ── テーブルカード ── */
-            .uadm-card {
-                background: #fff;
-                border-radius: 18px;
-                box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 8px 32px rgba(15,23,42,.07);
-                overflow: hidden;
-            }
-            .uadm-table {
-                width: 100%;
-                border-collapse: collapse;
-            }
-            .uadm-table thead th {
-                padding: 13px 20px;
-                background: #0f172a;
-                color: #cbd5e1;
-                font-size: 11px;
-                font-weight: 700;
-                letter-spacing: .07em;
-                text-transform: uppercase;
-                white-space: nowrap;
-            }
-            .uadm-table thead th:first-child { border-radius: 0; }
-            .uadm-row {
-                border-bottom: 1px solid #f1f5f9;
-                transition: background .12s;
-                animation: rowIn .3s ease both;
-            }
-            @keyframes rowIn {
-                from { opacity:0; transform:translateX(-6px); }
-                to   { opacity:1; transform:translateX(0); }
-            }
-            .uadm-row:last-child { border-bottom: none; }
-            .uadm-row:hover { background: #f8faff; }
-            .uadm-td {
-                padding: 14px 20px;
-                vertical-align: middle;
-                font-size: 14px;
-            }
-
-            /* ── ユーザーセル ── */
-            .uadm-user-cell {
-                display: flex;
-                align-items: center;
-                gap: 12px;
-            }
-            .uadm-avatar {
-                width: 36px;
-                height: 36px;
-                border-radius: 10px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 14px;
-                flex-shrink: 0;
-            }
-            .uadm-avatar-admin {
-                background: linear-gradient(135deg, #fef3c7, #fde68a);
-                color: #92400e;
-                border: 1.5px solid #fcd34d;
-            }
-            .uadm-avatar-user {
-                background: #f1f5f9;
-                color: #64748b;
-                border: 1.5px solid #e2e8f0;
-            }
-            .uadm-username {
-                font-weight: 700;
-                color: #0f172a;
-                font-size: 14px;
-            }
-
-            /* ── バッジ ── */
-            .uadm-badge {
-                display: inline-flex;
-                align-items: center;
-                gap: 4px;
-                padding: 4px 12px;
-                border-radius: 999px;
-                font-size: 12px;
-                font-weight: 700;
-            }
-            .uadm-badge-admin {
-                background: #fffbeb;
-                color: #92400e;
-                border: 1.5px solid #fcd34d;
-            }
-            .uadm-badge-user {
-                background: #f0f9ff;
-                color: #0369a1;
-                border: 1.5px solid #bae6fd;
-            }
-
-            /* ── アクション列 ── */
-            .uadm-td-actions { width: 1%; white-space: nowrap; }
-            .uadm-actions {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                flex-wrap: wrap;
-            }
-            .uadm-form { margin: 0; }
-            .uadm-pw-row {
-                display: flex;
-                align-items: center;
-                gap: 6px;
-            }
-            .uadm-pw-input {
-                width: 150px;
-                padding: 7px 11px;
-                border: 1.5px solid #e2e8f0;
-                border-radius: 8px;
-                font-size: 13px;
-                color: #0f172a;
-                background: #fafbfc;
-                outline: none;
-                transition: border-color .18s, box-shadow .18s;
-            }
-            .uadm-pw-input:focus {
-                border-color: #3b82f6;
-                box-shadow: 0 0 0 3px rgba(59,130,246,.1);
-                background: #fff;
-            }
-            .uadm-pw-input::placeholder { color: #c0c8d4; }
-
-            /* ── ボタン ── */
-            .uadm-btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 6px;
-                padding: 7px 14px;
-                border: none;
-                border-radius: 8px;
-                font-size: 12px;
-                font-weight: 700;
-                cursor: pointer;
-                transition: opacity .15s, transform .1s, box-shadow .15s;
-                white-space: nowrap;
-            }
-            .uadm-btn:hover { opacity: .85; transform: translateY(-1px); }
-            .uadm-btn:active { transform: translateY(0); }
-            .uadm-btn-promote {
-                background: linear-gradient(135deg, #10b981, #059669);
-                color: #fff;
-                box-shadow: 0 2px 8px rgba(16,185,129,.3);
-            }
-            .uadm-btn-revoke {
-                background: linear-gradient(135deg, #f87171, #ef4444);
-                color: #fff;
-                box-shadow: 0 2px 8px rgba(239,68,68,.25);
-            }
-            .uadm-btn-reset {
-                background: linear-gradient(135deg, #f59e0b, #d97706);
-                color: #fff;
-                box-shadow: 0 2px 8px rgba(245,158,11,.3);
-            }
-
-            /* ── フッター ── */
-            .uadm-footer {
-                margin-top: 24px;
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                flex-wrap: wrap;
-                gap: 12px;
-            }
-            .uadm-back-link {
-                display: inline-flex;
-                align-items: center;
-                gap: 7px;
-                padding: 9px 18px;
-                background: #fff;
-                color: #475569;
-                border: 1.5px solid #e2e8f0;
-                border-radius: 10px;
-                font-size: 13px;
-                font-weight: 600;
-                text-decoration: none;
-                transition: border-color .15s, color .15s;
-            }
-            .uadm-back-link:hover {
-                border-color: #94a3b8;
-                color: #1e293b;
-            }
-            .uadm-footer-note {
-                font-size: 12px;
-                color: #94a3b8;
-                display: flex;
-                align-items: center;
-                gap: 5px;
-            }
-
-            @media (max-width: 700px) {
-                .uadm-td { padding: 12px 12px; }
-                .uadm-actions { flex-direction: column; align-items: flex-start; }
-                .uadm-pw-input { width: 120px; }
-                .uadm-table thead th { padding: 11px 12px; }
-            }
+            .uadm-wrap{max-width:1100px;margin:0 auto;padding:0 0 60px}
+            .uadm-breadcrumb{display:flex;align-items:center;gap:6px;font-size:12px;color:#94a3b8;margin-bottom:24px}
+            .uadm-breadcrumb a{color:#64748b;text-decoration:none;transition:color .15s}
+            .uadm-breadcrumb a:hover{color:#3b82f6}
+            .uadm-breadcrumb .sep{color:#cbd5e1}
+            .uadm-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;gap:12px;flex-wrap:wrap}
+            .uadm-header-left{display:flex;align-items:center;gap:16px}
+            .uadm-icon{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#f59e0b,#d97706);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;box-shadow:0 4px 14px rgba(245,158,11,.35)}
+            .uadm-title-block h1{margin:0 0 4px;font-size:22px;font-weight:800;color:#0f172a}
+            .uadm-title-block p{margin:0;font-size:13px;color:#64748b}
+            .uadm-count-chip{background:#f1f5f9;color:#475569;font-size:12px;font-weight:700;padding:4px 12px;border-radius:999px;border:1px solid #e2e8f0}
+            .uadm-alert{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:10px;font-size:13px;font-weight:600;margin-bottom:18px}
+            .uadm-alert-success{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
+            .uadm-alert-error{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+            .uadm-card{background:#fff;border-radius:18px;box-shadow:0 1px 3px rgba(0,0,0,.06),0 8px 32px rgba(15,23,42,.07);overflow:hidden}
+            .uadm-table{width:100%;border-collapse:collapse}
+            .uadm-table thead th{padding:13px 20px;background:#0f172a;color:#cbd5e1;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;white-space:nowrap}
+            .uadm-row{border-bottom:1px solid #f1f5f9;transition:background .12s}
+            .uadm-row:last-child{border-bottom:none}
+            .uadm-row:hover{background:#f8faff}
+            .uadm-td{padding:14px 20px;vertical-align:middle;font-size:14px}
+            .uadm-user-cell{display:flex;align-items:center;gap:12px}
+            .uadm-avatar{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+            .uadm-username{font-weight:700;color:#0f172a;font-size:14px}
+            .uadm-badge{display:inline-flex;align-items:center;gap:4px;padding:4px 12px;border-radius:999px;font-size:12px;font-weight:700}
+            .uadm-td-actions{white-space:nowrap}
+            .uadm-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+            .uadm-form{margin:0}
+            .uadm-role-row{display:flex;align-items:center;gap:6px}
+            .uadm-select{padding:7px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;background:#fafbfc;outline:none;cursor:pointer;transition:border-color .18s}
+            .uadm-select:focus{border-color:#3b82f6;background:#fff}
+            .uadm-pw-row{display:flex;align-items:center;gap:6px}
+            .uadm-pw-input{width:150px;padding:7px 11px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;background:#fafbfc;outline:none;transition:border-color .18s}
+            .uadm-pw-input:focus{border-color:#3b82f6;background:#fff}
+            .uadm-pw-input::placeholder{color:#c0c8d4}
+            .uadm-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;transition:opacity .15s,transform .1s;white-space:nowrap}
+            .uadm-btn:hover{opacity:.85;transform:translateY(-1px)}
+            .uadm-btn-role{background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:#fff;box-shadow:0 2px 8px rgba(59,130,246,.3)}
+            .uadm-btn-reset{background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;box-shadow:0 2px 8px rgba(245,158,11,.3)}
+            .uadm-footer{margin-top:24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+            .uadm-back-link{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;background:#fff;color:#475569;border:1.5px solid #e2e8f0;border-radius:10px;font-size:13px;font-weight:600;text-decoration:none;transition:border-color .15s,color .15s}
+            .uadm-back-link:hover{border-color:#94a3b8;color:#1e293b}
+            .uadm-footer-note{font-size:12px;color:#94a3b8;display:flex;align-items:center;gap:5px}
+            @media(max-width:700px){.uadm-td{padding:12px 12px}.uadm-actions{flex-direction:column;align-items:flex-start}.uadm-pw-input{width:120px}}
         </style>
 
         <div class="uadm-wrap">
-            <!-- パンくず -->
             <nav class="uadm-breadcrumb">
                 <a href="/admin"><i class="fa fa-shield-halved"></i> 管理者メニュー</a>
                 <span class="sep">›</span>
                 <span>ユーザー権限管理</span>
             </nav>
-
-            <!-- ヘッダー -->
             <div class="uadm-header">
                 <div class="uadm-header-left">
                     <div class="uadm-icon">🔑</div>
                     <div class="uadm-title-block">
                         <h1>ユーザー権限管理</h1>
-                        <p>管理者権限の付与・剥奪およびパスワードのリセットを行います</p>
+                        <p>ロールの変更・パスワードのリセットを行います</p>
                     </div>
                 </div>
-                <div class="uadm-count-chip">
-                    <i class="fa fa-users" style="margin-right:5px;opacity:.7"></i>${users.length} アカウント
-                </div>
+                <div class="uadm-count-chip"><i class="fa fa-users" style="margin-right:5px;opacity:.7"></i>${users.length} アカウント</div>
             </div>
 
-            <!-- アラート -->
-            ${req.query.success === 'admin'    ? '<div class="uadm-alert uadm-alert-success"><i class="fa fa-circle-check"></i> 管理者権限を更新しました。</div>' : ''}
+            ${req.query.success === 'role'     ? '<div class="uadm-alert uadm-alert-success"><i class="fa fa-circle-check"></i> ロールを変更しました。</div>' : ''}
             ${req.query.success === 'password' ? '<div class="uadm-alert uadm-alert-success"><i class="fa fa-circle-check"></i> パスワードをリセットしました。</div>' : ''}
-            ${req.query.error                  ? '<div class="uadm-alert uadm-alert-error"><i class="fa fa-triangle-exclamation"></i> エラーが発生しました。もう一度お試しください。</div>' : ''}
+            ${req.query.error                  ? '<div class="uadm-alert uadm-alert-error"><i class="fa fa-triangle-exclamation"></i> エラーが発生しました。</div>' : ''}
 
-            <!-- テーブルカード -->
             <div class="uadm-card">
                 <table class="uadm-table">
                     <thead>
                         <tr>
-                            <th><i class="fa fa-user" style="margin-right:6px;opacity:.7"></i>ユーザー名</th>
-                            <th><i class="fa fa-shield-halved" style="margin-right:6px;opacity:.7"></i>権限</th>
-                            <th><i class="fa fa-sliders" style="margin-right:6px;opacity:.7"></i>操作</th>
+                            <th>ユーザー名</th>
+                            <th>現在のロール</th>
+                            <th>操作</th>
                         </tr>
                     </thead>
                     <tbody>${rows}</tbody>
                 </table>
             </div>
 
-            <!-- フッター -->
             <div class="uadm-footer">
-                <a href="/admin" class="uadm-back-link">
-                    <i class="fa fa-arrow-left"></i> 管理者メニューに戻る
-                </a>
-                <div class="uadm-footer-note">
-                    <i class="fa fa-lock"></i> 操作ログは管理者のみ閲覧できます
-                </div>
+                <a href="/admin" class="uadm-back-link"><i class="fa fa-arrow-left"></i> 管理者メニューに戻る</a>
+                <div class="uadm-footer-note"><i class="fa fa-lock"></i> 操作は即時反映されます（次回ログイン時に適用）</div>
             </div>
         </div>
         `;
@@ -1631,20 +1391,39 @@ router.get('/admin/users', requireLogin, isAdmin, async (req, res) => {
     }
 });
 
-router.post('/admin/users/toggle-admin', requireLogin, isAdmin, async (req, res) => {
+router.post('/admin/users/change-role', requireLogin, isAdmin, async (req, res) => {
     try {
-        const { userId, isAdmin: newVal } = req.body;
-        await User.findByIdAndUpdate(userId, { isAdmin: newVal === '1' });
-        res.redirect('/admin/users?success=admin');
+        const { userId, role } = req.body;
+        const validRoles = ['admin', 'manager', 'team_leader', 'employee', 'test_user'];
+        if (!validRoles.includes(role)) return res.redirect('/admin/users?error=1');
+        await User.findByIdAndUpdate(userId, {
+            role,
+            isAdmin: role === 'admin'
+        });
+        res.redirect('/admin/users?success=role');
     } catch (err) {
         console.error(err);
         res.redirect('/admin/users?error=1');
     }
 });
 
+// 旧 toggle-admin は change-role にリダイレクト
+router.post('/admin/users/toggle-admin', requireLogin, isAdmin, async (req, res) => {
+    try {
+        const { userId, isAdmin: newVal } = req.body;
+        const role = newVal === '1' ? 'admin' : 'employee';
+        await User.findByIdAndUpdate(userId, { isAdmin: newVal === '1', role });
+        res.redirect('/admin/users?success=role');
+    } catch (err) {
+        res.redirect('/admin/users?error=1');
+    }
+});
+
+
 router.post('/admin/users/reset-password', requireLogin, isAdmin, async (req, res) => {
     try {
         const { userId, newPassword } = req.body;
+        const bcrypt = require('bcryptjs');
         const hashed = await bcrypt.hash(newPassword, 10);
         await User.findByIdAndUpdate(userId, { password: hashed });
         res.redirect('/admin/users?success=password');
@@ -1654,7 +1433,6 @@ router.post('/admin/users/reset-password', requireLogin, isAdmin, async (req, re
     }
 });
 
-module.exports = router;
 // ── 社員一覧JSON API（スキルマップセレクト用）──
 router.get('/admin/api/employees', async (req, res) => {
     if (!req.session || !req.session.isAdmin) return res.status(403).json([]);
@@ -1664,3 +1442,5 @@ router.get('/admin/api/employees', async (req, res) => {
         res.json(emps);
     } catch (e) { res.status(500).json([]); }
 });
+
+module.exports = router;

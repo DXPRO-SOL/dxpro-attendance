@@ -50,4 +50,12 @@ function isLeaderOrAbove(req, res, next) {
     res.status(403).send('チームリーダー以上の権限が必要です');
 }
 
-module.exports = { requireLogin, isAdmin, requireRole, isManagerOrAdmin, isLeaderOrAbove, ROLE_LEVEL };
+// テストユーザーを書き込み操作からブロック
+function blockTestUser(req, res, next) {
+    if (req.session.isTestUser) {
+        return res.status(403).json({ error: 'テストユーザーはこの操作を実行できません' });
+    }
+    next();
+}
+
+module.exports = { requireLogin, isAdmin, requireRole, isManagerOrAdmin, isLeaderOrAbove, blockTestUser, ROLE_LEVEL };
