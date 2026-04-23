@@ -68,6 +68,7 @@ app.use('/', require('./routes/pretest'));
 app.use('/', require('./routes/rules'));
 app.use('/', require('./routes/chatbot'));
 app.use('/', require('./routes/skillsheet'));
+app.use('/', require('./routes/tasks'));
 app.use('/', require('./routes/notifications').router);
 app.use('/', require('./routes/overtime'));
 app.use('/', require('./routes/locations'));

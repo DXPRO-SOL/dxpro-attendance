@@ -500,6 +500,101 @@ const IntegrationConfigSchema = new mongoose.Schema({
 });
 const IntegrationConfig = mongoose.model('IntegrationConfig', IntegrationConfigSchema);
 
+// ─── タスク管理（GitHub連携）スキーマ ───────────────────────────────────────
+
+// タスク管理連携設定（管理者が設定）
+const TaskConfigSchema = new mongoose.Schema({
+    source:           { type: String, enum: ['github', 'jira', 'backlog'], default: 'github' },
+    // GitHub
+    githubToken:      { type: String, default: '' },
+    repos:            [{ type: String }],
+    // Jira Cloud
+    jiraUrl:          { type: String, default: '' },   // https://xxx.atlassian.net
+    jiraEmail:        { type: String, default: '' },
+    jiraApiToken:     { type: String, default: '' },
+    jiraProjectKeys:  [{ type: String }],
+    // Backlog
+    backlogSpaceId:   { type: String, default: '' },   // xxx.backlog.com の xxx
+    backlogApiKey:    { type: String, default: '' },
+    backlogProjectIds:[{ type: String }],
+    syncEnabled:      { type: Boolean, default: true },
+    lastSyncedAt:     { type: Date },
+    updatedBy:        { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    updatedAt:        { type: Date, default: Date.now }
+});
+const TaskConfig = mongoose.model('TaskConfig', TaskConfigSchema);
+
+// NOKORIユーザー ↔ 外部サービスユーザーのマッピング
+const GitHubMappingSchema = new mongoose.Schema({
+    userId:         { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    employeeId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Employee' },
+    githubLogin:    { type: String, default: '' },     // GitHub username
+    jiraAccountId:  { type: String, default: '' },     // Jira account ID
+    backlogUserId:  { type: String, default: '' },     // Backlog user ID（数値文字列）
+    // ── 個人接続設定（各ユーザーが自分で管理）──
+    source:             { type: String, enum: ['github', 'jira', 'backlog', ''], default: '' },
+    githubToken:        { type: String, default: '' },
+    repos:              [String],
+    jiraUrl:            { type: String, default: '' },
+    jiraEmail:          { type: String, default: '' },
+    jiraApiToken:       { type: String, default: '' },
+    jiraProjectKeys:    [String],
+    backlogSpaceId:     { type: String, default: '' },
+    backlogApiKey:      { type: String, default: '' },
+    backlogProjectIds:  [String],
+    lastSyncedAt:       { type: Date },
+    updatedAt:          { type: Date, default: Date.now }
+});
+const GitHubMapping = mongoose.model('GitHubMapping', GitHubMappingSchema);
+
+// タスク（GitHubのIssue/PRを同期）
+const TaskSchema = new mongoose.Schema({
+    source:        { type: String, enum: ['github', 'jira', 'backlog'], default: 'github' },
+    repoFullName:  { type: String, required: true },   // 'owner/repo' or project key
+    githubId:      { type: Number, required: true },   // GitHubのIssue/PR ID
+    number:        { type: Number, required: true },   // Issue/PR番号
+    taskType:      { type: String, enum: ['issue', 'pr'], required: true },
+    title:         { type: String, required: true },
+    body:          { type: String, default: '' },
+    state:         { type: String, enum: ['open', 'closed', 'merged'], default: 'open' },
+    url:           { type: String, default: '' },
+    htmlUrl:       { type: String, default: '' },
+    assigneeLogins: [{ type: String }],               // GitHub assignee ログイン名
+    assignedUserIds:[{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], // 対応NOKORIユーザー
+    labels:        [{ type: String }],
+    milestone:     { type: String, default: '' },
+    // AI分析フィールド
+    priority:      { type: String, enum: ['low', 'medium', 'high', 'urgent', ''], default: '' },
+    difficulty:    { type: String, enum: ['easy', 'medium', 'hard', ''], default: '' },
+    isStagnant:    { type: Boolean, default: false },
+    aiNote:        { type: String, default: '' },
+    aiAnalyzedAt:  { type: Date },
+    // 日付情報
+    ghCreatedAt:   { type: Date },
+    ghUpdatedAt:   { type: Date },
+    closedAt:      { type: Date },
+    mergedAt:      { type: Date },
+    lastSyncedAt:  { type: Date, default: Date.now },
+    // NOKORI内コメント（日報と同等の機能）
+    comments: [{
+        authorId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+        authorName:  { type: String },
+        text:        { type: String, required: true },
+        mentions:    [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+        attachments: [{
+            originalName: { type: String },
+            filename:     { type: String },
+            mimetype:     { type: String },
+            size:         { type: Number }
+        }],
+        editedAt:    { type: Date },
+        at:          { type: Date, default: Date.now }
+    }]
+}, { timestamps: true });
+// 複合ユニークインデックス: リポジトリ × GitHub ID × タイプ
+TaskSchema.index({ repoFullName: 1, githubId: 1, taskType: 1 }, { unique: true });
+const Task = mongoose.model('Task', TaskSchema);
+
 module.exports = {
     User,
     Attendance,
@@ -524,5 +619,8 @@ module.exports = {
     PretestConfig,
     IntegrationConfig,
     Department,
-    PayrollSetting
+    PayrollSetting,
+    Task,
+    TaskConfig,
+    GitHubMapping
 };
