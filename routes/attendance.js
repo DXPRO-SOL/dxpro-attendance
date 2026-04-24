@@ -323,13 +323,18 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
             <div><i class="fa-solid fa-file-lines" style="color:var(--accent)"></i></div>
           </a>
 
-          <a class="link-card" href="/leave/apply">
-            <div>
-              <div style="font-weight:700">休暇申請</div>
-              <small>申請・履歴確認</small>
-            </div>
-            <div><i class="fa-solid fa-plane-departure" style="color:#f59e0b"></i></div>
-          </a>
+
+                    <div class="link-card" id="leave-menu" style="cursor:pointer;">
+                        <div>
+                            <div style="font-weight:700">休暇</div>
+                            <small>申請・履歴</small>
+                        </div>
+                        <div><i class="fa-solid fa-plane-departure" style="color:#f59e0b"></i></div>
+                    </div>
+                    <div id="leave-actions" style="display:none; margin:10px 0 0 0;">
+                        <button onclick="location.href='/leave/apply'" class="btn btn--ghost" style="width:100%;margin-bottom:6px;">休暇申請</button>
+                        <button onclick="location.href='/leave/my-requests'" class="btn btn--ghost" style="width:100%;">休暇履歴</button>
+                    </div>
 
           <a class="link-card" href="/overtime/new">
             <div>
@@ -364,6 +369,16 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
 </main>
 
 <script>
+    // 休暇メニューの展開/非展開
+    document.addEventListener('DOMContentLoaded', function() {
+        var leaveMenu = document.getElementById('leave-menu');
+        var leaveActions = document.getElementById('leave-actions');
+        if (leaveMenu && leaveActions) {
+            leaveMenu.addEventListener('click', function() {
+                leaveActions.style.display = leaveActions.style.display === 'none' ? 'block' : 'none';
+            });
+        }
+    });
   function updateClocks(){
     const d = new Date();
     const opts = { hour12:false, timeZone:'Asia/Tokyo' };
