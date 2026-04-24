@@ -948,7 +948,38 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
       "更新日",
       "備考",
     ];
-    const theadHtml = UNIFIED_HEADERS.map((h) => `<th>${h}</th>`).join("");
+    const COL_WIDTHS = [
+      "7%",
+      "6%",
+      "8%",
+      "22%",
+      "12%",
+      "10%",
+      "6%",
+      "8%",
+      "7%",
+      "7%",
+      "7%",
+    ];
+    const theadHtml =
+      "<tr>" +
+      UNIFIED_HEADERS.map(
+        (h, i) =>
+          '<th style="width:' +
+          COL_WIDTHS[i] +
+          '" title="' +
+          h +
+          '" data-col="' +
+          i +
+          '">' +
+          h +
+          '<span class="tkl-sort-icon"></span>' +
+          (i < UNIFIED_HEADERS.length - 1
+            ? '<div class="tkl-col-resizer"></div>'
+            : "") +
+          "</th>",
+      ).join("") +
+      "</tr>";
     const COLS = UNIFIED_HEADERS.length;
 
     let bodyContent;
@@ -971,21 +1002,25 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
         </td></tr>`;
     } else {
       bodyContent = taskRows
-        .map(
-          (r) => `<tr>
-            <td><a href="/tasks/${tool}/${encodeURIComponent(r.rawId || r.no)}" class="tkl-no-link">${escapeHtml(String(r.no))}</a></td>
-            <td><span class="tkl-type-badge">${escapeHtml(String(r.type))}</span></td>
-            <td><span class="tkl-status-badge">${escapeHtml(String(r.status))}</span></td>
-            <td class="tkl-title-cell">${escapeHtml(String(r.title))}</td>
-            <td>${escapeHtml(String(r.project))}</td>
-            <td>${escapeHtml(String(r.labels))}</td>
-            <td>${escapeHtml(String(r.priority))}</td>
-            <td>${escapeHtml(String(r.assignee))}</td>
-            <td>${escapeHtml(String(r.dueDate))}</td>
-            <td>${escapeHtml(String(r.updatedAt))}</td>
-            <td>${escapeHtml(String(r.notes))}</td>
-        </tr>`,
-        )
+        .map((r) => {
+          // タスクNoは末尾の数値をゼロ埋めしてソートキーに（例: #10→00000010, PROJ-10→00000010）
+          const noSortKey = (String(r.no).match(/(\d+)$/) || [])[1]
+            ? String((String(r.no).match(/(\d+)$/) || [])[1]).padStart(10, "0")
+            : String(r.no);
+          return `<tr>
+            <td data-sort="${noSortKey}"><a href="/tasks/${tool}/${encodeURIComponent(r.rawId || r.no)}" class="tkl-no-link">${escapeHtml(String(r.no))}</a></td>
+            <td data-sort="${escapeHtml(String(r.type))}"><span class="tkl-type-badge">${escapeHtml(String(r.type))}</span></td>
+            <td data-sort="${escapeHtml(String(r.status))}"><span class="tkl-status-badge">${escapeHtml(String(r.status))}</span></td>
+            <td data-sort="${escapeHtml(String(r.title))}" class="tkl-title-cell">${escapeHtml(String(r.title))}</td>
+            <td data-sort="${escapeHtml(String(r.project))}">${escapeHtml(String(r.project))}</td>
+            <td data-sort="${escapeHtml(String(r.labels))}">${escapeHtml(String(r.labels))}</td>
+            <td data-sort="${escapeHtml(String(r.priority))}">${escapeHtml(String(r.priority))}</td>
+            <td data-sort="${escapeHtml(String(r.assignee))}">${escapeHtml(String(r.assignee))}</td>
+            <td data-sort="${escapeHtml(String(r.dueDate))}">${escapeHtml(String(r.dueDate))}</td>
+            <td data-sort="${escapeHtml(String(r.updatedAt))}">${escapeHtml(String(r.updatedAt))}</td>
+            <td data-sort="${escapeHtml(String(r.notes))}">${escapeHtml(String(r.notes))}</td>
+        </tr>`;
+        })
         .join("");
     }
 
@@ -1023,16 +1058,28 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
 .tkl-filter-btn--clear { background:#f1f5f9; color:#374151; text-decoration:none; }
 .tkl-filter-btn--clear:hover { background:#e2e8f0; }
 .tkl-table-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.04); }
-.tkl-table { width:100%; border-collapse:collapse; font-size:13px; }
-.tkl-table thead tr { background:#f8fafc; border-bottom:1px solid #e2e8f0; }
-.tkl-table th { padding:11px 14px; text-align:left; font-weight:600; color:#374151; white-space:nowrap; }
-.tkl-table td { padding:12px 14px; border-bottom:1px solid #f1f5f9; color:#374151; }
+.tkl-table { width:100%; border-collapse:collapse; font-size:12px; table-layout:fixed; }
+.tkl-table thead tr { background:#f8fafc; border-bottom:2px solid #e2e8f0; }
+.tkl-table th { padding:9px 8px; text-align:left; font-weight:600; color:#374151; white-space:nowrap; font-size:11px; overflow:hidden; text-overflow:ellipsis; position:relative; cursor:pointer; user-select:none; }
+.tkl-table th:hover { background:#f1f5f9; }
+.tkl-sort-icon { display:inline-flex; flex-direction:column; gap:1px; margin-left:4px; vertical-align:middle; opacity:0.35; font-size:9px; line-height:1; }
+.tkl-table th.tkl-sort-asc .tkl-sort-icon,
+.tkl-table th.tkl-sort-desc .tkl-sort-icon { opacity:1; color:#1d4ed8; }
+.tkl-table th.tkl-sort-asc .tkl-sort-icon::before  { content:'▲'; }
+.tkl-table th.tkl-sort-desc .tkl-sort-icon::before { content:'▼'; }
+.tkl-table th:not(.tkl-sort-asc):not(.tkl-sort-desc) .tkl-sort-icon::before { content:'⇅'; }
+.tkl-table th::after { content:''; position:absolute; right:0; top:20%; bottom:20%; width:1px; background:#e2e8f0; }
+.tkl-table th:last-child::after { display:none; }
+.tkl-col-resizer { position:absolute; right:-4px; top:0; bottom:0; width:8px; cursor:col-resize; z-index:2; }
+.tkl-col-resizer:hover { background:rgba(59,130,246,.22); border-radius:4px; }
+.tkl-table.tkl-col-resizing, .tkl-table.tkl-col-resizing * { cursor:col-resize !important; user-select:none !important; }
+.tkl-table td { padding:9px 8px; border-bottom:1px solid #f1f5f9; color:#374151; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tkl-table tr:last-child td { border-bottom:none; }
-.tkl-empty { text-align:center; padding:56px 20px !important; color:#94a3b8; font-size:14px; }
-.tkl-type-badge { display:inline-block; padding:2px 8px; border-radius:5px; font-size:11px; font-weight:600; background:#f1f5f9; color:#334155; white-space:nowrap; }
-.tkl-status-badge { display:inline-block; padding:2px 8px; border-radius:5px; font-size:11px; font-weight:600; background:#eff6ff; color:#1d4ed8; white-space:nowrap; }
-.tkl-title-cell { max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.tkl-no-link { color:#1d4ed8; font-weight:600; text-decoration:none; font-family:monospace; font-size:12px; }
+.tkl-empty { text-align:center; padding:56px 20px !important; color:#94a3b8; font-size:14px; white-space:normal; }
+.tkl-type-badge { display:inline-block; padding:2px 7px; border-radius:5px; font-size:11px; font-weight:600; background:#f1f5f9; color:#334155; white-space:nowrap; }
+.tkl-status-badge { display:inline-block; padding:2px 7px; border-radius:5px; font-size:11px; font-weight:600; background:#eff6ff; color:#1d4ed8; white-space:nowrap; }
+.tkl-title-cell { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tkl-no-link { color:#1d4ed8; font-weight:600; text-decoration:none; font-family:monospace; font-size:12px; white-space:nowrap; }
 .tkl-no-link:hover { text-decoration:underline; color:#1e40af; }
 @media (max-width:700px) {
     .tkl-topbar { flex-direction:column; align-items:flex-start; }
@@ -1042,7 +1089,7 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
 
     const html =
       buildPageShell({
-        title: `${validTool.label} タスク一覧 | タスク管理`,
+        title: `タスク一覧 ${validTool.label} | タスク管理`,
         currentPath: "/tasks",
         employee,
         isAdmin,
@@ -1055,7 +1102,7 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
     <div class="tkl-topbar">
         <div class="tkl-topbar-left">
             <div class="tkl-title">
-                タスク管理 <span>${validTool.label} のタスク一覧</span>
+                タスク一覧 <span>${validTool.label}</span>
             </div>
             <div class="tkl-btns">
                 <a href="/tasks/settings/${tool}" class="tkl-btn tkl-btn--settings">
@@ -1091,13 +1138,107 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
     </div>
 
     <div class="tkl-table-card">
-        <table class="tkl-table">
-            <thead><tr>${theadHtml}</tr></thead>
+        <table class="tkl-table" id="tklTable">
+            <thead>${theadHtml}</thead>
             <tbody>${bodyContent}</tbody>
         </table>
     </div>
 </div>
 </div>
+<script>
+(function(){
+  var tbl = document.getElementById('tklTable');
+  if (!tbl) return;
+  var ths = Array.from(tbl.querySelectorAll('thead th'));
+
+  // --- リサイズ ---
+  var widths = ths.map(function(th){ return th.offsetWidth; });
+  var minW = Math.min.apply(null, widths);
+  tbl.style.width = tbl.offsetWidth + 'px';
+  ths.forEach(function(th, i){ th.style.width = widths[i] + 'px'; });
+
+  tbl.querySelectorAll('.tkl-col-resizer').forEach(function(handle, i){
+    var startX, startW, nextW;
+    handle.addEventListener('mousedown', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      startX = e.clientX;
+      startW = parseInt(ths[i].style.width, 10);
+      nextW  = ths[i+1] ? parseInt(ths[i+1].style.width, 10) : 0;
+      tbl.classList.add('tkl-col-resizing');
+      function onMove(e){
+        var delta = e.clientX - startX;
+        var newW     = startW + delta;
+        var newNextW = nextW  - delta;
+        if (newW >= minW && newNextW >= minW) {
+          ths[i].style.width = newW + 'px';
+          if (ths[i+1]) ths[i+1].style.width = newNextW + 'px';
+        }
+      }
+      function onUp(){
+        tbl.classList.remove('tkl-col-resizing');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+
+  // --- ソート ---
+  var sortCol = -1, sortAsc = true;
+
+  function getCellVal(row, col){
+    var tds = row.getElementsByTagName('td');
+    var td = tds[col];
+    if (!td) return '';
+    return td.getAttribute('data-sort') || '';
+  }
+
+  function sortTable(col){
+    if (sortCol === col) {
+      sortAsc = !sortAsc;
+    } else {
+      sortCol = col;
+      sortAsc = true;
+    }
+    ths.forEach(function(th){
+      th.classList.remove('tkl-sort-asc','tkl-sort-desc');
+    });
+    ths[col].classList.add(sortAsc ? 'tkl-sort-asc' : 'tkl-sort-desc');
+
+    var tbody = tbl.tBodies[0];
+    if (!tbody) return;
+    var rows = Array.from(tbody.rows);
+    if (rows.length <= 1) return;
+    if (rows.length === 1 && rows[0].querySelector('td[colspan]')) return;
+
+    rows.sort(function(a, b){
+      var av = getCellVal(a, col);
+      var bv = getCellVal(b, col);
+      // Number() で厳密に数値判定（"2024-01-15" は NaN になるので日付は文字列比較）
+      var an = Number(av), bn = Number(bv);
+      var cmp;
+      if (av !== '' && bv !== '' && !isNaN(an) && !isNaN(bn)) {
+        cmp = an - bn;
+      } else {
+        cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      }
+      return sortAsc ? cmp : -cmp;
+    });
+    var frag = document.createDocumentFragment();
+    rows.forEach(function(r){ frag.appendChild(r); });
+    tbody.appendChild(frag);
+  }
+
+  ths.forEach(function(th, i){
+    th.addEventListener('click', function(e){
+      if (e.target.closest('.tkl-col-resizer')) return;
+      sortTable(i);
+    });
+  });
+})();
+</script>
 ` +
       pageFooter();
 
