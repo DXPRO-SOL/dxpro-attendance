@@ -549,17 +549,21 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
       const cfg = configs[t.key];
       const fields = toolFields[t.key] || [];
       const fieldsHtml = fields
-        .map(
-          (f) => `
-                <label class="tks-label">
-                    ${f.label}${f.required ? ' <span class="tks-req">*</span>' : ""}
+        .map((f) => {
+          const isFull =
+            f.type === "password" ||
+            f.id === "webhookUrl" ||
+            f.id === "accessToken";
+          return `
+                <label class="tks-label${isFull ? " tks-field--full" : ""}">
+                    <span class="tks-label-text">${f.label}${f.required ? ' <span class="tks-req">*</span>' : ""}</span>
                     <input type="${f.type}" name="${f.id}" class="tks-input"
                            placeholder="${f.placeholder}"
                            value="${f.type !== "password" && cfg[f.id] ? cfg[f.id] || "" : ""}"
                            autocomplete="off">
                     ${f.hint ? `<span class="tks-hint">${f.hint}</span>` : ""}
-                </label>`,
-        )
+                </label>`;
+        })
         .join("");
       return `
             <div class="tks-panel ${t.key === activeTool ? "tks-panel--active" : ""}" id="panel-${t.key}">
@@ -602,7 +606,10 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
 
     const extraHead = `
 <style>
-.tks-wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 56px; }
+.tks-wrap { max-width: 1400px; margin: 0 auto; padding: 32px 28px 56px; }
+.page-content { max-width: 1400px; }
+.main { align-items: stretch; padding-left: 20px; padding-right: 20px; }
+.main-content { width: 100%; }
 .tks-page-header { display:flex; align-items:center; gap:12px; margin-bottom:6px; }
 .tks-page-header h1 { font-size:20px; font-weight:700; color:#0f172a; margin:0; }
 .tks-back { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:#64748b; text-decoration:none; margin-bottom:20px; }
@@ -614,19 +621,21 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
 .tks-tab--active { color:#1d4ed8; border-bottom-color:#1d4ed8; background:#fff; font-weight:600; }
 .tks-panel { display:none; }
 .tks-panel--active { display:block; }
-.tks-form-body { padding:28px 28px 0; }
+.tks-form-body { padding:28px 32px 0; }
 .tks-tool-header { display:flex; align-items:flex-start; gap:14px; margin-bottom:22px; padding-bottom:18px; border-bottom:1px solid #f1f5f9; }
 .tks-tool-icon { font-size:32px; line-height:1; flex-shrink:0; margin-top:2px; }
 .tks-tool-title { font-size:16px; font-weight:700; color:#0f172a; }
 .tks-tool-sub { font-size:12px; color:#64748b; margin-top:3px; }
 .tks-toggle-wrap { margin-left:auto; display:flex; align-items:center; gap:8px; flex-shrink:0; cursor:pointer; font-size:13px; font-weight:600; color:#374151; }
 .tks-toggle-cb { width:18px; height:18px; accent-color:#1d4ed8; cursor:pointer; }
-.tks-fields { display:flex; flex-direction:column; gap:14px; }
+.tks-fields { display:grid; grid-template-columns:1fr 1fr; gap:18px 24px; }
+.tks-field--full { grid-column:1 / -1; }
 .tks-label { font-size:13px; font-weight:600; color:#374151; display:flex; flex-direction:column; gap:5px; }
-.tks-req { color:#dc2626; }
+.tks-label-text { display:inline-flex; align-items:center; gap:3px; flex-wrap:nowrap; white-space:nowrap; }
+.tks-req { color:#dc2626; line-height:1; }
 .tks-input { padding:9px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px; width:100%; transition:border-color .15s; }
 .tks-input:focus { outline:none; border-color:#93c5fd; box-shadow:0 0 0 3px rgba(59,130,246,.15); }
-.tks-footer { display:flex; gap:10px; padding:20px 28px; border-top:1px solid #f1f5f9; margin-top:24px; background:#fafafa; }
+.tks-footer { display:flex; gap:10px; padding:24px 32px; border-top:1px solid #f1f5f9; margin-top:28px; background:#fafafa; }
 .tks-btn { display:inline-flex; align-items:center; gap:7px; padding:9px 22px; border-radius:8px; font-size:14px; font-weight:600; text-decoration:none; cursor:pointer; border:none; transition:background .15s; }
 .tks-btn--save { background:#1d4ed8; color:#fff; }
 .tks-btn--save:hover { background:#1e40af; }
@@ -637,6 +646,7 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
 .tks-alert--success { background:#dcfce7; color:#166534; border:1px solid #bbf7d0; }
 .tks-alert--error   { background:#fee2e2; color:#991b1b; border:1px solid #fecaca; }
 .tks-hint { font-size:11px; color:#64748b; margin-top:3px; font-weight:400; }
+@media (max-width:700px) { .tks-fields { grid-template-columns:1fr; } .tks-field--full { grid-column:1; } }
 .tks-btn--test { background:#f59e0b; color:#fff; border:none; }
 .tks-btn--test:hover { background:#d97706; }
 .tks-test-result { margin:12px 28px 0; padding:12px 14px; border-radius:8px; font-size:13px; display:none; }
@@ -660,9 +670,9 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
         <div class="tk-header-icon" style="width:40px;height:40px;background:linear-gradient(135deg,#1d4ed8,#7c3aed);border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;">
             <i class="fa-solid fa-gear"></i>
         </div>
-        <h1>タスク管理（ツール連携設定）</h1>
+        <h1>接続設定（ツール連携）</h1>
     </div>
-    <a href="/tasks" class="tks-back"><i class="fa-solid fa-arrow-left"></i> タスク一覧に戻る</a>
+    <a href="/tasks/${tool}" class="tks-back"><i class="fa-solid fa-arrow-left"></i> タスク一覧に戻る</a>
     ${alertHtml}
     <div class="tks-card">
         <div class="tks-tabs">${tabsHtml}</div>
@@ -981,7 +991,10 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
 
     const extraHead = `
 <style>
-.tkl-wrap { max-width: 1100px; margin: 0 auto; padding: 28px 20px 56px; }
+.tkl-wrap { max-width: 1400px; margin: 0 auto; padding: 28px 28px 56px; }
+.page-content { max-width: 1400px; }
+.main { align-items: stretch; padding-left: 20px; padding-right: 20px; }
+.main-content { width: 100%; }
 .tkl-topbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; flex-wrap:wrap; }
 .tkl-topbar-left { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
 .tkl-title { font-size:19px; font-weight:700; color:#0f172a; }
@@ -1708,7 +1721,10 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
 
     const extraHead = `
 <style>
-.tkd-wrap { max-width:1200px; margin:0 auto; padding:28px 20px 56px; }
+.tkd-wrap { max-width:1400px; margin:0 auto; padding:28px 28px 56px; }
+.page-content { max-width:1400px; }
+.main { align-items: stretch; padding-left: 20px; padding-right: 20px; }
+.main-content { width: 100%; }
 .tkd-topbar { display:flex; align-items:center; gap:16px; margin-bottom:22px; flex-wrap:wrap; }
 .tkd-back { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:8px; font-size:13px; font-weight:500; text-decoration:none; background:#f1f5f9; color:#374151; transition:background .15s; }
 .tkd-back:hover { background:#e2e8f0; color:#374151; }
