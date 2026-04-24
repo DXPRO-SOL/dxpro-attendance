@@ -504,6 +504,7 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
     }, { timeout: 10000, enableHighAccuracy: true });
   }
 </script>
+<script src="/attendance-alert.js"></script>
 </body>
 </html>
         `);
