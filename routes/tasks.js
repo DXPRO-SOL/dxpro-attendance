@@ -10,6 +10,68 @@ const { requireLogin } = require("../middleware/auth");
 const { getConfig, saveConfig } = require("../lib/integrations");
 const { escapeHtml } = require("../lib/helpers");
 
+// Markdown の画像・リンク・コードブロック・改行を安全にHTMLへ変換
+function renderMarkdown(text) {
+  if (!text) return "";
+  // TOKEN: コードブロック・インラインコード・生<img>タグ・Markdown画像・Markdownリンク
+  const TOKEN =
+    /```([\s\S]*?)```|`([^`\n]+)`|<img\s([^>]*?)\/?>|!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  let result = "";
+  let lastIndex = 0;
+  let m;
+  while ((m = TOKEN.exec(text)) !== null) {
+    if (m.index > lastIndex) {
+      result += escapeHtml(text.slice(lastIndex, m.index)).replace(
+        /\n/g,
+        "<br>",
+      );
+    }
+    const [
+      ,
+      codeBlock,
+      inlineCode,
+      rawImgAttrs,
+      imgAlt,
+      imgUrl,
+      linkLabel,
+      linkUrl,
+    ] = m;
+    if (codeBlock !== undefined) {
+      result += `<pre class="tkd-md-pre"><code>${escapeHtml(codeBlock)}</code></pre>`;
+    } else if (inlineCode !== undefined) {
+      result += `<code style="background:#f1f5f9;padding:1px 4px;border-radius:4px;font-size:12px">${escapeHtml(inlineCode)}</code>`;
+    } else if (rawImgAttrs !== undefined) {
+      // 生HTMLの<img>タグ: src="https://..." のみ許可
+      const srcM = rawImgAttrs.match(/src="(https:\/\/[^"]+)"/);
+      const altM = rawImgAttrs.match(/alt="([^"]*)"/);
+      if (srcM) {
+        result +=
+          `<div class="tkd-md-img">` +
+          `<img src="${escapeHtml(srcM[1])}" alt="${escapeHtml(altM ? altM[1] : "")}" loading="lazy" ` +
+          `onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">` +
+          `<span class="tkd-img-err" style="display:none;color:#94a3b8;font-size:12px">[画像読込失敗]</span>` +
+          `</div>`;
+      }
+      // src が https:// でない場合は何も出力しない（セキュリティ）
+    } else if (imgUrl !== undefined) {
+      // Markdown ![alt](url)
+      result +=
+        `<div class="tkd-md-img">` +
+        `<img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(imgAlt || "")}" loading="lazy" ` +
+        `onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">` +
+        `<span class="tkd-img-err" style="display:none;color:#94a3b8;font-size:12px">[画像読込失敗]</span>` +
+        `</div>`;
+    } else if (linkUrl !== undefined) {
+      result += `<a href="${escapeHtml(linkUrl)}" target="_blank" rel="noopener noreferrer" style="color:#1d4ed8">${escapeHtml(linkLabel)}</a>`;
+    }
+    lastIndex = m.index + m[0].length;
+  }
+  if (lastIndex < text.length) {
+    result += escapeHtml(text.slice(lastIndex)).replace(/\n/g, "<br>");
+  }
+  return result;
+}
+
 // タスク管理対応ツール定義
 const TASK_TOOLS = [
   {
@@ -1776,7 +1838,7 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
       </div>
       <div class="tkd-section">
         <div class="tkd-section-title"><i class="fa-solid fa-align-left"></i> 説明 / 本文</div>
-        <div class="tkd-body">${escapeHtml(task.body || "（説明なし）")}</div>
+        <div class="tkd-body">${renderMarkdown(task.body || "（説明なし）")}</div>
       </div>
       <div class="tkd-section">
         <div class="tkd-section-title"><i class="fa-solid fa-tag"></i> ラベル / タグ</div>
@@ -1803,7 +1865,7 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
             <div class="tkd-comment">
               <span class="tkd-comment-author">${escapeHtml(c.author || "?")}</span>
               <span class="tkd-comment-date">${escapeHtml(c.createdAt)}</span>
-              <div class="tkd-comment-body">${escapeHtml(c.body)}</div>
+              <div class="tkd-comment-body">${renderMarkdown(c.body)}</div>
             </div>`,
                 )
                 .join("")
@@ -1886,7 +1948,10 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
 .tkd-dl dt { color:#64748b; font-weight:600; white-space:nowrap; }
 .tkd-dl dd { color:#1e293b; margin:0; }
 .tkd-status-badge { display:inline-block; padding:2px 8px; border-radius:5px; font-size:11px; font-weight:600; background:#dbeafe; color:#1d4ed8; }
-.tkd-body { font-size:13px; color:#334155; line-height:1.7; white-space:pre-wrap; word-break:break-word; max-height:200px; overflow-y:auto; background:#fff; border:1px solid #dbeafe; border-radius:8px; padding:12px; }
+.tkd-body { font-size:13px; color:#334151; line-height:1.7; word-break:break-word; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #dbeafe; border-radius:8px; padding:12px; }
+.tkd-md-img { margin:8px 0; }
+.tkd-md-img img { max-width:100%; max-height:300px; border-radius:6px; border:1px solid #e2e8f0; cursor:pointer; }
+.tkd-md-pre { background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px 12px; font-size:12px; overflow-x:auto; margin:8px 0; white-space:pre; }
 .tkd-labels { display:flex; flex-wrap:wrap; gap:6px; }
 .tkd-label { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:500; background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; }
 .tkd-comment { padding:10px 12px; border-radius:8px; background:#fff; border:1px solid #dbeafe; margin-bottom:8px; }
