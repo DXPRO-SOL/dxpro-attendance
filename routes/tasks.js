@@ -1299,6 +1299,24 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
       sortTable(i);
     });
   });
+
+  // --- テキストが省略されているセルにのみ title を付与 ---
+  function updateTitles() {
+    var tbody = tbl.tBodies[0];
+    if (!tbody) return;
+    Array.from(tbody.rows).forEach(function(row) {
+      Array.from(row.cells).forEach(function(td) {
+        if (td.scrollWidth > td.offsetWidth + 1) {
+          td.title = td.getAttribute('data-sort') || td.innerText.trim();
+        } else {
+          td.removeAttribute('title');
+        }
+      });
+    });
+  }
+  updateTitles();
+  // リサイズ後やソート後に再実行
+  tbl.addEventListener('mouseenter', updateTitles, { once: false });
 })();
 </script>
 ` +
