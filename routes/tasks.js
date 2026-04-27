@@ -1991,7 +1991,7 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
       <i class="fa-solid fa-arrow-left"></i> タスク一覧に戻る
     </a>
     <div class="tkd-page-title">
-      タスク管理 <span>（${escapeHtml(validTool.label)}のタスク詳細画面）</span>
+      タスク詳細 <span>（${escapeHtml(validTool.label)}）</span>
     </div>
   </div>
   <div class="tkd-layout">
