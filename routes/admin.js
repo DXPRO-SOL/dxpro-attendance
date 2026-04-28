@@ -263,12 +263,13 @@ ${monthlyData.map(data => {
                     <th>昼休み</th>
                     <th>勤務時間</th>
                     <th>状態</th>
+                    <th>打刻方法</th>
                     <th>備考</th>
                     <th>操作</th>
                 </tr>
             </thead>
             <tbody>
-                ${attendances.length === 0 ? `<tr><td colspan="8" style="text-align:center;color:#9ca3af;padding:20px">記録なし</td></tr>` : ''}
+                ${attendances.length === 0 ? `<tr><td colspan="9" style="text-align:center;color:#9ca3af;padding:20px">記録なし</td></tr>` : ''}
                 ${attendances.map(att => {
                     const statusCls = att.status === '遅刻' ? 'badge-warning' : att.status === '早退' ? 'badge-warning' : att.status === '欠勤' ? 'badge-danger' : 'badge-success';
                     return `<tr>
@@ -282,6 +283,9 @@ ${monthlyData.map(data => {
                         <td>${att.workingHours != null ? att.workingHours + 'h' : '-'}</td>
                         <td><span class="badge ${statusCls}">${att.status}</span>
                             ${att.isConfirmed ? '<span class="badge badge-info" style="margin-left:2px">確定</span>' : ''}</td>
+                        <td>
+                            ${att.isGpsVerified ? '<span style="background:#dcfce7;color:#16a34a;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:600">GPS</span>' : '<span style="background:#f1f5f9;color:#94a3b8;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:600">手動</span>'}
+                        </td>
                         <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;color:#6b7280">${att.notes ? escapeHtml(att.notes) : '-'}</td>
                         <td>
                             <a href="/edit-attendance/${att._id}" class="btn btn-ghost btn-sm"><i class="fa-solid fa-pen"></i></a>
