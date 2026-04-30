@@ -114,7 +114,7 @@ async function fetchGitHubTasks(cfg, query) {
     return { rows: [], error: "オーナー名またはリポジトリ名が未設定です" };
   const params = new URLSearchParams({
     per_page: "50",
-    state: query.state || "open",
+    state: query.state || "all",
   });
   if (query.assignee) params.set("assignee", query.assignee);
   if (query.label) params.set("labels", query.label);
