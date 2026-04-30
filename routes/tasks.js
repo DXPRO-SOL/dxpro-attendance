@@ -1683,6 +1683,135 @@ async function fetchBacklogTaskDetail(cfg, id) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// AI 優先度判定（全タスクを比較してスコアリング）
+// ─────────────────────────────────────────────────────────────
+function scoreTaskForPriority(t) {
+  // t は一覧行（{ title, labels, priority, dueDate, status, type }）または詳細タスク
+  const title = (t.title || "").toLowerCase();
+  const labels = Array.isArray(t.labels)
+    ? t.labels.map((l) => String(l).toLowerCase())
+    : String(t.labels || "")
+        .split(",")
+        .map((l) => l.trim().toLowerCase())
+        .filter(Boolean);
+  const priority = String(t.priority || "").toLowerCase();
+  const status = String(t.status || "").toLowerCase();
+  const type = String(t.type || "").toLowerCase();
+  const dueDate = t.dueDate || "";
+
+  let score = 0;
+
+  // タイトルキーワード
+  if (
+    title.includes("bug") ||
+    title.includes("fix") ||
+    title.includes("error") ||
+    title.includes("crash") ||
+    title.includes("バグ") ||
+    title.includes("修正") ||
+    title.includes("障害") ||
+    title.includes("緊急")
+  )
+    score += 30;
+  if (
+    title.includes("refactor") ||
+    title.includes("docs") ||
+    title.includes("chore") ||
+    title.includes("リファクタ") ||
+    title.includes("ドキュメント")
+  )
+    score -= 10;
+
+  // ラベル
+  if (
+    labels.some((l) =>
+      ["critical", "urgent", "p0", "p1", "bug", "high", "blocker"].includes(l),
+    )
+  )
+    score += 25;
+  if (
+    labels.some((l) =>
+      ["low", "docs", "chore", "refactor", "p4", "p5"].includes(l),
+    )
+  )
+    score -= 15;
+
+  // API提供の優先度
+  if (
+    priority === "high" ||
+    priority === "highest" ||
+    priority === "高" ||
+    priority === "critical"
+  )
+    score += 20;
+  if (priority === "low" || priority === "lowest" || priority === "低")
+    score -= 10;
+
+  // タイプ
+  if (type === "bug" || type === "バグ") score += 15;
+  if (type === "pr") score += 5;
+
+  // ステータス（完了済みは下げる）
+  if (
+    status === "done" ||
+    status === "完了" ||
+    status === "closed" ||
+    status === "処理済み"
+  )
+    score -= 30;
+  if (status === "in progress" || status === "進行中" || status === "処理中")
+    score += 5;
+
+  // 期限日の近さ
+  if (dueDate) {
+    const due = new Date(dueDate);
+    const now = new Date();
+    const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
+    if (diffDays < 0)
+      score += 50; // 期限超過
+    else if (diffDays <= 3) score += 35;
+    else if (diffDays <= 7) score += 20;
+    else if (diffDays <= 14) score += 10;
+  }
+
+  return score;
+}
+
+// 全タスクのスコア分布を基に対象タスクの相対優先度を判定
+function determineAiPriorityFromAllTasks(currentTask, allTaskRows) {
+  // 現在のタスクをスコアリング
+  const currentScore = scoreTaskForPriority(currentTask);
+
+  // 全タスクをスコアリング（現在のタスクも含む）
+  const allScores = allTaskRows.map((t) => scoreTaskForPriority(t));
+  allScores.push(currentScore); // 念のため含める
+  allScores.sort((a, b) => b - a); // 降順
+
+  const total = allScores.length;
+  const rank = allScores.indexOf(currentScore); // 0始まり（上位ほど0に近い）
+
+  const topPct = rank / total;
+
+  let priority, reason;
+  if (total <= 1) {
+    // 比較対象がなければ単独スコアで判定
+    priority = currentScore >= 20 ? "高" : currentScore <= -10 ? "低" : "中";
+    reason = "比較対象タスクが少ないため単独分析に基づきます";
+  } else if (topPct <= 0.25) {
+    priority = "高";
+    reason = `全${total}件中 上位${Math.round(topPct * 100)}%の重要度です`;
+  } else if (topPct <= 0.65) {
+    priority = "中";
+    reason = `全${total}件中 中位（上位${Math.round(topPct * 100)}%）の重要度です`;
+  } else {
+    priority = "低";
+    reason = `全${total}件中 下位${Math.round((1 - topPct) * 100)}%の重要度です`;
+  }
+
+  return { priority, reason, score: currentScore, totalTasks: total };
+}
+
+// ─────────────────────────────────────────────────────────────
 // AI 分析（ルールベースヒューリスティック）
 // ─────────────────────────────────────────────────────────────
 function generateAiAnalysis(task) {
@@ -1828,6 +1957,26 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
     const task = taskData.task;
     const fetchError = taskData.error;
 
+    // 全タスク取得（AI優先度の相対判定に使用）
+    let allTaskRows = [];
+    if (task) {
+      try {
+        let listResult;
+        if (tool === "github")
+          listResult = await fetchGitHubTasks(cfg, { state: "open" });
+        else if (tool === "jira") listResult = await fetchJiraTasks(cfg, {});
+        else if (tool === "backlog")
+          listResult = await fetchBacklogTasks(cfg, {});
+        if (listResult && listResult.rows) allTaskRows = listResult.rows;
+      } catch (_) {
+        // 全タスク取得失敗時は単独スコアにフォールバック
+      }
+    }
+
+    const aiContextPriority = task
+      ? determineAiPriorityFromAllTasks(task, allTaskRows)
+      : null;
+
     const ai = task ? generateAiAnalysis(task) : null;
 
     // 詳細セクション HTML
@@ -1848,7 +1997,16 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
         <dl class="tkd-dl">
           <dt>ステータス</dt><dd><span class="tkd-status-badge">${escapeHtml(task.status || "—")}</span></dd>
           <dt>種別</dt><dd>${escapeHtml(task.type || "—")}</dd>
-          <dt>優先度</dt><dd>${escapeHtml(task.priority || "—")}</dd>
+          <dt>優先度</dt><dd>
+            ${
+              aiContextPriority
+                ? `<span class="tkd-ai-priority-badge tkd-ai-priority-badge--${aiContextPriority.priority === "高" ? "high" : aiContextPriority.priority === "低" ? "low" : "mid"}">
+                  <i class="fa-solid fa-robot" style="font-size:10px;margin-right:3px"></i>${escapeHtml(aiContextPriority.priority)}
+                </span>
+                <span class="tkd-ai-priority-note">${escapeHtml(aiContextPriority.reason)}</span>`
+                : escapeHtml(task.priority || "—")
+            }
+          </dd>
           <dt>担当者</dt><dd>${escapeHtml(task.assignee || "（未設定）")}</dd>
           <dt>期限日</dt><dd>${escapeHtml(task.dueDate || "—")}</dd>
           <dt>更新日</dt><dd>${escapeHtml(task.updatedAt || "—")}</dd>
@@ -1989,6 +2147,11 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
 .tkd-ai-list li { margin-bottom:3px; }
 .tkd-ai-list--ol { list-style:decimal; }
 .tkd-ai-summary { font-size:13px; color:#1e293b; line-height:1.6; }
+.tkd-ai-priority-badge { display:inline-flex; align-items:center; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:700; margin-right:8px; }
+.tkd-ai-priority-badge--high { background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; }
+.tkd-ai-priority-badge--mid  { background:#fef3c7; color:#92400e; border:1px solid #fde68a; }
+.tkd-ai-priority-badge--low  { background:#dcfce7; color:#166534; border:1px solid #bbf7d0; }
+.tkd-ai-priority-note { font-size:11px; color:#64748b; }
 @media (max-width:900px) { .tkd-layout { grid-template-columns:1fr; } .tkd-ai-panel { position:static; } }
 </style>`;
 
