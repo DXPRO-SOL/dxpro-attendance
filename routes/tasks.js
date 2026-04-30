@@ -5,10 +5,52 @@
 const express = require("express");
 const router = express.Router();
 const { buildPageShell, pageFooter } = require("../lib/renderPage");
-const { IntegrationConfig } = require("../models");
+const { UserTaskConfig, TaskDueDate } = require("../models");
 const { requireLogin } = require("../middleware/auth");
-const { getConfig, saveConfig } = require("../lib/integrations");
+const { encrypt, decrypt } = require("../lib/integrations");
 const { escapeHtml } = require("../lib/helpers");
+
+// ─── ユーザー別タスク設定ヘルパー ──────────────────────────────────────────
+const TASK_CFG_FIELDS = [
+  "webhookUrl",
+  "apiKey",
+  "clientId",
+  "accessToken",
+  "channel",
+];
+
+async function getTaskConfig(service, userId) {
+  if (!userId) return null;
+  const cfg = await UserTaskConfig.findOne({ service, userId })
+    .lean()
+    .catch(() => null);
+  if (!cfg) return null;
+  for (const f of TASK_CFG_FIELDS) {
+    if (cfg[f]) cfg[f] = decrypt(cfg[f]);
+  }
+  return cfg;
+}
+
+async function saveTaskConfig(service, userId, data) {
+  if (!userId) throw new Error("userId is required for task config");
+  const toSave = { ...data, updatedAt: new Date() };
+  for (const f of TASK_CFG_FIELDS) {
+    if (toSave[f] !== undefined && toSave[f] !== "") {
+      toSave[f] = encrypt(toSave[f]);
+    }
+  }
+  await UserTaskConfig.findOneAndUpdate(
+    { service, userId },
+    { $set: toSave },
+    { upsert: true, new: true },
+  );
+}
+
+// 期限日変更が可能なロール
+const CAN_EDIT_DUE_ROLES = ["admin", "manager", "team_leader"];
+function canEditDue(role, isAdmin) {
+  return isAdmin || CAN_EDIT_DUE_ROLES.includes(role);
+}
 
 // Markdown の画像・リンク・コードブロック・改行を安全にHTMLへ変換
 function renderMarkdown(text) {
@@ -277,14 +319,14 @@ router.get("/tasks", requireLogin, async (req, res) => {
           .catch(() => null)
       : null;
     const isAdmin = req.session.isAdmin || false;
-    const role = req.session.role || (isAdmin ? "admin" : "employee");
+    const role = req.session.orgRole || (isAdmin ? "admin" : "employee");
 
-    // 各ツールの接続設定状態を確認
+    // 各ツールの接続設定状態を確認（ログインユーザー別）
     const configMap = {};
     for (const tool of TASK_TOOLS) {
-      const cfg = await IntegrationConfig.findOne({ service: tool.key })
-        .lean()
-        .catch(() => null);
+      const cfg = await getTaskConfig(tool.key, req.session.userId).catch(
+        () => null,
+      );
       configMap[tool.key] = cfg && cfg.enabled ? "configured" : "unconfigured";
     }
 
@@ -506,12 +548,14 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
           .catch(() => null)
       : null;
     const isAdmin = req.session.isAdmin || false;
-    const role = req.session.role || (isAdmin ? "admin" : "employee");
+    const role = req.session.orgRole || (isAdmin ? "admin" : "employee");
 
-    // 全ツールの設定を取得（getConfig で復号済みの値を取得）
+    // 全ツールの設定を取得（ログインユーザー別・復号済み）
     const configs = {};
     for (const t of TASK_TOOLS) {
-      const cfg = await getConfig(t.key).catch(() => null);
+      const cfg = await getTaskConfig(t.key, req.session.userId).catch(
+        () => null,
+      );
       configs[t.key] = cfg || { service: t.key, enabled: false };
     }
 
@@ -622,14 +666,16 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
                     <input type="${f.type}" name="${f.id}" class="tks-input"
                            placeholder="${f.placeholder}"
                            value="${f.type !== "password" && cfg[f.id] ? cfg[f.id] || "" : ""}"
-                           autocomplete="off">
+                           autocomplete="new-password"
+                           data-lpignore="true"
+                           data-form-type="other">
                     ${f.hint ? `<span class="tks-hint">${f.hint}</span>` : ""}
                 </label>`;
         })
         .join("");
       return `
             <div class="tks-panel ${t.key === activeTool ? "tks-panel--active" : ""}" id="panel-${t.key}">
-                <form method="POST" action="/tasks/settings/${t.key}">
+                <form method="POST" action="/tasks/settings/${t.key}" autocomplete="off">
                     <div class="tks-form-body">
                         <div class="tks-tool-header">
                             <span class="tks-tool-icon" style="color:${t.color}">${t.icon}</span>
@@ -806,7 +852,7 @@ router.post("/tasks/settings/:tool", requireLogin, async (req, res) => {
     if (clientId && clientId.trim()) update.clientId = clientId.trim();
     if (channel && channel.trim()) update.channel = channel.trim();
 
-    await saveConfig(tool, update);
+    await saveTaskConfig(tool, req.session.userId, update);
     res.redirect("/tasks/settings/" + tool + "?saved=1");
   } catch (err) {
     console.error("[tasks] POST /tasks/settings error:", err);
@@ -830,9 +876,9 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
           .catch(() => null)
       : null;
     const isAdmin = req.session.isAdmin || false;
-    const role = req.session.role || (isAdmin ? "admin" : "employee");
+    const role = req.session.orgRole || (isAdmin ? "admin" : "employee");
 
-    const cfg = await getConfig(tool).catch(() => null);
+    const cfg = await getTaskConfig(tool, req.session.userId).catch(() => null);
     const isConfigured = cfg && cfg.enabled;
 
     // クエリパラメータ（フィルター）
@@ -855,6 +901,31 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
         apiError = e.message;
       }
     }
+
+    // 期限日はNOKORI上のDBのみで管理（外部ツールの値は無視）
+    taskRows.forEach((r) => {
+      r.dueDate = "";
+    });
+    if (taskRows.length > 0) {
+      const rawIds = taskRows.map((r) => String(r.rawId || r.no));
+      const dueDocs = await TaskDueDate.find({
+        userId: req.session.userId,
+        service: tool,
+        taskId: { $in: rawIds },
+      })
+        .lean()
+        .catch(() => []);
+      const dueMap = {};
+      dueDocs.forEach((d) => {
+        dueMap[d.taskId] = d.dueDate || "";
+      });
+      taskRows.forEach((r) => {
+        r.dueDate = dueMap[String(r.rawId || r.no)] || "";
+      });
+    }
+
+    // 期限日変更権限
+    const canEdit = canEditDue(role, isAdmin);
 
     // ツール切り替えタブ
     const switchTabsHtml = TASK_TOOLS.map(
@@ -1069,6 +1140,18 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
           const noSortKey = (String(r.no).match(/(\d+)$/) || [])[1]
             ? String((String(r.no).match(/(\d+)$/) || [])[1]).padStart(10, "0")
             : String(r.no);
+          const rawId = escapeHtml(String(r.rawId || r.no));
+          const dueDateDisplay = r.dueDate
+            ? escapeHtml(r.dueDate)
+            : '<span class="tkl-due-unset">未設定</span>';
+          const dueDateCell = canEdit
+            ? `<span class="tkl-due-cell" data-taskid="${rawId}" data-tool="${escapeHtml(tool)}">
+                 <span class="tkl-due-val">${dueDateDisplay}</span>
+                 <button type="button" class="tkl-due-btn" title="期限日を変更" onclick="openDueEdit(this)">
+                   <i class="fa-solid fa-pen-to-square"></i>
+                 </button>
+               </span>`
+            : `<span class="tkl-due-cell">${dueDateDisplay}</span>`;
           return `<tr>
             <td data-sort="${noSortKey}"><a href="/tasks/${tool}/${encodeURIComponent(r.rawId || r.no)}" class="tkl-no-link">${escapeHtml(String(r.no))}</a></td>
             <td data-sort="${escapeHtml(String(r.type))}"><span class="tkl-type-badge">${escapeHtml(String(r.type))}</span></td>
@@ -1078,7 +1161,7 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
             <td data-sort="${escapeHtml(String(r.labels))}">${escapeHtml(String(r.labels))}</td>
             <td data-sort="${escapeHtml(String(r.priority))}">${escapeHtml(String(r.priority))}</td>
             <td data-sort="${escapeHtml(String(r.assignee))}">${escapeHtml(String(r.assignee))}</td>
-            <td data-sort="${escapeHtml(String(r.dueDate))}">${escapeHtml(String(r.dueDate))}</td>
+            <td data-sort="${r.dueDate || ""}" style="white-space:nowrap">${dueDateCell}</td>
             <td data-sort="${escapeHtml(String(r.updatedAt))}">${escapeHtml(String(r.updatedAt))}</td>
             <td data-sort="${escapeHtml(String(r.notes))}">${escapeHtml(String(r.notes))}</td>
         </tr>`;
@@ -1143,6 +1226,21 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
 .tkl-title-cell { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tkl-no-link { color:#1d4ed8; font-weight:600; text-decoration:none; font-family:monospace; font-size:12px; white-space:nowrap; }
 .tkl-no-link:hover { text-decoration:underline; color:#1e40af; }
+.tkl-due-cell { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+.tkl-due-unset { color:#94a3b8; font-style:italic; }
+.tkl-due-btn { background:none; border:none; cursor:pointer; color:#64748b; padding:2px 4px; border-radius:4px; font-size:12px; line-height:1; transition:color .15s,background .15s; vertical-align:middle; }
+.tkl-due-btn:hover { color:#1d4ed8; background:#eff6ff; }
+.tkl-due-popup { position:fixed; z-index:9999; background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,.15); padding:16px 18px; min-width:240px; }
+.tkl-due-popup h4 { margin:0 0 12px; font-size:13px; font-weight:700; color:#0f172a; }
+.tkl-due-popup input[type=date] { width:100%; padding:8px 10px; border:1px solid #e2e8f0; border-radius:8px; font-size:13px; margin-bottom:10px; box-sizing:border-box; cursor:pointer; }
+.tkl-due-popup input[type=date]:focus { outline:none; border-color:#93c5fd; }
+.tkl-due-popup-actions { display:flex; gap:8px; }
+.tkl-due-popup-save { flex:1; background:#1d4ed8; color:#fff; border:none; border-radius:8px; padding:8px; font-size:13px; font-weight:600; cursor:pointer; }
+.tkl-due-popup-save:hover { background:#1e40af; }
+.tkl-due-popup-clear { background:#fee2e2; color:#dc2626; border:none; border-radius:8px; padding:8px 12px; font-size:13px; font-weight:600; cursor:pointer; }
+.tkl-due-popup-clear:hover { background:#fecaca; }
+.tkl-due-popup-cancel { background:#f1f5f9; color:#374151; border:none; border-radius:8px; padding:8px 12px; font-size:13px; cursor:pointer; }
+.tkl-due-popup-cancel:hover { background:#e2e8f0; }
 @media (max-width:700px) {
     .tkl-topbar { flex-direction:column; align-items:flex-start; }
     .tkl-filter-item { min-width:100%; }
@@ -1318,6 +1416,86 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
   // リサイズ後やソート後に再実行
   tbl.addEventListener('mouseenter', updateTitles, { once: false });
 })();
+
+// ―― 期限日インライン編集 ――――――――――――――――――――――――――――――――――――――――――――――――
+var _duePopup = null;
+
+function openDueEdit(btn) {
+  closeDuePopup();
+  var cell = btn.closest('.tkl-due-cell');
+  var taskId = cell.dataset.taskid;
+  var toolKey = cell.dataset.tool;
+  var currentVal = (cell.querySelector('.tkl-due-val') || {}).innerText || '';
+  if (currentVal === '未設定') currentVal = '';
+
+  var popup = document.createElement('div');
+  popup.className = 'tkl-due-popup';
+  popup.innerHTML =
+    '<h4><i class="fa-solid fa-calendar-days" style="margin-right:6px;color:#1d4ed8"></i>期限日を設定</h4>' +
+    '<input type="date" id="duePopupDate">' +
+    '<div class="tkl-due-popup-actions">' +
+      '<button class="tkl-due-popup-save">保存</button>' +
+      '<button class="tkl-due-popup-clear" title="期限日をクリア">クリア</button>' +
+      '<button class="tkl-due-popup-cancel">キャンセル</button>' +
+    '</div>';
+
+  var rect = btn.getBoundingClientRect();
+  popup.style.top  = (rect.bottom + window.scrollY + 6) + 'px';
+  popup.style.left = Math.max(8, rect.left + window.scrollX - 60) + 'px';
+  document.body.appendChild(popup);
+
+  var dateInput = popup.querySelector('#duePopupDate');
+  dateInput.value = currentVal;
+  popup.querySelector('.tkl-due-popup-save').addEventListener('click', function() { saveDue(taskId, toolKey, false); });
+  popup.querySelector('.tkl-due-popup-clear').addEventListener('click', function() { saveDue(taskId, toolKey, true); });
+  popup.querySelector('.tkl-due-popup-cancel').addEventListener('click', closeDuePopup);
+
+  _duePopup = { popup: popup, cell: cell };
+
+  var pRect = popup.getBoundingClientRect();
+  if (pRect.right > window.innerWidth - 8) {
+    popup.style.left = (window.innerWidth - pRect.width - 12) + 'px';
+  }
+  // カレンダーを自動で開く
+  setTimeout(function() {
+    try { dateInput.showPicker(); } catch(e) { dateInput.focus(); }
+  }, 50);
+  setTimeout(function(){ document.addEventListener('click', outsideDueClick); }, 10);
+}
+
+function outsideDueClick(e) {
+  if (_duePopup && !_duePopup.popup.contains(e.target)) closeDuePopup();
+}
+
+function closeDuePopup() {
+  if (_duePopup) {
+    _duePopup.popup.remove();
+    _duePopup = null;
+    document.removeEventListener('click', outsideDueClick);
+  }
+}
+
+async function saveDue(taskId, toolKey, clear) {
+  var dateVal = clear ? '' : (document.getElementById('duePopupDate') || {}).value || '';
+  try {
+    var r = await fetch('/tasks/' + toolKey + '/' + encodeURIComponent(taskId) + '/duedate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dueDate: dateVal })
+    });
+    var d = await r.json();
+    if (!d.ok) { alert('保存失敗: ' + (d.error || '不明なエラー')); return; }
+    if (_duePopup) {
+      var valEl = _duePopup.cell.querySelector('.tkl-due-val');
+      var td = _duePopup.cell.closest('td');
+      if (valEl) valEl.innerHTML = dateVal ? dateVal : '<span class="tkl-due-unset">未設定</span>';
+      if (td) td.setAttribute('data-sort', dateVal);
+    }
+    closeDuePopup();
+  } catch(e) {
+    alert('通信エラー: ' + e.message);
+  }
+}
 </script>
 ` +
       pageFooter();
@@ -1339,7 +1517,7 @@ router.post("/tasks/settings/:tool/test", requireLogin, async (req, res) => {
   if (!TASK_TOOLS.find((t) => t.key === tool))
     return res.json({ ok: false, error: "不明なツール" });
   try {
-    const cfg = await getConfig(tool).catch(() => null);
+    const cfg = await getTaskConfig(tool, req.session.userId).catch(() => null);
     if (!cfg)
       return res.json({
         ok: false,
@@ -1812,9 +1990,9 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
           .catch(() => null)
       : null;
     const isAdmin = req.session.isAdmin || false;
-    const role = req.session.role || (isAdmin ? "admin" : "employee");
+    const role = req.session.orgRole || (isAdmin ? "admin" : "employee");
 
-    const cfg = await getConfig(tool).catch(() => null);
+    const cfg = await getTaskConfig(tool, req.session.userId).catch(() => null);
     if (!cfg || !cfg.enabled) {
       return res.redirect(`/tasks/settings/${tool}`);
     }
@@ -1828,7 +2006,34 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
     const task = taskData.task;
     const fetchError = taskData.error;
 
+    // 期限日はNOKORI DBのみで管理（外部ツールの値は無視）
+    let dbDueDate = "";
+    if (task) {
+      const rawId = String(task.rawId || task.no || id);
+      const dueDoc = await TaskDueDate.findOne({
+        userId: req.session.userId,
+        service: tool,
+        taskId: rawId,
+      })
+        .lean()
+        .catch(() => null);
+      dbDueDate = dueDoc ? dueDoc.dueDate || "" : "";
+      task.dueDate = "";
+    }
+    const canEdit = canEditDue(role, isAdmin);
+
     const ai = task ? generateAiAnalysis(task) : null;
+    const taskRawId = task
+      ? escapeHtml(String(task.rawId || task.no || id))
+      : "";
+    const dueDateDetailHtml = canEdit
+      ? `<span class="tkl-due-cell" data-taskid="${taskRawId}" data-tool="${escapeHtml(tool)}">
+           <span class="tkl-due-val">${dbDueDate ? escapeHtml(dbDueDate) : '<span class="tkl-due-unset">未設定</span>'}</span>
+           <button type="button" class="tkl-due-btn" title="期限日を変更" onclick="openDueEdit(this)">
+             <i class="fa-solid fa-pen-to-square"></i>
+           </button>
+         </span>`
+      : `<span>${dbDueDate ? escapeHtml(dbDueDate) : "—"}</span>`;
 
     // 詳細セクション HTML
     const detailHtml = task
@@ -1850,7 +2055,7 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
           <dt>種別</dt><dd>${escapeHtml(task.type || "—")}</dd>
           <dt>優先度</dt><dd>${escapeHtml(task.priority || "—")}</dd>
           <dt>担当者</dt><dd>${escapeHtml(task.assignee || "（未設定）")}</dd>
-          <dt>期限日</dt><dd>${escapeHtml(task.dueDate || "—")}</dd>
+          <dt>期限日</dt><dd>${dueDateDetailHtml}</dd>
           <dt>更新日</dt><dd>${escapeHtml(task.updatedAt || "—")}</dd>
         </dl>
       </div>
@@ -1990,7 +2195,92 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
 .tkd-ai-list--ol { list-style:decimal; }
 .tkd-ai-summary { font-size:13px; color:#1e293b; line-height:1.6; }
 @media (max-width:900px) { .tkd-layout { grid-template-columns:1fr; } .tkd-ai-panel { position:static; } }
-</style>`;
+/* due date popup (reused from list page) */
+.tkl-due-cell { display:inline-flex; align-items:center; gap:4px; }
+.tkl-due-unset { color:#94a3b8; font-style:italic; }
+.tkl-due-btn { background:none; border:none; cursor:pointer; color:#64748b; padding:2px 4px; border-radius:4px; font-size:13px; line-height:1; transition:color .15s,background .15s; }
+.tkl-due-btn:hover { color:#1d4ed8; background:#eff6ff; }
+.tkl-due-popup { position:fixed; z-index:9999; background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,.15); padding:16px 18px; min-width:220px; }
+.tkl-due-popup h4 { margin:0 0 12px; font-size:13px; font-weight:700; color:#0f172a; }
+.tkl-due-popup input[type=date] { width:100%; padding:8px 10px; border:1px solid #e2e8f0; border-radius:8px; font-size:13px; margin-bottom:10px; box-sizing:border-box; }
+.tkl-due-popup-actions { display:flex; gap:8px; }
+.tkl-due-popup-save { flex:1; background:#1d4ed8; color:#fff; border:none; border-radius:8px; padding:8px; font-size:13px; font-weight:600; cursor:pointer; }
+.tkl-due-popup-save:hover { background:#1e40af; }
+.tkl-due-popup-clear { background:#fee2e2; color:#dc2626; border:none; border-radius:8px; padding:8px 12px; font-size:13px; font-weight:600; cursor:pointer; }
+.tkl-due-popup-clear:hover { background:#fecaca; }
+.tkl-due-popup-cancel { background:#f1f5f9; color:#374151; border:none; border-radius:8px; padding:8px 12px; font-size:13px; cursor:pointer; }
+.tkl-due-popup-cancel:hover { background:#e2e8f0; }
+</style>
+<script>
+var _duePopup = null;
+function openDueEdit(btn) {
+  closeDuePopup();
+  var cell = btn.closest('.tkl-due-cell');
+  var taskId = cell.dataset.taskid;
+  var toolKey = cell.dataset.tool;
+  var valEl = cell.querySelector('.tkl-due-val');
+  var currentVal = valEl ? valEl.innerText.trim() : '';
+  if (currentVal === '未設定') currentVal = '';
+  var popup = document.createElement('div');
+  popup.className = 'tkl-due-popup';
+  popup.innerHTML =
+    '<h4><i class="fa-solid fa-calendar-days" style="margin-right:6px;color:#1d4ed8"></i>期限日を設定</h4>' +
+    '<input type="date" id="duePopupDate">' +
+    '<div class="tkl-due-popup-actions">' +
+      '<button class="tkl-due-popup-save">保存</button>' +
+      '<button class="tkl-due-popup-clear" title="期限日をクリア">クリア</button>' +
+      '<button class="tkl-due-popup-cancel">キャンセル</button>' +
+    '</div>';
+  var rect = btn.getBoundingClientRect();
+  popup.style.top  = (rect.bottom + window.scrollY + 6) + 'px';
+  popup.style.left = Math.max(8, rect.left + window.scrollX - 60) + 'px';
+  document.body.appendChild(popup);
+  var dateInput = popup.querySelector('#duePopupDate');
+  dateInput.value = currentVal;
+  popup.querySelector('.tkl-due-popup-save').addEventListener('click', function() { saveDue(taskId, toolKey, false); });
+  popup.querySelector('.tkl-due-popup-clear').addEventListener('click', function() { saveDue(taskId, toolKey, true); });
+  popup.querySelector('.tkl-due-popup-cancel').addEventListener('click', closeDuePopup);
+  _duePopup = { popup: popup, cell: cell };
+  var pRect = popup.getBoundingClientRect();
+  if (pRect.right > window.innerWidth - 8) {
+    popup.style.left = (window.innerWidth - pRect.width - 12) + 'px';
+  }
+  // カレンダーを自動で開く
+  setTimeout(function() {
+    try { dateInput.showPicker(); } catch(e) { dateInput.focus(); }
+  }, 50);
+  setTimeout(function(){ document.addEventListener('click', outsideDueClick); }, 10);
+}
+function outsideDueClick(e) {
+  if (_duePopup && !_duePopup.popup.contains(e.target)) closeDuePopup();
+}
+function closeDuePopup() {
+  if (_duePopup) {
+    _duePopup.popup.remove();
+    _duePopup = null;
+    document.removeEventListener('click', outsideDueClick);
+  }
+}
+async function saveDue(taskId, toolKey, clear) {
+  var dateVal = clear ? '' : (document.getElementById('duePopupDate') || {}).value || '';
+  try {
+    var r = await fetch('/tasks/' + toolKey + '/' + encodeURIComponent(taskId) + '/duedate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dueDate: dateVal })
+    });
+    var d = await r.json();
+    if (!d.ok) { alert('保存失敗: ' + (d.error || '不明なエラー')); return; }
+    if (_duePopup) {
+      var valEl = _duePopup.cell.querySelector('.tkl-due-val');
+      if (valEl) valEl.innerHTML = dateVal ? dateVal : '<span class="tkl-due-unset">未設定</span>';
+    }
+    closeDuePopup();
+  } catch(e) {
+    alert('通信エラー: ' + e.message);
+  }
+}
+</script>`;
 
     const html =
       buildPageShell({
@@ -2025,5 +2315,42 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
   } catch (err) {
     console.error("[tasks] GET /tasks/:tool/:id error:", err);
     res.status(500).send("サーバーエラーが発生しました。");
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// POST /tasks/:tool/:id/duedate - 期限日をNOKORI DBに保存
+// ─────────────────────────────────────────────────────────────
+router.post("/tasks/:tool/:id/duedate", requireLogin, async (req, res) => {
+  const tool = req.params.tool;
+  const taskId = req.params.id;
+  if (!TASK_TOOLS.find((t) => t.key === tool))
+    return res.json({ ok: false, error: "不明なツール" });
+  const isAdmin = req.session.isAdmin || false;
+  const role = req.session.orgRole || (isAdmin ? "admin" : "employee");
+  if (!canEditDue(role, isAdmin))
+    return res.status(403).json({ ok: false, error: "変更権限がありません" });
+  try {
+    const rawDate = (req.body.dueDate || "").trim();
+    if (rawDate && !/^\d{4}-\d{2}-\d{2}$/.test(rawDate))
+      return res.json({
+        ok: false,
+        error: "日付形式が正しくありません（YYYY-MM-DD）",
+      });
+    await TaskDueDate.findOneAndUpdate(
+      { userId: req.session.userId, service: tool, taskId },
+      {
+        $set: {
+          dueDate: rawDate,
+          updatedAt: new Date(),
+          updatedBy: req.session.userId,
+        },
+      },
+      { upsert: true, new: true },
+    );
+    res.json({ ok: true, dueDate: rawDate });
+  } catch (err) {
+    console.error("[tasks] POST duedate error:", err);
+    res.status(500).json({ ok: false, error: "サーバーエラーが発生しました" });
   }
 });
