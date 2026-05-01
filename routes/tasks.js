@@ -226,14 +226,28 @@ async function fetchJiraTasks(cfg, query) {
   if (query.priority) jql += ` AND priority = "${query.priority}"`;
   if (query.assignee) jql += ` AND assignee = "${query.assignee}"`;
   if (query.q) jql += ` AND summary ~ "${query.q}"`;
-  const params = new URLSearchParams({
-    jql,
-    maxResults: "50",
-    fields:
-      "summary,status,priority,assignee,issuetype,project,duedate,updated,labels",
-  });
-  const res = await fetch(`${siteUrl}/rest/api/3/search?${params}`, {
-    headers: { Authorization: `Basic ${auth}`, Accept: "application/json" },
+  const res = await fetch(`${siteUrl}/rest/api/3/search/jql`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${auth}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      jql,
+      maxResults: 50,
+      fields: [
+        "summary",
+        "status",
+        "priority",
+        "assignee",
+        "issuetype",
+        "project",
+        "duedate",
+        "updated",
+        "labels",
+      ],
+    }),
   });
   if (!res.ok) return { rows: [], error: `JIRA API エラー (${res.status})` };
   const data = await res.json();
@@ -593,6 +607,7 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
           label: "JIRAサイトURL",
           type: "text",
           placeholder: "https://yoursite.atlassian.net",
+          hint: "JIRAにログイン後、ブラウザのURLに表示される「https://〇〇.atlassian.net」の部分",
           required: true,
         },
         {
@@ -600,6 +615,7 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
           label: "メールアドレス",
           type: "email",
           placeholder: "you@example.com",
+          hint: "JIRAへのログインに使っているメールアドレス",
           required: true,
         },
         {
@@ -607,6 +623,7 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
           label: "APIトークン",
           type: "password",
           placeholder: "ATATxxxxxxxxxxxxxxxx",
+          hint: "Atlassian → アカウント設定 → セキュリティ → APIトークンで発行",
           required: true,
         },
         {
@@ -614,6 +631,7 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
           label: "プロジェクトキー",
           type: "text",
           placeholder: "PROJ",
+          hint: "JIRAプロジェクト一覧の「キー」列に表示される英字コード（例: PROJ, DEV）",
           required: true,
         },
       ],
@@ -623,6 +641,7 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
           label: "スペースキー",
           type: "text",
           placeholder: "yourspace",
+          hint: "BacklogのURL「https://▶yourspace◀.backlog.com」の部分",
           required: true,
         },
         {
@@ -630,6 +649,7 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
           label: "APIキー",
           type: "password",
           placeholder: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          hint: "Backlog → 個人設定 → API → APIキーを発行",
           required: true,
         },
         {
@@ -637,6 +657,7 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
           label: "プロジェクトキー",
           type: "text",
           placeholder: "PROJECT",
+          hint: "Backlogプロジェクトの設定画面に表示される英字コード（例: PROJECT, DEV）",
           required: true,
         },
       ],
