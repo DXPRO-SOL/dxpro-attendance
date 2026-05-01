@@ -1,8 +1,13 @@
 require("dotenv").config();
 const express = require("express");
+const http = require("http");
+const { Server: SocketIO } = require("socket.io");
 const session = require("express-session");
 const bcrypt = require("bcryptjs");
 const app = express();
+const httpServer = http.createServer(app);
+const io = new SocketIO(httpServer);
+global.io = io;
 
 // Render/Cloudflare環境ではプロキシを信頼してHTTPS判定を正しく行う
 app.set("trust proxy", 1);
@@ -77,6 +82,7 @@ app.use("/", require("./routes/lang"));
 app.use("/", require("./routes/integrations"));
 app.use("/", require("./routes/organization"));
 app.use("/", require("./routes/tasks"));
+app.use("/", require("./routes/chat"));
 
 // ── グローバルエラーハンドラー（500エラーでプロセスをクラッシュさせない） ─
 app.use((err, req, res, next) => {
@@ -135,7 +141,15 @@ async function createAdminUser() {
 // サーバー起動
 const PORT = process.env.PORT || 10000;
 
-app.listen(PORT, "0.0.0.0", async () => {
+// Socket.io 接続処理
+io.on("connection", (socket) => {
+  // タイピングインジケーター中継
+  socket.on("typing", (data) => socket.broadcast.emit("typing", data));
+  socket.on("stop_typing", (data) => socket.broadcast.emit("stop_typing", data));
+  socket.on("disconnect", () => {});
+});
+
+httpServer.listen(PORT, "0.0.0.0", async () => {
   await createAdminUser();
 
   const admin = await User.findOne({ username: "admin" });

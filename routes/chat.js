@@ -1,0 +1,1248 @@
+// ==============================
+// routes/chat.js - ユーザー間チャット
+// ==============================
+const express = require('express');
+const router = express.Router();
+const { requireLogin } = require('../middleware/auth');
+const { User, Employee, ChatMessage } = require('../models');
+const { renderPage } = require('../lib/renderPage');
+
+// ── チャットトップ（ユーザー一覧）────────────────────────────────
+router.get('/chat', requireLogin, async (req, res) => {
+    try {
+        const myId = req.session.userId;
+
+        // 全ユーザー（検索用）
+        const users = await User.find({ _id: { $ne: myId } })
+            .select('username chatStatus lastSeenAt')
+            .lean();
+
+        const employees = await Employee.find({
+            userId: { $in: users.map(u => u._id) }
+        }).select('userId name department').lean();
+        const empMap = {};
+        employees.forEach(e => { empMap[String(e.userId)] = e; });
+
+        const userList = users.map(u => ({
+            ...u,
+            emp: empMap[String(u._id)] || null,
+        }));
+
+        // 最近会話したユーザー（未読数つき）
+        const recentAgg = await ChatMessage.aggregate([
+            { $match: { $or: [{ fromUserId: myId }, { toUserId: myId }] } },
+            { $sort: { createdAt: -1 } },
+            { $addFields: { otherId: { $cond: [{ $eq: ['$fromUserId', myId] }, '$toUserId', '$fromUserId'] } } },
+            { $group: { _id: '$otherId', lastAt: { $first: '$createdAt' } } },
+            { $sort: { lastAt: -1 } },
+            { $limit: 20 }
+        ]);
+        const recentIds = recentAgg.map(r => r._id);
+
+        const unreadCounts = await ChatMessage.aggregate([
+            { $match: { toUserId: myId, read: false } },
+            { $group: { _id: '$fromUserId', count: { $sum: 1 } } }
+        ]);
+        const unreadMap = {};
+        unreadCounts.forEach(u => { unreadMap[String(u._id)] = u.count; });
+
+        const recentUsers = recentIds.map(id => {
+            const u = userList.find(x => String(x._id) === String(id));
+            if (!u) return null;
+            return { ...u, unread: unreadMap[String(id)] || 0 };
+        }).filter(Boolean);
+
+        const currentUser = await User.findById(myId).select('chatStatus').lean();
+        const myEmp = await Employee.findOne({ userId: myId }).select('name').lean();
+        const myName = myEmp ? myEmp.name : req.session.username;
+
+        const content = buildChatListHtml(userList, currentUser, myName, recentUsers);
+        renderPage(req, res, 'チャット', 'チャット', content);
+    } catch (err) {
+        console.error('[chat] トップエラー:', err);
+        res.status(500).send('エラーが発生しました');
+    }
+});
+
+// ── DM画面（特定ユーザーとのチャット）────────────────────────────
+router.get('/chat/:userId', requireLogin, async (req, res) => {
+    try {
+        const myId    = req.session.userId;
+        const targetId = req.params.userId;
+        const targetUser = await User.findById(targetId).select('username chatStatus lastSeenAt').lean();
+        if (!targetUser) return res.status(404).send('ユーザーが見つかりません');
+
+        const targetEmp = await Employee.findOne({ userId: targetId }).select('name department position').lean();
+
+        // 未読を既読に
+        await ChatMessage.updateMany(
+            { fromUserId: targetId, toUserId: myId, read: false },
+            { $set: { read: true, readAt: new Date() } }
+        );
+
+        // 直近100件取得
+        const messages = await ChatMessage.find({
+            $or: [
+                { fromUserId: myId, toUserId: targetId },
+                { fromUserId: targetId, toUserId: myId }
+            ]
+        }).sort({ createdAt: 1 }).limit(100).lean();
+
+        // 全ユーザー（検索用）
+        const allUsers = await User.find({ _id: { $ne: myId } })
+            .select('username chatStatus')
+            .lean();
+        const employees = await Employee.find({
+            userId: { $in: allUsers.map(u => u._id) }
+        }).select('userId name department').lean();
+        const empMap = {};
+        employees.forEach(e => { empMap[String(e.userId)] = e; });
+
+        const unreadCounts = await ChatMessage.aggregate([
+            { $match: { toUserId: myId, read: false } },
+            { $group: { _id: '$fromUserId', count: { $sum: 1 } } }
+        ]);
+        const unreadMap = {};
+        unreadCounts.forEach(u => { unreadMap[String(u._id)] = u.count; });
+
+        const userList = allUsers.map(u => ({
+            ...u,
+            emp: empMap[String(u._id)] || null,
+            unread: unreadMap[String(u._id)] || 0
+        }));
+
+        // 最近会話したユーザー（サイドバー表示用）
+        const recentAgg = await ChatMessage.aggregate([
+            { $match: { $or: [{ fromUserId: myId }, { toUserId: myId }] } },
+            { $sort: { createdAt: -1 } },
+            { $addFields: { otherId: { $cond: [{ $eq: ['$fromUserId', myId] }, '$toUserId', '$fromUserId'] } } },
+            { $group: { _id: '$otherId', lastAt: { $first: '$createdAt' } } },
+            { $sort: { lastAt: -1 } },
+            { $limit: 20 }
+        ]);
+        const recentIds = recentAgg.map(r => String(r._id));
+        // 現在開いているDM相手を先頭に確保
+        if (!recentIds.includes(targetId)) recentIds.unshift(targetId);
+        const recentUserList = recentIds.map(id => userList.find(u => String(u._id) === id)).filter(Boolean);
+
+        // 自分のEmployeeInfo
+        const myEmp = await Employee.findOne({ userId: myId }).select('name').lean();
+        const currentUser = await User.findById(myId).select('chatStatus').lean();
+
+        const content = buildDmHtml({
+            targetUser,
+            targetEmp,
+            messages,
+            userList: recentUserList,
+            allUsers: userList,
+            myUserId: String(myId),
+            myName: myEmp ? myEmp.name : req.session.username,
+            currentUser
+        });
+
+        const targetName = targetEmp ? targetEmp.name : targetUser.username;
+        renderPage(req, res, `チャット - ${targetName}`, `チャット`, content);
+    } catch (err) {
+        console.error('[chat] DMエラー:', err);
+        res.status(500).send('エラーが発生しました');
+    }
+});
+
+// ── ステータス変更 API ──────────────────────────────────────────
+router.post('/api/chat/status', requireLogin, async (req, res) => {
+    try {
+        // sendBeacon は text/plain で送るため両方対応
+        let body = req.body;
+        if (typeof body === 'string') {
+            try { body = JSON.parse(body); } catch(e) { body = {}; }
+        }
+        const { status } = body;
+        if (!['online', 'offline', 'break'].includes(status)) {
+            return res.status(400).json({ error: '無効なステータスです' });
+        }
+        await User.findByIdAndUpdate(req.session.userId, {
+            chatStatus: status,
+            lastSeenAt: new Date()
+        });
+        if (global.io) {
+            global.io.emit('status_change', {
+                userId: String(req.session.userId),
+                status
+            });
+        }
+        res.json({ ok: true, status });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── メッセージ送信 API（Socket.io の補完用） ──────────────────────
+router.post('/api/chat/send', requireLogin, async (req, res) => {
+    try {
+        const { toUserId, content, replyToId } = req.body;
+        if (!toUserId || !content || !content.trim()) {
+            return res.status(400).json({ error: 'パラメーターが不足しています' });
+        }
+        let replyPreview = null;
+        if (replyToId) {
+            const orig = await ChatMessage.findById(replyToId).select('content fromUserId').lean();
+            if (orig && !orig.deleted) replyPreview = orig.content.slice(0, 80);
+        }
+        const msg = await ChatMessage.create({
+            fromUserId: req.session.userId,
+            toUserId,
+            content: content.trim(),
+            replyTo: replyToId || null,
+            replyPreview
+        });
+        if (global.io) {
+            global.io.emit('new_message', {
+                _id: msg._id,
+                fromUserId: String(req.session.userId),
+                toUserId: String(toUserId),
+                content: msg.content,
+                replyTo: replyToId || null,
+                replyPreview,
+                createdAt: msg.createdAt,
+                reactions: []
+            });
+        }
+        res.json({ ok: true, msg });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── メッセージ削除 API ──────────────────────────────────────────
+router.delete('/api/chat/msg/:id', requireLogin, async (req, res) => {
+    try {
+        const msg = await ChatMessage.findById(req.params.id);
+        if (!msg) return res.status(404).json({ error: '見つかりません' });
+        if (String(msg.fromUserId) !== String(req.session.userId)) {
+            return res.status(403).json({ error: '自分のメッセージのみ削除できます' });
+        }
+        msg.deleted = true;
+        msg.deletedAt = new Date();
+        msg.content = '（このメッセージは削除されました）';
+        await msg.save();
+        if (global.io) global.io.emit('msg_deleted', { _id: String(msg._id) });
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── リアクション API ──────────────────────────────────────────
+router.post('/api/chat/react', requireLogin, async (req, res) => {
+    try {
+        const { msgId, emoji } = req.body;
+        const msg = await ChatMessage.findById(msgId);
+        if (!msg || msg.deleted) return res.status(404).json({ error: '見つかりません' });
+        const uid = req.session.userId;
+        let reaction = msg.reactions.find(r => r.emoji === emoji);
+        if (reaction) {
+            const idx = reaction.userIds.findIndex(id => String(id) === String(uid));
+            if (idx >= 0) reaction.userIds.splice(idx, 1); // トグルOFF
+            else reaction.userIds.push(uid);               // トグルON
+            if (reaction.userIds.length === 0) {
+                msg.reactions = msg.reactions.filter(r => r.emoji !== emoji);
+            }
+        } else {
+            msg.reactions.push({ emoji, userIds: [uid] });
+        }
+        await msg.save();
+        if (global.io) {
+            global.io.emit('msg_reaction', {
+                _id: String(msgId),
+                reactions: msg.reactions.map(r => ({ emoji: r.emoji, count: r.userIds.length, mine: r.userIds.some(id => String(id) === String(uid)) }))
+            });
+        }
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── HTML生成ヘルパー ────────────────────────────────────────────
+
+const STATUS_MAP = {
+    online:  { color: '#2bac76', label: 'オンライン',  cls: 'online'  },
+    break:   { color: '#e8a838', label: '休憩中',       cls: 'break'   },
+    offline: { color: '#5e6472', label: 'オフライン',  cls: 'offline' },
+};
+
+function escapeHtml(s) {
+    return String(s)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/\n/g,'<br>');
+}
+function statusLabel(s) { return (STATUS_MAP[s]||STATUS_MAP.offline).label; }
+
+// ─── サイドバーユーザー行 HTML ───
+function sidebarUserRow(u, targetId = null) {
+    const name = u.emp ? u.emp.name : u.username;
+    const dept = u.emp ? u.emp.department : '';
+    const s    = STATUS_MAP[u.chatStatus] || STATUS_MAP.offline;
+    const isActive = targetId && String(u._id) === targetId;
+    return `
+    <a href="/chat/${u._id}" class="sc-dm-row${isActive?' active':''}" data-userid="${u._id}">
+        <div class="sc-avatar-wrap sc-avatar-wrap-sm">
+            <div class="sc-avatar sc-av-sm">${name.charAt(0).toUpperCase()}</div>
+            <span class="sc-status-pip sc-pip-${s.cls}" data-userid="${u._id}" title="${s.label}"></span>
+        </div>
+        <div class="sc-dm-info">
+            <span class="sc-dm-name">${name}</span>
+            ${dept ? `<span class="sc-dm-dept">${dept}</span>` : ''}
+        </div>
+        ${u.unread ? `<span class="sc-unread">${u.unread}</span>` : ''}
+    </a>`;
+}
+
+// ─── サイドパネル共通 HTML ───
+function buildSidePanel(myInitial, myStatus, userRows, myName, allUsersJson) {
+    const safeJson = (allUsersJson || '[]').replace(/'/g, '&#39;');
+    const hasRows  = userRows && userRows.trim().length > 0;
+    return `
+    <div class="sc-side">
+        <div class="sc-side-head">
+            <i class="fa-regular fa-comment-dots" style="color:#c9b5a0;font-size:1rem;"></i>
+            <span class="sc-ws-name">DXPRO SOLUTIONS</span>
+        </div>
+        <div class="sc-my-status-row">
+            <div class="sc-avatar-wrap sc-avatar-wrap-sm">
+                <div class="sc-avatar sc-av-sm sc-av-me">${myInitial}</div>
+                <span class="sc-status-pip sc-pip-${(STATUS_MAP[myStatus]||STATUS_MAP.offline).cls}" id="my-pip"></span>
+            </div>
+            <div class="sc-my-status-info">
+                <span class="sc-my-name">${escapeHtml(myName)}</span>
+                <div class="sc-status-btns">
+                    <button class="sc-st-btn ${myStatus==='online'?'active':''}" data-status="online" onclick="setMyStatus('online',this)">
+                        <span class="sc-btn-pip sc-pip-online"></span>オンライン
+                    </button>
+                    <button class="sc-st-btn ${myStatus==='break'?'active':''}" data-status="break" onclick="setMyStatus('break',this)">
+                        <span class="sc-btn-pip sc-pip-break"></span>休憩中
+                    </button>
+                    <button class="sc-st-btn ${myStatus==='offline'?'active':''}" data-status="offline" onclick="setMyStatus('offline',this)">
+                        <span class="sc-btn-pip sc-pip-offline"></span>オフライン
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="sc-search-wrap">
+            <input type="text" id="sc-user-search" class="sc-search-inp"
+                placeholder="🔍 ユーザーを検索..."
+                oninput="filterSidebarUsers(this.value)"
+                autocomplete="off">
+        </div>
+        <div class="sc-section-label" id="sc-section-label">${hasRows ? '最近の会話' : ''}</div>
+        <div class="sc-dm-list" id="sc-dm-recent">
+            ${hasRows ? userRows : '<span class="sc-empty">まだ会話がありません</span>'}
+        </div>
+        <div class="sc-dm-list" id="sc-dm-search" style="display:none;"></div>
+        <script>
+        (function(){
+            const ALL_USERS = ${allUsersJson || '[]'};
+            const STATUS_CLS = { online:'sc-pip-online', break:'sc-pip-break', offline:'sc-pip-offline' };
+            const STATUS_LBL = { online:'オンライン', break:'休憩中', offline:'オフライン' };
+            window.filterSidebarUsers = function(q) {
+                const recent = document.getElementById('sc-dm-recent');
+                const search = document.getElementById('sc-dm-search');
+                const label  = document.getElementById('sc-section-label');
+                q = q.trim().toLowerCase();
+                if (!q) {
+                    recent.style.display='';
+                    search.style.display='none';
+                    label.textContent = recent.querySelector('.sc-empty') ? '' : '最近の会話';
+                    return;
+                }
+                const filtered = ALL_USERS.filter(u => {
+                    const name = (u.emp ? u.emp.name : u.username)||'';
+                    const dept = (u.emp ? u.emp.department : '')||'';
+                    return name.toLowerCase().includes(q) || dept.toLowerCase().includes(q) || u.username.toLowerCase().includes(q);
+                });
+                label.textContent = filtered.length ? '検索結果' : '';
+                search.innerHTML = filtered.length
+                    ? filtered.map(u => {
+                        const name = u.emp ? u.emp.name : u.username;
+                        const dept = u.emp ? u.emp.department : '';
+                        const sc   = STATUS_CLS[u.chatStatus] || 'sc-pip-offline';
+                        const sl   = STATUS_LBL[u.chatStatus] || 'オフライン';
+                        return '<a href="/chat/'+u._id+'" class="sc-dm-row">'
+                            +'<div class="sc-avatar-wrap sc-avatar-wrap-sm">'
+                            +'<div class="sc-avatar sc-av-sm">'+name.charAt(0).toUpperCase()+'</div>'
+                            +'<span class="sc-status-pip '+sc+'" data-userid="'+u._id+'" title="'+sl+'"></span>'
+                            +'</div>'
+                            +'<div class="sc-dm-info">'
+                            +'<span class="sc-dm-name">'+name+'</span>'
+                            +(dept ? '<span class="sc-dm-dept">'+dept+'</span>' : '')
+                            +'</div></a>';
+                    }).join('')
+                    : '<span class="sc-empty">見つかりません</span>';
+                recent.style.display='none';
+                search.style.display='';
+            };
+
+            // ── 自動ステータス管理 ──────────────────────────────────
+            // 操作中 → online、3分無操作 → break、30分無操作 → offline
+            (function initAutoStatus() {
+                let currentAutoStatus = 'online';
+                let breakTimer = null;
+                let offlineTimer = null;
+
+                function applyStatus(status) {
+                    if (currentAutoStatus === status) return;
+                    currentAutoStatus = status;
+                    fetch('/api/chat/status', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status })
+                    });
+                    // ボタンUI更新
+                    document.querySelectorAll('.sc-st-btn').forEach(b => b.classList.remove('active'));
+                    const btn = document.querySelector('.sc-st-btn[data-status="'+status+'"]');
+                    if (btn) btn.classList.add('active');
+                    const pip = document.getElementById('my-pip');
+                    if (pip) pip.className = 'sc-status-pip sc-pip-' + status;
+                }
+
+                function resetTimers() {
+                    // タイマークリア
+                    clearTimeout(breakTimer);
+                    clearTimeout(offlineTimer);
+                    // 操作があればオンライン
+                    applyStatus('online');
+                    // 3分後 → 休憩中
+                    breakTimer = setTimeout(() => {
+                        applyStatus('break');
+                        // さらに27分後（合計30分）→ オフライン
+                        offlineTimer = setTimeout(() => applyStatus('offline'), 27 * 60 * 1000);
+                    }, 3 * 60 * 1000);
+                }
+
+                // 操作イベントを監視
+                ['mousemove','mousedown','keydown','touchstart','scroll','click'].forEach(evt => {
+                    document.addEventListener(evt, resetTimers, { passive: true });
+                });
+
+                // 初回: オンラインにしてタイマー開始
+                resetTimers();
+
+                // ページを閉じる/離れるときオフライン
+                window.addEventListener('beforeunload', () => {
+                    navigator.sendBeacon('/api/chat/status', JSON.stringify({ status: 'offline' }));
+                });
+            })();
+
+        })();
+        </script>
+    </div>`;
+}
+
+// ─── チャット一覧ページ ───
+function buildChatListHtml(users, currentUser, myName, recentUsers) {
+    const myStatus   = currentUser ? currentUser.chatStatus : 'offline';
+    const myInitial  = myName ? myName.charAt(0).toUpperCase() : '?';
+    const order      = { online:0, break:1, offline:2 };
+    // 最近の会話ユーザーのみサイドバーに表示
+    const recentRows = (recentUsers || []).map(u => sidebarUserRow(u)).join('');
+    // 全ユーザーを検索用JSONとして渡す
+    const allJson    = JSON.stringify(users.map(u => ({
+        _id: String(u._id), username: u.username,
+        chatStatus: u.chatStatus || 'offline',
+        emp: u.emp ? { name: u.emp.name, department: u.emp.department || '' } : null
+    })));
+    return `
+    ${chatStyles()}
+    <div class="sc-page-root">
+        ${buildSidePanel(myInitial, myStatus, recentRows, myName, allJson)}
+        <div class="sc-main sc-main-welcome">
+            <div class="sc-welcome">
+                <div class="sc-welcome-icon">💬</div>
+                <h2>チャットへようこそ</h2>
+                <p>左の検索ボックスからユーザーを探してメッセージを送りましょう</p>
+            </div>
+        </div>
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+    const socket = io();
+    socket.on('status_change', ({ userId, status }) => { updateStatusPips(userId, status); });
+    function setMyStatus(status, btn) {
+        fetch('/api/chat/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})})
+        .then(r=>r.json()).then(()=>{
+            document.querySelectorAll('.sc-st-btn').forEach(b=>b.classList.remove('active'));
+            btn.classList.add('active');
+            const pip=document.getElementById('my-pip');
+            if(pip) pip.className='sc-status-pip sc-pip-'+status;
+        });
+    }
+    function updateStatusPips(userId, status) {
+        const cls = { online:'sc-pip-online', break:'sc-pip-break', offline:'sc-pip-offline' };
+        const lbl = { online:'オンライン', break:'休憩中', offline:'オフライン' };
+        document.querySelectorAll('[data-userid="'+userId+'"].sc-status-pip').forEach(el => {
+            el.className = 'sc-status-pip ' + (cls[status]||'sc-pip-offline');
+            el.title = lbl[status]||'';
+        });
+    }
+    </script>`;
+}
+
+// ─── DM画面 ───
+function buildDmHtml({ targetUser, targetEmp, messages, userList, allUsers, myUserId, myName, currentUser }) {
+    const targetName = targetEmp ? targetEmp.name : targetUser.username;
+    const targetId   = String(targetUser._id);
+    const myStatus   = currentUser ? currentUser.chatStatus : 'offline';
+    const myInitial  = myName ? myName.charAt(0).toUpperCase() : '?';
+    const tgtInitial = targetName.charAt(0).toUpperCase();
+    const order = { online:0, break:1, offline:2 };
+    userList.sort((a,b) => (order[a.chatStatus]||2) - (order[b.chatStatus]||2));
+    const sidebarRows = userList.map(u => sidebarUserRow(u, targetId)).join('');
+    const tgtStatus   = STATUS_MAP[targetUser.chatStatus] || STATUS_MAP.offline;
+    // 全ユーザーを検索用JSONとして生成
+    const searchUsers = (allUsers || userList);
+    const allJson = JSON.stringify(searchUsers.map(u => ({
+        _id: String(u._id), username: u.username,
+        chatStatus: u.chatStatus || 'offline',
+        emp: u.emp ? { name: u.emp.name, department: u.emp.department || '' } : null
+    })));
+
+    // メッセージ HTML 生成
+    let msgHtml = '';
+    let prevFrom = null, prevDate = null;
+    messages.forEach(m => {
+        if (m.deleted) {
+            msgHtml += `<div class="sc-msg sc-msg-deleted" data-id="${m._id}">
+                <div class="sc-msg-del-icon">🗑</div>
+                <div class="sc-msg-del-text">このメッセージは削除されました</div>
+            </div>`;
+            prevFrom = null; return;
+        }
+        const isMine   = String(m.fromUserId) === myUserId;
+        const senderName = isMine ? myName : targetName;
+        const initial  = isMine ? myInitial : tgtInitial;
+        const colorCls = isMine ? 'sc-av-color-0' : 'sc-av-color-1';
+        const dt       = new Date(m.createdAt);
+        const timeStr  = dt.toLocaleTimeString('ja-JP', { hour:'2-digit', minute:'2-digit' });
+        const dateStr  = dt.toLocaleDateString('ja-JP', { month:'long', day:'numeric', weekday:'short' });
+
+        if (!prevDate || prevDate !== dateStr) {
+            msgHtml += `<div class="sc-date-divider"><span>${dateStr}</span></div>`;
+            prevDate = dateStr;
+        }
+
+        const isCont = prevFrom === String(m.fromUserId);
+        prevFrom = String(m.fromUserId);
+
+        // 引用ブロック
+        const replyBlock = m.replyPreview ? `
+            <div class="sc-reply-preview">
+                <div class="sc-reply-bar"></div>
+                <span>${escapeHtml(m.replyPreview.slice(0, 60))}${m.replyPreview.length > 60 ? '...' : ''}</span>
+            </div>` : '';
+
+        // リアクション
+        const reactHtml = (m.reactions && m.reactions.length)
+            ? `<div class="sc-reactions" data-msgid="${m._id}">`
+              + m.reactions.map(r => `<button class="sc-react-chip" data-emoji="${r.emoji}" onclick="toggleReact('${m._id}','${r.emoji}',this)">
+                    ${r.emoji} <span class="sc-react-count">${r.userIds ? r.userIds.length : 0}</span>
+                </button>`).join('')
+              + `</div>` : `<div class="sc-reactions" data-msgid="${m._id}"></div>`;
+
+        // ホバーアクションツールバー
+        const toolbar = `
+            <div class="sc-msg-toolbar">
+                <button class="sc-tb-btn" onclick="startReply('${m._id}','${escapeHtml(m.content).replace(/'/g,'\\x27').slice(0,60)}')" title="返信">↩</button>
+                <button class="sc-tb-btn sc-emoji-trigger" data-msgid="${m._id}" title="リアクション">😊</button>
+                ${isMine ? `<button class="sc-tb-btn sc-tb-delete" onclick="deleteMsg('${m._id}')" title="削除">🗑</button>` : ''}
+            </div>`;
+
+        if (isCont) {
+            msgHtml += `
+            <div class="sc-msg sc-msg-cont" data-id="${m._id}">
+                ${toolbar}
+                <div class="sc-msg-time-hover">${timeStr}</div>
+                <div class="sc-msg-content-wrap">
+                    ${replyBlock}
+                    <div class="sc-msg-body">${escapeHtml(m.content)}</div>
+                    ${reactHtml}
+                </div>
+            </div>`;
+        } else {
+            msgHtml += `
+            <div class="sc-msg" data-id="${m._id}">
+                ${toolbar}
+                <div class="sc-msg-avatar ${colorCls}">${initial}</div>
+                <div class="sc-msg-right">
+                    <div class="sc-msg-meta">
+                        <span class="sc-msg-sender">${escapeHtml(senderName)}</span>
+                        <span class="sc-msg-ts">${timeStr}</span>
+                    </div>
+                    ${replyBlock}
+                    <div class="sc-msg-body">${escapeHtml(m.content)}</div>
+                    ${reactHtml}
+                </div>
+            </div>`;
+        }
+    });
+
+    const EMOJIS = ['👍','👎','❤️','😂','😮','🎉','🙏','💪','✅','❓'];
+
+    return `
+    ${chatStyles()}
+    <div class="sc-page-root">
+        ${buildSidePanel(myInitial, myStatus, sidebarRows, myName, allJson)}
+        <div class="sc-main">
+            <!-- ヘッダー -->
+            <div class="sc-main-header">
+                <div class="sc-header-left">
+                    <div class="sc-avatar-wrap">
+                        <div class="sc-avatar sc-av-color-1">${tgtInitial}</div>
+                        <span class="sc-status-pip sc-pip-${tgtStatus.cls}" id="target-pip"></span>
+                    </div>
+                    <div>
+                        <div class="sc-header-name">${escapeHtml(targetName)}</div>
+                        <div class="sc-header-status" id="target-status-label">${tgtStatus.label}${targetEmp && targetEmp.department ? ' · '+targetEmp.department : ''}</div>
+                    </div>
+                </div>
+                <!-- 検索 -->
+                <div class="sc-search-wrap">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" id="msgSearch" placeholder="会話内を検索..." oninput="filterMessages(this.value)">
+                </div>
+            </div>
+
+            <!-- タイピングインジケーター -->
+            <div class="sc-typing-bar" id="typingBar"></div>
+
+            <!-- メッセージ一覧 -->
+            <div class="sc-messages" id="chatMessages">
+                <div class="sc-thread-start">
+                    <div class="sc-avatar sc-av-color-1 sc-av-lg">${tgtInitial}</div>
+                    <div class="sc-thread-name">${escapeHtml(targetName)}</div>
+                    <div class="sc-thread-sub">${targetEmp ? (targetEmp.department||'') : ''}</div>
+                    <p class="sc-thread-desc">${escapeHtml(targetName)} とのダイレクトメッセージです</p>
+                </div>
+                ${msgHtml}
+                <div id="msgBottom"></div>
+            </div>
+
+            <!-- 返信プレビュー -->
+            <div class="sc-reply-bar-wrap" id="replyBarWrap" style="display:none">
+                <div class="sc-reply-bar-inner">
+                    <span class="sc-reply-bar-icon">↩</span>
+                    <span id="replyBarText"></span>
+                    <button onclick="cancelReply()" class="sc-reply-cancel">×</button>
+                </div>
+            </div>
+
+            <!-- 絵文字ピッカー（フローティング） -->
+            <div class="sc-emoji-picker" id="emojiPicker" style="display:none">
+                ${EMOJIS.map(e => `<button class="sc-emoji-btn" onclick="pickEmoji('${e}')">${e}</button>`).join('')}
+            </div>
+
+            <!-- 入力エリア -->
+            <div class="sc-input-wrap">
+                <div class="sc-input-toolbar">
+                    <button class="sc-input-tool-btn" id="emojiPickerToggle" title="絵文字" type="button">😊</button>
+                </div>
+                <form class="sc-input-form" id="chatForm">
+                    <div class="sc-input-box">
+                        <textarea id="msgInput" placeholder="${escapeHtml(targetName)} へメッセージを送る... (Shift+Enter で改行)" rows="1" maxlength="2000"></textarea>
+                        <button type="submit" class="sc-send-btn" id="sendBtn" disabled>
+                            <i class="fa-solid fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </form>
+                <div class="sc-input-hint">Enter で送信 · Shift+Enter で改行</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+    const socket = io();
+    const MY_ID   = '${myUserId}';
+    const TARGET_ID = '${targetId}';
+    const MY_NAME  = ${JSON.stringify(myName)};
+    const TGT_NAME = ${JSON.stringify(targetName)};
+    const MY_INIT  = '${myInitial}';
+    const TGT_INIT = '${tgtInitial}';
+    let lastFrom = ${messages.filter(m=>!m.deleted).length ? JSON.stringify(String(messages.filter(m=>!m.deleted).at(-1).fromUserId)) : 'null'};
+    let replyToId = null;
+    let emojiTargetMsgId = null;
+
+    const textarea = document.getElementById('msgInput');
+    const sendBtn  = document.getElementById('sendBtn');
+
+    // ── テキストエリア ──────────────────────────
+    textarea.addEventListener('input', () => {
+        textarea.style.height = 'auto';
+        textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px';
+        sendBtn.disabled = !textarea.value.trim();
+        // タイピング通知
+        socket.emit('typing', { fromUserId: MY_ID, toUserId: TARGET_ID });
+    });
+    textarea.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    });
+
+    function scrollBottom(smooth) {
+        const el = document.getElementById('msgBottom');
+        if (el) el.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' });
+    }
+    scrollBottom(false);
+
+    // ── メッセージ送信 ─────────────────────────
+    async function sendMessage() {
+        const content = textarea.value.trim();
+        if (!content) return;
+        textarea.value = '';
+        textarea.style.height = 'auto';
+        sendBtn.disabled = true;
+        cancelReply();
+        textarea.focus();
+        socket.emit('stop_typing', { fromUserId: MY_ID, toUserId: TARGET_ID });
+        await fetch('/api/chat/send', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ toUserId: TARGET_ID, content, replyToId })
+        });
+        replyToId = null;
+    }
+    document.getElementById('chatForm').addEventListener('submit', e => { e.preventDefault(); sendMessage(); });
+
+    // ── 返信 ───────────────────────────────────
+    function startReply(msgId, preview) {
+        replyToId = msgId;
+        document.getElementById('replyBarText').textContent = preview + '...';
+        document.getElementById('replyBarWrap').style.display = '';
+        textarea.focus();
+    }
+    function cancelReply() {
+        replyToId = null;
+        document.getElementById('replyBarWrap').style.display = 'none';
+    }
+
+    // ── メッセージ削除 ─────────────────────────
+    function deleteMsg(msgId) {
+        if (!confirm('このメッセージを削除しますか？')) return;
+        fetch('/api/chat/msg/'+msgId, { method: 'DELETE' });
+    }
+
+    // ── リアクション ───────────────────────────
+    function toggleReact(msgId, emoji, btn) {
+        fetch('/api/chat/react', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ msgId, emoji })
+        });
+    }
+    function pickEmoji(emoji) {
+        if (emojiTargetMsgId) {
+            toggleReact(emojiTargetMsgId, emoji, null);
+            emojiTargetMsgId = null;
+        } else {
+            const pos = textarea.selectionStart;
+            const v   = textarea.value;
+            textarea.value = v.slice(0, pos) + emoji + v.slice(pos);
+            textarea.selectionStart = textarea.selectionEnd = pos + emoji.length;
+            sendBtn.disabled = false;
+            textarea.focus();
+        }
+        document.getElementById('emojiPicker').style.display = 'none';
+    }
+
+    // 絵文字ピッカートグル（入力欄用）
+    document.getElementById('emojiPickerToggle').addEventListener('click', () => {
+        const p = document.getElementById('emojiPicker');
+        emojiTargetMsgId = null;
+        p.style.display = p.style.display === 'none' ? 'flex' : 'none';
+    });
+    // メッセージホバーの絵文字ボタン
+    document.addEventListener('click', e => {
+        const trigger = e.target.closest('.sc-emoji-trigger');
+        if (trigger) {
+            emojiTargetMsgId = trigger.dataset.msgid;
+            const p = document.getElementById('emojiPicker');
+            const r = trigger.getBoundingClientRect();
+            p.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+            p.style.left   = r.left + 'px';
+            p.style.display = 'flex';
+            return;
+        }
+        if (!e.target.closest('#emojiPicker') && !e.target.closest('#emojiPickerToggle')) {
+            document.getElementById('emojiPicker').style.display = 'none';
+        }
+    });
+
+    // ── 検索 ────────────────────────────────────
+    function filterMessages(q) {
+        const lower = q.toLowerCase();
+        document.querySelectorAll('.sc-msg').forEach(el => {
+            if (!q) { el.style.display = ''; return; }
+            const body = el.querySelector('.sc-msg-body');
+            el.style.display = (body && body.textContent.toLowerCase().includes(lower)) ? '' : 'none';
+        });
+    }
+
+    // ── Socket.io イベント受信 ──────────────────
+    socket.on('new_message', (msg) => {
+        const relevant = (msg.fromUserId===MY_ID && msg.toUserId===TARGET_ID) ||
+                         (msg.fromUserId===TARGET_ID && msg.toUserId===MY_ID);
+        if (!relevant) return;
+        const isMine   = msg.fromUserId === MY_ID;
+        const sName    = isMine ? MY_NAME : TGT_NAME;
+        const initial  = isMine ? MY_INIT : TGT_INIT;
+        const colorIdx = isMine ? 0 : 1;
+        const dt       = new Date(msg.createdAt);
+        const timeStr  = dt.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+        const isCont   = lastFrom === msg.fromUserId;
+        lastFrom = msg.fromUserId;
+
+        const replyBlock = msg.replyPreview
+            ? '<div class="sc-reply-preview"><div class="sc-reply-bar"></div><span>'+escHtml(msg.replyPreview.slice(0,60))+'...</span></div>' : '';
+        const toolbar = '<div class="sc-msg-toolbar">'+
+            '<button class="sc-tb-btn" onclick="startReply(\''+msg._id+'\',\''+escHtml(msg.content).replace(/'/g,'\\x27').slice(0,60)+'\')" title="返信">↩</button>'+
+            '<button class="sc-tb-btn sc-emoji-trigger" data-msgid="'+msg._id+'" title="リアクション">😊</button>'+
+            (isMine ? '<button class="sc-tb-btn sc-tb-delete" onclick="deleteMsg(\''+msg._id+'\')" title="削除">🗑</button>' : '')+
+            '</div>';
+
+        const el = document.createElement('div');
+        if (isCont) {
+            el.className = 'sc-msg sc-msg-cont';
+            el.dataset.id = msg._id;
+            el.innerHTML = toolbar +
+                '<div class="sc-msg-time-hover">'+timeStr+'</div>'+
+                '<div class="sc-msg-content-wrap">'+replyBlock+'<div class="sc-msg-body">'+escHtml(msg.content)+'</div><div class="sc-reactions" data-msgid="'+msg._id+'"></div></div>';
+        } else {
+            el.className = 'sc-msg';
+            el.dataset.id = msg._id;
+            el.innerHTML = toolbar +
+                '<div class="sc-msg-avatar sc-av-color-'+colorIdx+'">'+initial+'</div>'+
+                '<div class="sc-msg-right">'+
+                  '<div class="sc-msg-meta"><span class="sc-msg-sender">'+escHtml(sName)+'</span><span class="sc-msg-ts">'+timeStr+'</span></div>'+
+                  replyBlock+'<div class="sc-msg-body">'+escHtml(msg.content)+'</div>'+
+                  '<div class="sc-reactions" data-msgid="'+msg._id+'"></div>'+
+                '</div>';
+        }
+        document.getElementById('msgBottom').before(el);
+        scrollBottom(true);
+    });
+
+    socket.on('msg_deleted', ({ _id }) => {
+        const el = document.querySelector('[data-id="'+_id+'"]');
+        if (el) { el.innerHTML = '<div class="sc-msg-del-icon">🗑</div><div class="sc-msg-del-text">このメッセージは削除されました</div>'; el.className = 'sc-msg sc-msg-deleted'; }
+    });
+
+    socket.on('msg_reaction', ({ _id, reactions }) => {
+        const wrap = document.querySelector('.sc-reactions[data-msgid="'+_id+'"]');
+        if (!wrap) return;
+        wrap.innerHTML = reactions.filter(r=>r.count>0).map(r =>
+            '<button class="sc-react-chip'+(r.mine?' mine':'')+'" data-emoji="'+r.emoji+'" onclick="toggleReact(\''+_id+'\',\''+r.emoji+'\',this)">'+r.emoji+' <span class="sc-react-count">'+r.count+'</span></button>'
+        ).join('');
+    });
+
+    // タイピングインジケーター
+    let typingTimer = null;
+    socket.on('typing', ({ fromUserId, toUserId }) => {
+        if (fromUserId !== TARGET_ID || toUserId !== MY_ID) return;
+        const bar = document.getElementById('typingBar');
+        bar.textContent = TGT_NAME + ' が入力中...';
+        bar.style.opacity = '1';
+        clearTimeout(typingTimer);
+        typingTimer = setTimeout(() => { bar.style.opacity = '0'; }, 3000);
+    });
+    socket.on('stop_typing', ({ fromUserId }) => {
+        if (fromUserId !== TARGET_ID) return;
+        document.getElementById('typingBar').style.opacity = '0';
+    });
+
+    socket.on('status_change', ({ userId, status }) => { updateStatusPips(userId, status); });
+    function updateStatusPips(userId, status) {
+        const cls = { online:'sc-pip-online', break:'sc-pip-break', offline:'sc-pip-offline' };
+        const lbl = { online:'オンライン', break:'休憩中', offline:'オフライン' };
+        document.querySelectorAll('[data-userid="'+userId+'"].sc-status-pip').forEach(el => {
+            el.className = 'sc-status-pip ' + (cls[status]||'sc-pip-offline');
+            el.title = lbl[status]||'';
+        });
+        if (userId === TARGET_ID) {
+            const pip = document.getElementById('target-pip');
+            if (pip) pip.className = 'sc-status-pip ' + (cls[status]||'sc-pip-offline');
+            const sl = document.getElementById('target-status-label');
+            if (sl) { const dept=(sl.textContent.split('·')[1]||'').trim(); sl.textContent=(lbl[status]||status)+(dept?' · '+dept:''); }
+        }
+    }
+    function setMyStatus(status, btn) {
+        fetch('/api/chat/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})})
+        .then(r=>r.json()).then(()=>{
+            document.querySelectorAll('.sc-st-btn').forEach(b=>b.classList.remove('active'));
+            btn.classList.add('active');
+            const pip=document.getElementById('my-pip');
+            if(pip) pip.className='sc-status-pip sc-pip-'+status;
+        });
+    }
+    function escHtml(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                        .replace(/"/g,'&quot;').replace(/\\n/g,'<br>');
+    }
+    </script>`;
+}
+
+function chatStyles() {
+    return `
+<style>
+/* ══ グローバルサイドバー上書き（ウォームダーク） ══════════════ */
+.sidebar { background:#1c1917 !important; }
+.sidebar a, .sidebar .nav-link { color:#c9bfb5 !important; }
+.sidebar a:hover, .sidebar .nav-link:hover { background:#2a2724 !important; color:#e8e0d5 !important; }
+.sidebar .nav-link.active { background:#2e2b28 !important; color:#e8e0d5 !important; }
+
+/* ══ レイアウトリセット ══════════════════════════════════════════ */
+.main {
+    padding:0 !important; overflow:hidden !important;
+    display:flex !important; flex-direction:column !important;
+    align-items:stretch !important; background:#f5f4f0 !important;
+    min-height:0;
+}
+.page-content {
+    padding:0 !important; margin:0 !important;
+    max-width:none !important; width:100% !important;
+    flex:1 1 auto; overflow:hidden;
+    display:flex; flex-direction:column; min-height:0;
+}
+
+/* ══ ルートレイアウト ════════════════════════════════════════════ */
+.sc-page-root {
+    display:flex; height:100%; width:100%; overflow:hidden;
+    font-family:'Inter','Segoe UI',system-ui,sans-serif;
+}
+
+/* ══ サイドパネル（ウォームダーク ベージュ） ════════════════════ */
+.sc-side {
+    width:240px; min-width:240px; flex-shrink:0;
+    background:#1c1917;
+    display:flex; flex-direction:column; overflow:hidden;
+}
+.sc-side-head {
+    padding:14px 16px 12px;
+    border-bottom:1px solid #2c2a27;
+    display:flex; align-items:center; gap:8px;
+}
+.sc-ws-name { color:#e8e0d5; font-weight:700; font-size:.95rem; letter-spacing:-.2px; }
+
+/* 自分のステータス行 */
+.sc-my-status-row {
+    display:flex; align-items:flex-start; gap:10px;
+    padding:12px 14px 10px;
+    border-bottom:1px solid #2c2a27;
+}
+.sc-my-status-info { flex:1; min-width:0; }
+.sc-my-name { color:#c9bfb5; font-size:.82rem; font-weight:600; display:block; margin-bottom:6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sc-status-btns { display:flex; gap:4px; flex-wrap:wrap; }
+.sc-st-btn {
+    display:flex; align-items:center; gap:4px;
+    padding:3px 8px; border-radius:12px;
+    border:1px solid #3a3733;
+    background:transparent; color:#9b948c; font-size:.72rem; cursor:pointer; transition:.15s;
+}
+.sc-st-btn:hover { background:#2a2724; color:#e8e0d5; }
+.sc-st-btn.active { background:#2e2b28; color:#e8e0d5; border-color:#57534e; }
+
+/* 検索ボックス */
+.sc-search-wrap {
+    padding:8px 10px 6px;
+    border-bottom:1px solid #2c2a27;
+}
+.sc-search-inp {
+    width:100%; box-sizing:border-box;
+    background:#2a2724; border:1px solid #3a3733;
+    border-radius:6px; color:#f0ece7;
+    padding:6px 10px; font-size:.8rem; outline:none;
+    transition:.15s;
+}
+.sc-search-inp::placeholder { color:#78716c; }
+.sc-search-inp:focus { border-color:#78716c; background:#322f2b; }
+/* 検索結果 DM行 を明るく */
+#sc-dm-search .sc-dm-row { color:#d6cfc8; }
+#sc-dm-search .sc-dm-row:hover { background:#252220; color:#f0ece7; }
+#sc-dm-search .sc-dm-name { color:#f0ece7; font-weight:500; }
+#sc-dm-search .sc-dm-dept { color:#a09890; }
+
+/* セクションラベル */
+.sc-section-label {
+    padding:14px 16px 4px;
+    color:#57534e; font-size:.7rem; font-weight:700;
+    text-transform:uppercase; letter-spacing:.06em;
+    min-height:22px;
+}
+
+/* DM リスト */
+.sc-dm-list { overflow-y:auto; padding:2px 8px 8px; }
+.sc-dm-list::-webkit-scrollbar { width:3px; }
+.sc-dm-list::-webkit-scrollbar-thumb { background:#3a3733; border-radius:2px; }
+
+.sc-dm-row {
+    display:flex; align-items:center; gap:9px;
+    padding:5px 8px; border-radius:6px;
+    text-decoration:none; color:#9b948c; font-size:.85rem;
+    transition:.1s; position:relative;
+}
+.sc-dm-row:hover { background:#252220; color:#e8e0d5; }
+.sc-dm-row.active { background:#2e2b28; color:#e8e0d5; }
+.sc-dm-info { flex:1; min-width:0; display:flex; flex-direction:column; }
+.sc-dm-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.84rem; }
+.sc-dm-dept { font-size:.7rem; color:#57534e; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sc-empty { color:#57534e; font-size:.8rem; padding:8px; display:block; }
+.sc-unread {
+    background:#b45309; color:#fff;
+    border-radius:10px; padding:1px 6px; font-size:.7rem; font-weight:700;
+    flex-shrink:0; min-width:18px; text-align:center;
+}
+
+/* ══ アバター ════════════════════════════════════════════════════ */
+.sc-avatar-wrap { position:relative; flex-shrink:0; width:36px; height:36px; }
+.sc-avatar-wrap-sm { width:28px; height:28px; }
+.sc-avatar {
+    width:36px; height:36px; border-radius:6px;
+    background:#44403c; color:#e8e0d5;
+    display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:.95rem; flex-shrink:0; user-select:none;
+}
+.sc-av-sm { width:28px; height:28px; font-size:.78rem; border-radius:5px; }
+.sc-av-lg { width:72px; height:72px; font-size:2rem; border-radius:12px; }
+.sc-av-me  { background:#57534e; }
+.sc-av-color-0 { background:#44403c; }
+.sc-av-color-1 { background:#78350f; color:#fef3c7; }
+
+/* ステータスドット */
+.sc-status-pip {
+    position:absolute; bottom:-2px; right:-2px;
+    width:11px; height:11px; border-radius:50%;
+    border:2px solid #1c1917; flex-shrink:0;
+}
+.sc-pip-online  { background:#2bac76; }
+.sc-pip-break   { background:#e8a838; }
+.sc-pip-offline { background:#4b4744; }
+.sc-dm-row .sc-avatar-wrap { width:28px; height:28px; }
+.sc-dm-row .sc-avatar { width:28px; height:28px; font-size:.78rem; border-radius:5px; }
+.sc-dm-row .sc-status-pip { width:9px; height:9px; bottom:-1px; right:-1px; border-color:#1c1917; }
+.sc-btn-pip {
+    display:inline-block; width:8px; height:8px; border-radius:50%; flex-shrink:0;
+}
+.sc-btn-pip.sc-pip-online  { background:#2bac76; }
+.sc-btn-pip.sc-pip-break   { background:#e8a838; }
+.sc-btn-pip.sc-pip-offline { background:#4b4744; }
+
+/* ══ メインエリア ════════════════════════════════════════════════ */
+.sc-main {
+    flex:1; display:flex; flex-direction:column; overflow:hidden;
+    background:#fafaf8; min-height:0;
+}
+.sc-main-welcome { align-items:center; justify-content:center; }
+.sc-welcome { text-align:center; color:#78716c; }
+.sc-welcome-icon { font-size:3rem; margin-bottom:12px; }
+.sc-welcome h2 { margin:0 0 8px; color:#1c1917; font-size:1.3rem; }
+.sc-welcome p  { margin:0; font-size:.9rem; }
+
+/* ヘッダー */
+.sc-main-header {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:11px 20px; border-bottom:1px solid #e7e5e0;
+    background:#fff; flex-shrink:0; gap:12px;
+}
+.sc-header-left { display:flex; align-items:center; gap:10px; }
+.sc-main-header .sc-avatar { background:#78350f; color:#fef3c7; }
+.sc-main-header .sc-status-pip { border-color:#fff; }
+.sc-header-name { font-weight:700; font-size:1rem; color:#1c1917; line-height:1.2; }
+.sc-header-status { font-size:.78rem; color:#78716c; margin-top:1px; }
+
+/* 検索バー */
+.sc-search-wrap {
+    display:flex; align-items:center; gap:6px;
+    background:#f5f4f0; border:1px solid #e7e5e0; border-radius:6px;
+    padding:5px 10px; max-width:200px;
+}
+.sc-search-wrap i { color:#a8a29e; font-size:.8rem; }
+.sc-search-wrap input {
+    border:none; background:transparent; outline:none;
+    font-size:.82rem; color:#1c1917; width:140px;
+}
+.sc-search-wrap input::placeholder { color:#a8a29e; }
+
+/* タイピングインジケーター */
+.sc-typing-bar {
+    height:20px; padding:0 20px;
+    font-size:.76rem; color:#78716c; font-style:italic;
+    flex-shrink:0; display:flex; align-items:center;
+    opacity:0; transition:opacity .3s;
+}
+
+/* スレッド先頭 */
+.sc-thread-start {
+    display:flex; flex-direction:column; align-items:flex-start;
+    padding:32px 20px 20px; border-bottom:1px solid #f0ede8;
+    margin-bottom:8px; flex-shrink:0;
+}
+.sc-thread-name { font-size:1.4rem; font-weight:800; color:#1c1917; margin:12px 0 2px; }
+.sc-thread-sub  { font-size:.82rem; color:#78716c; margin-bottom:6px; }
+.sc-thread-desc { font-size:.88rem; color:#78716c; margin:0; }
+
+/* ══ メッセージ ══════════════════════════════════════════════════ */
+.sc-messages {
+    flex:1; overflow-y:auto; padding:0 0 8px;
+    display:flex; flex-direction:column; min-height:0;
+}
+.sc-messages::-webkit-scrollbar { width:5px; }
+.sc-messages::-webkit-scrollbar-thumb { background:#d6d3ce; border-radius:3px; }
+
+.sc-date-divider {
+    display:flex; align-items:center; margin:16px 20px 8px;
+    gap:10px; flex-shrink:0;
+}
+.sc-date-divider::before, .sc-date-divider::after { content:''; flex:1; height:1px; background:#e7e5e0; }
+.sc-date-divider span { font-size:.72rem; color:#a8a29e; font-weight:600; white-space:nowrap; padding:0 4px; }
+
+/* メッセージブロック */
+.sc-msg {
+    display:flex; gap:10px; padding:4px 20px;
+    position:relative; transition:background .1s;
+}
+.sc-msg:hover { background:#f5f4f0; }
+.sc-msg:hover .sc-msg-toolbar { opacity:1; pointer-events:all; }
+.sc-msg-cont { padding:2px 20px 2px 66px; }
+
+.sc-msg-avatar {
+    width:36px; height:36px; border-radius:6px;
+    color:#fff; display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:.9rem; flex-shrink:0; margin-top:2px;
+}
+.sc-msg-right { flex:1; min-width:0; }
+.sc-msg-meta  { display:flex; align-items:baseline; gap:8px; margin-bottom:2px; }
+.sc-msg-sender { font-weight:700; font-size:.9rem; color:#1c1917; }
+.sc-msg-ts { font-size:.72rem; color:#a8a29e; }
+.sc-msg-body {
+    font-size:.9rem; color:#292524; line-height:1.65;
+    word-break:break-word; white-space:pre-wrap;
+}
+.sc-msg-time-hover {
+    position:absolute; left:20px; top:50%; transform:translateY(-50%);
+    width:36px; text-align:center;
+    font-size:.68rem; color:#a8a29e;
+    opacity:0; transition:opacity .1s; pointer-events:none;
+}
+.sc-msg-cont:hover .sc-msg-time-hover { opacity:1; }
+.sc-msg-content-wrap { flex:1; min-width:0; }
+
+/* 削除済み */
+.sc-msg-deleted {
+    display:flex; align-items:center; gap:8px;
+    padding:4px 20px; color:#a8a29e; font-style:italic; font-size:.85rem;
+}
+.sc-msg-del-icon { font-size:.9rem; }
+
+/* 引用プレビュー */
+.sc-reply-preview {
+    display:flex; align-items:stretch; gap:8px;
+    margin-bottom:4px;
+}
+.sc-reply-preview .sc-reply-bar { width:3px; border-radius:3px; background:#a8a29e; flex-shrink:0; }
+.sc-reply-preview span { font-size:.8rem; color:#78716c; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* リアクション */
+.sc-reactions { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; min-height:4px; }
+.sc-react-chip {
+    display:flex; align-items:center; gap:3px;
+    padding:2px 8px; border-radius:12px;
+    border:1px solid #e7e5e0; background:#f5f4f0;
+    font-size:.82rem; cursor:pointer; transition:.15s;
+}
+.sc-react-chip:hover { background:#e7e5e0; }
+.sc-react-chip.mine  { background:#fef9ee; border-color:#d97706; }
+.sc-react-count { font-size:.72rem; color:#78716c; font-weight:600; }
+
+/* ホバーツールバー */
+.sc-msg-toolbar {
+    position:absolute; top:-16px; right:20px;
+    display:flex; gap:2px;
+    background:#fff; border:1px solid #e7e5e0; border-radius:8px;
+    padding:3px 6px; box-shadow:0 2px 8px rgba(0,0,0,.1);
+    opacity:0; pointer-events:none; transition:opacity .1s; z-index:10;
+}
+.sc-tb-btn {
+    width:28px; height:28px; border:none; background:transparent;
+    cursor:pointer; border-radius:5px; font-size:.88rem;
+    display:flex; align-items:center; justify-content:center; transition:.1s;
+}
+.sc-tb-btn:hover { background:#f5f4f0; }
+.sc-tb-delete:hover { background:#fef2f2; }
+
+/* ══ 返信バー ════════════════════════════════════════════════════ */
+.sc-reply-bar-wrap {
+    padding:6px 20px 0; flex-shrink:0;
+}
+.sc-reply-bar-inner {
+    display:flex; align-items:center; gap:8px;
+    background:#f5f4f0; border-left:3px solid #a8a29e;
+    padding:5px 10px; border-radius:0 6px 6px 0;
+    font-size:.82rem; color:#78716c;
+}
+.sc-reply-bar-icon { font-size:1rem; }
+.sc-reply-cancel {
+    margin-left:auto; background:none; border:none; cursor:pointer;
+    color:#a8a29e; font-size:1rem; line-height:1; padding:0 2px;
+}
+.sc-reply-cancel:hover { color:#44403c; }
+
+/* ══ 絵文字ピッカー ══════════════════════════════════════════════ */
+.sc-emoji-picker {
+    position:fixed; z-index:200;
+    background:#fff; border:1px solid #e7e5e0; border-radius:10px;
+    padding:8px; box-shadow:0 4px 20px rgba(0,0,0,.12);
+    display:flex; flex-wrap:wrap; gap:4px; width:220px;
+}
+.sc-emoji-btn {
+    width:34px; height:34px; border:none; background:transparent;
+    border-radius:6px; font-size:1.2rem; cursor:pointer; transition:.1s;
+    display:flex; align-items:center; justify-content:center;
+}
+.sc-emoji-btn:hover { background:#f5f4f0; }
+
+/* ══ 入力エリア ══════════════════════════════════════════════════ */
+.sc-input-wrap {
+    padding:8px 20px 12px; flex-shrink:0; background:#fff;
+    border-top:1px solid #e7e5e0;
+}
+.sc-input-toolbar {
+    display:flex; gap:4px; padding-bottom:6px;
+}
+.sc-input-tool-btn {
+    width:28px; height:28px; border:none; background:transparent;
+    border-radius:5px; cursor:pointer; font-size:1rem;
+    display:flex; align-items:center; justify-content:center; transition:.1s;
+}
+.sc-input-tool-btn:hover { background:#f5f4f0; }
+.sc-input-box {
+    display:flex; align-items:flex-end;
+    border:1.5px solid #d6d3ce; border-radius:8px;
+    overflow:hidden; background:#fff; transition:border-color .2s, box-shadow .2s;
+}
+.sc-input-box:focus-within { border-color:#78716c; box-shadow:0 0 0 3px rgba(120,113,108,.12); }
+.sc-input-box textarea {
+    flex:1; padding:11px 14px; border:none; outline:none; resize:none;
+    font-size:.9rem; font-family:inherit; line-height:1.5;
+    max-height:160px; background:transparent; color:#1c1917;
+}
+.sc-input-box textarea::placeholder { color:#c4bfba; }
+.sc-send-btn {
+    width:38px; height:38px; margin:5px; border-radius:6px; border:none;
+    background:#44403c; color:#fff; cursor:pointer; font-size:.88rem;
+    display:flex; align-items:center; justify-content:center;
+    transition:.15s; flex-shrink:0; align-self:flex-end;
+}
+.sc-send-btn:disabled { background:#d6d3ce; cursor:default; }
+.sc-send-btn:not(:disabled):hover { background:#292524; }
+.sc-input-hint { font-size:.72rem; color:#c4bfba; padding-top:4px; text-align:right; }
+</style>`;
+}
+
+module.exports = router;

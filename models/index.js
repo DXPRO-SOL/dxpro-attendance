@@ -8,8 +8,35 @@ const UserSchema = new mongoose.Schema({
     // Issue #19: 中間ロール拡張
     // 'admin' | 'manager' | 'team_leader' | 'employee'
     role: { type: String, enum: ['admin', 'manager', 'team_leader', 'employee', 'test_user'], default: 'employee' },
+    // チャットステータス
+    chatStatus: { type: String, enum: ['online', 'offline', 'break'], default: 'offline' },
+    lastSeenAt: { type: Date, default: Date.now },
     createdAt: { type: Date, default: Date.now }
 });
+
+// チャットメッセージスキーマ
+const ChatMessageSchema = new mongoose.Schema({
+    fromUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    toUserId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    content:    { type: String, required: true },
+    read:       { type: Boolean, default: false },
+    readAt:     { type: Date },
+    // リプライ元メッセージ
+    replyTo:    { type: mongoose.Schema.Types.ObjectId, ref: 'ChatMessage', default: null },
+    replyPreview: { type: String, default: null }, // 引用テキスト（取得不要にするため保存）
+    // 絵文字リアクション
+    reactions:  [{
+        emoji:   { type: String },
+        userIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
+    }],
+    // 削除フラグ（ソフトデリート）
+    deleted:    { type: Boolean, default: false },
+    deletedAt:  { type: Date },
+}, { timestamps: true });
+
+// インデックス（会話履歴取得高速化）
+ChatMessageSchema.index({ fromUserId: 1, toUserId: 1, createdAt: -1 });
+ChatMessageSchema.index({ toUserId: 1, read: 1 });
 
 // 勤怠スキーマ
 const AttendanceSchema = new mongoose.Schema({
@@ -500,7 +527,10 @@ const IntegrationConfigSchema = new mongoose.Schema({
 });
 const IntegrationConfig = mongoose.model('IntegrationConfig', IntegrationConfigSchema);
 
+const ChatMessage = mongoose.model('ChatMessage', ChatMessageSchema);
+
 module.exports = {
+    ChatMessage,
     User,
     Attendance,
     Employee,
