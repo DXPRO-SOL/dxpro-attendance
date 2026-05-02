@@ -30,7 +30,7 @@
     let typingTimer      = null;
     let autoStatusTimer  = null;
     let autoBreakTimer   = null;
-    let curAutoStatus    = 'online';
+    let curAutoStatus    = null; // null = 未送信（ページロード時に必ず送信させる）
 
     // ── Socket.io ────────────────────────────────────────────
     const socket = io();
@@ -537,6 +537,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status }),
         }).then(r => r.json()).then(() => {
+            curAutoStatus = status; // 手動変更を自動タイマーに反映
             document.querySelectorAll('.sc-st-btn').forEach(b => b.classList.remove('active'));
             if (btn) btn.classList.add('active');
             const pip = document.getElementById('my-pip');
@@ -552,6 +553,8 @@
 
     // ── 自動ステータス管理 ────────────────────────────────────
     (function setupAutoStatus() {
+        let manualOverride = false; // 手動設定中はタイマーで上書きしない
+
         function applyAuto(s) {
             if (curAutoStatus === s) return;
             curAutoStatus = s;
@@ -570,13 +573,18 @@
             applyAuto('online');
             autoBreakTimer = setTimeout(() => {
                 applyAuto('break');
-                autoStatusTimer = setTimeout(() => applyAuto('offline'), 27 * 60000);
-            }, 3 * 60000);
+                autoStatusTimer = setTimeout(() => applyAuto('offline'), 2 * 60000); // 休憩から2分後(合計5分)でオフライン
+            }, 3 * 60000); // 3分無操作で休憩中
         }
         ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'].forEach(ev =>
             document.addEventListener(ev, resetTimer, { passive: true })
         );
         resetTimer();
+        window.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                resetTimer(); // タブに戻ったらオンラインに
+            }
+        });
         window.addEventListener('beforeunload', () =>
             navigator.sendBeacon('/api/chat/status', new Blob([JSON.stringify({ status: 'offline' })], { type: 'application/json' }))
         );
