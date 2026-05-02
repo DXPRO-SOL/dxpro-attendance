@@ -9,6 +9,28 @@ const httpServer = http.createServer(app);
 const io = new SocketIO(httpServer);
 global.io = io;
 
+// ── Socket.io ルーム管理 ─────────────────────────────────────
+io.on('connection', (socket) => {
+    // クライアントが自分のユーザールームとグループルームに参加
+    socket.on('join_rooms', ({ userId, roomIds = [] }) => {
+        if (!userId) return;
+        socket.join('u_' + userId);
+        roomIds.forEach(rid => socket.join('r_' + rid));
+    });
+    socket.on('join_room', ({ roomId }) => {
+        if (roomId) socket.join('r_' + roomId);
+    });
+    // タイピングイベントは対象ユーザー/ルームにのみ転送
+    socket.on('typing', (data) => {
+        if (data.toUserId) socket.to('u_' + data.toUserId).emit('typing', data);
+        if (data.roomId)   socket.to('r_' + data.roomId).emit('typing', data);
+    });
+    socket.on('stop_typing', (data) => {
+        if (data.toUserId) socket.to('u_' + data.toUserId).emit('stop_typing', data);
+        if (data.roomId)   socket.to('r_' + data.roomId).emit('stop_typing', data);
+    });
+});
+
 // Render/Cloudflare環境ではプロキシを信頼してHTTPS判定を正しく行う
 app.set("trust proxy", 1);
 

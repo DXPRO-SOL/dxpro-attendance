@@ -14,28 +14,51 @@ const UserSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 
-// チャットメッセージスキーマ
+// グループチャットルームスキーマ
+const ChatRoomSchema = new mongoose.Schema({
+    name:          { type: String, required: true },
+    description:   { type: String, default: '' },
+    icon:          { type: String, default: '💬' },
+    members:       [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    admins:        [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    createdBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    lastMessageAt: { type: Date, default: Date.now },
+}, { timestamps: true });
+ChatRoomSchema.index({ members: 1, lastMessageAt: -1 });
+
+// チャットメッセージスキーマ（全面拡張版）
 const ChatMessageSchema = new mongoose.Schema({
-    fromUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    toUserId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    content:    { type: String, required: true },
-    read:       { type: Boolean, default: false },
-    readAt:     { type: Date },
-    // リプライ元メッセージ
-    replyTo:    { type: mongoose.Schema.Types.ObjectId, ref: 'ChatMessage', default: null },
-    replyPreview: { type: String, default: null }, // 引用テキスト（取得不要にするため保存）
-    // 絵文字リアクション
-    reactions:  [{
-        emoji:   { type: String },
-        userIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
+    fromUserId:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    toUserId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },    // DM
+    roomId:      { type: mongoose.Schema.Types.ObjectId, ref: 'ChatRoom', default: null },// グループ
+    content:     { type: String, default: '' },
+    // ファイル添付
+    attachments: [{
+        name:     { type: String },
+        url:      { type: String },
+        mimeType: { type: String },
+        size:     { type: Number },
     }],
-    // 削除フラグ（ソフトデリート）
-    deleted:    { type: Boolean, default: false },
-    deletedAt:  { type: Date },
+    // 既読（DM用）
+    read:     { type: Boolean, default: false },
+    readAt:   { type: Date },
+    // 既読（グループ用）
+    readBy:   [{ userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, readAt: { type: Date } }],
+    // リプライ
+    replyTo:      { type: mongoose.Schema.Types.ObjectId, ref: 'ChatMessage', default: null },
+    replyPreview: { type: String, default: null },
+    // リアクション
+    reactions: [{ emoji: { type: String }, userIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }] }],
+    // 削除・編集
+    deleted:  { type: Boolean, default: false },
+    deletedAt: { type: Date },
+    edited:   { type: Boolean, default: false },
+    editedAt: { type: Date },
 }, { timestamps: true });
 
-// インデックス（会話履歴取得高速化）
+// インデックス
 ChatMessageSchema.index({ fromUserId: 1, toUserId: 1, createdAt: -1 });
+ChatMessageSchema.index({ roomId: 1, createdAt: -1 });
 ChatMessageSchema.index({ toUserId: 1, read: 1 });
 
 // 勤怠スキーマ
@@ -702,6 +725,7 @@ const IntegrationConfig = mongoose.model(
   IntegrationConfigSchema,
 );
 
+const ChatRoom    = mongoose.model('ChatRoom', ChatRoomSchema);
 const ChatMessage = mongoose.model('ChatMessage', ChatMessageSchema);
 
 // ─── ユーザー別タスク接続設定 ──────────────────────────────────────────────
@@ -732,6 +756,7 @@ TaskDueDateSchema.index({ userId: 1, service: 1, taskId: 1 }, { unique: true });
 const TaskDueDate = mongoose.model("TaskDueDate", TaskDueDateSchema);
 
 module.exports = {
+    ChatRoom,
     ChatMessage,
     User,
     Attendance,

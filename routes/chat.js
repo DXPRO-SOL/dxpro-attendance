@@ -1,238 +1,314 @@
 // ==============================
-// routes/chat.js - ユーザー間チャット
+// routes/chat.js - チャット機能 全面改版
+// DM・グループチャット・ファイル添付・メッセージ編集・既読表示
 // ==============================
-const express = require('express');
-const router = express.Router();
+'use strict';
+
+const express   = require('express');
+const router    = express.Router();
+const multer    = require('multer');
+const path      = require('path');
+const fs        = require('fs');
+const mongoose  = require('mongoose');
 const { requireLogin } = require('../middleware/auth');
-const { User, Employee, ChatMessage } = require('../models');
+const { User, Employee, ChatMessage, ChatRoom } = require('../models');
 const { renderPage } = require('../lib/renderPage');
 
-// ── チャットトップ（ユーザー一覧）────────────────────────────────
+const UPLOAD_DIR = path.join(__dirname, '../uploads/chat');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const chatUpload = multer({
+    storage: multer.diskStorage({
+        destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+        filename: (_req, file, cb) =>
+            cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`),
+    }),
+    limits: { fileSize: 20 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        cb(null, /\.(jpg|jpeg|png|gif|webp|pdf|doc|docx|xls|xlsx|txt|zip|csv|mp4|mov|mp3)$/.test(ext));
+    },
+});
+
+const oid = (id) => {
+    try { return new mongoose.Types.ObjectId(String(id)); } catch (e) { return id; }
+};
+
+function escHtml(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function mimeToType(mime) {
+    mime = mime || '';
+    if (/^image\//.test(mime)) return 'image';
+    if (mime === 'application/pdf') return 'pdf';
+    if (/^video\//.test(mime)) return 'video';
+    return 'file';
+}
+
+const STATUS_CLS   = { online: 'pip-online', break: 'pip-break', offline: 'pip-offline' };
+const STATUS_LABEL = { online: 'オンライン', break: '休憩中', offline: 'オフライン' };
+
+// サイドバーデータ構築
+async function buildSidebarData(myId) {
+    const myOid = oid(myId);
+    const [users, employees, recentAgg, unreadDMAgg, rooms] = await Promise.all([
+        User.find({ _id: { $ne: myId } }).select('username chatStatus lastSeenAt').lean(),
+        Employee.find({}).select('userId name department').lean(),
+        ChatMessage.aggregate([
+            { $match: { $or: [{ fromUserId: myOid }, { toUserId: myOid }], roomId: null } },
+            { $sort: { createdAt: -1 } },
+            { $addFields: { otherId: { $cond: [{ $eq: ['$fromUserId', myOid] }, '$toUserId', '$fromUserId'] } } },
+            { $group: { _id: '$otherId', lastAt: { $first: '$createdAt' }, lastMsg: { $first: '$content' } } },
+            { $sort: { lastAt: -1 } },
+            { $limit: 30 },
+        ]),
+        ChatMessage.aggregate([
+            { $match: { toUserId: myOid, read: false, roomId: null } },
+            { $group: { _id: '$fromUserId', count: { $sum: 1 } } },
+        ]),
+        ChatRoom.find({ members: myId }).sort({ lastMessageAt: -1 }).lean(),
+    ]);
+
+    const empMap = {};
+    employees.forEach(e => { empMap[String(e.userId)] = e; });
+    const userMap = {};
+    users.forEach(u => { userMap[String(u._id)] = { ...u, emp: empMap[String(u._id)] || null }; });
+
+    const unreadDM = {};
+    unreadDMAgg.forEach(u => { unreadDM[String(u._id)] = u.count; });
+
+    const recentDMs = recentAgg.map(r => {
+        const u = userMap[String(r._id)];
+        if (!u) return null;
+        return { ...u, lastAt: r.lastAt, lastMsg: r.lastMsg, unread: unreadDM[String(r._id)] || 0 };
+    }).filter(Boolean);
+
+    let unreadRoomMap = {};
+    if (rooms.length) {
+        const roomUnread = await ChatMessage.aggregate([
+            { $match: { roomId: { $in: rooms.map(r => oid(r._id)) }, fromUserId: { $ne: myOid }, deleted: { $ne: true } } },
+            { $project: { roomId: 1, isRead: { $in: [myOid, { $ifNull: ['$readBy.userId', []] }] } } },
+            { $match: { isRead: false } },
+            { $group: { _id: '$roomId', count: { $sum: 1 } } },
+        ]);
+        roomUnread.forEach(r => { unreadRoomMap[String(r._id)] = r.count; });
+    }
+
+    return {
+        allUsers:  Object.values(userMap),
+        recentDMs,
+        roomList: rooms.map(r => ({ ...r, unread: unreadRoomMap[String(r._id)] || 0 })),
+    };
+}
+
+// ── ページルート ──────────────────────────────────────────────
+
 router.get('/chat', requireLogin, async (req, res) => {
     try {
         const myId = req.session.userId;
-
-        // 全ユーザー（検索用）
-        const users = await User.find({ _id: { $ne: myId } })
-            .select('username chatStatus lastSeenAt')
-            .lean();
-
-        const employees = await Employee.find({
-            userId: { $in: users.map(u => u._id) }
-        }).select('userId name department').lean();
-        const empMap = {};
-        employees.forEach(e => { empMap[String(e.userId)] = e; });
-
-        const userList = users.map(u => ({
-            ...u,
-            emp: empMap[String(u._id)] || null,
-        }));
-
-        // 最近会話したユーザー（未読数つき）
-        const recentAgg = await ChatMessage.aggregate([
-            { $match: { $or: [{ fromUserId: myId }, { toUserId: myId }] } },
-            { $sort: { createdAt: -1 } },
-            { $addFields: { otherId: { $cond: [{ $eq: ['$fromUserId', myId] }, '$toUserId', '$fromUserId'] } } },
-            { $group: { _id: '$otherId', lastAt: { $first: '$createdAt' } } },
-            { $sort: { lastAt: -1 } },
-            { $limit: 20 }
+        const [[cu, myEmp], sideData] = await Promise.all([
+            Promise.all([
+                User.findById(myId).select('chatStatus').lean(),
+                Employee.findOne({ userId: myId }).select('name').lean(),
+            ]),
+            buildSidebarData(myId),
         ]);
-        const recentIds = recentAgg.map(r => r._id);
-
-        const unreadCounts = await ChatMessage.aggregate([
-            { $match: { toUserId: myId, read: false } },
-            { $group: { _id: '$fromUserId', count: { $sum: 1 } } }
-        ]);
-        const unreadMap = {};
-        unreadCounts.forEach(u => { unreadMap[String(u._id)] = u.count; });
-
-        const recentUsers = recentIds.map(id => {
-            const u = userList.find(x => String(x._id) === String(id));
-            if (!u) return null;
-            return { ...u, unread: unreadMap[String(id)] || 0 };
-        }).filter(Boolean);
-
-        const currentUser = await User.findById(myId).select('chatStatus').lean();
-        const myEmp = await Employee.findOne({ userId: myId }).select('name').lean();
         const myName = myEmp ? myEmp.name : req.session.username;
-
-        const content = buildChatListHtml(userList, currentUser, myName, recentUsers);
-        renderPage(req, res, 'チャット', 'チャット', content);
-    } catch (err) {
-        console.error('[chat] トップエラー:', err);
-        res.status(500).send('エラーが発生しました');
-    }
+        renderPage(req, res, 'チャット', 'チャット', buildPage({
+            mode: 'home', myId: String(myId), myName,
+            myInitial: (myName || '?').charAt(0).toUpperCase(),
+            myStatus: cu ? cu.chatStatus : 'offline',
+            ...sideData,
+        }));
+    } catch (e) { console.error('[chat/home]', e); res.status(500).send('エラー'); }
 });
 
-// ── DM画面（特定ユーザーとのチャット）────────────────────────────
-router.get('/chat/:userId', requireLogin, async (req, res) => {
+router.get('/chat/dm/:userId', requireLogin, async (req, res) => {
     try {
-        const myId    = req.session.userId;
+        const myId     = req.session.userId;
         const targetId = req.params.userId;
-        const targetUser = await User.findById(targetId).select('username chatStatus lastSeenAt').lean();
+        const [targetUser, targetEmp, myEmp, cu, sideData] = await Promise.all([
+            User.findById(targetId).select('username chatStatus lastSeenAt').lean(),
+            Employee.findOne({ userId: targetId }).select('name department position').lean(),
+            Employee.findOne({ userId: myId }).select('name').lean(),
+            User.findById(myId).select('chatStatus').lean(),
+            buildSidebarData(myId),
+        ]);
         if (!targetUser) return res.status(404).send('ユーザーが見つかりません');
-
-        const targetEmp = await Employee.findOne({ userId: targetId }).select('name department position').lean();
-
-        // 未読を既読に
         await ChatMessage.updateMany(
             { fromUserId: targetId, toUserId: myId, read: false },
             { $set: { read: true, readAt: new Date() } }
         );
-
-        // 直近100件取得
         const messages = await ChatMessage.find({
-            $or: [
-                { fromUserId: myId, toUserId: targetId },
-                { fromUserId: targetId, toUserId: myId }
-            ]
+            $or: [{ fromUserId: myId, toUserId: targetId }, { fromUserId: targetId, toUserId: myId }],
+            roomId: null,
         }).sort({ createdAt: 1 }).limit(100).lean();
-
-        // 全ユーザー（検索用）
-        const allUsers = await User.find({ _id: { $ne: myId } })
-            .select('username chatStatus')
-            .lean();
-        const employees = await Employee.find({
-            userId: { $in: allUsers.map(u => u._id) }
-        }).select('userId name department').lean();
-        const empMap = {};
-        employees.forEach(e => { empMap[String(e.userId)] = e; });
-
-        const unreadCounts = await ChatMessage.aggregate([
-            { $match: { toUserId: myId, read: false } },
-            { $group: { _id: '$fromUserId', count: { $sum: 1 } } }
-        ]);
-        const unreadMap = {};
-        unreadCounts.forEach(u => { unreadMap[String(u._id)] = u.count; });
-
-        const userList = allUsers.map(u => ({
-            ...u,
-            emp: empMap[String(u._id)] || null,
-            unread: unreadMap[String(u._id)] || 0
-        }));
-
-        // 最近会話したユーザー（サイドバー表示用）
-        const recentAgg = await ChatMessage.aggregate([
-            { $match: { $or: [{ fromUserId: myId }, { toUserId: myId }] } },
-            { $sort: { createdAt: -1 } },
-            { $addFields: { otherId: { $cond: [{ $eq: ['$fromUserId', myId] }, '$toUserId', '$fromUserId'] } } },
-            { $group: { _id: '$otherId', lastAt: { $first: '$createdAt' } } },
-            { $sort: { lastAt: -1 } },
-            { $limit: 20 }
-        ]);
-        const recentIds = recentAgg.map(r => String(r._id));
-        // 現在開いているDM相手を先頭に確保
-        if (!recentIds.includes(targetId)) recentIds.unshift(targetId);
-        const recentUserList = recentIds.map(id => userList.find(u => String(u._id) === id)).filter(Boolean);
-
-        // 自分のEmployeeInfo
-        const myEmp = await Employee.findOne({ userId: myId }).select('name').lean();
-        const currentUser = await User.findById(myId).select('chatStatus').lean();
-
-        const content = buildDmHtml({
-            targetUser,
-            targetEmp,
-            messages,
-            userList: recentUserList,
-            allUsers: userList,
-            myUserId: String(myId),
-            myName: myEmp ? myEmp.name : req.session.username,
-            currentUser
-        });
-
+        const myName     = myEmp ? myEmp.name : req.session.username;
         const targetName = targetEmp ? targetEmp.name : targetUser.username;
-        renderPage(req, res, `チャット - ${targetName}`, `チャット`, content);
-    } catch (err) {
-        console.error('[chat] DMエラー:', err);
-        res.status(500).send('エラーが発生しました');
-    }
+        renderPage(req, res, `チャット - ${targetName}`, 'チャット', buildPage({
+            mode: 'dm', myId: String(myId), myName,
+            myInitial: (myName || '?').charAt(0).toUpperCase(),
+            myStatus: cu ? cu.chatStatus : 'offline',
+            targetId: String(targetId), targetName,
+            targetStatus: targetUser.chatStatus || 'offline',
+            targetDept: targetEmp ? (targetEmp.department || '') : '',
+            targetPos:  targetEmp ? (targetEmp.position  || '') : '',
+            messages, ...sideData,
+        }));
+    } catch (e) { console.error('[chat/dm]', e); res.status(500).send('エラー'); }
 });
 
-// ── ステータス変更 API ──────────────────────────────────────────
+router.get('/chat/room/:roomId', requireLogin, async (req, res) => {
+    try {
+        const myId   = req.session.userId;
+        const roomId = req.params.roomId;
+        const room   = await ChatRoom.findOne({ _id: roomId, members: myId }).lean();
+        if (!room) return res.status(404).send('ルームが見つかりません');
+        await ChatMessage.updateMany(
+            { roomId: room._id, fromUserId: { $ne: myId }, 'readBy.userId': { $ne: myId } },
+            { $push: { readBy: { userId: myId, readAt: new Date() } } }
+        );
+        const [messages, myEmp, cu, sideData, memberUsers, memberEmps] = await Promise.all([
+            ChatMessage.find({ roomId: room._id }).sort({ createdAt: 1 }).limit(100).lean(),
+            Employee.findOne({ userId: myId }).select('name').lean(),
+            User.findById(myId).select('chatStatus').lean(),
+            buildSidebarData(myId),
+            User.find({ _id: { $in: room.members } }).select('username chatStatus').lean(),
+            Employee.find({ userId: { $in: room.members } }).select('userId name department').lean(),
+        ]);
+        const memEmpMap = {};
+        memberEmps.forEach(e => { memEmpMap[String(e.userId)] = e; });
+        const members = memberUsers.map(u => ({ ...u, emp: memEmpMap[String(u._id)] || null }));
+        const myName  = myEmp ? myEmp.name : req.session.username;
+        renderPage(req, res, `${room.name} - チャット`, 'チャット', buildPage({
+            mode: 'room', myId: String(myId), myName,
+            myInitial: (myName || '?').charAt(0).toUpperCase(),
+            myStatus: cu ? cu.chatStatus : 'offline',
+            roomId: String(room._id), roomName: room.name,
+            roomIcon: room.icon || '💬', roomDesc: room.description || '',
+            isRoomAdmin: room.admins.some(a => String(a) === String(myId)),
+            members, messages, ...sideData,
+        }));
+    } catch (e) { console.error('[chat/room]', e); res.status(500).send('エラー'); }
+});
+
+// ── API ────────────────────────────────────────────────────────
+
 router.post('/api/chat/status', requireLogin, async (req, res) => {
     try {
-        // sendBeacon は text/plain で送るため両方対応
         let body = req.body;
-        if (typeof body === 'string') {
-            try { body = JSON.parse(body); } catch(e) { body = {}; }
-        }
+        if (typeof body === 'string') { try { body = JSON.parse(body); } catch (_) { body = {}; } }
         const { status } = body;
-        if (!['online', 'offline', 'break'].includes(status)) {
-            return res.status(400).json({ error: '無効なステータスです' });
-        }
-        await User.findByIdAndUpdate(req.session.userId, {
-            chatStatus: status,
-            lastSeenAt: new Date()
-        });
-        if (global.io) {
-            global.io.emit('status_change', {
-                userId: String(req.session.userId),
-                status
-            });
-        }
-        res.json({ ok: true, status });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+        if (!['online', 'offline', 'break'].includes(status))
+            return res.status(400).json({ error: '無効なステータス' });
+        await User.findByIdAndUpdate(req.session.userId, { chatStatus: status, lastSeenAt: new Date() });
+        global.io && global.io.emit('status_change', { userId: String(req.session.userId), status });
+        res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── メッセージ送信 API（Socket.io の補完用） ──────────────────────
+router.post('/api/chat/upload', requireLogin, chatUpload.array('files', 5), (req, res) => {
+    try {
+        const files = (req.files || []).map(f => ({
+            name: Buffer.from(f.originalname, 'latin1').toString('utf8'),
+            url: '/uploads/chat/' + f.filename,
+            mimeType: f.mimetype, size: f.size,
+        }));
+        res.json({ ok: true, files });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.post('/api/chat/send', requireLogin, async (req, res) => {
     try {
-        const { toUserId, content, replyToId } = req.body;
-        if (!toUserId || !content || !content.trim()) {
-            return res.status(400).json({ error: 'パラメーターが不足しています' });
-        }
+        const { toUserId, roomId, content, replyToId, attachments } = req.body;
+        if (!toUserId && !roomId)
+            return res.status(400).json({ error: 'toUserId か roomId が必要です' });
+        if (!(content && content.trim()) && !(attachments && attachments.length))
+            return res.status(400).json({ error: 'コンテンツが空です' });
         let replyPreview = null;
         if (replyToId) {
-            const orig = await ChatMessage.findById(replyToId).select('content fromUserId').lean();
-            if (orig && !orig.deleted) replyPreview = orig.content.slice(0, 80);
+            const orig = await ChatMessage.findById(replyToId).select('content').lean();
+            if (orig && !orig.deleted) replyPreview = (orig.content || '').slice(0, 80);
         }
-        const msg = await ChatMessage.create({
+        const msgData = {
             fromUserId: req.session.userId,
-            toUserId,
-            content: content.trim(),
+            content: (content && content.trim()) || '',
             replyTo: replyToId || null,
-            replyPreview
-        });
-        if (global.io) {
-            global.io.emit('new_message', {
-                _id: msg._id,
-                fromUserId: String(req.session.userId),
-                toUserId: String(toUserId),
-                content: msg.content,
-                replyTo: replyToId || null,
-                replyPreview,
-                createdAt: msg.createdAt,
-                reactions: []
-            });
+            replyPreview,
+            attachments: attachments || [],
+        };
+        if (toUserId) msgData.toUserId = toUserId;
+        if (roomId)   msgData.roomId   = roomId;
+        const msg = await ChatMessage.create(msgData);
+        const [senderEmp, senderUser] = await Promise.all([
+            Employee.findOne({ userId: req.session.userId }).select('name').lean(),
+            User.findById(req.session.userId).select('username').lean(),
+        ]);
+        const senderName = senderEmp ? senderEmp.name : ((senderUser && senderUser.username) || '');
+        const payload = {
+            _id: String(msg._id),
+            fromUserId: String(req.session.userId),
+            toUserId:  toUserId ? String(toUserId) : null,
+            roomId:    roomId   ? String(roomId)   : null,
+            content: msg.content,
+            attachments: msg.attachments,
+            replyTo: replyToId || null,
+            replyPreview,
+            createdAt: msg.createdAt,
+            reactions: [],
+            senderName,
+        };
+        if (toUserId && global.io) {
+            global.io.to('u_' + String(toUserId))
+                     .to('u_' + String(req.session.userId))
+                     .emit('new_message', payload);
         }
-        res.json({ ok: true, msg });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+        if (roomId && global.io) {
+            global.io.to('r_' + String(roomId)).emit('new_message', payload);
+            await ChatRoom.findByIdAndUpdate(roomId, { lastMessageAt: new Date() });
+        }
+        res.json({ ok: true, msg: payload });
+    } catch (e) { console.error('[chat/send]', e); res.status(500).json({ error: e.message }); }
 });
 
-// ── メッセージ削除 API ──────────────────────────────────────────
+router.put('/api/chat/msg/:id', requireLogin, async (req, res) => {
+    try {
+        const { content } = req.body;
+        if (!(content && content.trim())) return res.status(400).json({ error: '内容が空です' });
+        const msg = await ChatMessage.findById(req.params.id);
+        if (!msg) return res.status(404).json({ error: '見つかりません' });
+        if (String(msg.fromUserId) !== String(req.session.userId))
+            return res.status(403).json({ error: '権限がありません' });
+        msg.content = content.trim(); msg.edited = true; msg.editedAt = new Date();
+        await msg.save();
+        const payload = { _id: String(msg._id), content: msg.content, editedAt: msg.editedAt };
+        if (msg.toUserId && global.io)
+            global.io.to('u_' + String(msg.toUserId)).to('u_' + String(msg.fromUserId)).emit('msg_edited', payload);
+        if (msg.roomId && global.io)
+            global.io.to('r_' + String(msg.roomId)).emit('msg_edited', payload);
+        res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.delete('/api/chat/msg/:id', requireLogin, async (req, res) => {
     try {
         const msg = await ChatMessage.findById(req.params.id);
         if (!msg) return res.status(404).json({ error: '見つかりません' });
-        if (String(msg.fromUserId) !== String(req.session.userId)) {
-            return res.status(403).json({ error: '自分のメッセージのみ削除できます' });
-        }
-        msg.deleted = true;
-        msg.deletedAt = new Date();
+        if (String(msg.fromUserId) !== String(req.session.userId))
+            return res.status(403).json({ error: '権限がありません' });
+        msg.deleted = true; msg.deletedAt = new Date();
         msg.content = '（このメッセージは削除されました）';
         await msg.save();
-        if (global.io) global.io.emit('msg_deleted', { _id: String(msg._id) });
+        const payload = { _id: String(msg._id) };
+        if (msg.toUserId && global.io)
+            global.io.to('u_' + String(msg.toUserId)).to('u_' + String(msg.fromUserId)).emit('msg_deleted', payload);
+        if (msg.roomId && global.io)
+            global.io.to('r_' + String(msg.roomId)).emit('msg_deleted', payload);
         res.json({ ok: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── リアクション API ──────────────────────────────────────────
 router.post('/api/chat/react', requireLogin, async (req, res) => {
     try {
         const { msgId, emoji } = req.body;
@@ -242,1006 +318,553 @@ router.post('/api/chat/react', requireLogin, async (req, res) => {
         let reaction = msg.reactions.find(r => r.emoji === emoji);
         if (reaction) {
             const idx = reaction.userIds.findIndex(id => String(id) === String(uid));
-            if (idx >= 0) reaction.userIds.splice(idx, 1); // トグルOFF
-            else reaction.userIds.push(uid);               // トグルON
-            if (reaction.userIds.length === 0) {
-                msg.reactions = msg.reactions.filter(r => r.emoji !== emoji);
-            }
-        } else {
-            msg.reactions.push({ emoji, userIds: [uid] });
-        }
+            if (idx >= 0) reaction.userIds.splice(idx, 1); else reaction.userIds.push(uid);
+            if (reaction.userIds.length === 0) msg.reactions = msg.reactions.filter(r => r.emoji !== emoji);
+        } else { msg.reactions.push({ emoji, userIds: [uid] }); }
         await msg.save();
-        if (global.io) {
-            global.io.emit('msg_reaction', {
-                _id: String(msgId),
-                reactions: msg.reactions.map(r => ({ emoji: r.emoji, count: r.userIds.length, mine: r.userIds.some(id => String(id) === String(uid)) }))
-            });
-        }
+        const reactions = msg.reactions.map(r => ({
+            emoji: r.emoji, count: r.userIds.length,
+            mine: r.userIds.some(id => String(id) === String(uid)),
+        }));
+        const payload = { _id: String(msgId), reactions };
+        if (msg.toUserId && global.io)
+            global.io.to('u_' + String(msg.toUserId)).to('u_' + String(msg.fromUserId)).emit('msg_reaction', payload);
+        if (msg.roomId && global.io)
+            global.io.to('r_' + String(msg.roomId)).emit('msg_reaction', payload);
         res.json({ ok: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── HTML生成ヘルパー ────────────────────────────────────────────
+router.post('/api/chat/read', requireLogin, async (req, res) => {
+    try {
+        const { msgId } = req.body;
+        const msg = await ChatMessage.findById(msgId);
+        if (!msg) return res.json({ ok: false });
+        const uid = req.session.userId;
+        if (msg.roomId) {
+            if (!msg.readBy.some(r => String(r.userId) === String(uid))) {
+                msg.readBy.push({ userId: uid, readAt: new Date() });
+                await msg.save();
+                if (global.io) global.io.to('r_' + String(msg.roomId))
+                    .emit('read_receipt', { msgId: String(msgId), userId: String(uid), count: msg.readBy.length });
+            }
+        } else if (String(msg.toUserId) === String(uid) && !msg.read) {
+            msg.read = true; msg.readAt = new Date(); await msg.save();
+            if (global.io) global.io.to('u_' + String(msg.fromUserId))
+                .emit('read_receipt', { msgId: String(msgId), userId: String(uid) });
+        }
+        res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
-const STATUS_MAP = {
-    online:  { color: '#2bac76', label: 'オンライン',  cls: 'online'  },
-    break:   { color: '#e8a838', label: '休憩中',       cls: 'break'   },
-    offline: { color: '#5e6472', label: 'オフライン',  cls: 'offline' },
-};
+router.post('/api/chat/room', requireLogin, async (req, res) => {
+    try {
+        const { name, description, icon, memberIds } = req.body;
+        if (!(name && name.trim())) return res.status(400).json({ error: '名前が必要です' });
+        const members = [...new Set([String(req.session.userId), ...(memberIds || [])])];
+        const room = await ChatRoom.create({
+            name: name.trim(), description: (description && description.trim()) || '',
+            icon: icon || '💬', members, admins: [req.session.userId], createdBy: req.session.userId,
+        });
+        if (global.io) members.forEach(mid =>
+            global.io.to('u_' + mid).emit('room_created', { roomId: String(room._id), name: room.name, icon: room.icon }));
+        res.json({ ok: true, roomId: String(room._id) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
-function escapeHtml(s) {
-    return String(s)
-        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-        .replace(/"/g,'&quot;').replace(/\n/g,'<br>');
+router.put('/api/chat/room/:id', requireLogin, async (req, res) => {
+    try {
+        const room = await ChatRoom.findOne({ _id: req.params.id, admins: req.session.userId });
+        if (!room) return res.status(403).json({ error: '権限がありません' });
+        const { name, description, icon } = req.body;
+        if (name) room.name = name.trim();
+        if (description !== undefined) room.description = description.trim();
+        if (icon) room.icon = icon;
+        await room.save();
+        res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/api/chat/room/:id/members', requireLogin, async (req, res) => {
+    try {
+        const room = await ChatRoom.findOne({ _id: req.params.id, admins: req.session.userId });
+        if (!room) return res.status(403).json({ error: '権限がありません' });
+        (req.body.userIds || []).forEach(uid => {
+            if (!room.members.some(m => String(m) === uid)) room.members.push(uid);
+        });
+        await room.save();
+        res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/api/chat/room/:id/members/:userId', requireLogin, async (req, res) => {
+    try {
+        const room = await ChatRoom.findOne({ _id: req.params.id, admins: req.session.userId });
+        if (!room) return res.status(403).json({ error: '権限がありません' });
+        room.members = room.members.filter(m => String(m) !== req.params.userId);
+        await room.save();
+        res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── HTML ビルダー ──────────────────────────────────────────────
+
+function buildPage(data) {
+    const { mode, myId, myName, myInitial, myStatus, recentDMs, roomList, allUsers } = data;
+    const clientData = {
+        mode, myId, myName, myInitial, myStatus,
+        allUsers: allUsers.map(u => ({
+            _id: String(u._id), username: u.username, chatStatus: u.chatStatus || 'offline',
+            emp: u.emp ? { name: u.emp.name, department: u.emp.department || '' } : null,
+        })),
+        roomIds: roomList.map(r => String(r._id)),
+    };
+    if (mode === 'dm') {
+        Object.assign(clientData, { targetId: data.targetId, targetName: data.targetName, targetStatus: data.targetStatus });
+    }
+    if (mode === 'room') {
+        Object.assign(clientData, {
+            roomId: data.roomId, roomName: data.roomName, isRoomAdmin: data.isRoomAdmin,
+            members: (data.members || []).map(m => ({
+                _id: String(m._id), username: m.username, chatStatus: m.chatStatus || 'offline',
+                emp: m.emp ? { name: m.emp.name, department: m.emp.department || '' } : null,
+            })),
+        });
+    }
+    return `${chatStyles()}
+<div class="sc-root">
+    ${buildSidebarHtml(data)}
+    <div class="sc-main" id="sc-main">${buildMainHtml(data)}</div>
+</div>
+${buildGroupCreateModal(allUsers)}
+${buildRoomSettingsModal()}
+<script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/chat-app.js?v=3"></script>`;
 }
-function statusLabel(s) { return (STATUS_MAP[s]||STATUS_MAP.offline).label; }
 
-// ─── サイドバーユーザー行 HTML ───
-function sidebarUserRow(u, targetId = null) {
-    const name = u.emp ? u.emp.name : u.username;
-    const dept = u.emp ? u.emp.department : '';
-    const s    = STATUS_MAP[u.chatStatus] || STATUS_MAP.offline;
-    const isActive = targetId && String(u._id) === targetId;
-    return `
-    <a href="/chat/${u._id}" class="sc-dm-row${isActive?' active':''}" data-userid="${u._id}">
-        <div class="sc-avatar-wrap sc-avatar-wrap-sm">
-            <div class="sc-avatar sc-av-sm">${name.charAt(0).toUpperCase()}</div>
-            <span class="sc-status-pip sc-pip-${s.cls}" data-userid="${u._id}" title="${s.label}"></span>
+function buildSidebarHtml(d) {
+    const { myName, myInitial, myStatus, recentDMs, roomList, mode, targetId, roomId } = d;
+    const dmRows = recentDMs.length ? recentDMs.map(u => {
+        const name = u.emp ? u.emp.name : u.username;
+        const dept = u.emp ? (u.emp.department || '') : '';
+        const preview = u.lastMsg ? escHtml(u.lastMsg.slice(0, 26)) + (u.lastMsg.length > 26 ? '…' : '') : '';
+        const active = mode === 'dm' && String(u._id) === targetId;
+        return `<a href="/chat/dm/${u._id}" class="sc-nav-row${active ? ' active' : ''}" data-userid="${u._id}">
+            <div class="sc-av-wrap sm"><div class="sc-av sm">${name.charAt(0).toUpperCase()}</div>
+            <span class="sc-pip ${STATUS_CLS[u.chatStatus || 'offline']}" data-uid="${u._id}"></span></div>
+            <div class="sc-nav-info"><span class="sc-nav-name">${escHtml(name)}</span>
+            <span class="sc-nav-sub">${dept ? escHtml(dept) : preview}</span></div>
+            ${u.unread ? '<span class="sc-badge">' + u.unread + '</span>' : ''}
+        </a>`;
+    }).join('') : '<div class="sc-empty-row">まだ会話がありません</div>';
+
+    const roomRows = roomList.length ? roomList.map(r => {
+        const active = mode === 'room' && String(r._id) === roomId;
+        return `<a href="/chat/room/${r._id}" class="sc-nav-row${active ? ' active' : ''}">
+            <div class="sc-room-icon">${escHtml(r.icon || '💬')}</div>
+            <div class="sc-nav-info"><span class="sc-nav-name">${escHtml(r.name)}</span>
+            <span class="sc-nav-sub">${(r.members && r.members.length) || 0}人</span></div>
+            ${r.unread ? '<span class="sc-badge">' + r.unread + '</span>' : ''}
+        </a>`;
+    }).join('') : '<div class="sc-empty-row">グループはありません</div>';
+
+    return `<div class="sc-side">
+    <div class="sc-side-hd"><i class="fa-regular fa-comment-dots" style="color:#c9b5a0;font-size:.9rem;"></i><span class="sc-ws-name">DXPRO SOLUTIONS</span></div>
+    <div class="sc-me-row">
+        <div class="sc-av-wrap sm"><div class="sc-av sm sc-av-me">${myInitial}</div>
+        <span class="sc-pip ${STATUS_CLS[myStatus || 'offline']}" id="my-pip"></span></div>
+        <div class="sc-me-info">
+            <span class="sc-me-name">${escHtml(myName)}</span>
+            <div class="sc-st-btns">
+                <button class="sc-st-btn${myStatus === 'online'  ? ' active' : ''}" data-st="online"   onclick="chatApp.setStatus('online',this)"><span class="sc-btn-pip pip-online"></span>オンライン</button>
+                <button class="sc-st-btn${myStatus === 'break'   ? ' active' : ''}" data-st="break"    onclick="chatApp.setStatus('break',this)"><span class="sc-btn-pip pip-break"></span>休憩中</button>
+                <button class="sc-st-btn${myStatus === 'offline' ? ' active' : ''}" data-st="offline"  onclick="chatApp.setStatus('offline',this)"><span class="sc-btn-pip pip-offline"></span>オフライン</button>
+            </div>
         </div>
-        <div class="sc-dm-info">
-            <span class="sc-dm-name">${name}</span>
-            ${dept ? `<span class="sc-dm-dept">${dept}</span>` : ''}
-        </div>
-        ${u.unread ? `<span class="sc-unread">${u.unread}</span>` : ''}
-    </a>`;
+    </div>
+    <div class="sc-search-wrap"><input type="text" id="sc-search" class="sc-search-inp" placeholder="🔍 ユーザーを検索..." autocomplete="off" oninput="chatApp.filterSidebar(this.value)"></div>
+    <div class="sc-side-sec"><span class="sc-sec-label">ダイレクトメッセージ</span></div>
+    <div class="sc-nav-list" id="sc-dm-list">${dmRows}</div>
+    <div class="sc-nav-list" id="sc-search-list" style="display:none"></div>
+    <div class="sc-side-sec"><span class="sc-sec-label">グループ</span><button class="sc-sec-btn" onclick="chatApp.openCreateRoom()" title="グループを作成">＋</button></div>
+    <div class="sc-nav-list" id="sc-room-list">${roomRows}</div>
+</div>`;
 }
 
-// ─── サイドパネル共通 HTML ───
-function buildSidePanel(myInitial, myStatus, userRows, myName, allUsersJson) {
-    const safeJson = (allUsersJson || '[]').replace(/'/g, '&#39;');
-    const hasRows  = userRows && userRows.trim().length > 0;
-    return `
-    <div class="sc-side">
-        <div class="sc-side-head">
-            <i class="fa-regular fa-comment-dots" style="color:#c9b5a0;font-size:1rem;"></i>
-            <span class="sc-ws-name">DXPRO SOLUTIONS</span>
-        </div>
-        <div class="sc-my-status-row">
-            <div class="sc-avatar-wrap sc-avatar-wrap-sm">
-                <div class="sc-avatar sc-av-sm sc-av-me">${myInitial}</div>
-                <span class="sc-status-pip sc-pip-${(STATUS_MAP[myStatus]||STATUS_MAP.offline).cls}" id="my-pip"></span>
+function buildMainHtml(data) {
+    if (data.mode === 'home') return `<div class="sc-welcome"><div class="sc-welcome-icon">💬</div><h2>チャットへようこそ</h2><p>左からユーザーを選んでダイレクトメッセージを送るか、<br>グループチャットを作成してください。</p></div>`;
+    const isRoom = data.mode === 'room';
+    const EMOJIS = ['👍','👎','❤️','😂','😮','🎉','🙏','💪','✅','❓','🔥','👀','😅','🤔','💯'];
+    const headerHtml = isRoom
+        ? `<div class="sc-main-hd">
+            <div class="sc-hd-left"><div class="sc-room-icon-lg">${escHtml(data.roomIcon || '💬')}</div>
+            <div><div class="sc-hd-name">${escHtml(data.roomName)}</div><div class="sc-hd-sub" id="room-sub">${data.members.length}人のメンバー</div></div></div>
+            <div class="sc-hd-actions">
+                <button class="sc-hd-btn" onclick="chatApp.toggleMemberPanel()" title="メンバー"><i class="fa-solid fa-users"></i></button>
+                ${data.isRoomAdmin ? '<button class="sc-hd-btn" onclick="chatApp.openRoomSettings()" title="設定"><i class="fa-solid fa-gear"></i></button>' : ''}
+                <div class="sc-hd-search"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="msg-search" placeholder="検索..." oninput="chatApp.filterMessages(this.value)"></div>
             </div>
-            <div class="sc-my-status-info">
-                <span class="sc-my-name">${escapeHtml(myName)}</span>
-                <div class="sc-status-btns">
-                    <button class="sc-st-btn ${myStatus==='online'?'active':''}" data-status="online" onclick="setMyStatus('online',this)">
-                        <span class="sc-btn-pip sc-pip-online"></span>オンライン
-                    </button>
-                    <button class="sc-st-btn ${myStatus==='break'?'active':''}" data-status="break" onclick="setMyStatus('break',this)">
-                        <span class="sc-btn-pip sc-pip-break"></span>休憩中
-                    </button>
-                    <button class="sc-st-btn ${myStatus==='offline'?'active':''}" data-status="offline" onclick="setMyStatus('offline',this)">
-                        <span class="sc-btn-pip sc-pip-offline"></span>オフライン
-                    </button>
-                </div>
-            </div>
-        </div>
-        <div class="sc-search-wrap">
-            <input type="text" id="sc-user-search" class="sc-search-inp"
-                placeholder="🔍 ユーザーを検索..."
-                oninput="filterSidebarUsers(this.value)"
-                autocomplete="off">
-        </div>
-        <div class="sc-section-label" id="sc-section-label">${hasRows ? '最近の会話' : ''}</div>
-        <div class="sc-dm-list" id="sc-dm-recent">
-            ${hasRows ? userRows : '<span class="sc-empty">まだ会話がありません</span>'}
-        </div>
-        <div class="sc-dm-list" id="sc-dm-search" style="display:none;"></div>
-        <script>
-        (function(){
-            const ALL_USERS = ${allUsersJson || '[]'};
-            const STATUS_CLS = { online:'sc-pip-online', break:'sc-pip-break', offline:'sc-pip-offline' };
-            const STATUS_LBL = { online:'オンライン', break:'休憩中', offline:'オフライン' };
-            window.filterSidebarUsers = function(q) {
-                const recent = document.getElementById('sc-dm-recent');
-                const search = document.getElementById('sc-dm-search');
-                const label  = document.getElementById('sc-section-label');
-                q = q.trim().toLowerCase();
-                if (!q) {
-                    recent.style.display='';
-                    search.style.display='none';
-                    label.textContent = recent.querySelector('.sc-empty') ? '' : '最近の会話';
-                    return;
-                }
-                const filtered = ALL_USERS.filter(u => {
-                    const name = (u.emp ? u.emp.name : u.username)||'';
-                    const dept = (u.emp ? u.emp.department : '')||'';
-                    return name.toLowerCase().includes(q) || dept.toLowerCase().includes(q) || u.username.toLowerCase().includes(q);
-                });
-                label.textContent = filtered.length ? '検索結果' : '';
-                search.innerHTML = filtered.length
-                    ? filtered.map(u => {
-                        const name = u.emp ? u.emp.name : u.username;
-                        const dept = u.emp ? u.emp.department : '';
-                        const sc   = STATUS_CLS[u.chatStatus] || 'sc-pip-offline';
-                        const sl   = STATUS_LBL[u.chatStatus] || 'オフライン';
-                        return '<a href="/chat/'+u._id+'" class="sc-dm-row">'
-                            +'<div class="sc-avatar-wrap sc-avatar-wrap-sm">'
-                            +'<div class="sc-avatar sc-av-sm">'+name.charAt(0).toUpperCase()+'</div>'
-                            +'<span class="sc-status-pip '+sc+'" data-userid="'+u._id+'" title="'+sl+'"></span>'
-                            +'</div>'
-                            +'<div class="sc-dm-info">'
-                            +'<span class="sc-dm-name">'+name+'</span>'
-                            +(dept ? '<span class="sc-dm-dept">'+dept+'</span>' : '')
-                            +'</div></a>';
-                    }).join('')
-                    : '<span class="sc-empty">見つかりません</span>';
-                recent.style.display='none';
-                search.style.display='';
-            };
+        </div>`
+        : `<div class="sc-main-hd">
+            <div class="sc-hd-left"><div class="sc-av-wrap"><div class="sc-av sc-av-target">${escHtml(data.targetName || '?').charAt(0).toUpperCase()}</div>
+            <span class="sc-pip ${STATUS_CLS[data.targetStatus || 'offline']}" id="target-pip"></span></div>
+            <div><div class="sc-hd-name">${escHtml(data.targetName || '')}</div>
+            <div class="sc-hd-sub" id="target-sub">${STATUS_LABEL[data.targetStatus || 'offline']}${data.targetDept ? ' · ' + escHtml(data.targetDept) : ''}</div></div></div>
+            <div class="sc-hd-actions"><div class="sc-hd-search"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="msg-search" placeholder="会話内を検索..." oninput="chatApp.filterMessages(this.value)"></div></div>
+        </div>`;
+    return `${headerHtml}
+<div class="sc-typing-bar" id="sc-typing"></div>
+<div class="sc-body-wrap">
+    <div class="sc-messages" id="sc-messages">
+        ${buildThreadStart(data)}
+        ${buildMessagesHtml(data)}
+        <div id="sc-msg-bottom"></div>
+    </div>
+    ${isRoom ? buildMemberPanel(data) : ''}
+</div>
+<div class="sc-emoji-picker" id="sc-emoji-picker" style="display:none">${EMOJIS.map(e => '<button class="sc-emoji-btn" onclick="chatApp.pickEmoji(\'' + e + '\')">' + e + '</button>').join('')}</div>
+<div class="sc-reply-bar" id="sc-reply-bar" style="display:none">
+    <span class="sc-reply-icon">↩</span><span id="sc-reply-text" class="sc-reply-txt"></span>
+    <button onclick="chatApp.cancelReply()" class="sc-reply-close">×</button>
+</div>
+<div class="sc-input-area">
+    <div class="sc-input-tools">
+        <button class="sc-tool-btn" title="ファイルを添付" onclick="document.getElementById('sc-file-input').click()"><i class="fa-solid fa-paperclip"></i></button>
+        <button class="sc-tool-btn" title="絵文字を挿入" onclick="chatApp.toggleInputEmoji()"><i class="fa-regular fa-face-smile"></i></button>
+        <input type="file" id="sc-file-input" multiple accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.csv,.mp4,.mov" style="display:none" onchange="chatApp.handleFileSelect(this)">
+    </div>
+    <div id="sc-file-preview" class="sc-file-preview-area"></div>
+    <div class="sc-input-box" id="sc-input-box"
+        ondragover="event.preventDefault();this.classList.add('drag-over')"
+        ondragleave="this.classList.remove('drag-over')"
+        ondrop="chatApp.handleDrop(event)">
+        <textarea id="sc-msg-input" placeholder="${isRoom ? escHtml(data.roomName) : escHtml(data.targetName || '')} へメッセージを送る... (Shift+Enter で改行)" rows="1" maxlength="4000" oninput="chatApp.onInput()" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chatApp.send();}"></textarea>
+        <button class="sc-send-btn" id="sc-send-btn" disabled onclick="chatApp.send()"><i class="fa-solid fa-paper-plane"></i></button>
+    </div>
+    <div class="sc-input-hint">Enter で送信 · Shift+Enter で改行 · ファイルをドロップで添付</div>
+</div>`;
+}
 
-            // ── 自動ステータス管理 ──────────────────────────────────
-            // 操作中 → online、3分無操作 → break、30分無操作 → offline
-            (function initAutoStatus() {
-                let currentAutoStatus = 'online';
-                let breakTimer = null;
-                let offlineTimer = null;
+function buildThreadStart(data) {
+    if (data.mode === 'dm') {
+        const initial = (data.targetName || '?').charAt(0).toUpperCase();
+        return `<div class="sc-thread-start"><div class="sc-av sc-av-lg sc-av-target">${initial}</div>
+        <div class="sc-thread-name">${escHtml(data.targetName || '')}</div>
+        <div class="sc-thread-sub">${data.targetDept ? escHtml(data.targetDept) : ''}${data.targetPos ? ' · ' + escHtml(data.targetPos) : ''}</div>
+        <p class="sc-thread-desc">${escHtml(data.targetName || '')} とのダイレクトメッセージです。</p></div>`;
+    }
+    return `<div class="sc-thread-start"><div class="sc-room-icon-xl">${escHtml(data.roomIcon || '💬')}</div>
+    <div class="sc-thread-name">${escHtml(data.roomName || '')}</div>
+    ${data.roomDesc ? '<div class="sc-thread-sub">' + escHtml(data.roomDesc) + '</div>' : ''}
+    <p class="sc-thread-desc">${escHtml(data.roomName || '')} グループチャットへようこそ。</p></div>`;
+}
 
-                function applyStatus(status) {
-                    if (currentAutoStatus === status) return;
-                    currentAutoStatus = status;
-                    fetch('/api/chat/status', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ status })
-                    });
-                    // ボタンUI更新
-                    document.querySelectorAll('.sc-st-btn').forEach(b => b.classList.remove('active'));
-                    const btn = document.querySelector('.sc-st-btn[data-status="'+status+'"]');
-                    if (btn) btn.classList.add('active');
-                    const pip = document.getElementById('my-pip');
-                    if (pip) pip.className = 'sc-status-pip sc-pip-' + status;
-                }
-
-                function resetTimers() {
-                    // タイマークリア
-                    clearTimeout(breakTimer);
-                    clearTimeout(offlineTimer);
-                    // 操作があればオンライン
-                    applyStatus('online');
-                    // 3分後 → 休憩中
-                    breakTimer = setTimeout(() => {
-                        applyStatus('break');
-                        // さらに27分後（合計30分）→ オフライン
-                        offlineTimer = setTimeout(() => applyStatus('offline'), 27 * 60 * 1000);
-                    }, 3 * 60 * 1000);
-                }
-
-                // 操作イベントを監視
-                ['mousemove','mousedown','keydown','touchstart','scroll','click'].forEach(evt => {
-                    document.addEventListener(evt, resetTimers, { passive: true });
-                });
-
-                // 初回: オンラインにしてタイマー開始
-                resetTimers();
-
-                // ページを閉じる/離れるときオフライン
-                window.addEventListener('beforeunload', () => {
-                    navigator.sendBeacon('/api/chat/status', JSON.stringify({ status: 'offline' }));
-                });
-            })();
-
-        })();
-        </script>
+function buildMemberPanel(data) {
+    const rows = (data.members || []).map(m => {
+        const name = m.emp ? m.emp.name : m.username;
+        const dept = m.emp ? (m.emp.department || '') : '';
+        return `<div class="sc-member-row">
+            <div class="sc-av-wrap sm"><div class="sc-av sm">${name.charAt(0).toUpperCase()}</div>
+            <span class="sc-pip ${STATUS_CLS[m.chatStatus || 'offline']}" data-uid="${m._id}"></span></div>
+            <div class="sc-nav-info"><span class="sc-nav-name">${escHtml(name)}</span>${dept ? '<span class="sc-nav-sub">' + escHtml(dept) + '</span>' : ''}</div>
+            ${data.isRoomAdmin && String(m._id) !== data.myId ? '<button class="sc-member-kick" onclick="chatApp.kickMember(\'' + m._id + '\',\'' + escHtml(name) + '\')" title="除外">×</button>' : ''}
+        </div>`;
+    }).join('');
+    return `<div class="sc-member-panel" id="sc-member-panel" style="display:none">
+        <div class="sc-member-hd"><span>メンバー (${data.members.length})</span><button onclick="chatApp.toggleMemberPanel()">×</button></div>
+        <div class="sc-member-list">${rows}</div>
+        ${data.isRoomAdmin ? '<div class="sc-member-add"><button class="sc-add-btn" onclick="chatApp.openAddMember()"><i class="fa-solid fa-user-plus"></i> メンバーを追加</button></div>' : ''}
     </div>`;
 }
 
-// ─── チャット一覧ページ ───
-function buildChatListHtml(users, currentUser, myName, recentUsers) {
-    const myStatus   = currentUser ? currentUser.chatStatus : 'offline';
-    const myInitial  = myName ? myName.charAt(0).toUpperCase() : '?';
-    const order      = { online:0, break:1, offline:2 };
-    // 最近の会話ユーザーのみサイドバーに表示
-    const recentRows = (recentUsers || []).map(u => sidebarUserRow(u)).join('');
-    // 全ユーザーを検索用JSONとして渡す
-    const allJson    = JSON.stringify(users.map(u => ({
-        _id: String(u._id), username: u.username,
-        chatStatus: u.chatStatus || 'offline',
-        emp: u.emp ? { name: u.emp.name, department: u.emp.department || '' } : null
-    })));
-    return `
-    ${chatStyles()}
-    <div class="sc-page-root">
-        ${buildSidePanel(myInitial, myStatus, recentRows, myName, allJson)}
-        <div class="sc-main sc-main-welcome">
-            <div class="sc-welcome">
-                <div class="sc-welcome-icon">💬</div>
-                <h2>チャットへようこそ</h2>
-                <p>左の検索ボックスからユーザーを探してメッセージを送りましょう</p>
-            </div>
-        </div>
-    </div>
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-    const socket = io();
-    socket.on('status_change', ({ userId, status }) => { updateStatusPips(userId, status); });
-    function setMyStatus(status, btn) {
-        fetch('/api/chat/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})})
-        .then(r=>r.json()).then(()=>{
-            document.querySelectorAll('.sc-st-btn').forEach(b=>b.classList.remove('active'));
-            btn.classList.add('active');
-            const pip=document.getElementById('my-pip');
-            if(pip) pip.className='sc-status-pip sc-pip-'+status;
-        });
+function buildMessagesHtml(data) {
+    const { messages, myId, myName, mode } = data;
+    if (!messages || !messages.length) return '';
+    const isRoom = mode === 'room';
+    const memberNameMap = {};
+    if (isRoom && data.members) {
+        data.members.forEach(m => { memberNameMap[String(m._id)] = m.emp ? m.emp.name : m.username; });
     }
-    function updateStatusPips(userId, status) {
-        const cls = { online:'sc-pip-online', break:'sc-pip-break', offline:'sc-pip-offline' };
-        const lbl = { online:'オンライン', break:'休憩中', offline:'オフライン' };
-        document.querySelectorAll('[data-userid="'+userId+'"].sc-status-pip').forEach(el => {
-            el.className = 'sc-status-pip ' + (cls[status]||'sc-pip-offline');
-            el.title = lbl[status]||'';
-        });
-    }
-    </script>`;
-}
+    memberNameMap[String(myId)] = myName;
 
-// ─── DM画面 ───
-function buildDmHtml({ targetUser, targetEmp, messages, userList, allUsers, myUserId, myName, currentUser }) {
-    const targetName = targetEmp ? targetEmp.name : targetUser.username;
-    const targetId   = String(targetUser._id);
-    const myStatus   = currentUser ? currentUser.chatStatus : 'offline';
-    const myInitial  = myName ? myName.charAt(0).toUpperCase() : '?';
-    const tgtInitial = targetName.charAt(0).toUpperCase();
-    const order = { online:0, break:1, offline:2 };
-    userList.sort((a,b) => (order[a.chatStatus]||2) - (order[b.chatStatus]||2));
-    const sidebarRows = userList.map(u => sidebarUserRow(u, targetId)).join('');
-    const tgtStatus   = STATUS_MAP[targetUser.chatStatus] || STATUS_MAP.offline;
-    // 全ユーザーを検索用JSONとして生成
-    const searchUsers = (allUsers || userList);
-    const allJson = JSON.stringify(searchUsers.map(u => ({
-        _id: String(u._id), username: u.username,
-        chatStatus: u.chatStatus || 'offline',
-        emp: u.emp ? { name: u.emp.name, department: u.emp.department || '' } : null
-    })));
-
-    // メッセージ HTML 生成
-    let msgHtml = '';
+    let html = '';
     let prevFrom = null, prevDate = null;
-    messages.forEach(m => {
+    for (const m of messages) {
         if (m.deleted) {
-            msgHtml += `<div class="sc-msg sc-msg-deleted" data-id="${m._id}">
-                <div class="sc-msg-del-icon">🗑</div>
-                <div class="sc-msg-del-text">このメッセージは削除されました</div>
-            </div>`;
-            prevFrom = null; return;
+            html += '<div class="sc-msg sc-msg-del" data-id="' + m._id + '"><span class="sc-del-icon">🗑</span><span class="sc-del-text">このメッセージは削除されました</span></div>';
+            prevFrom = null; continue;
         }
-        const isMine   = String(m.fromUserId) === myUserId;
-        const senderName = isMine ? myName : targetName;
-        const initial  = isMine ? myInitial : tgtInitial;
-        const colorCls = isMine ? 'sc-av-color-0' : 'sc-av-color-1';
-        const dt       = new Date(m.createdAt);
-        const timeStr  = dt.toLocaleTimeString('ja-JP', { hour:'2-digit', minute:'2-digit' });
-        const dateStr  = dt.toLocaleDateString('ja-JP', { month:'long', day:'numeric', weekday:'short' });
-
-        if (!prevDate || prevDate !== dateStr) {
-            msgHtml += `<div class="sc-date-divider"><span>${dateStr}</span></div>`;
-            prevDate = dateStr;
+        const isMine     = String(m.fromUserId) === String(myId);
+        const senderName = isRoom ? (memberNameMap[String(m.fromUserId)] || '不明') : (isMine ? myName : data.targetName);
+        const initial    = (senderName || '?').charAt(0).toUpperCase();
+        const colorIdx   = isMine ? 0 : (isRoom ? (([...String(m.fromUserId)].reduce((a, c) => a + c.charCodeAt(0), 0) % 5) + 1) : 1);
+        const dt      = new Date(m.createdAt);
+        const dateStr = dt.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
+        const timeStr = dt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+        if (prevDate !== dateStr) {
+            html += '<div class="sc-date-div"><span>' + dateStr + '</span></div>';
+            prevDate = dateStr; prevFrom = null;
         }
-
         const isCont = prevFrom === String(m.fromUserId);
         prevFrom = String(m.fromUserId);
-
-        // 引用ブロック
-        const replyBlock = m.replyPreview ? `
-            <div class="sc-reply-preview">
-                <div class="sc-reply-bar"></div>
-                <span>${escapeHtml(m.replyPreview.slice(0, 60))}${m.replyPreview.length > 60 ? '...' : ''}</span>
-            </div>` : '';
-
-        // リアクション
-        const reactHtml = (m.reactions && m.reactions.length)
-            ? `<div class="sc-reactions" data-msgid="${m._id}">`
-              + m.reactions.map(r => `<button class="sc-react-chip" data-emoji="${r.emoji}" onclick="toggleReact('${m._id}','${r.emoji}',this)">
-                    ${r.emoji} <span class="sc-react-count">${r.userIds ? r.userIds.length : 0}</span>
-                </button>`).join('')
-              + `</div>` : `<div class="sc-reactions" data-msgid="${m._id}"></div>`;
-
-        // ホバーアクションツールバー
-        const toolbar = `
-            <div class="sc-msg-toolbar">
-                <button class="sc-tb-btn" onclick="startReply('${m._id}','${escapeHtml(m.content).replace(/'/g,'\\x27').slice(0,60)}')" title="返信">↩</button>
-                <button class="sc-tb-btn sc-emoji-trigger" data-msgid="${m._id}" title="リアクション">😊</button>
-                ${isMine ? `<button class="sc-tb-btn sc-tb-delete" onclick="deleteMsg('${m._id}')" title="削除">🗑</button>` : ''}
-            </div>`;
-
-        if (isCont) {
-            msgHtml += `
-            <div class="sc-msg sc-msg-cont" data-id="${m._id}">
-                ${toolbar}
-                <div class="sc-msg-time-hover">${timeStr}</div>
-                <div class="sc-msg-content-wrap">
-                    ${replyBlock}
-                    <div class="sc-msg-body">${escapeHtml(m.content)}</div>
-                    ${reactHtml}
-                </div>
-            </div>`;
-        } else {
-            msgHtml += `
-            <div class="sc-msg" data-id="${m._id}">
-                ${toolbar}
-                <div class="sc-msg-avatar ${colorCls}">${initial}</div>
-                <div class="sc-msg-right">
-                    <div class="sc-msg-meta">
-                        <span class="sc-msg-sender">${escapeHtml(senderName)}</span>
-                        <span class="sc-msg-ts">${timeStr}</span>
-                    </div>
-                    ${replyBlock}
-                    <div class="sc-msg-body">${escapeHtml(m.content)}</div>
-                    ${reactHtml}
-                </div>
-            </div>`;
+        const replyBlock = m.replyPreview
+            ? '<div class="sc-reply-quote"><div class="sc-reply-stripe"></div><span>' + escHtml(m.replyPreview.slice(0, 60)) + (m.replyPreview.length > 60 ? '…' : '') + '</span></div>' : '';
+        const attachHtml  = buildAttachmentsHtml(m.attachments || []);
+        const reactHtml   = buildReactHtml(m, myId);
+        const editedBadge = m.edited ? '<span class="sc-edited">（編集済み）</span>' : '';
+        let readBadge = '';
+        if (!isRoom && isMine) {
+            readBadge = m.read
+                ? '<span class="sc-read read" data-read="' + m._id + '">✓✓ 既読</span>'
+                : '<span class="sc-read unread" data-read="' + m._id + '">✓ 未読</span>';
+        } else if (isRoom && isMine) {
+            const rc = (m.readBy || []).length;
+            readBadge = rc > 0
+                ? '<span class="sc-read read" data-read="' + m._id + '">既読 ' + rc + '</span>'
+                : '<span class="sc-read unread" data-read="' + m._id + '"></span>';
         }
-    });
+        const safeContent = escHtml(m.content || '').replace(/'/g, '\\x27').slice(0, 60);
+        const toolbar = '<div class="sc-toolbar">'
+            + '<button class="sc-tb" onclick="chatApp.startReply(\'' + m._id + '\',\'' + safeContent + '\')" title="返信">↩</button>'
+            + '<button class="sc-tb sc-emoji-trig" data-mid="' + m._id + '" title="リアクション">😊</button>'
+            + (isMine ? '<button class="sc-tb" onclick="chatApp.startEdit(\'' + m._id + '\')" title="編集">✏️</button>' : '')
+            + (isMine ? '<button class="sc-tb sc-tb-del" onclick="chatApp.deleteMsg(\'' + m._id + '\')" title="削除">🗑</button>' : '')
+            + '</div>';
+        if (isCont) {
+            html += '<div class="sc-msg sc-msg-cont" data-id="' + m._id + '">' + toolbar
+                + '<div class="sc-ts-hover">' + timeStr + '</div>'
+                + '<div class="sc-body-wrap2">' + replyBlock
+                + '<div class="sc-msg-text" data-mid="' + m._id + '">' + escHtml(m.content || '') + '</div>'
+                + editedBadge + attachHtml + reactHtml + readBadge + '</div></div>';
+        } else {
+            html += '<div class="sc-msg" data-id="' + m._id + '">' + toolbar
+                + '<div class="sc-av sc-av-c' + colorIdx + '">' + initial + '</div>'
+                + '<div class="sc-msg-right"><div class="sc-msg-meta"><span class="sc-sender">' + escHtml(senderName) + '</span><span class="sc-ts">' + timeStr + '</span></div>'
+                + replyBlock + '<div class="sc-msg-text" data-mid="' + m._id + '">' + escHtml(m.content || '') + '</div>'
+                + editedBadge + attachHtml + reactHtml + readBadge + '</div></div>';
+        }
+    }
+    return html;
+}
 
-    const EMOJIS = ['👍','👎','❤️','😂','😮','🎉','🙏','💪','✅','❓'];
+function buildAttachmentsHtml(attachments) {
+    if (!attachments.length) return '';
+    return '<div class="sc-atts">' + attachments.map(a => {
+        const type = mimeToType(a.mimeType || '');
+        if (type === 'image') return '<a href="' + a.url + '" target="_blank" class="sc-att-img-wrap"><img src="' + a.url + '" alt="' + escHtml(a.name) + '" class="sc-att-img" loading="lazy"></a>';
+        const icon = type === 'pdf' ? '📄' : type === 'video' ? '🎬' : '📎';
+        const sz   = a.size ? (a.size > 1048576 ? (a.size / 1048576).toFixed(1) + 'MB' : Math.ceil(a.size / 1024) + 'KB') : '';
+        return '<a href="' + a.url + '" target="_blank" download="' + escHtml(a.name) + '" class="sc-att-file"><span class="sc-att-icon">' + icon + '</span><div><div class="sc-att-name">' + escHtml(a.name) + '</div><div class="sc-att-size">' + sz + '</div></div></a>';
+    }).join('') + '</div>';
+}
 
-    return `
-    ${chatStyles()}
-    <div class="sc-page-root">
-        ${buildSidePanel(myInitial, myStatus, sidebarRows, myName, allJson)}
-        <div class="sc-main">
-            <!-- ヘッダー -->
-            <div class="sc-main-header">
-                <div class="sc-header-left">
-                    <div class="sc-avatar-wrap">
-                        <div class="sc-avatar sc-av-color-1">${tgtInitial}</div>
-                        <span class="sc-status-pip sc-pip-${tgtStatus.cls}" id="target-pip"></span>
-                    </div>
-                    <div>
-                        <div class="sc-header-name">${escapeHtml(targetName)}</div>
-                        <div class="sc-header-status" id="target-status-label">${tgtStatus.label}${targetEmp && targetEmp.department ? ' · '+targetEmp.department : ''}</div>
-                    </div>
-                </div>
-                <!-- 検索 -->
-                <div class="sc-search-wrap">
-                    <i class="fa-solid fa-magnifying-glass"></i>
-                    <input type="text" id="msgSearch" placeholder="会話内を検索..." oninput="filterMessages(this.value)">
-                </div>
-            </div>
+function buildReactHtml(m, myId) {
+    if (!m.reactions || !m.reactions.length) return '<div class="sc-reactions" data-mid="' + m._id + '"></div>';
+    const chips = m.reactions.map(r => {
+        const mine  = (r.userIds || []).some(id => String(id) === String(myId));
+        const count = (r.userIds || []).length;
+        return '<button class="sc-react-chip' + (mine ? ' mine' : '') + '" data-emoji="' + r.emoji + '" onclick="chatApp.toggleReact(\'' + m._id + '\',\'' + r.emoji + '\',this)">' + r.emoji + ' <span class="sc-react-n">' + count + '</span></button>';
+    }).join('');
+    return '<div class="sc-reactions" data-mid="' + m._id + '">' + chips + '</div>';
+}
 
-            <!-- タイピングインジケーター -->
-            <div class="sc-typing-bar" id="typingBar"></div>
-
-            <!-- メッセージ一覧 -->
-            <div class="sc-messages" id="chatMessages">
-                <div class="sc-thread-start">
-                    <div class="sc-avatar sc-av-color-1 sc-av-lg">${tgtInitial}</div>
-                    <div class="sc-thread-name">${escapeHtml(targetName)}</div>
-                    <div class="sc-thread-sub">${targetEmp ? (targetEmp.department||'') : ''}</div>
-                    <p class="sc-thread-desc">${escapeHtml(targetName)} とのダイレクトメッセージです</p>
-                </div>
-                ${msgHtml}
-                <div id="msgBottom"></div>
-            </div>
-
-            <!-- 返信プレビュー -->
-            <div class="sc-reply-bar-wrap" id="replyBarWrap" style="display:none">
-                <div class="sc-reply-bar-inner">
-                    <span class="sc-reply-bar-icon">↩</span>
-                    <span id="replyBarText"></span>
-                    <button onclick="cancelReply()" class="sc-reply-cancel">×</button>
-                </div>
-            </div>
-
-            <!-- 絵文字ピッカー（フローティング） -->
-            <div class="sc-emoji-picker" id="emojiPicker" style="display:none">
-                ${EMOJIS.map(e => `<button class="sc-emoji-btn" onclick="pickEmoji('${e}')">${e}</button>`).join('')}
-            </div>
-
-            <!-- 入力エリア -->
-            <div class="sc-input-wrap">
-                <div class="sc-input-toolbar">
-                    <button class="sc-input-tool-btn" id="emojiPickerToggle" title="絵文字" type="button">😊</button>
-                </div>
-                <form class="sc-input-form" id="chatForm">
-                    <div class="sc-input-box">
-                        <textarea id="msgInput" placeholder="${escapeHtml(targetName)} へメッセージを送る... (Shift+Enter で改行)" rows="1" maxlength="2000"></textarea>
-                        <button type="submit" class="sc-send-btn" id="sendBtn" disabled>
-                            <i class="fa-solid fa-paper-plane"></i>
-                        </button>
-                    </div>
-                </form>
-                <div class="sc-input-hint">Enter で送信 · Shift+Enter で改行</div>
+function buildGroupCreateModal(allUsers) {
+    const opts = allUsers.map(u => {
+        const name = u.emp ? u.emp.name : u.username;
+        const dept = u.emp ? (u.emp.department || '') : '';
+        return '<label class="sc-modal-user-row"><input type="checkbox" name="member" value="' + u._id + '"><div class="sc-av sm2">' + name.charAt(0).toUpperCase() + '</div><div><div class="sc-modal-uname">' + escHtml(name) + '</div>' + (dept ? '<div class="sc-modal-udept">' + escHtml(dept) + '</div>' : '') + '</div></label>';
+    }).join('');
+    return `<div class="sc-overlay" id="sc-modal-create" style="display:none" onclick="if(event.target===this)chatApp.closeModal('sc-modal-create')">
+    <div class="sc-modal">
+        <div class="sc-modal-hd"><h3>グループチャットを作成</h3><button onclick="chatApp.closeModal('sc-modal-create')">×</button></div>
+        <div class="sc-modal-body">
+            <div class="sc-form-row"><label>グループ名 <span style="color:red">*</span></label><input type="text" id="room-name" placeholder="例: プロジェクトチーム" maxlength="50"></div>
+            <div class="sc-form-row"><label>説明（任意）</label><input type="text" id="room-desc" placeholder="グループの説明" maxlength="200"></div>
+            <div class="sc-form-row"><label>アイコン絵文字</label><input type="text" id="room-icon" value="💬" maxlength="4" style="width:60px"></div>
+            <div class="sc-form-row"><label>メンバーを追加</label>
+                <input type="text" id="modal-user-search" placeholder="🔍 メンバーを検索..." oninput="chatApp.filterModalUsers(this.value)" style="margin-bottom:8px">
+                <div class="sc-modal-user-list" id="sc-modal-user-list">${opts}</div>
             </div>
         </div>
+        <div class="sc-modal-ft">
+            <button class="sc-btn-cancel" onclick="chatApp.closeModal('sc-modal-create')">キャンセル</button>
+            <button class="sc-btn-primary" onclick="chatApp.createRoom()">作成する</button>
+        </div>
     </div>
+</div>`;
+}
 
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-    const socket = io();
-    const MY_ID   = '${myUserId}';
-    const TARGET_ID = '${targetId}';
-    const MY_NAME  = ${JSON.stringify(myName)};
-    const TGT_NAME = ${JSON.stringify(targetName)};
-    const MY_INIT  = '${myInitial}';
-    const TGT_INIT = '${tgtInitial}';
-    let lastFrom = ${messages.filter(m=>!m.deleted).length ? JSON.stringify(String(messages.filter(m=>!m.deleted).at(-1).fromUserId)) : 'null'};
-    let replyToId = null;
-    let emojiTargetMsgId = null;
-
-    const textarea = document.getElementById('msgInput');
-    const sendBtn  = document.getElementById('sendBtn');
-
-    // ── テキストエリア ──────────────────────────
-    textarea.addEventListener('input', () => {
-        textarea.style.height = 'auto';
-        textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px';
-        sendBtn.disabled = !textarea.value.trim();
-        // タイピング通知
-        socket.emit('typing', { fromUserId: MY_ID, toUserId: TARGET_ID });
-    });
-    textarea.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-    });
-
-    function scrollBottom(smooth) {
-        const el = document.getElementById('msgBottom');
-        if (el) el.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' });
-    }
-    scrollBottom(false);
-
-    // ── メッセージ送信 ─────────────────────────
-    async function sendMessage() {
-        const content = textarea.value.trim();
-        if (!content) return;
-        textarea.value = '';
-        textarea.style.height = 'auto';
-        sendBtn.disabled = true;
-        cancelReply();
-        textarea.focus();
-        socket.emit('stop_typing', { fromUserId: MY_ID, toUserId: TARGET_ID });
-        await fetch('/api/chat/send', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ toUserId: TARGET_ID, content, replyToId })
-        });
-        replyToId = null;
-    }
-    document.getElementById('chatForm').addEventListener('submit', e => { e.preventDefault(); sendMessage(); });
-
-    // ── 返信 ───────────────────────────────────
-    function startReply(msgId, preview) {
-        replyToId = msgId;
-        document.getElementById('replyBarText').textContent = preview + '...';
-        document.getElementById('replyBarWrap').style.display = '';
-        textarea.focus();
-    }
-    function cancelReply() {
-        replyToId = null;
-        document.getElementById('replyBarWrap').style.display = 'none';
-    }
-
-    // ── メッセージ削除 ─────────────────────────
-    function deleteMsg(msgId) {
-        if (!confirm('このメッセージを削除しますか？')) return;
-        fetch('/api/chat/msg/'+msgId, { method: 'DELETE' });
-    }
-
-    // ── リアクション ───────────────────────────
-    function toggleReact(msgId, emoji, btn) {
-        fetch('/api/chat/react', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ msgId, emoji })
-        });
-    }
-    function pickEmoji(emoji) {
-        if (emojiTargetMsgId) {
-            toggleReact(emojiTargetMsgId, emoji, null);
-            emojiTargetMsgId = null;
-        } else {
-            const pos = textarea.selectionStart;
-            const v   = textarea.value;
-            textarea.value = v.slice(0, pos) + emoji + v.slice(pos);
-            textarea.selectionStart = textarea.selectionEnd = pos + emoji.length;
-            sendBtn.disabled = false;
-            textarea.focus();
-        }
-        document.getElementById('emojiPicker').style.display = 'none';
-    }
-
-    // 絵文字ピッカートグル（入力欄用）
-    document.getElementById('emojiPickerToggle').addEventListener('click', () => {
-        const p = document.getElementById('emojiPicker');
-        emojiTargetMsgId = null;
-        p.style.display = p.style.display === 'none' ? 'flex' : 'none';
-    });
-    // メッセージホバーの絵文字ボタン
-    document.addEventListener('click', e => {
-        const trigger = e.target.closest('.sc-emoji-trigger');
-        if (trigger) {
-            emojiTargetMsgId = trigger.dataset.msgid;
-            const p = document.getElementById('emojiPicker');
-            const r = trigger.getBoundingClientRect();
-            p.style.bottom = (window.innerHeight - r.top + 8) + 'px';
-            p.style.left   = r.left + 'px';
-            p.style.display = 'flex';
-            return;
-        }
-        if (!e.target.closest('#emojiPicker') && !e.target.closest('#emojiPickerToggle')) {
-            document.getElementById('emojiPicker').style.display = 'none';
-        }
-    });
-
-    // ── 検索 ────────────────────────────────────
-    function filterMessages(q) {
-        const lower = q.toLowerCase();
-        document.querySelectorAll('.sc-msg').forEach(el => {
-            if (!q) { el.style.display = ''; return; }
-            const body = el.querySelector('.sc-msg-body');
-            el.style.display = (body && body.textContent.toLowerCase().includes(lower)) ? '' : 'none';
-        });
-    }
-
-    // ── Socket.io イベント受信 ──────────────────
-    socket.on('new_message', (msg) => {
-        const relevant = (msg.fromUserId===MY_ID && msg.toUserId===TARGET_ID) ||
-                         (msg.fromUserId===TARGET_ID && msg.toUserId===MY_ID);
-        if (!relevant) return;
-        const isMine   = msg.fromUserId === MY_ID;
-        const sName    = isMine ? MY_NAME : TGT_NAME;
-        const initial  = isMine ? MY_INIT : TGT_INIT;
-        const colorIdx = isMine ? 0 : 1;
-        const dt       = new Date(msg.createdAt);
-        const timeStr  = dt.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
-        const isCont   = lastFrom === msg.fromUserId;
-        lastFrom = msg.fromUserId;
-
-        const replyBlock = msg.replyPreview
-            ? '<div class="sc-reply-preview"><div class="sc-reply-bar"></div><span>'+escHtml(msg.replyPreview.slice(0,60))+'...</span></div>' : '';
-        const toolbar = '<div class="sc-msg-toolbar">'+
-            '<button class="sc-tb-btn" onclick="startReply(\''+msg._id+'\',\''+escHtml(msg.content).replace(/'/g,'\\x27').slice(0,60)+'\')" title="返信">↩</button>'+
-            '<button class="sc-tb-btn sc-emoji-trigger" data-msgid="'+msg._id+'" title="リアクション">😊</button>'+
-            (isMine ? '<button class="sc-tb-btn sc-tb-delete" onclick="deleteMsg(\''+msg._id+'\')" title="削除">🗑</button>' : '')+
-            '</div>';
-
-        const el = document.createElement('div');
-        if (isCont) {
-            el.className = 'sc-msg sc-msg-cont';
-            el.dataset.id = msg._id;
-            el.innerHTML = toolbar +
-                '<div class="sc-msg-time-hover">'+timeStr+'</div>'+
-                '<div class="sc-msg-content-wrap">'+replyBlock+'<div class="sc-msg-body">'+escHtml(msg.content)+'</div><div class="sc-reactions" data-msgid="'+msg._id+'"></div></div>';
-        } else {
-            el.className = 'sc-msg';
-            el.dataset.id = msg._id;
-            el.innerHTML = toolbar +
-                '<div class="sc-msg-avatar sc-av-color-'+colorIdx+'">'+initial+'</div>'+
-                '<div class="sc-msg-right">'+
-                  '<div class="sc-msg-meta"><span class="sc-msg-sender">'+escHtml(sName)+'</span><span class="sc-msg-ts">'+timeStr+'</span></div>'+
-                  replyBlock+'<div class="sc-msg-body">'+escHtml(msg.content)+'</div>'+
-                  '<div class="sc-reactions" data-msgid="'+msg._id+'"></div>'+
-                '</div>';
-        }
-        document.getElementById('msgBottom').before(el);
-        scrollBottom(true);
-    });
-
-    socket.on('msg_deleted', ({ _id }) => {
-        const el = document.querySelector('[data-id="'+_id+'"]');
-        if (el) { el.innerHTML = '<div class="sc-msg-del-icon">🗑</div><div class="sc-msg-del-text">このメッセージは削除されました</div>'; el.className = 'sc-msg sc-msg-deleted'; }
-    });
-
-    socket.on('msg_reaction', ({ _id, reactions }) => {
-        const wrap = document.querySelector('.sc-reactions[data-msgid="'+_id+'"]');
-        if (!wrap) return;
-        wrap.innerHTML = reactions.filter(r=>r.count>0).map(r =>
-            '<button class="sc-react-chip'+(r.mine?' mine':'')+'" data-emoji="'+r.emoji+'" onclick="toggleReact(\''+_id+'\',\''+r.emoji+'\',this)">'+r.emoji+' <span class="sc-react-count">'+r.count+'</span></button>'
-        ).join('');
-    });
-
-    // タイピングインジケーター
-    let typingTimer = null;
-    socket.on('typing', ({ fromUserId, toUserId }) => {
-        if (fromUserId !== TARGET_ID || toUserId !== MY_ID) return;
-        const bar = document.getElementById('typingBar');
-        bar.textContent = TGT_NAME + ' が入力中...';
-        bar.style.opacity = '1';
-        clearTimeout(typingTimer);
-        typingTimer = setTimeout(() => { bar.style.opacity = '0'; }, 3000);
-    });
-    socket.on('stop_typing', ({ fromUserId }) => {
-        if (fromUserId !== TARGET_ID) return;
-        document.getElementById('typingBar').style.opacity = '0';
-    });
-
-    socket.on('status_change', ({ userId, status }) => { updateStatusPips(userId, status); });
-    function updateStatusPips(userId, status) {
-        const cls = { online:'sc-pip-online', break:'sc-pip-break', offline:'sc-pip-offline' };
-        const lbl = { online:'オンライン', break:'休憩中', offline:'オフライン' };
-        document.querySelectorAll('[data-userid="'+userId+'"].sc-status-pip').forEach(el => {
-            el.className = 'sc-status-pip ' + (cls[status]||'sc-pip-offline');
-            el.title = lbl[status]||'';
-        });
-        if (userId === TARGET_ID) {
-            const pip = document.getElementById('target-pip');
-            if (pip) pip.className = 'sc-status-pip ' + (cls[status]||'sc-pip-offline');
-            const sl = document.getElementById('target-status-label');
-            if (sl) { const dept=(sl.textContent.split('·')[1]||'').trim(); sl.textContent=(lbl[status]||status)+(dept?' · '+dept:''); }
-        }
-    }
-    function setMyStatus(status, btn) {
-        fetch('/api/chat/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})})
-        .then(r=>r.json()).then(()=>{
-            document.querySelectorAll('.sc-st-btn').forEach(b=>b.classList.remove('active'));
-            btn.classList.add('active');
-            const pip=document.getElementById('my-pip');
-            if(pip) pip.className='sc-status-pip sc-pip-'+status;
-        });
-    }
-    function escHtml(s) {
-        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-                        .replace(/"/g,'&quot;').replace(/\\n/g,'<br>');
-    }
-    </script>`;
+function buildRoomSettingsModal() {
+    return `<div class="sc-overlay" id="sc-modal-room-settings" style="display:none" onclick="if(event.target===this)chatApp.closeModal('sc-modal-room-settings')">
+    <div class="sc-modal">
+        <div class="sc-modal-hd"><h3>グループ設定</h3><button onclick="chatApp.closeModal('sc-modal-room-settings')">×</button></div>
+        <div class="sc-modal-body">
+            <div class="sc-form-row"><label>グループ名</label><input type="text" id="room-edit-name" maxlength="50"></div>
+            <div class="sc-form-row"><label>説明</label><input type="text" id="room-edit-desc" maxlength="200"></div>
+            <div class="sc-form-row"><label>アイコン絵文字</label><input type="text" id="room-edit-icon" maxlength="4" style="width:60px"></div>
+        </div>
+        <div class="sc-modal-ft">
+            <button class="sc-btn-cancel" onclick="chatApp.closeModal('sc-modal-room-settings')">キャンセル</button>
+            <button class="sc-btn-primary" onclick="chatApp.saveRoomSettings()">保存</button>
+        </div>
+    </div>
+</div>`;
 }
 
 function chatStyles() {
-    return `
-<style>
-/* ══ グローバルサイドバー上書き（ウォームダーク） ══════════════ */
-.sidebar { background:#1c1917 !important; }
-.sidebar a, .sidebar .nav-link { color:#c9bfb5 !important; }
-.sidebar a:hover, .sidebar .nav-link:hover { background:#2a2724 !important; color:#e8e0d5 !important; }
-.sidebar .nav-link.active { background:#2e2b28 !important; color:#e8e0d5 !important; }
-
-/* ══ レイアウトリセット ══════════════════════════════════════════ */
-.main {
-    padding:0 !important; overflow:hidden !important;
-    display:flex !important; flex-direction:column !important;
-    align-items:stretch !important; background:#f5f4f0 !important;
-    min-height:0;
-}
-.page-content {
-    padding:0 !important; margin:0 !important;
-    max-width:none !important; width:100% !important;
-    flex:1 1 auto; overflow:hidden;
-    display:flex; flex-direction:column; min-height:0;
-}
-
-/* ══ ルートレイアウト ════════════════════════════════════════════ */
-.sc-page-root {
-    display:flex; height:100%; width:100%; overflow:hidden;
-    font-family:'Inter','Segoe UI',system-ui,sans-serif;
-}
-
-/* ══ サイドパネル（ウォームダーク ベージュ） ════════════════════ */
-.sc-side {
-    width:240px; min-width:240px; flex-shrink:0;
-    background:#1c1917;
-    display:flex; flex-direction:column; overflow:hidden;
-}
-.sc-side-head {
-    padding:14px 16px 12px;
-    border-bottom:1px solid #2c2a27;
-    display:flex; align-items:center; gap:8px;
-}
-.sc-ws-name { color:#e8e0d5; font-weight:700; font-size:.95rem; letter-spacing:-.2px; }
-
-/* 自分のステータス行 */
-.sc-my-status-row {
-    display:flex; align-items:flex-start; gap:10px;
-    padding:12px 14px 10px;
-    border-bottom:1px solid #2c2a27;
-}
-.sc-my-status-info { flex:1; min-width:0; }
-.sc-my-name { color:#c9bfb5; font-size:.82rem; font-weight:600; display:block; margin-bottom:6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.sc-status-btns { display:flex; gap:4px; flex-wrap:wrap; }
-.sc-st-btn {
-    display:flex; align-items:center; gap:4px;
-    padding:3px 8px; border-radius:12px;
-    border:1px solid #3a3733;
-    background:transparent; color:#9b948c; font-size:.72rem; cursor:pointer; transition:.15s;
-}
-.sc-st-btn:hover { background:#2a2724; color:#e8e0d5; }
-.sc-st-btn.active { background:#2e2b28; color:#e8e0d5; border-color:#57534e; }
-
-/* 検索ボックス */
-.sc-search-wrap {
-    padding:8px 10px 6px;
-    border-bottom:1px solid #2c2a27;
-}
-.sc-search-inp {
-    width:100%; box-sizing:border-box;
-    background:#2a2724; border:1px solid #3a3733;
-    border-radius:6px; color:#f0ece7;
-    padding:6px 10px; font-size:.8rem; outline:none;
-    transition:.15s;
-}
-.sc-search-inp::placeholder { color:#78716c; }
-.sc-search-inp:focus { border-color:#78716c; background:#322f2b; }
-/* 検索結果 DM行 を明るく */
-#sc-dm-search .sc-dm-row { color:#d6cfc8; }
-#sc-dm-search .sc-dm-row:hover { background:#252220; color:#f0ece7; }
-#sc-dm-search .sc-dm-name { color:#f0ece7; font-weight:500; }
-#sc-dm-search .sc-dm-dept { color:#a09890; }
-
-/* セクションラベル */
-.sc-section-label {
-    padding:14px 16px 4px;
-    color:#57534e; font-size:.7rem; font-weight:700;
-    text-transform:uppercase; letter-spacing:.06em;
-    min-height:22px;
-}
-
-/* DM リスト */
-.sc-dm-list { overflow-y:auto; padding:2px 8px 8px; }
-.sc-dm-list::-webkit-scrollbar { width:3px; }
-.sc-dm-list::-webkit-scrollbar-thumb { background:#3a3733; border-radius:2px; }
-
-.sc-dm-row {
-    display:flex; align-items:center; gap:9px;
-    padding:5px 8px; border-radius:6px;
-    text-decoration:none; color:#9b948c; font-size:.85rem;
-    transition:.1s; position:relative;
-}
-.sc-dm-row:hover { background:#252220; color:#e8e0d5; }
-.sc-dm-row.active { background:#2e2b28; color:#e8e0d5; }
-.sc-dm-info { flex:1; min-width:0; display:flex; flex-direction:column; }
-.sc-dm-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.84rem; }
-.sc-dm-dept { font-size:.7rem; color:#57534e; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.sc-empty { color:#57534e; font-size:.8rem; padding:8px; display:block; }
-.sc-unread {
-    background:#b45309; color:#fff;
-    border-radius:10px; padding:1px 6px; font-size:.7rem; font-weight:700;
-    flex-shrink:0; min-width:18px; text-align:center;
-}
-
-/* ══ アバター ════════════════════════════════════════════════════ */
-.sc-avatar-wrap { position:relative; flex-shrink:0; width:36px; height:36px; }
-.sc-avatar-wrap-sm { width:28px; height:28px; }
-.sc-avatar {
-    width:36px; height:36px; border-radius:6px;
-    background:#44403c; color:#e8e0d5;
-    display:flex; align-items:center; justify-content:center;
-    font-weight:700; font-size:.95rem; flex-shrink:0; user-select:none;
-}
-.sc-av-sm { width:28px; height:28px; font-size:.78rem; border-radius:5px; }
-.sc-av-lg { width:72px; height:72px; font-size:2rem; border-radius:12px; }
-.sc-av-me  { background:#57534e; }
-.sc-av-color-0 { background:#44403c; }
-.sc-av-color-1 { background:#78350f; color:#fef3c7; }
-
-/* ステータスドット */
-.sc-status-pip {
-    position:absolute; bottom:-2px; right:-2px;
-    width:11px; height:11px; border-radius:50%;
-    border:2px solid #1c1917; flex-shrink:0;
-}
-.sc-pip-online  { background:#2bac76; }
-.sc-pip-break   { background:#e8a838; }
-.sc-pip-offline { background:#4b4744; }
-.sc-dm-row .sc-avatar-wrap { width:28px; height:28px; }
-.sc-dm-row .sc-avatar { width:28px; height:28px; font-size:.78rem; border-radius:5px; }
-.sc-dm-row .sc-status-pip { width:9px; height:9px; bottom:-1px; right:-1px; border-color:#1c1917; }
-.sc-btn-pip {
-    display:inline-block; width:8px; height:8px; border-radius:50%; flex-shrink:0;
-}
-.sc-btn-pip.sc-pip-online  { background:#2bac76; }
-.sc-btn-pip.sc-pip-break   { background:#e8a838; }
-.sc-btn-pip.sc-pip-offline { background:#4b4744; }
-
-/* ══ メインエリア ════════════════════════════════════════════════ */
-.sc-main {
-    flex:1; display:flex; flex-direction:column; overflow:hidden;
-    background:#fafaf8; min-height:0;
-}
-.sc-main-welcome { align-items:center; justify-content:center; }
-.sc-welcome { text-align:center; color:#78716c; }
-.sc-welcome-icon { font-size:3rem; margin-bottom:12px; }
-.sc-welcome h2 { margin:0 0 8px; color:#1c1917; font-size:1.3rem; }
-.sc-welcome p  { margin:0; font-size:.9rem; }
-
-/* ヘッダー */
-.sc-main-header {
-    display:flex; align-items:center; justify-content:space-between;
-    padding:11px 20px; border-bottom:1px solid #e7e5e0;
-    background:#fff; flex-shrink:0; gap:12px;
-}
-.sc-header-left { display:flex; align-items:center; gap:10px; }
-.sc-main-header .sc-avatar { background:#78350f; color:#fef3c7; }
-.sc-main-header .sc-status-pip { border-color:#fff; }
-.sc-header-name { font-weight:700; font-size:1rem; color:#1c1917; line-height:1.2; }
-.sc-header-status { font-size:.78rem; color:#78716c; margin-top:1px; }
-
-/* 検索バー */
-.sc-search-wrap {
-    display:flex; align-items:center; gap:6px;
-    background:#f5f4f0; border:1px solid #e7e5e0; border-radius:6px;
-    padding:5px 10px; max-width:200px;
-}
-.sc-search-wrap i { color:#a8a29e; font-size:.8rem; }
-.sc-search-wrap input {
-    border:none; background:transparent; outline:none;
-    font-size:.82rem; color:#1c1917; width:140px;
-}
-.sc-search-wrap input::placeholder { color:#a8a29e; }
-
-/* タイピングインジケーター */
-.sc-typing-bar {
-    height:20px; padding:0 20px;
-    font-size:.76rem; color:#78716c; font-style:italic;
-    flex-shrink:0; display:flex; align-items:center;
-    opacity:0; transition:opacity .3s;
-}
-
-/* スレッド先頭 */
-.sc-thread-start {
-    display:flex; flex-direction:column; align-items:flex-start;
-    padding:32px 20px 20px; border-bottom:1px solid #f0ede8;
-    margin-bottom:8px; flex-shrink:0;
-}
-.sc-thread-name { font-size:1.4rem; font-weight:800; color:#1c1917; margin:12px 0 2px; }
-.sc-thread-sub  { font-size:.82rem; color:#78716c; margin-bottom:6px; }
-.sc-thread-desc { font-size:.88rem; color:#78716c; margin:0; }
-
-/* ══ メッセージ ══════════════════════════════════════════════════ */
-.sc-messages {
-    flex:1; overflow-y:auto; padding:0 0 8px;
-    display:flex; flex-direction:column; min-height:0;
-}
-.sc-messages::-webkit-scrollbar { width:5px; }
-.sc-messages::-webkit-scrollbar-thumb { background:#d6d3ce; border-radius:3px; }
-
-.sc-date-divider {
-    display:flex; align-items:center; margin:16px 20px 8px;
-    gap:10px; flex-shrink:0;
-}
-.sc-date-divider::before, .sc-date-divider::after { content:''; flex:1; height:1px; background:#e7e5e0; }
-.sc-date-divider span { font-size:.72rem; color:#a8a29e; font-weight:600; white-space:nowrap; padding:0 4px; }
-
-/* メッセージブロック */
-.sc-msg {
-    display:flex; gap:10px; padding:4px 20px;
-    position:relative; transition:background .1s;
-}
-.sc-msg:hover { background:#f5f4f0; }
-.sc-msg:hover .sc-msg-toolbar { opacity:1; pointer-events:all; }
-.sc-msg-cont { padding:2px 20px 2px 66px; }
-
-.sc-msg-avatar {
-    width:36px; height:36px; border-radius:6px;
-    color:#fff; display:flex; align-items:center; justify-content:center;
-    font-weight:700; font-size:.9rem; flex-shrink:0; margin-top:2px;
-}
-.sc-msg-right { flex:1; min-width:0; }
-.sc-msg-meta  { display:flex; align-items:baseline; gap:8px; margin-bottom:2px; }
-.sc-msg-sender { font-weight:700; font-size:.9rem; color:#1c1917; }
-.sc-msg-ts { font-size:.72rem; color:#a8a29e; }
-.sc-msg-body {
-    font-size:.9rem; color:#292524; line-height:1.65;
-    word-break:break-word; white-space:pre-wrap;
-}
-.sc-msg-time-hover {
-    position:absolute; left:20px; top:50%; transform:translateY(-50%);
-    width:36px; text-align:center;
-    font-size:.68rem; color:#a8a29e;
-    opacity:0; transition:opacity .1s; pointer-events:none;
-}
-.sc-msg-cont:hover .sc-msg-time-hover { opacity:1; }
-.sc-msg-content-wrap { flex:1; min-width:0; }
-
-/* 削除済み */
-.sc-msg-deleted {
-    display:flex; align-items:center; gap:8px;
-    padding:4px 20px; color:#a8a29e; font-style:italic; font-size:.85rem;
-}
-.sc-msg-del-icon { font-size:.9rem; }
-
-/* 引用プレビュー */
-.sc-reply-preview {
-    display:flex; align-items:stretch; gap:8px;
-    margin-bottom:4px;
-}
-.sc-reply-preview .sc-reply-bar { width:3px; border-radius:3px; background:#a8a29e; flex-shrink:0; }
-.sc-reply-preview span { font-size:.8rem; color:#78716c; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-
-/* リアクション */
-.sc-reactions { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; min-height:4px; }
-.sc-react-chip {
-    display:flex; align-items:center; gap:3px;
-    padding:2px 8px; border-radius:12px;
-    border:1px solid #e7e5e0; background:#f5f4f0;
-    font-size:.82rem; cursor:pointer; transition:.15s;
-}
-.sc-react-chip:hover { background:#e7e5e0; }
-.sc-react-chip.mine  { background:#fef9ee; border-color:#d97706; }
-.sc-react-count { font-size:.72rem; color:#78716c; font-weight:600; }
-
-/* ホバーツールバー */
-.sc-msg-toolbar {
-    position:absolute; top:-16px; right:20px;
-    display:flex; gap:2px;
-    background:#fff; border:1px solid #e7e5e0; border-radius:8px;
-    padding:3px 6px; box-shadow:0 2px 8px rgba(0,0,0,.1);
-    opacity:0; pointer-events:none; transition:opacity .1s; z-index:10;
-}
-.sc-tb-btn {
-    width:28px; height:28px; border:none; background:transparent;
-    cursor:pointer; border-radius:5px; font-size:.88rem;
-    display:flex; align-items:center; justify-content:center; transition:.1s;
-}
-.sc-tb-btn:hover { background:#f5f4f0; }
-.sc-tb-delete:hover { background:#fef2f2; }
-
-/* ══ 返信バー ════════════════════════════════════════════════════ */
-.sc-reply-bar-wrap {
-    padding:6px 20px 0; flex-shrink:0;
-}
-.sc-reply-bar-inner {
-    display:flex; align-items:center; gap:8px;
-    background:#f5f4f0; border-left:3px solid #a8a29e;
-    padding:5px 10px; border-radius:0 6px 6px 0;
-    font-size:.82rem; color:#78716c;
-}
-.sc-reply-bar-icon { font-size:1rem; }
-.sc-reply-cancel {
-    margin-left:auto; background:none; border:none; cursor:pointer;
-    color:#a8a29e; font-size:1rem; line-height:1; padding:0 2px;
-}
-.sc-reply-cancel:hover { color:#44403c; }
-
-/* ══ 絵文字ピッカー ══════════════════════════════════════════════ */
-.sc-emoji-picker {
-    position:fixed; z-index:200;
-    background:#fff; border:1px solid #e7e5e0; border-radius:10px;
-    padding:8px; box-shadow:0 4px 20px rgba(0,0,0,.12);
-    display:flex; flex-wrap:wrap; gap:4px; width:220px;
-}
-.sc-emoji-btn {
-    width:34px; height:34px; border:none; background:transparent;
-    border-radius:6px; font-size:1.2rem; cursor:pointer; transition:.1s;
-    display:flex; align-items:center; justify-content:center;
-}
-.sc-emoji-btn:hover { background:#f5f4f0; }
-
-/* ══ 入力エリア ══════════════════════════════════════════════════ */
-.sc-input-wrap {
-    padding:8px 20px 12px; flex-shrink:0; background:#fff;
-    border-top:1px solid #e7e5e0;
-}
-.sc-input-toolbar {
-    display:flex; gap:4px; padding-bottom:6px;
-}
-.sc-input-tool-btn {
-    width:28px; height:28px; border:none; background:transparent;
-    border-radius:5px; cursor:pointer; font-size:1rem;
-    display:flex; align-items:center; justify-content:center; transition:.1s;
-}
-.sc-input-tool-btn:hover { background:#f5f4f0; }
-.sc-input-box {
-    display:flex; align-items:flex-end;
-    border:1.5px solid #d6d3ce; border-radius:8px;
-    overflow:hidden; background:#fff; transition:border-color .2s, box-shadow .2s;
-}
-.sc-input-box:focus-within { border-color:#78716c; box-shadow:0 0 0 3px rgba(120,113,108,.12); }
-.sc-input-box textarea {
-    flex:1; padding:11px 14px; border:none; outline:none; resize:none;
-    font-size:.9rem; font-family:inherit; line-height:1.5;
-    max-height:160px; background:transparent; color:#1c1917;
-}
-.sc-input-box textarea::placeholder { color:#c4bfba; }
-.sc-send-btn {
-    width:38px; height:38px; margin:5px; border-radius:6px; border:none;
-    background:#44403c; color:#fff; cursor:pointer; font-size:.88rem;
-    display:flex; align-items:center; justify-content:center;
-    transition:.15s; flex-shrink:0; align-self:flex-end;
-}
-.sc-send-btn:disabled { background:#d6d3ce; cursor:default; }
-.sc-send-btn:not(:disabled):hover { background:#292524; }
-.sc-input-hint { font-size:.72rem; color:#c4bfba; padding-top:4px; text-align:right; }
+    return `<style>
+.sidebar{background:#1c1917!important}.sidebar a,.sidebar .nav-link{color:#c9bfb5!important}.sidebar a:hover{background:#2a2724!important;color:#e8e0d5!important}.sidebar .nav-link.active{background:#2e2b28!important;color:#e8e0d5!important}
+#cb-fab,#cb-panel{display:none!important}
+.main{padding:0!important;overflow:hidden!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;background:#f5f4f0!important;min-height:0}
+.page-content{padding:0!important;margin:0!important;max-width:none!important;width:100%!important;flex:1 1 auto;overflow:hidden;display:flex;flex-direction:column;min-height:0}
+.sc-root{display:flex;height:100%;width:100%;overflow:hidden;font-family:'Inter','Segoe UI',system-ui,sans-serif}
+.sc-side{width:240px;min-width:240px;background:#1c1917;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+.sc-side-hd{padding:14px 16px 11px;border-bottom:1px solid #2c2a27;display:flex;align-items:center;gap:8px}
+.sc-ws-name{color:#e8e0d5;font-weight:700;font-size:.9rem}
+.sc-me-row{display:flex;align-items:flex-start;gap:9px;padding:10px 12px 9px;border-bottom:1px solid #2c2a27}
+.sc-me-info{flex:1;min-width:0}
+.sc-me-name{color:#c9bfb5;font-size:.79rem;font-weight:600;display:block;margin-bottom:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sc-st-btns{display:flex;gap:4px;flex-wrap:wrap}
+.sc-st-btn{display:flex;align-items:center;gap:3px;padding:2px 7px;border-radius:10px;border:1px solid #3a3733;background:transparent;color:#9b948c;font-size:.69rem;cursor:pointer;transition:.15s}
+.sc-st-btn:hover{background:#2a2724;color:#e8e0d5}.sc-st-btn.active{background:#2e2b28;color:#e8e0d5;border-color:#57534e}
+.sc-btn-pip{display:inline-block;width:7px;height:7px;border-radius:50%}
+.sc-search-wrap{padding:7px 10px 4px}
+.sc-search-inp{width:100%;box-sizing:border-box;background:#2a2724;border:1px solid #3a3733;border-radius:6px;color:#f0ece7;padding:5px 10px;font-size:.78rem;outline:none}
+.sc-search-inp::placeholder{color:#6b6460}.sc-search-inp:focus{border-color:#78716c;background:#322f2b}
+.sc-side-sec{display:flex;align-items:center;justify-content:space-between;padding:11px 16px 3px}
+.sc-sec-label{color:#57534e;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.sc-sec-btn{background:none;border:none;color:#57534e;cursor:pointer;font-size:.95rem;line-height:1;padding:0 2px;transition:.1s}
+.sc-sec-btn:hover{color:#c9bfb5}
+.sc-nav-list{overflow-y:auto;padding:2px 8px 4px}
+.sc-nav-list::-webkit-scrollbar{width:3px}.sc-nav-list::-webkit-scrollbar-thumb{background:#3a3733}
+.sc-nav-row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;text-decoration:none;color:#9b948c;font-size:.83rem;transition:.1s}
+.sc-nav-row:hover{background:#252220;color:#e8e0d5}.sc-nav-row.active{background:#2e2b28;color:#e8e0d5}
+.sc-nav-info{flex:1;min-width:0;display:flex;flex-direction:column}
+.sc-nav-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.82rem}
+.sc-nav-sub{font-size:.69rem;color:#57534e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sc-badge{background:#b45309;color:#fff;border-radius:10px;padding:1px 6px;font-size:.67rem;font-weight:700;min-width:17px;text-align:center;flex-shrink:0}
+.sc-empty-row{color:#4b4744;font-size:.77rem;padding:6px 8px}
+.sc-room-icon{width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:1rem;border-radius:6px;background:#2a2724;flex-shrink:0}
+.sc-av-wrap{position:relative;flex-shrink:0;width:36px;height:36px}
+.sc-av-wrap.sm{width:28px;height:28px}
+.sc-av{width:36px;height:36px;border-radius:7px;background:#44403c;color:#e8e0d5;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;flex-shrink:0;user-select:none}
+.sc-av.sm,.sc-av.sm2{width:28px;height:28px;font-size:.74rem;border-radius:5px}
+.sc-av-me{background:#57534e!important}.sc-av-target{background:#78350f;color:#fef3c7}
+.sc-av-lg{width:64px;height:64px;font-size:1.8rem;border-radius:12px}
+.sc-av-c0{background:#44403c}.sc-av-c1{background:#78350f;color:#fef3c7}.sc-av-c2{background:#1e3a5f;color:#bfdbfe}
+.sc-av-c3{background:#14532d;color:#bbf7d0}.sc-av-c4{background:#4a1d96;color:#ddd6fe}.sc-av-c5{background:#7c2d12;color:#fed7aa}
+.sc-pip{position:absolute;bottom:-2px;right:-2px;width:10px;height:10px;border-radius:50%;border:2px solid #1c1917}
+.sc-av-wrap:not(.sm) .sc-pip{width:11px;height:11px}
+.sc-main-hd .sc-pip{border-color:#fff}
+.pip-online{background:#22c55e}.pip-break{background:#f59e0b}.pip-offline{background:#52524e}
+.sc-btn-pip.pip-online{background:#22c55e}.sc-btn-pip.pip-break{background:#f59e0b}.sc-btn-pip.pip-offline{background:#52524e}
+.sc-main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#fafaf8;min-height:0}
+.sc-welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;color:#78716c;text-align:center;padding:20px}
+.sc-welcome-icon{font-size:3rem;margin-bottom:12px}.sc-welcome h2{margin:0 0 8px;color:#1c1917;font-size:1.3rem}.sc-welcome p{margin:0;font-size:.87rem;line-height:1.7}
+.sc-main-hd{display:flex;align-items:center;justify-content:space-between;padding:10px 18px;border-bottom:1px solid #e7e5e0;background:#fff;flex-shrink:0;gap:12px}
+.sc-hd-left{display:flex;align-items:center;gap:10px}
+.sc-hd-name{font-weight:700;font-size:1rem;color:#1c1917;line-height:1.2}.sc-hd-sub{font-size:.75rem;color:#78716c;margin-top:1px}
+.sc-hd-actions{display:flex;align-items:center;gap:8px}
+.sc-hd-btn{width:32px;height:32px;border:none;background:transparent;border-radius:6px;cursor:pointer;color:#78716c;font-size:.88rem;display:flex;align-items:center;justify-content:center;transition:.1s}
+.sc-hd-btn:hover{background:#f5f4f0;color:#1c1917}
+.sc-hd-search{display:flex;align-items:center;gap:6px;background:#f5f4f0;border:1px solid #e7e5e0;border-radius:6px;padding:5px 10px}
+.sc-hd-search i{color:#a8a29e;font-size:.76rem}.sc-hd-search input{border:none;background:transparent;outline:none;font-size:.79rem;color:#1c1917;width:130px}
+.sc-hd-search input::placeholder{color:#a8a29e}
+.sc-room-icon-lg{font-size:1.8rem;width:40px;height:40px;display:flex;align-items:center;justify-content:center;background:#f5f4f0;border-radius:8px}
+.sc-room-icon-xl{font-size:3rem;margin-bottom:12px}
+.sc-typing-bar{height:18px;padding:0 18px;font-size:.73rem;color:#78716c;font-style:italic;flex-shrink:0;display:flex;align-items:center}
+.sc-thread-start{display:flex;flex-direction:column;align-items:flex-start;padding:28px 18px 14px;border-bottom:1px solid #f0ede8;flex-shrink:0}
+.sc-thread-name{font-size:1.3rem;font-weight:800;color:#1c1917;margin:10px 0 2px}
+.sc-thread-sub{font-size:.79rem;color:#78716c;margin-bottom:4px}.sc-thread-desc{font-size:.84rem;color:#78716c;margin:0}
+.sc-body-wrap{flex:1;display:flex;overflow:hidden;min-height:0}
+.sc-messages{flex:1;overflow-y:auto;padding-bottom:8px;display:flex;flex-direction:column;min-height:0}
+.sc-messages::-webkit-scrollbar{width:5px}.sc-messages::-webkit-scrollbar-thumb{background:#d6d3ce;border-radius:3px}
+.sc-date-div{display:flex;align-items:center;margin:14px 18px 6px;gap:10px;flex-shrink:0}
+.sc-date-div::before,.sc-date-div::after{content:'';flex:1;height:1px;background:#e7e5e0}
+.sc-date-div span{font-size:.7rem;color:#a8a29e;font-weight:600;white-space:nowrap;padding:0 4px}
+.sc-msg{display:flex;gap:10px;padding:4px 18px;position:relative;transition:background .1s}
+.sc-msg:hover{background:#f5f4f0}.sc-msg:hover .sc-toolbar{opacity:1;pointer-events:all}
+.sc-msg-cont{padding:2px 18px 2px 62px}
+.sc-msg-del{display:flex;align-items:center;gap:8px;padding:4px 18px;color:#a8a29e;font-style:italic;font-size:.82rem}
+.sc-msg-right{flex:1;min-width:0}.sc-body-wrap2{flex:1;min-width:0}
+.sc-msg-meta{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
+.sc-sender{font-weight:700;font-size:.87rem;color:#1c1917}.sc-ts{font-size:.7rem;color:#a8a29e}
+.sc-ts-hover{position:absolute;left:18px;top:50%;transform:translateY(-50%);width:36px;text-align:center;font-size:.65rem;color:#a8a29e;opacity:0;pointer-events:none}
+.sc-msg-cont:hover .sc-ts-hover{opacity:1}
+.sc-msg-text{font-size:.87rem;color:#1c1917;line-height:1.65;word-break:break-word;white-space:pre-wrap}
+.sc-msg-text[contenteditable="true"]{background:#fffbeb;border:1.5px solid #f59e0b;border-radius:6px;padding:4px 8px;outline:none}
+.sc-edited{font-size:.67rem;color:#a8a29e;margin-left:4px}
+.sc-read{font-size:.68rem;display:block;text-align:right;min-height:14px;margin-top:1px}
+.sc-read.read{color:#22c55e}.sc-read.unread{color:#a8a29e}
+.sc-reply-quote{display:flex;align-items:stretch;gap:8px;margin-bottom:4px;max-width:400px}
+.sc-reply-stripe{width:3px;border-radius:3px;background:#a8a29e;flex-shrink:0}
+.sc-reply-quote span{font-size:.77rem;color:#78716c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sc-atts{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.sc-att-img{max-width:280px;max-height:220px;border-radius:8px;display:block;border:1px solid #e7e5e0;cursor:zoom-in}
+.sc-att-file{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#f5f4f0;border:1px solid #e7e5e0;border-radius:8px;text-decoration:none;color:#1c1917;transition:.1s;max-width:260px}
+.sc-att-file:hover{background:#eeebe6}.sc-att-icon{font-size:1.4rem;flex-shrink:0}
+.sc-att-name{font-size:.8rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px}
+.sc-att-size{font-size:.68rem;color:#78716c}
+.sc-reactions{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:4px}
+.sc-react-chip{display:flex;align-items:center;gap:3px;padding:2px 8px;border-radius:12px;border:1px solid #e7e5e0;background:#f5f4f0;font-size:.79rem;cursor:pointer;transition:.15s}
+.sc-react-chip:hover{background:#e7e5e0}.sc-react-chip.mine{background:#fffbeb;border-color:#f59e0b}
+.sc-react-n{font-size:.7rem;color:#78716c;font-weight:600}
+.sc-toolbar{position:absolute;top:-14px;right:18px;display:flex;gap:2px;background:#fff;border:1px solid #e7e5e0;border-radius:8px;padding:3px 4px;box-shadow:0 2px 8px rgba(0,0,0,.1);opacity:0;pointer-events:none;z-index:10;transition:opacity .1s}
+.sc-tb{width:26px;height:26px;border:none;background:transparent;border-radius:5px;cursor:pointer;font-size:.8rem;display:flex;align-items:center;justify-content:center;transition:.1s}
+.sc-tb:hover{background:#f5f4f0}.sc-tb-del:hover{background:#fef2f2}
+.sc-reply-bar{display:flex;align-items:center;gap:8px;padding:5px 18px;flex-shrink:0;background:#f5f4f0;border-top:1px solid #e7e5e0}
+.sc-reply-icon{font-size:.9rem;color:#a8a29e}.sc-reply-txt{font-size:.8rem;color:#78716c;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sc-reply-close{background:none;border:none;cursor:pointer;color:#a8a29e;font-size:.95rem;padding:2px 5px}
+.sc-reply-close:hover{color:#44403c}
+.sc-emoji-picker{position:fixed;z-index:200;background:#fff;border:1px solid #e7e5e0;border-radius:10px;padding:8px;box-shadow:0 4px 20px rgba(0,0,0,.12);display:flex;flex-wrap:wrap;gap:4px;width:220px}
+.sc-emoji-btn{width:32px;height:32px;border:none;background:transparent;border-radius:5px;font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.sc-emoji-btn:hover{background:#f5f4f0}
+.sc-input-area{padding:8px 18px 12px;flex-shrink:0;background:#fff;border-top:1px solid #e7e5e0}
+.sc-input-tools{display:flex;gap:4px;margin-bottom:6px}
+.sc-tool-btn{width:28px;height:28px;border:none;background:transparent;border-radius:5px;cursor:pointer;font-size:.9rem;color:#78716c;display:flex;align-items:center;justify-content:center;transition:.1s}
+.sc-tool-btn:hover{background:#f5f4f0;color:#1c1917}
+.sc-file-preview-area{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
+.sc-fp{position:relative}
+.sc-fp img{width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid #e7e5e0}
+.sc-fp .sc-fp-card{width:110px;padding:5px 8px;background:#f5f4f0;border:1px solid #e7e5e0;border-radius:6px;font-size:.73rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sc-fp-rm{position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:#44403c;color:#fff;font-size:.62rem;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.sc-input-box{display:flex;align-items:flex-end;border:1.5px solid #d6d3ce;border-radius:8px;overflow:hidden;background:#fff;transition:border-color .2s,box-shadow .2s}
+.sc-input-box.drag-over{border-color:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.15)}
+.sc-input-box:focus-within{border-color:#78716c;box-shadow:0 0 0 3px rgba(120,113,108,.12)}
+.sc-input-box textarea{flex:1;padding:10px 12px;border:none;outline:none;resize:none;font-size:.87rem;font-family:inherit;line-height:1.5;max-height:160px;background:transparent;color:#1c1917}
+.sc-input-box textarea::placeholder{color:#c4bfba}
+.sc-send-btn{width:36px;height:36px;margin:5px;border-radius:6px;border:none;background:#44403c;color:#fff;cursor:pointer;font-size:.82rem;display:flex;align-items:center;justify-content:center;transition:.15s;flex-shrink:0}
+.sc-send-btn:disabled{background:#d6d3ce;cursor:default}.sc-send-btn:not(:disabled):hover{background:#1c1917}
+.sc-input-hint{font-size:.69rem;color:#c4bfba;text-align:right;padding-top:3px}
+.sc-member-panel{width:220px;min-width:220px;border-left:1px solid #e7e5e0;display:flex;flex-direction:column;background:#fff;overflow:hidden}
+.sc-member-hd{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #e7e5e0;font-weight:600;font-size:.87rem;color:#1c1917}
+.sc-member-hd button{background:none;border:none;cursor:pointer;color:#78716c;font-size:1rem}
+.sc-member-list{flex:1;overflow-y:auto;padding:8px}
+.sc-member-row{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px}
+.sc-member-row:hover{background:#f5f4f0}
+.sc-member-kick{margin-left:auto;background:none;border:none;cursor:pointer;color:#a8a29e;font-size:.79rem;padding:2px 5px;border-radius:4px}
+.sc-member-kick:hover{background:#fef2f2;color:#ef4444}
+.sc-member-add{padding:8px;border-top:1px solid #e7e5e0}
+.sc-add-btn{width:100%;padding:7px;border:1.5px dashed #d6d3ce;background:transparent;border-radius:6px;cursor:pointer;font-size:.79rem;color:#78716c;display:flex;align-items:center;gap:6px;justify-content:center;transition:.1s}
+.sc-add-btn:hover{border-color:#78716c;color:#1c1917}
+.sc-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px}
+.sc-modal{background:#fff;border-radius:12px;width:100%;max-width:480px;max-height:82vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.18)}
+.sc-modal-hd{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #e7e5e0}
+.sc-modal-hd h3{margin:0;font-size:.98rem;color:#1c1917}.sc-modal-hd button{background:none;border:none;cursor:pointer;color:#78716c;font-size:1.1rem}
+.sc-modal-body{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:14px}
+.sc-modal-ft{display:flex;justify-content:flex-end;gap:10px;padding:14px 20px;border-top:1px solid #e7e5e0}
+.sc-form-row{display:flex;flex-direction:column;gap:6px}.sc-form-row label{font-size:.81rem;font-weight:600;color:#44403c}
+.sc-form-row input[type=text]{padding:8px 12px;border:1.5px solid #d6d3ce;border-radius:7px;font-size:.87rem;outline:none;transition:.2s}
+.sc-form-row input[type=text]:focus{border-color:#78716c}
+.sc-modal-user-list{max-height:200px;overflow-y:auto;border:1px solid #e7e5e0;border-radius:7px;padding:4px;display:flex;flex-direction:column;gap:2px}
+.sc-modal-user-row{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;cursor:pointer}
+.sc-modal-user-row:hover{background:#f5f4f0}.sc-modal-user-row input{cursor:pointer}
+.sc-modal-uname{font-size:.84rem;font-weight:600;color:#1c1917}.sc-modal-udept{font-size:.71rem;color:#78716c}
+.sc-btn-cancel{padding:8px 18px;border:1.5px solid #d6d3ce;background:transparent;border-radius:7px;cursor:pointer;font-size:.85rem;color:#78716c;transition:.1s}
+.sc-btn-cancel:hover{background:#f5f4f0}
+.sc-btn-primary{padding:8px 18px;background:#44403c;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:.85rem;font-weight:600;transition:.15s}
+.sc-btn-primary:hover{background:#1c1917}
 </style>`;
 }
 
