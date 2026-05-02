@@ -107,20 +107,50 @@ async function buildSidebarData(myId) {
 router.get('/chat', requireLogin, async (req, res) => {
     try {
         const myId = req.session.userId;
-        const [[cu, myEmp], sideData] = await Promise.all([
-            Promise.all([
-                User.findById(myId).select('chatStatus').lean(),
-                Employee.findOne({ userId: myId }).select('name').lean(),
-            ]),
-            buildSidebarData(myId),
+        const myOid = oid(myId);
+
+        // 最後に使った会話を探して自動リダイレクト（Slack/Teams方式）
+        const [lastDM, lastRoom] = await Promise.all([
+            ChatMessage.findOne({
+                $or: [{ fromUserId: myOid }, { toUserId: myOid }],
+                roomId: null,
+            }).sort({ createdAt: -1 }).lean(),
+            ChatRoom.findOne({ members: myId }).sort({ lastMessageAt: -1 }).lean(),
         ]);
-        const myName = myEmp ? myEmp.name : req.session.username;
-        renderPage(req, res, 'チャット', 'チャット', buildPage({
-            mode: 'home', myId: String(myId), myName,
-            myInitial: (myName || '?').charAt(0).toUpperCase(),
-            myStatus: cu ? cu.chatStatus : 'offline',
-            ...sideData,
-        }));
+
+        // DM と グループ の最新をそれぞれ比較して直近のほうへ飛ばす
+        const dmTime   = lastDM   ? new Date(lastDM.createdAt).getTime()       : 0;
+        const roomTime = lastRoom ? new Date(lastRoom.lastMessageAt).getTime()  : 0;
+
+        if (dmTime === 0 && roomTime === 0) {
+            // 会話がない場合のみホーム画面を表示
+            const [[cu, myEmp], sideData] = await Promise.all([
+                Promise.all([
+                    User.findById(myId).select('chatStatus').lean(),
+                    Employee.findOne({ userId: myId }).select('name').lean(),
+                ]),
+                buildSidebarData(myId),
+            ]);
+            const myName = myEmp ? myEmp.name : req.session.username;
+            return renderPage(req, res, 'チャット', 'チャット', buildPage({
+                mode: 'home', myId: String(myId), myName,
+                myInitial: (myName || '?').charAt(0).toUpperCase(),
+                myStatus: cu ? cu.chatStatus : 'offline',
+                ...sideData,
+            }));
+        }
+
+        if (dmTime >= roomTime && lastDM) {
+            // 最後のDM相手を特定してリダイレクト
+            const otherId = String(lastDM.fromUserId) === String(myId)
+                ? lastDM.toUserId
+                : lastDM.fromUserId;
+            return res.redirect('/chat/dm/' + otherId);
+        } else if (lastRoom) {
+            return res.redirect('/chat/room/' + lastRoom._id);
+        }
+
+        return res.redirect('/chat');
     } catch (e) { console.error('[chat/home]', e); res.status(500).send('エラー'); }
 });
 
@@ -194,6 +224,24 @@ router.get('/chat/room/:roomId', requireLogin, async (req, res) => {
 });
 
 // ── API ────────────────────────────────────────────────────────
+
+// チャット未読件数（トップバーバッジ用）
+router.get('/api/chat/unread-count', requireLogin, async (req, res) => {
+    try {
+        const myOid = oid(req.session.userId);
+        const [dmCount, roomCount] = await Promise.all([
+            ChatMessage.countDocuments({ toUserId: myOid, read: false, roomId: null, deleted: { $ne: true } }),
+            ChatMessage.aggregate([
+                { $match: { fromUserId: { $ne: myOid }, deleted: { $ne: true }, roomId: { $ne: null } } },
+                { $match: { 'readBy.userId': { $ne: myOid } } },
+                { $lookup: { from: 'chatrooms', localField: 'roomId', foreignField: '_id', as: 'room' } },
+                { $match: { 'room.members': myOid } },
+                { $count: 'n' },
+            ]).then(r => (r[0] ? r[0].n : 0)),
+        ]);
+        res.json({ count: dmCount + roomCount });
+    } catch (e) { res.json({ count: 0 }); }
+});
 
 router.post('/api/chat/status', requireLogin, async (req, res) => {
     try {
@@ -494,7 +542,75 @@ function buildSidebarHtml(d) {
 }
 
 function buildMainHtml(data) {
-    if (data.mode === 'home') return `<div class="sc-welcome"><div class="sc-welcome-icon">💬</div><h2>チャットへようこそ</h2><p>左からユーザーを選んでダイレクトメッセージを送るか、<br>グループチャットを作成してください。</p></div>`;
+    if (data.mode === 'home') {
+        const { recentDMs = [], roomList = [], allUsers = [], myName } = data;
+
+        // 最近のDM（最大6件）
+        const recentRows = recentDMs.slice(0, 6).map(u => {
+            const name    = u.emp ? u.emp.name : u.username;
+            const dept    = u.emp ? (u.emp.department || '') : '';
+            const preview = u.lastMsg ? escHtml(u.lastMsg.slice(0, 30)) + (u.lastMsg.length > 30 ? '…' : '') : 'メッセージを送る';
+            const pip     = STATUS_CLS[u.chatStatus || 'offline'];
+            const initial = (name || '?').charAt(0).toUpperCase();
+            const unread  = u.unread ? `<span class="ch-badge">${u.unread}</span>` : '';
+            return `<a href="/chat/dm/${u._id}" class="ch-card">
+                <div class="ch-av-wrap"><div class="ch-av">${initial}</div><span class="ch-pip ${pip}"></span></div>
+                <div class="ch-info">
+                    <div class="ch-name">${escHtml(name)}${dept ? `<span class="ch-dept">${escHtml(dept)}</span>` : ''}</div>
+                    <div class="ch-preview">${preview}</div>
+                </div>
+                ${unread}
+            </a>`;
+        }).join('');
+
+        // グループ（最大4件）
+        const roomRows = roomList.slice(0, 4).map(r => {
+            const unread = r.unread ? `<span class="ch-badge">${r.unread}</span>` : '';
+            return `<a href="/chat/room/${r._id}" class="ch-card">
+                <div class="ch-room-icon">${escHtml(r.icon || '💬')}</div>
+                <div class="ch-info">
+                    <div class="ch-name">${escHtml(r.name)}</div>
+                    <div class="ch-preview">${(r.members && r.members.length) || 0}人のメンバー</div>
+                </div>
+                ${unread}
+            </a>`;
+        }).join('');
+
+        // オンラインユーザー
+        const onlineUsers = allUsers.filter(u => u.chatStatus === 'online').slice(0, 8);
+        const onlineHtml = onlineUsers.length ? onlineUsers.map(u => {
+            const name    = u.emp ? u.emp.name : u.username;
+            const initial = (name || '?').charAt(0).toUpperCase();
+            return `<a href="/chat/dm/${u._id}" class="ch-online-chip" title="${escHtml(name)}">
+                <div class="ch-av sm">${initial}</div>
+                <span>${escHtml(name)}</span>
+            </a>`;
+        }).join('') : '<div class="ch-empty-sub">現在オンラインのユーザーはいません</div>';
+
+        return `<div class="ch-home">
+    <div class="ch-home-hd">
+        <span class="ch-home-icon">💬</span>
+        <div>
+            <div class="ch-home-title">チャット</div>
+            <div class="ch-home-sub">こんにちは、${escHtml(myName || '')}さん</div>
+        </div>
+    </div>
+
+    <div class="ch-section-label">🟢 オンライン中</div>
+    <div class="ch-online-row">${onlineHtml}</div>
+
+    ${recentRows ? `<div class="ch-section-label">🕐 最近のメッセージ</div><div class="ch-cards">${recentRows}</div>
+    <div style="text-align:right;margin-top:4px"><a href="#" onclick="document.getElementById('sc-search').focus();return false" class="ch-more-link">全ユーザーを検索 →</a></div>` : ''}
+
+    ${roomRows ? `<div class="ch-section-label">👥 グループチャット</div><div class="ch-cards">${roomRows}</div>` : ''}
+
+    ${!recentRows && !roomRows ? `<div class="ch-empty">
+        <div style="font-size:2.5rem;margin-bottom:10px;">💬</div>
+        <div style="font-weight:600;color:#1c1917;margin-bottom:6px;">まだ会話がありません</div>
+        <div style="font-size:.85rem;color:#78716c;">左のリストからユーザーを選んで<br>メッセージを送ってみましょう。</div>
+    </div>` : ''}
+</div>`;
+    }
     const isRoom = data.mode === 'room';
     const EMOJIS = ['👍','👎','❤️','😂','😮','🎉','🙏','💪','✅','❓','🔥','👀','😅','🤔','💯'];
     const headerHtml = isRoom
@@ -763,6 +879,33 @@ function chatStyles() {
 .sc-main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#fafaf8;min-height:0}
 .sc-welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;color:#78716c;text-align:center;padding:20px}
 .sc-welcome-icon{font-size:3rem;margin-bottom:12px}.sc-welcome h2{margin:0 0 8px;color:#1c1917;font-size:1.3rem}.sc-welcome p{margin:0;font-size:.87rem;line-height:1.7}
+/* ホーム画面 */
+.ch-home{padding:20px 24px;overflow-y:auto;flex:1}
+.ch-home-hd{display:flex;align-items:center;gap:14px;margin-bottom:22px;padding-bottom:18px;border-bottom:1px solid #e7e5e0}
+.ch-home-icon{font-size:2.2rem}
+.ch-home-title{font-size:1.3rem;font-weight:700;color:#1c1917}
+.ch-home-sub{font-size:.83rem;color:#78716c;margin-top:2px}
+.ch-section-label{font-size:.75rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#a8a29e;margin:18px 0 8px}
+.ch-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.ch-card{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#fff;border:1px solid #e7e5e0;border-radius:10px;text-decoration:none;color:inherit;transition:.15s;position:relative}
+.ch-card:hover{background:#f5f4f0;border-color:#d6d3d1;transform:translateY(-1px);box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.ch-av-wrap{position:relative;flex-shrink:0}
+.ch-av{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;font-size:.85rem;font-weight:700;display:flex;align-items:center;justify-content:center}
+.ch-av.sm{width:28px;height:28px;font-size:.75rem}
+.ch-pip{position:absolute;bottom:0;right:0;width:9px;height:9px;border-radius:50%;border:1.5px solid #fff}
+.ch-room-icon{width:36px;height:36px;border-radius:10px;background:#f5f4f0;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0}
+.ch-info{flex:1;min-width:0}
+.ch-name{font-size:.85rem;font-weight:600;color:#1c1917;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ch-dept{font-size:.72rem;color:#a8a29e;margin-left:5px;font-weight:400}
+.ch-preview{font-size:.75rem;color:#78716c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.ch-badge{background:#ef4444;color:#fff;border-radius:10px;font-size:.7rem;font-weight:700;padding:1px 6px;flex-shrink:0}
+.ch-online-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px}
+.ch-online-chip{display:flex;align-items:center;gap:6px;padding:5px 10px;background:#f0fdf4;border:1px solid #86efac;border-radius:20px;text-decoration:none;color:#15803d;font-size:.78rem;font-weight:500;transition:.15s}
+.ch-online-chip:hover{background:#dcfce7;border-color:#4ade80}
+.ch-empty-sub{font-size:.82rem;color:#a8a29e;padding:6px 0}
+.ch-empty{text-align:center;padding:40px 20px;color:#78716c}
+.ch-more-link{font-size:.78rem;color:#a8a29e;text-decoration:none}
+.ch-more-link:hover{color:#78716c}
 .sc-main-hd{display:flex;align-items:center;justify-content:space-between;padding:10px 18px;border-bottom:1px solid #e7e5e0;background:#fff;flex-shrink:0;gap:12px}
 .sc-hd-left{display:flex;align-items:center;gap:10px}
 .sc-hd-name{font-weight:700;font-size:1rem;color:#1c1917;line-height:1.2}.sc-hd-sub{font-size:.75rem;color:#78716c;margin-top:1px}
