@@ -203,6 +203,7 @@ router.post('/api/chat/status', requireLogin, async (req, res) => {
         if (!['online', 'offline', 'break'].includes(status))
             return res.status(400).json({ error: '無効なステータス' });
         await User.findByIdAndUpdate(req.session.userId, { chatStatus: status, lastSeenAt: new Date() });
+        req.session.chatStatus = status; // セッションにも保存してサイドバーに反映
         global.io && global.io.emit('status_change', { userId: String(req.session.userId), status });
         res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
