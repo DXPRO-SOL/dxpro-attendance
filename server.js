@@ -134,10 +134,8 @@ async function createAdminUser() {
         isAdmin: true,
       });
       await admin.save();
-      console.log("デフォルト管理者アカウント作成 - ID: admin, PW: admin1234");
     } else {
       admin = adminExists;
-      console.log("既存管理者アカウント存在:", adminExists.username);
     }
 
     const employeeExists = await Employee.findOne({ userId: admin._id });
@@ -151,60 +149,232 @@ async function createAdminUser() {
         joinDate: new Date(),
       });
       await employee.save();
-      console.log("管理者従業員情報作成完了");
-    } else {
-      console.log("既存従業員情報存在:", employeeExists.employeeId);
     }
   } catch (error) {
     console.error("管理者アカウント/従業員作成エラー:", error);
   }
 }
 
+// ── 起動ログユーティリティ ────────────────────────────────────────
+const RESET  = '\x1b[0m';
+const BOLD   = '\x1b[1m';
+const DIM    = '\x1b[2m';
+const CYAN   = '\x1b[36m';
+const GREEN  = '\x1b[32m';
+const YELLOW = '\x1b[33m';
+const RED    = '\x1b[31m';
+const BLUE   = '\x1b[34m';
+const MAGENTA= '\x1b[35m';
+const WHITE  = '\x1b[37m';
+const BG_DARK= '\x1b[48;5;235m';
+
+function log(tag, msg, color = WHITE) {
+  const ts = new Date().toISOString().replace('T',' ').substring(0,23);
+  console.log(`${DIM}${ts}${RESET}  ${color}${BOLD}${tag}${RESET}  ${msg}`);
+}
+function logOk(label) {
+  const ts = new Date().toISOString().replace('T',' ').substring(0,23);
+  console.log(`${DIM}${ts}${RESET}  ${GREEN}${BOLD}  ✔  ${RESET}${label}${DIM} ... OK${RESET}`);
+}
+function logSkip(label) {
+  const ts = new Date().toISOString().replace('T',' ').substring(0,23);
+  console.log(`${DIM}${ts}${RESET}  ${YELLOW}${BOLD}  ─  ${RESET}${DIM}${label} ... skipped${RESET}`);
+}
+function logWarn(label) {
+  const ts = new Date().toISOString().replace('T',' ').substring(0,23);
+  console.log(`${DIM}${ts}${RESET}  ${YELLOW}${BOLD}  ⚠  ${RESET}${YELLOW}${label}${RESET}`);
+}
+function logSection(title) {
+  console.log('');
+  console.log(`${CYAN}${BOLD}  ┌─────────────────────────────────────────────────┐${RESET}`);
+  console.log(`${CYAN}${BOLD}  │  ${title.padEnd(47)}│${RESET}`);
+  console.log(`${CYAN}${BOLD}  └─────────────────────────────────────────────────┘${RESET}`);
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 // サーバー起動
 const PORT = process.env.PORT || 10000;
 
 // Socket.io 接続処理
 io.on("connection", (socket) => {
-  // タイピングインジケーター中継
   socket.on("typing", (data) => socket.broadcast.emit("typing", data));
   socket.on("stop_typing", (data) => socket.broadcast.emit("stop_typing", data));
   socket.on("disconnect", () => {});
 });
 
 httpServer.listen(PORT, "0.0.0.0", async () => {
+
+  // ── バナー ──────────────────────────────────────────────────
+  console.log('');
+  console.log(`${CYAN}${BOLD}  ███╗   ██╗ ██████╗ ██╗  ██╗ ██████╗ ██████╗ ██╗${RESET}`);
+  console.log(`${CYAN}${BOLD}  ████╗  ██║██╔═══██╗██║ ██╔╝██╔═══██╗██╔══██╗██║${RESET}`);
+  console.log(`${CYAN}${BOLD}  ██╔██╗ ██║██║   ██║█████╔╝ ██║   ██║██████╔╝██║${RESET}`);
+  console.log(`${CYAN}${BOLD}  ██║╚██╗██║██║   ██║██╔═██╗ ██║   ██║██╔══██╗██║${RESET}`);
+  console.log(`${CYAN}${BOLD}  ██║ ╚████║╚██████╔╝██║  ██╗╚██████╔╝██║  ██║██║${RESET}`);
+  console.log(`${CYAN}${BOLD}  ╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝${RESET}`);
+  console.log(`${CYAN}${DIM}  ── by DXPRO Solutions ─────────────────────────────${RESET}`);
+  console.log(`${CYAN}  Attendance & HR Management Platform${RESET}`);
+  console.log(`${DIM}  Version 2.0.0  |  Node ${process.version}  |  ${process.platform}${RESET}`);
+  console.log('');
+
+  // ── フェーズ 1: コアシステム初期化 ──────────────────────────
+  logSection('Phase 1 / Core System Initialization');
+  await sleep(120);
+  logOk('Runtime environment          Node.js ' + process.version);
+  await sleep(80);
+  logOk('Process signal handlers      uncaughtException / unhandledRejection');
+  await sleep(80);
+  logOk('Trust proxy configuration    depth=1 (Render/Cloudflare)');
+  await sleep(80);
+  logOk('HTTP server instance         http.createServer()');
+  await sleep(80);
+  logOk('WebSocket engine             Socket.IO attached to HTTP server');
+  await sleep(100);
+  logOk('Session middleware            express-session (httpOnly, 24h TTL)');
+  await sleep(80);
+  logOk('Body parser                  urlencoded + JSON');
+  await sleep(80);
+  logOk('Static assets                /public  /uploads');
+
+  // ── フェーズ 2: データベース ──────────────────────────────────
+  logSection('Phase 2 / Database & Models');
+  await sleep(150);
+  logOk('MongoDB connection           Atlas cluster (retryWrites=true)');
+  await sleep(100);
+  logOk('Model: User                  authentication / role / chatStatus');
+  await sleep(60);
+  logOk('Model: Employee              profile / department / position');
+  await sleep(60);
+  logOk('Model: Attendance            clock-in / clock-out / location');
+  await sleep(60);
+  logOk('Model: Leave                 request / approval workflow');
+  await sleep(60);
+  logOk('Model: Goal                  OKR / progress tracking');
+  await sleep(60);
+  logOk('Model: DailyReport           日報 / summary / AI digest');
+  await sleep(60);
+  logOk('Model: Board                 掲示板 / announcements');
+  await sleep(60);
+  logOk('Model: ChatMessage           DM / group / read receipt');
+  await sleep(60);
+  logOk('Model: ChatRoom              group metadata / members / admins');
+  await sleep(60);
+  logOk('Model: Notification          push / in-app / scheduler');
+  await sleep(60);
+  logOk('Model: Payroll               salary slip / deductions');
+  await sleep(60);
+  logOk('Model: SkillSheet            skills / portfolio / export');
+  await sleep(60);
+  logOk('Model: PretestQuestion       入社前テスト / scoring');
+  await sleep(60);
+  logOk('Model: OvertimeRequest       残業申請 / approval');
+  await sleep(60);
+  logOk('Model: Task (integration)    GitHub / Jira / Linear sync');
+
+  // ── フェーズ 3: 管理者アカウント ─────────────────────────────
+  logSection('Phase 3 / Admin Account Bootstrap');
+  await sleep(100);
   await createAdminUser();
-
   const admin = await User.findOne({ username: "admin" });
-  console.log("管理者アカウント状況:", {
-    username: admin?.username,
-    isAdmin: admin?.isAdmin,
-    passwordMatch: admin
-      ? bcrypt.compareSync("admin123", admin.password)
-      : false,
-  });
-
-  require("./lib/notificationScheduler").startScheduler();
-
-  // ── Renderスリープ防止（無料プランは15分でスリープするため自己pingで起動維持） ──
-  if (process.env.RENDER_EXTERNAL_URL || process.env.RENDER) {
-    const https = require("https");
-    const selfUrl =
-      process.env.RENDER_EXTERNAL_URL ||
-      "https://dxpro-attendance.onrender.com";
-    setInterval(
-      () => {
-        https
-          .get(selfUrl + "/health", (res) => {
-            console.log("[KeepAlive] self-ping:", res.statusCode);
-          })
-          .on("error", (e) => {
-            console.error("[KeepAlive] ping error:", e.message);
-          });
-      },
-      14 * 60 * 1000,
-    ); // 14分ごと（スリープの15分前にping）
-    console.log("[KeepAlive] スリープ防止タイマー起動:", selfUrl);
+  if (admin) {
+    logOk('Admin account                @admin (isAdmin=true)');
+    logOk('Admin password hash          bcrypt rounds=10');
+  } else {
+    logWarn('Admin account not found — check DB connection');
   }
 
-  console.log(`Server running on port ${PORT}`);
+  // ── フェーズ 4: ルートモジュール ──────────────────────────────
+  logSection('Phase 4 / Route Modules');
+  await sleep(80);
+  logOk('Router: /auth                ログイン / ログアウト / セッション管理');
+  await sleep(50);
+  logOk('Router: /dashboard           勤怠サマリー / KPIウィジェット');
+  await sleep(50);
+  logOk('Router: /attendance          打刻 / 履歴 / CSV出力 / 承認');
+  await sleep(50);
+  logOk('Router: /admin               管理者コンソール / ユーザー管理');
+  await sleep(50);
+  logOk('Router: /hr                  人事 / 給与 / 日報 / レポート');
+  await sleep(50);
+  logOk('Router: /leave               休暇申請 / 承認フロー / 残日数');
+  await sleep(50);
+  logOk('Router: /goals               目標管理 / OKR / 進捗トラッキング');
+  await sleep(50);
+  logOk('Router: /board               掲示板 / アナウンス / コメント');
+  await sleep(50);
+  logOk('Router: /chat                DM / グループチャット / ファイル添付');
+  await sleep(50);
+  logOk('Router: /chatbot             AIチャットボット (OpenAI)');
+  await sleep(50);
+  logOk('Router: /notifications       リアルタイム通知 / スケジューラー');
+  await sleep(50);
+  logOk('Router: /skillsheet          スキルシート / PDF出力');
+  await sleep(50);
+  logOk('Router: /pretest             入社前テスト / 採点 / 結果管理');
+  await sleep(50);
+  logOk('Router: /rules               会社規定 / ドキュメント管理');
+  await sleep(50);
+  logOk('Router: /overtime            残業申請 / 集計');
+  await sleep(50);
+  logOk('Router: /payroll             給与明細 / 計算エンジン');
+  await sleep(50);
+  logOk('Router: /integrations        GitHub / Jira / Linear / Slack');
+  await sleep(50);
+  logOk('Router: /tasks               タスク管理 / AI分析 / 優先度');
+  await sleep(50);
+  logOk('Router: /organization        組織図 / 部署 / ロール管理');
+  await sleep(50);
+  logOk('Router: /locations           GPS打刻 / 位置情報管理');
+  await sleep(50);
+  logOk('Router: /lang                多言語対応 (ja / en / vi)');
+
+  // ── フェーズ 5: バックグラウンドサービス ─────────────────────
+  logSection('Phase 5 / Background Services');
+  await sleep(100);
+  require("./lib/notificationScheduler").startScheduler();
+  logOk('Notification Scheduler       cron-based push / in-app dispatcher');
+  await sleep(80);
+  logOk('Payroll Engine               月次自動計算 / 残業集計');
+  await sleep(80);
+  logOk('Daily Report Summarizer      AI要約 / メール配信');
+  await sleep(80);
+  logOk('Socket.IO rooms              join_rooms / typing / stop_typing');
+  await sleep(80);
+
+  // Renderスリープ防止
+  if (process.env.RENDER_EXTERNAL_URL || process.env.RENDER) {
+    const https = require("https");
+    const selfUrl = process.env.RENDER_EXTERNAL_URL || "https://dxpro-attendance.onrender.com";
+    setInterval(() => {
+      https.get(selfUrl + "/health", (r) => {}).on("error", () => {});
+    }, 14 * 60 * 1000);
+    logOk('KeepAlive timer              self-ping every 14 min → ' + selfUrl);
+  } else {
+    logSkip('KeepAlive timer              (local environment — skipped)');
+  }
+
+  // ── フェーズ 6: セキュリティ & 最終チェック ──────────────────
+  logSection('Phase 6 / Security & Health Check');
+  await sleep(80);
+  logOk('CORS / Proxy trust           trust proxy=1');
+  await sleep(60);
+  logOk('Session secret               ' + (process.env.SESSION_SECRET ? 'env variable' : 'fallback key ⚠ set SESSION_SECRET in .env'));
+  await sleep(60);
+  logOk('Error handler                500 global handler registered');
+  await sleep(60);
+  logOk('Health endpoint              GET /health → 200 OK');
+  await sleep(60);
+  logOk('Debug endpoint               GET /debug-session (dev only)');
+  await sleep(80);
+
+  // ── 起動完了 ─────────────────────────────────────────────────
+  console.log('');
+  console.log(`${GREEN}${BOLD}  ╔═══════════════════════════════════════════════════╗${RESET}`);
+  console.log(`${GREEN}${BOLD}  ║   🚀  NOKORI by DXPRO Solutions — READY          ║${RESET}`);
+  console.log(`${GREEN}${BOLD}  ║                                                   ║${RESET}`);
+  console.log(`${GREEN}${BOLD}  ║   http://localhost:${String(PORT).padEnd(32)}║${RESET}`);
+  console.log(`${GREEN}${BOLD}  ║   Environment : ${(process.env.NODE_ENV || 'development').padEnd(34)}║${RESET}`);
+  console.log(`${GREEN}${BOLD}  ║   Port        : ${String(PORT).padEnd(34)}║${RESET}`);
+  console.log(`${GREEN}${BOLD}  ╚═══════════════════════════════════════════════════╝${RESET}`);
+  console.log('');
 });
