@@ -1884,14 +1884,661 @@ async function fetchBacklogTaskDetail(cfg, id) {
 // ─────────────────────────────────────────────────────────────
 // AI 分析（ルールベースヒューリスティック）
 // ─────────────────────────────────────────────────────────────
-function generateAiAnalysis(task) {
+// ─────────────────────────────────────────────────────────────
+// コードベース解析：チケット内容から現在のソースを読んで実装プランを動的生成
+// ─────────────────────────────────────────────────────────────
+const fs = require("fs");
+const path = require("path");
+const BASE_DIR = path.join(__dirname, "..");
+
+function readSrc(relPath) {
+  try { return fs.readFileSync(path.join(BASE_DIR, relPath), "utf8"); }
+  catch { return ""; }
+}
+
+// ルートファイルから既存エンドポイントを抽出
+function extractRoutes(src) {
+  const re = /router\.(get|post|put|delete|patch)\s*\(\s*['"`]([^'"`\n]+)['"`]/g;
+  const found = [];
+  let m;
+  while ((m = re.exec(src)) !== null) found.push(`${m[1].toUpperCase()} ${m[2]}`);
+  return found;
+}
+
+// モデルファイルから指定スキーマのフィールド名を抽出
+function extractSchemaFields(src, schemaVarName) {
+  const startRe = new RegExp(`(?:const|let|var)\\s+${schemaVarName}\\s*=\\s*new\\s+mongoose\\.Schema\\s*\\(\\s*\\{`);
+  const startMatch = startRe.exec(src);
+  if (!startMatch) return [];
+  let depth = 1, i = startMatch.index + startMatch[0].length;
+  let block = "";
+  while (i < src.length && depth > 0) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}") depth--;
+    if (depth > 0) block += src[i];
+    i++;
+  }
+  const fieldRe = /^\s{0,4}(\w+)\s*:/gm;
+  const excl = ["type","default","required","ref","enum","min","max","index","unique","trim","sparse"];
+  const fields = [];
+  let fm;
+  while ((fm = fieldRe.exec(block)) !== null) {
+    if (!excl.includes(fm[1])) fields.push(fm[1]);
+  }
+  return [...new Set(fields)].slice(0, 12);
+}
+
+// lib/ ファイルから export されている関数名を抽出
+function extractExportedFunctions(src) {
+  const re = /(?:async\s+)?function\s+(\w+)\s*\(|(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\(|module\.exports\s*=\s*\{([^}]+)\}/g;
+  const fns = [];
+  let m;
+  while ((m = re.exec(src)) !== null) {
+    if (m[1]) fns.push(m[1]);
+    else if (m[2]) fns.push(m[2]);
+    else if (m[3]) fns.push(...m[3].split(",").map(s => s.trim().split(":")[0].trim()).filter(Boolean));
+  }
+  return [...new Set(fns)].slice(0, 6);
+}
+
+// server.js から既にマウントされているルートを抽出
+function extractMountedRoutes(src) {
+  const re = /app\.use\s*\(\s*['"`][^'"`]*['"`]\s*,\s*require\s*\(\s*['"`]\.\/routes\/(\w+)['"`]/g;
+  const found = [];
+  let m;
+  while ((m = re.exec(src)) !== null) found.push(m[1]);
+  return found;
+}
+
+// ── コードスニペット生成ヘルパー ──
+
+// ルートファイルから実在する短いルートハンドラを1件抽出してテンプレート化
+function extractRealRouteTemplate(src, routeFile) {
+  // requireLogin を含む短めのルートハンドラを探す
+  const re = /router\.(get|post)\s*\(\s*'([^']+)'\s*,\s*requireLogin\s*,\s*async\s*\(req,\s*res\)\s*=>\s*\{([\s\S]*?)\n\}\);/g;
+  let m;
+  while ((m = re.exec(src)) !== null) {
+    const body = m[3];
+    const lines = body.split("\n");
+    if (lines.length <= 12) {
+      return { method: m[1], path: m[2], body: body.split("\n").slice(0, 10).join("\n") };
+    }
+  }
+  return null;
+}
+
+// 新規ルート追加の修正例スニペットを生成
+function makeRouteAddExample(routeFile, modelName, isBugFix) {
+  if (isBugFix) {
+    return `// ${routeFile} — 対象ルートハンドラの try/catch を確認
+router.post('/該当パス', requireLogin, async (req, res) => {
+  try {
+    // console.log('[DEBUG] req.body:', req.body);
+    // console.log('[DEBUG] userId:', req.session.userId);
+
+    // ← ここで何かエラーが発生しているか確認する
+    const result = await ${modelName}.findOne({ ... });
+    res.json({ success: true, data: result });
+  } catch (err) {
+    console.error('[ERROR] ${routeFile}:', err); // ← エラー内容を確認
+    res.status(500).json({ error: err.message });
+  }
+});`;
+  }
+  return `// ${routeFile} の末尾（module.exports の前）に追加
+router.post('/新しいパス', requireLogin, async (req, res) => {
+  try {
+    const { userId } = req.session;
+    // req.body から必要なパラメータを取得
+    const { param1, param2 } = req.body;
+
+    const doc = new ${modelName}({
+      userId,
+      param1,
+      param2,
+      createdAt: new Date(),
+    });
+    await doc.save();
+
+    res.json({ success: true, id: doc._id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'サーバーエラー' });
+  }
+});`;
+}
+
+// 新規ルートファイル作成の修正例スニペットを生成
+function makeNewRouteFileExample(routeFile, modelName) {
+  const varName = routeFile.replace("routes/","").replace(".js","");
+  return `// ${routeFile} を新規作成
+"use strict";
+const express = require("express");
+const router = express.Router();
+const { ${modelName} } = require("../models");
+const { requireLogin } = require("../middleware/auth");
+
+router.get('/${varName}', requireLogin, async (req, res) => {
+  try {
+    const { userId } = req.session;
+    const items = await ${modelName}.find({ userId }).lean();
+    // res.send(buildPageShell(...) + HTML + pageFooter());
+    res.json({ items });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'サーバーエラー' });
+  }
+});
+
+module.exports = router;
+
+// server.js に以下を追加:
+// app.use('/', require('./${routeFile}'));`;
+}
+
+// DBスキーマ変更の修正例スニペットを生成
+function makeSchemaExample(schemaName, existingFields, modelsSrc) {
+  // 実際のスキーマから最初の2フィールドを引用
+  const startRe = new RegExp(`(?:const|let|var)\\s+${schemaName}\\s*=\\s*new\\s+mongoose\\.Schema\\s*\\(\\s*\\{`);
+  const startMatch = startRe.exec(modelsSrc);
+  let sampleLines = "";
+  if (startMatch) {
+    const afterBrace = modelsSrc.slice(startMatch.index + startMatch[0].length);
+    const lines = afterBrace.split("\n").filter(l => l.trim()).slice(0, 3);
+    sampleLines = lines.join("\n");
+  }
+  const shownFields = existingFields.slice(0, 3).join(", ");
+  return `// models/index.js — ${schemaName} にフィールドを追加
+const ${schemaName} = new mongoose.Schema({
+  // 既存フィールド（例: ${shownFields} など）:
+${sampleLines ? sampleLines + "\n" : ""}
+  // ↓ ここに新しいフィールドを追加
+  newField:  { type: String,  default: '' },
+  newFlag:   { type: Boolean, default: false },
+  newNumber: { type: Number,  default: 0 },
+  // 参照型の例:
+  // relatedId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+});`;
+}
+
+// フロントエンド fetch の修正例スニペットを生成
+function makeFrontExample(frontFile, apiPath) {
+  return `// ${frontFile} に追加
+async function callNewFeature(data) {
+  try {
+    const res = await fetch('${apiPath}', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error);
+    // ← 成功時のUI更新処理をここに記述
+    console.log('成功:', json);
+  } catch (err) {
+    console.error('エラー:', err);
+    alert('処理に失敗しました: ' + err.message);
+  }
+}
+
+// 呼び出し例（ボタンのクリックハンドラ等）:
+// document.getElementById('btn').addEventListener('click', () => {
+//   callNewFeature({ param1: '値', param2: '値' });
+// });`;
+}
+
+// ライブラリ関数追加の修正例スニペットを生成
+function makeLibExample(libFile, existingFns) {
+  const lastFn = existingFns.length ? existingFns[existingFns.length - 1] : "existingFn";
+  return `// ${libFile} に関数を追加（末尾の module.exports の前）
+async function newFeatureLogic(params) {
+  const { userId, targetDate } = params;
+  // 既存関数 ${lastFn}() 等を参考に実装
+
+  // DB操作が必要な場合:
+  // const { ModelName } = require('../models');
+  // const docs = await ModelName.find({ userId }).lean();
+
+  const result = {
+    // 計算・加工結果
+  };
+  return result;
+}
+
+// module.exports に追加:
+module.exports = {
+  // 既存のエクスポート...
+  newFeatureLogic,
+};`;
+}
+
+// 認証ミドルウェア追加の修正例スニペットを生成
+function makeAuthExample(mwFns) {
+  return `// middleware/auth.js に新しいロールチェックを追加
+// 既存: ${mwFns.slice(0, 3).join(", ")}
+
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.session.userId) return res.redirect('/login');
+    const userRole = req.session.orgRole || (req.session.isAdmin ? 'admin' : 'employee');
+    if (!roles.includes(userRole)) {
+      return res.status(403).send('権限がありません');
+    }
+    next();
+  };
+}
+module.exports = { ...(既存のexports), requireRole };
+
+// 使い方（routes/xxx.js）:
+// const { requireRole } = require('../middleware/auth');
+// router.post('/path', requireLogin, requireRole('admin','manager'), async (req, res) => { ... });`;
+}
+
+// UI ページ構造の修正例スニペットを生成
+function makeUiPageExample(routeFile) {
+  return `// ${routeFile} — ページレンダリング
+const { buildPageShell, pageFooter } = require('../lib/renderPage');
+
+router.get('/新しいページ', requireLogin, async (req, res) => {
+  try {
+    // データ取得
+    const data = await SomeModel.find({ userId: req.session.userId }).lean();
+
+    const bodyHtml = \`
+      <div class="page-content">
+        <h1 class="page-title">ページタイトル</h1>
+        <div class="main">
+          \${data.map(d => \`<div class="card">\${d.title}</div>\`).join('')}
+        </div>
+      </div>
+    \`;
+
+    const extraHead = \`<style>
+      .card { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+    </style>\`;
+
+    res.send(buildPageShell('ページタイトル', bodyHtml, extraHead, req) + pageFooter());
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('エラーが発生しました');
+  }
+});`;
+}
+
+// CSV エクスポートの修正例スニペットを生成
+function makeCsvExample(routeFile, modelName) {
+  return `// ${routeFile} — CSVエクスポートエンドポイント
+router.get('/export.csv', requireLogin, async (req, res) => {
+  try {
+    const { userId } = req.session;
+    const docs = await ${modelName}.find({ userId }).lean();
+
+    // ヘッダー行
+    const header = 'ID,フィールド1,フィールド2,日付';
+    // データ行
+    const rows = docs.map(d =>
+      [\`"\${d._id}"\`, \`"\${d.field1 || ''}"\`, \`"\${d.field2 || ''}"\`, d.createdAt || ''].join(',')
+    );
+    const csv = [header, ...rows].join('\\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename=export.csv');
+    res.send('\\uFEFF' + csv); // BOM付きでExcel対応
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'エクスポート失敗' });
+  }
+});`;
+}
+
+// パフォーマンス改善の修正例スニペットを生成
+function makePerfExample(schemaName, fields) {
+  const firstField = fields[0] || "userId";
+  return `// models/index.js — ${schemaName} にインデックスを追加
+const ${schemaName} = new mongoose.Schema({
+  // 既存フィールドはそのまま...
+  ${firstField}: { type: ..., index: true }, // ← index: true を追加
+});
+
+// クエリ改善例（routes/ の該当ファイル）:
+
+// ❌ Before（遅い）:
+// const docs = await SomeModel.find({ userId });
+
+// ✅ After（高速）:
+// const docs = await SomeModel.find({ userId }).lean(); // .lean() でメモリ節約
+// const docs = await SomeModel.find({ userId }).select('field1 field2').lean(); // 必要フィールドのみ
+
+// N+1 解消例:
+// const docs = await SomeModel.find({ userId })
+//   .populate('relatedId', 'name email') // 必要フィールドのみ populate
+//   .lean();`;
+}
+
+// テスト追加の修正例スニペットを生成
+function makeTestExample(testFiles) {
+  return `// tests/新機能.test.js を追加
+const request = require('supertest');
+const app = require('../server'); // または require('../app')
+
+describe('新機能テスト', () => {
+  let cookie;
+
+  beforeAll(async () => {
+    // ログイン
+    const res = await request(app)
+      .post('/login')
+      .send({ username: 'testuser', password: 'testpass' });
+    cookie = res.headers['set-cookie'];
+  });
+
+  test('正常系: エンドポイントが200を返す', async () => {
+    const res = await request(app)
+      .get('/対象パス')
+      .set('Cookie', cookie);
+    expect(res.status).toBe(200);
+  });
+
+  test('異常系: 未認証は302リダイレクト', async () => {
+    const res = await request(app).get('/対象パス');
+    expect(res.status).toBe(302);
+  });
+});
+
+// 実行: npm test`;
+}
+
+// i18n の修正例スニペットを生成
+function makeI18nExample() {
+  return `// locales/ja.json に追加:
+{
+  "既存キー": "既存テキスト",
+  "newFeature.title": "新機能タイトル",
+  "newFeature.button": "実行する",
+  "newFeature.success": "完了しました"
+}
+
+// locales/en.json に同じキーで追加:
+{
+  "newFeature.title": "New Feature Title",
+  "newFeature.button": "Execute",
+  "newFeature.success": "Completed"
+}
+
+// locales/vi.json に同じキーで追加:
+{
+  "newFeature.title": "Tiêu đề tính năng mới",
+  "newFeature.button": "Thực hiện",
+  "newFeature.success": "Hoàn thành"
+}
+
+// サーバー側テンプレートでの使用例:
+// const t = req.t || ((k) => k);
+// const title = t('newFeature.title');`;
+}
+
+// ── buildCodeActionPlan：{text, example}[] を返す ──
+function buildCodeActionPlan(titleOrig, bodyOrig) {
+  const fullText = (titleOrig + " " + bodyOrig).toLowerCase();
+  // {text: string, example: string} の配列
+  const steps = [];
+
+  const DOMAIN_TABLE = [
+    { label: "勤怠",      keys: /勤怠|出退勤|出勤|退勤|打刻|attendance/, route: "routes/attendance.js",   schema: "AttendanceSchema",    modelName: "Attendance" },
+    { label: "チャット",  keys: /チャット|chat(?!bot)/,                   route: "routes/chat.js",          schema: "ChatMessageSchema",   modelName: "ChatMessage",  front: "public/chat-app.js", socketNote: true },
+    { label: "掲示板",    keys: /掲示板|ボード|board/,                    route: "routes/board.js",         schema: "BoardPostSchema",     modelName: "BoardPost" },
+    { label: "目標管理",  keys: /目標|ゴール|goal|okr|kpi/,               route: "routes/goals.js",         schema: "goalSchema",          modelName: "Goal" },
+    { label: "休暇申請",  keys: /休暇|有休|leave|vacation/,               route: "routes/leave.js",         schema: "LeaveRequestSchema",  modelName: "LeaveRequest" },
+    { label: "給与",      keys: /給与|ペイロール|payroll|salary|給料|賃金/, route: "routes/payroll_admin.js", schema: "PayrollSlipSchema",   modelName: "PayrollSlip",  lib: "lib/payrollEngine.js" },
+    { label: "日報",      keys: /日報|daily.?report/,                     route: "routes/hr.js",            schema: "DailyReportSchema",   modelName: "DailyReport",  lib: "lib/dailyReportSummary.js" },
+    { label: "通知",      keys: /通知|notification|アラート/,             route: "routes/notifications.js", schema: "NotificationSchema",  modelName: "Notification", lib: "lib/notificationScheduler.js" },
+    { label: "認証・権限",keys: /認証|auth|ログイン|login|権限|role|permission|セッション/, route: "routes/auth.js", middleware: "middleware/auth.js" },
+    { label: "入社前テスト", keys: /入社前|pretest|事前テスト/,           route: "routes/pretest.js",                                                                  lib: "lib/pretestQuestions.js", front: "public/pretest-ui.js" },
+    { label: "スキルシート", keys: /スキルシート|skillsheet/,             route: "routes/skillsheet.js",    schema: "SkillSheetSchema",    modelName: "SkillSheet" },
+    { label: "会社規定",  keys: /会社規定|規定|規則/,                     route: "routes/rules.js",         schema: "CompanyRuleSchema",   modelName: "CompanyRule" },
+    { label: "残業申請",  keys: /残業|時間外|overtime/,                   route: "routes/overtime.js",      schema: "OvertimeRequestSchema", modelName: "OvertimeRequest" },
+    { label: "チャットボット", keys: /チャットボット|chatbot/,            route: "routes/chatbot.js",                                                                  front: "public/chatbot-widget.js" },
+    { label: "管理者機能",keys: /管理者機能|admin/,                       route: "routes/admin.js" },
+    { label: "ダッシュボード", keys: /ダッシュボード|dashboard/,          route: "routes/dashboard.js" },
+    { label: "多言語",    keys: /多言語|翻訳|i18n|locale|英語|ベトナム語/, locales: true },
+  ];
+
+  // アクション種別
+  const isBugFix  = /バグ|bug|修正|fix|不具合|エラー|error|crash|クラッシュ/.test(fullText);
+  const isNewFeat = /新規|追加|実装|機能|feature|add|create|新しい/.test(fullText);
+  const isUiChange= /ui|画面|フォーム|form|ボタン|button|表示|レイアウト|デザイン|css/.test(fullText);
+  const isDbChange= /db|database|データベース|モデル|schema|スキーマ|フィールド|field/.test(fullText);
+  const isTestTask= /テスト追加|test追加|spec|jest/.test(fullText);
+  const isExport  = /csv|excel|export|エクスポート|レポート出力/.test(fullText);
+  const isPerf    = /パフォーマンス|performance|遅い|slow|最適化|optim/.test(fullText);
+  const isSecurity= /セキュリティ|security|xss|csrf|脆弱性|vulnerability/.test(fullText);
+  const isRefactor= /リファクタ|refactor|整理|cleanup/.test(fullText);
+
+  const modelsSrc     = readSrc("models/index.js");
+  const serverSrc     = readSrc("server.js");
+  const middlewareSrc = readSrc("middleware/auth.js");
+  const mountedRoutes = extractMountedRoutes(serverSrc);
+
+  let domainMatched = false;
+
+  for (const domain of DOMAIN_TABLE) {
+    if (!domain.keys.test(fullText)) continue;
+    domainMatched = true;
+
+    // ── ルートファイル ──
+    if (domain.route) {
+      const src = readSrc(domain.route);
+      const routes = src ? extractRoutes(src) : [];
+      const routeList = routes.length ? routes.slice(0, 4).join(" / ") : "（まだエンドポイントなし）";
+      const mName = domain.modelName || "Model";
+
+      if (src) {
+        const verb = isNewFeat ? "追加" : isBugFix ? "修正" : "変更";
+        const desc = isBugFix
+          ? `エラー発生箇所のルートハンドラ内の try/catch を確認し原因を特定してください。`
+          : isNewFeat
+          ? `既存パターンに倣って末尾に追記してください。`
+          : `対象ルートを特定して変更してください。`;
+        const socketNote = domain.socketNote ? " リアルタイム処理は `server.js` の `io.on('connection', ...)` にも追記が必要です。" : "";
+        steps.push({
+          text: `【${domain.label}/ルート】\`${domain.route}\` を${verb}してください。現在のエンドポイント: ${routeList}。${desc}${socketNote}`,
+          example: makeRouteAddExample(domain.route, mName, isBugFix),
+        });
+      } else {
+        const mounted = mountedRoutes.includes(domain.route.replace("routes/","").replace(".js",""));
+        steps.push({
+          text: `【${domain.label}/新規ルート】\`${domain.route}\` がまだ存在しません。新規作成して実装してください。${!mounted ? `作成後 \`server.js\` の \`app.use\` 群に追加が必要です。` : ""}`,
+          example: makeNewRouteFileExample(domain.route, mName),
+        });
+      }
+    }
+
+    // ── DBスキーマ ──
+    if (domain.schema && (isDbChange || isNewFeat || isBugFix)) {
+      const fields = extractSchemaFields(modelsSrc, domain.schema);
+      if (fields.length > 0) {
+        const verb = (isDbChange || isNewFeat) ? "追加・変更" : "確認";
+        steps.push({
+          text: `【${domain.label}/DB】\`models/index.js\` の \`${domain.schema}\` を${verb}してください。現在のフィールド: ${fields.slice(0,6).join(", ")} など。新フィールドは既存ドキュメントへのデフォルト値の影響に注意して追記してください。`,
+          example: makeSchemaExample(domain.schema, fields, modelsSrc),
+        });
+      }
+    }
+
+    // ── ライブラリ ──
+    if (domain.lib) {
+      const libSrc = readSrc(domain.lib);
+      if (libSrc) {
+        const fns = extractExportedFunctions(libSrc);
+        steps.push({
+          text: `【${domain.label}/ライブラリ】\`${domain.lib}\` にロジックを実装してください。既存の関数: ${fns.join(", ")}。同パターンで追記し \`module.exports\` に追加してください。`,
+          example: makeLibExample(domain.lib, fns),
+        });
+      }
+    }
+
+    // ── フロントエンド ──
+    if (domain.front && isUiChange) {
+      steps.push({
+        text: `【${domain.label}/フロントエンド】\`${domain.front}\` にクライアント側処理を追加してください。`,
+        example: makeFrontExample(domain.front, "/api/新しいパス"),
+      });
+    }
+
+    // ── 認証ミドルウェア ──
+    if (domain.middleware) {
+      const mwFns = extractExportedFunctions(middlewareSrc);
+      steps.push({
+        text: `【認証・権限】\`middleware/auth.js\` の利用可能なミドルウェア: ${mwFns.join(", ")}。新規ロール制限が必要な場合は同ファイルに追加して対象ルートに適用してください。`,
+        example: makeAuthExample(mwFns),
+      });
+    }
+
+    // ── 多言語 ──
+    if (domain.locales) {
+      steps.push({
+        text: `【多言語】\`locales/ja.json\`・\`locales/en.json\`・\`locales/vi.json\` の3ファイルに同じキーで翻訳文字列を追加してください。`,
+        example: makeI18nExample(),
+      });
+    }
+
+    if (steps.length >= 5) break;
+  }
+
+  // ── アクション種別ごとの横断的ガイダンス ──
+
+  if (isUiChange && steps.length < 5) {
+    const routeHint = steps.length > 0 && steps[0].text.includes("routes/")
+      ? steps[0].text.match(/`(routes\/[^`]+)`/)?.[1] || "routes/対象.js"
+      : "routes/対象.js";
+    steps.push({
+      text: `【UI/ページ構造】新規ページは \`lib/renderPage.js\` の \`buildPageShell()\` + \`pageFooter()\` でレンダリングしてください。`,
+      example: makeUiPageExample(routeHint),
+    });
+  }
+
+  if (isTestTask && steps.length < 5) {
+    const testFiles = (() => {
+      try { return fs.readdirSync(path.join(BASE_DIR, "tests")).filter(f => f.endsWith(".test.js")).join("、") || "（なし）"; }
+      catch { return "（なし）"; }
+    })();
+    steps.push({
+      text: `【テスト】\`tests/\` に \`<機能名>.test.js\` を追加してください。現在のテストファイル: ${testFiles}。\`npm test\` で全件グリーンを確認してください。`,
+      example: makeTestExample(testFiles),
+    });
+  }
+
+  if (isExport && steps.length < 5) {
+    const domain = DOMAIN_TABLE.find(d => d.keys.test(fullText) && d.route);
+    const routeFile = domain ? domain.route : "routes/対象.js";
+    const mName = domain ? (domain.modelName || "Model") : "Model";
+    steps.push({
+      text: `【CSV出力】\`${routeFile}\` にエクスポートエンドポイントを追加してください。BOM付きCSVにするとExcelで文字化けしません。`,
+      example: makeCsvExample(routeFile, mName),
+    });
+  }
+
+  if (isPerf && steps.length < 5) {
+    const domain = DOMAIN_TABLE.find(d => d.keys.test(fullText) && d.schema);
+    const sName = domain ? domain.schema : "対象Schema";
+    const fields = domain ? extractSchemaFields(modelsSrc, sName) : [];
+    steps.push({
+      text: `【パフォーマンス】\`models/index.js\` にインデックスを追加し、クエリに \`.lean()\` を徹底してください。N+1問題は \`aggregate\` パイプラインで解消してください。`,
+      example: makePerfExample(sName, fields),
+    });
+  }
+
+  if (isSecurity && steps.length < 5) {
+    const helperFns = extractExportedFunctions(readSrc("lib/helpers.js"));
+    steps.push({
+      text: `【セキュリティ】\`lib/helpers.js\` の \`${helperFns.join(", ")}\` でユーザー入力を全てサニタイズしてください。`,
+      example: `// 修正例: ユーザー入力を直接HTMLに出力している箇所を修正
+const { escapeHtml } = require('../lib/helpers');
+
+// ❌ Before（XSS脆弱性あり）:
+// res.send('<div>' + req.body.userInput + '</div>');
+
+// ✅ After（安全）:
+// res.send('<div>' + escapeHtml(req.body.userInput) + '</div>');
+
+// テンプレート内での使用例:
+// const bodyHtml = \`<p>\${escapeHtml(user.name)}</p>\`;`,
+    });
+  }
+
+  if (isRefactor && steps.length < 5) {
+    steps.push({
+      text: `【リファクタ】重複処理は \`lib/helpers.js\` または新規 \`lib/<モジュール名>.js\` に切り出してください。`,
+      example: `// lib/新モジュール.js を新規作成
+"use strict";
+
+/**
+ * 共通化する処理の説明
+ */
+async function sharedFunction(params) {
+  const { userId, data } = params;
+  // 処理ロジック
+  return result;
+}
+
+module.exports = { sharedFunction };
+
+// 各ルートでの利用:
+// const { sharedFunction } = require('../lib/新モジュール');`,
+    });
+  }
+
+  if (isBugFix && !domainMatched && steps.length < 3) {
+    steps.push({
+      text: `【バグ修正】現在マウント済みのルートモジュール: ${mountedRoutes.join("、") || "（確認できません）"}。エラーログで対象ファイルを特定し try/catch を確認してください。`,
+      example: `// 対象ルートハンドラのデバッグ方法
+router.post('/対象パス', requireLogin, async (req, res) => {
+  try {
+    // ① まずデバッグログを追加
+    console.log('[DEBUG] body:', JSON.stringify(req.body));
+    console.log('[DEBUG] session:', req.session.userId, req.session.isAdmin);
+
+    // ② 処理を実行
+    const result = await SomeModel.findOne({ ... });
+    if (!result) return res.status(404).json({ error: '見つかりません' });
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    // ③ エラーの詳細をログ出力
+    console.error('[ERROR] スタックトレース:', err.stack);
+    res.status(500).json({ error: err.message });
+  }
+});`,
+    });
+  }
+
+  if (isNewFeat && !domainMatched && steps.length < 3) {
+    steps.push({
+      text: `【新規機能】現在マウント済みのルート: ${mountedRoutes.join("、") || "（確認できません）"}。新規ルートファイルを作成し \`server.js\` にマウントしてください。`,
+      example: makeNewRouteFileExample("routes/新機能.js", "NewModel"),
+    });
+  }
+
+  if (steps.length === 0) {
+    steps.push({
+      text: `チケットのタイトル・本文にドメイン（勤怠・チャット・掲示板・目標・休暇・給与・日報・通知・認証・スキルシートなど）と実装内容（新規機能・バグ修正・UI変更・DBスキーマ変更など）を具体的に記述することで、このリポジトリのどのファイルをどう修正すればよいかの実装プランと修正例コードを自動生成できます。`,
+      example: "",
+    });
+  }
+
+  return steps.slice(0, 5);
+}
+
+function generateAiAnalysis(task, overrideDueDate) {
   const title = (task.title || "").toLowerCase();
   const labels = (task.labels || []).map((l) => l.toLowerCase());
   const status = (task.status || "").toLowerCase();
   const priority = (task.priority || "").toLowerCase();
   const type = (task.type || "").toLowerCase();
   const assignee = task.assignee || "";
-  const dueDate = task.dueDate || "";
+  const body = (task.body || "").toLowerCase();
+  // 期限日はDBの値を優先（外部ツールの値は無視されているため）
+  const dueDate = overrideDueDate || task.dueDate || "";
 
   // 優先度判定
   const isCritical =
@@ -1924,28 +2571,39 @@ function generateAiAnalysis(task) {
       : "通常の開発タスクです";
   const confidence = isCritical ? "85%" : isLow ? "78%" : "72%";
 
-  // 緊急度判定
+  // 緊急度判定（基本情報の期限日をもとに算出）
   let urgencyLevel = "通常対応";
-  let urgencyReason = "期限まで余裕があります";
+  let urgencyReason = "期限が設定されていません";
+  let diffDaysForAction = null;
   if (dueDate) {
     const due = new Date(dueDate);
     const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    due.setHours(0, 0, 0, 0);
     const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
+    diffDaysForAction = diffDays;
     if (diffDays < 0) {
       urgencyLevel = "即日対応が必要";
-      urgencyReason = `期限を${Math.abs(diffDays)}日超過しています`;
+      urgencyReason = `期限日（${dueDate}）を${Math.abs(diffDays)}日超過しています`;
+    } else if (diffDays === 0) {
+      urgencyLevel = "今日が期限";
+      urgencyReason = `本日（${dueDate}）が期限です。今すぐ対応してください`;
     } else if (diffDays <= 3) {
       urgencyLevel = "今日中に確認推奨";
-      urgencyReason = `期限まであと${diffDays}日のため`;
+      urgencyReason = `期限日（${dueDate}）まであと${diffDays}日です`;
     } else if (diffDays <= 7) {
       urgencyLevel = "今週中に対応推奨";
-      urgencyReason = `期限まであと${diffDays}日です`;
+      urgencyReason = `期限日（${dueDate}）まであと${diffDays}日です`;
+    } else if (diffDays <= 14) {
+      urgencyLevel = "2週間以内に対応";
+      urgencyReason = `期限日（${dueDate}）まであと${diffDays}日あります`;
     } else {
-      urgencyReason = `期限まであと${diffDays}日あります`;
+      urgencyLevel = "通常対応";
+      urgencyReason = `期限日（${dueDate}）まであと${diffDays}日あります`;
     }
   } else if (isCritical) {
     urgencyLevel = "早急に確認推奨";
-    urgencyReason = "期限未設定ですが優先度の高いタスクです";
+    urgencyReason = "期限未設定ですが優先度の高いタスクです。期限日を設定することを推奨します";
   }
 
   // リスク
@@ -1954,18 +2612,12 @@ function generateAiAnalysis(task) {
   if (isCritical) risks.push("リリース遅延の可能性");
   if (type === "bug" || type === "issue") risks.push("同種バグの再発可能性");
   if (!dueDate) risks.push("期限未設定のため進捗管理が困難");
+  if (diffDaysForAction !== null && diffDaysForAction < 0) risks.push("期限超過により関係者への影響が拡大するリスク");
   if (risks.length === 0)
     risks.push("特筆すべきリスクは現時点では検出されていません");
 
-  // 推奨アクション
-  const actions = [];
-  if (!assignee) actions.push("担当者を設定する");
-  actions.push("影響範囲を確認する");
-  if (isCritical) actions.push("関連PRまたは修正予定日を確認する");
-  if (!dueDate) actions.push("期限日を設定する");
-  if (status === "open" || status === "未対応")
-    actions.push("ステータスを進行中に更新する");
-  if (actions.length > 4) actions.length = 4;
+  // ── 推奨アクション：現在のコードベースを実際に読んで動的に生成 ──
+  const actions = buildCodeActionPlan(task.title || "", task.body || "");
 
   // 要約
   const typeLabel =
@@ -1974,13 +2626,16 @@ function generateAiAnalysis(task) {
       : type === "pr"
         ? "プルリクエスト"
         : "タスク";
+  const dueSummary = dueDate
+    ? diffDaysForAction !== null && diffDaysForAction < 0
+      ? `期限（${dueDate}）を${Math.abs(diffDaysForAction)}日超過しており早急な対応が必要です。`
+      : `期限は${dueDate}（あと${diffDaysForAction}日）です。`
+    : "期限が未設定のため、速やかに設定することを推奨します。";
   const summary =
     `${typeLabel}に関するタスクです。` +
-    (isCritical ? "影響範囲が広く、" : "") +
-    (dueDate ? "期限が設定されているため、" : "期限が未設定のため、") +
-    (isCritical
-      ? "優先対応が推奨されます。"
-      : "通常の優先度で進めてください。");
+    (isCritical ? "影響範囲が広く優先対応が求められます。" : "通常の開発タスクです。") +
+    dueSummary +
+    (assignee ? `担当者：${assignee}。` : "担当者が未設定です。");
 
   return {
     aiPriority,
@@ -2043,7 +2698,7 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
     }
     const canEdit = canEditDue(role, isAdmin);
 
-    const ai = task ? generateAiAnalysis(task) : null;
+    const ai = task ? generateAiAnalysis(task, dbDueDate) : null;
     const taskRawId = task
       ? escapeHtml(String(task.rawId || task.no || id))
       : "";
@@ -2154,9 +2809,29 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
         </ul>
       </div>
       <div class="tkd-ai-block">
-        <div class="tkd-ai-label">推奨アクション</div>
+        <div class="tkd-ai-label">推奨アクション（コードベース実装プラン）</div>
         <ol class="tkd-ai-list tkd-ai-list--ol">
-          ${ai.actions.map((a) => `<li>${escapeHtml(a)}</li>`).join("")}
+          ${ai.actions.map((a, idx) => {
+            const item = (typeof a === "object") ? a : { text: a, example: "" };
+            const escaped = escapeHtml(item.text);
+            const withBadge = escaped.replace(/【([^】]+)】/g, '<span class="tkd-ai-badge">$1</span>');
+            const withCode  = withBadge.replace(/`([^`]+)`/g, '<code class="tkd-ai-code">$1</code>');
+            const exampleId = `ai-ex-${idx}`;
+            const exampleHtml = item.example
+              ? `<div class="tkd-ai-example-wrap">
+                   <button type="button" class="tkd-ai-ex-toggle" onclick="toggleAiExample('${exampleId}')">
+                     <i class="fa-solid fa-code" style="margin-right:4px"></i>修正例を見る
+                   </button>
+                   <div id="${exampleId}" class="tkd-ai-example" style="display:none">
+                     <button type="button" class="tkd-ai-copy-btn" onclick="copyAiExample('${exampleId}')">
+                       <i class="fa-regular fa-copy"></i> コピー
+                     </button>
+                     <pre class="tkd-ai-pre"><code>${escapeHtml(item.example)}</code></pre>
+                   </div>
+                 </div>`
+              : "";
+            return `<li><div class="tkd-ai-action-text">${withCode}</div>${exampleHtml}</li>`;
+          }).join("")}
         </ol>
       </div>
       <div class="tkd-ai-block">
@@ -2215,6 +2890,18 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
 .tkd-ai-list li { margin-bottom:3px; }
 .tkd-ai-list--ol { list-style:decimal; }
 .tkd-ai-summary { font-size:13px; color:#1e293b; line-height:1.6; }
+.tkd-ai-code { background:#fef3c7; color:#92400e; border:1px solid #fde68a; border-radius:4px; padding:1px 5px; font-family:monospace; font-size:11px; white-space:nowrap; }
+.tkd-ai-badge { display:inline-block; background:#1d4ed8; color:#fff; border-radius:4px; padding:1px 6px; font-size:10px; font-weight:700; margin-right:4px; vertical-align:middle; letter-spacing:0.02em; }
+.tkd-ai-action-text { font-size:13px; color:#1e293b; line-height:1.6; margin-bottom:4px; }
+.tkd-ai-example-wrap { margin-top:6px; }
+.tkd-ai-ex-toggle { display:inline-flex; align-items:center; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:6px; padding:3px 10px; font-size:11px; font-weight:600; cursor:pointer; transition:background .15s; }
+.tkd-ai-ex-toggle:hover { background:#dbeafe; }
+.tkd-ai-example { position:relative; margin-top:6px; background:#0f172a; border-radius:8px; overflow:hidden; }
+.tkd-ai-pre { margin:0; padding:14px 14px 14px 14px; overflow-x:auto; font-size:11.5px; line-height:1.65; color:#e2e8f0; font-family:'Fira Mono','Consolas','Monaco',monospace; white-space:pre; }
+.tkd-ai-pre code { background:none; color:inherit; font-size:inherit; padding:0; border:none; white-space:pre; }
+.tkd-ai-copy-btn { position:absolute; top:8px; right:8px; background:rgba(255,255,255,.12); color:#94a3b8; border:1px solid rgba(255,255,255,.18); border-radius:5px; padding:3px 8px; font-size:11px; cursor:pointer; transition:background .15s,color .15s; z-index:1; }
+.tkd-ai-copy-btn:hover { background:rgba(255,255,255,.22); color:#fff; }
+.tkd-ai-list--ol > li { margin-bottom:12px; }
 @media (max-width:900px) { .tkd-layout { grid-template-columns:1fr; } .tkd-ai-panel { position:static; } }
 /* due date popup (reused from list page) */
 .tkl-due-cell { display:inline-flex; align-items:center; gap:4px; }
@@ -2233,6 +2920,35 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
 .tkl-due-popup-cancel:hover { background:#e2e8f0; }
 </style>
 <script>
+// AI修正例 トグル
+function toggleAiExample(id) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var btn = el.previousElementSibling;
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+    if (btn) btn.innerHTML = '<i class="fa-solid fa-code" style="margin-right:4px"></i>修正例を閉じる';
+  } else {
+    el.style.display = 'none';
+    if (btn) btn.innerHTML = '<i class="fa-solid fa-code" style="margin-right:4px"></i>修正例を見る';
+  }
+}
+// AI修正例 コピー
+function copyAiExample(id) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var pre = el.querySelector('pre');
+  var text = pre ? pre.innerText : '';
+  navigator.clipboard.writeText(text).then(function() {
+    var btn = el.querySelector('.tkd-ai-copy-btn');
+    if (btn) { var orig = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-check"></i> コピー済'; setTimeout(function(){ btn.innerHTML = orig; }, 1500); }
+  }).catch(function() {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+  });
+}
 var _duePopup = null;
 function openDueEdit(btn) {
   closeDuePopup();
