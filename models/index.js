@@ -54,6 +54,8 @@ const ChatMessageSchema = new mongoose.Schema({
     deletedAt: { type: Date },
     edited:   { type: Boolean, default: false },
     editedAt: { type: Date },
+    // 不在着信
+    isMissedCall: { type: Boolean, default: false },
 }, { timestamps: true });
 
 // インデックス

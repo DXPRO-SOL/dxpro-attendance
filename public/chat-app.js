@@ -146,6 +146,22 @@
         const bottom    = document.getElementById('sc-msg-bottom');
         if (!container || !bottom) return;
 
+        // 不在着信メッセージの専用表示
+        if (msg.isMissedCall) {
+            const isMine2 = msg.fromUserId === MY_ID;
+            const dt2     = new Date(msg.createdAt);
+            const time2   = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+            const el2 = document.createElement('div');
+            el2.className = 'sc-missed-call';
+            el2.dataset.id = msg._id;
+            el2.innerHTML = '<span class="sc-missed-icon">📵</span>'
+                + (isMine2 ? '不在着信（発信）' : '不在着信')
+                + '<span class="sc-missed-time">' + time2 + '</span>';
+            container.insertBefore(el2, bottom);
+            scrollBottom(true);
+            return;
+        }
+
         const isMine     = msg.fromUserId === MY_ID;
         const senderName = isMine ? MY_NAME : (msg.senderName || TARGET_NAME || 'ユーザー');
         const initial    = (senderName || '?').charAt(0).toUpperCase();
@@ -706,6 +722,461 @@
 
     // ── 初期スクロール ────────────────────────────────────────
     if (MODE !== 'home') scrollBottom(false);
+
+    // --- WebRTC / call ─────────────────────────────────────────
+    // 変数
+    let localStream      = null;   // カメラ・マイク
+    let screenStream     = null;   // 画面共有ストリーム
+    let callPC           = null;   // RTCPeerConnection
+    let isMicOn          = true;
+    let isCamOn          = true;
+    let isRemoteCtrl     = false;  // 遠隔操作モード（自分が操作者）
+    let pendingOffer     = null;   // 着信時に保存する offer { fromUserId, sdp }
+    let callTimeoutTimer = null;   // 発信側 30秒タイムアウトタイマー
+    let incomingTimer    = null;   // 着信側 30秒タイムアウトタイマー（無視された場合）
+
+    // ─ UI helpers ───────────────────────────────────────────────
+    function showCallOverlay(label) {
+        const ov = document.getElementById('call-overlay');
+        const tl = document.getElementById('call-target-name');
+        const sl = document.getElementById('call-status-label');
+        if (ov) ov.style.display = 'flex';
+        if (tl) tl.textContent = TARGET_NAME || '';
+        if (sl) sl.textContent = label || '通話中';
+    }
+    function hideCallOverlay() {
+        const ov = document.getElementById('call-overlay');
+        if (ov) ov.style.display = 'none';
+    }
+    function showIncomingModal(name) {
+        const m = document.getElementById('call-incoming-modal');
+        const n = document.getElementById('call-incoming-name');
+        if (m) m.style.display = 'flex';
+        if (n) n.textContent = (name || '不明') + ' から';
+    }
+    function hideIncomingModal() {
+        const m = document.getElementById('call-incoming-modal');
+        if (m) m.style.display = 'none';
+    }
+
+    // ─ メディア取得 ──────────────────────────────────────────────
+    async function getLocalStream() {
+        if (localStream) return localStream;
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        const lv = document.getElementById('local-video');
+        if (lv) lv.srcObject = localStream;
+        return localStream;
+    }
+
+    // ─ RTCPeerConnection 作成 ─────────────────────────────────────
+    function createPC(targetId) {
+        if (callPC) return callPC;
+        const ICE = { iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+        ]};
+        callPC = new RTCPeerConnection(ICE);
+        callPC.onicecandidate = (ev) => {
+            if (ev.candidate)
+                socket.emit('webrtc-candidate', { toUserId: targetId, fromUserId: MY_ID, candidate: ev.candidate.toJSON() });
+        };
+        callPC.ontrack = (ev) => {
+            const rv = document.getElementById('remote-video');
+            if (rv && ev.streams[0]) rv.srcObject = ev.streams[0];
+        };
+        callPC.onconnectionstatechange = () => {
+            const s = callPC && callPC.connectionState;
+            if (s === 'connected') showCallOverlay('通話中');
+            if (s === 'disconnected' || s === 'failed' || s === 'closed') doHangup();
+        };
+        return callPC;
+    }
+
+    // ─ 発信（正しいフロー） ────────────────────────────────────────
+    // 1. ローカルメディア取得
+    // 2. offer SDP 作成
+    // 3. call_initiate に offer SDP を同梱して送信
+    // 4. 相手の call_accepted（answer SDP あり）または call_rejected を待つ
+    async function doStartCall(targetId) {
+        try {
+            showCallOverlay('発信中... 📞');
+            await getLocalStream();
+            createPC(targetId);
+            localStream.getTracks().forEach(t => callPC.addTrack(t, localStream));
+            const offer = await callPC.createOffer();
+            await callPC.setLocalDescription(offer);
+            socket.emit('call_initiate', { toUserId: targetId, fromUserId: MY_ID, fromName: MY_NAME, sdp: offer.sdp });
+
+            // ── 30秒タイムアウト ────────────────────────────────────
+            clearTimeout(callTimeoutTimer);
+            callTimeoutTimer = setTimeout(async () => {
+                if (!callPC || callPC.connectionState === 'connected') return;
+                // まだ接続されていない = 応答なし
+                socket.emit('call_cancel', { toUserId: targetId, fromUserId: MY_ID });
+                // 不在着信をチャットに保存
+                await fetch('/api/chat/missed-call', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ toUserId: targetId }),
+                }).catch(() => {});
+                doHangup();
+                // 「応答なし」をタイピングバーに表示
+                const bar = document.getElementById('sc-typing');
+                if (bar) { bar.textContent = TARGET_NAME + ' が応答しませんでした'; setTimeout(() => { if (bar) bar.textContent = ''; }, 5000); }
+            }, 30000); // 30秒
+        } catch (e) {
+            console.error('startCall error', e);
+            hideCallOverlay();
+            alert('通話を開始できませんでした: ' + (e.message || e));
+            doHangup();
+        }
+    }
+
+    // ─ 着信応答 ────────────────────────────────────────────────────
+    // acceptCall / rejectCall は着信モーダルのボタンから呼ばれる
+    async function acceptCall() {
+        clearTimeout(incomingTimer); incomingTimer = null;
+        hideIncomingModal();
+        if (!pendingOffer) return;
+        const { fromUserId, sdp } = pendingOffer;
+        pendingOffer = null;
+        try {
+            showCallOverlay('接続中...');
+            await getLocalStream();
+            createPC(fromUserId);
+            await callPC.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
+            localStream.getTracks().forEach(t => callPC.addTrack(t, localStream));
+            const answer = await callPC.createAnswer();
+            await callPC.setLocalDescription(answer);
+            socket.emit('call_accept', { toUserId: fromUserId, fromUserId: MY_ID, sdp: answer.sdp });
+        } catch (e) {
+            console.error('acceptCall error', e);
+            hideCallOverlay();
+            doHangup();
+        }
+    }
+
+    function rejectCall() {
+        clearTimeout(incomingTimer); incomingTimer = null;
+        hideIncomingModal();
+        if (!pendingOffer) return;
+        const { fromUserId } = pendingOffer;
+        pendingOffer = null;
+        socket.emit('call_reject', { toUserId: fromUserId, fromUserId: MY_ID });
+    }
+
+    // ─ 終話 ─────────────────────────────────────────────────────
+    function doHangup() {
+        try {
+            clearTimeout(callTimeoutTimer); callTimeoutTimer = null;
+            clearTimeout(incomingTimer);    incomingTimer    = null;
+            if (callPC) { callPC.close(); callPC = null; }
+            if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+            if (screenStream) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; }
+            isMicOn = true; isCamOn = true; isRemoteCtrl = false;
+            hideCallOverlay();
+            hideIncomingModal();
+            pendingOffer = null;
+            clearPointerCanvas();
+            const rb = document.getElementById('remote-ctrl-bar');
+            if (rb) rb.style.display = 'none';
+            if (TARGET_ID) socket.emit('call_end', { toUserId: TARGET_ID, fromUserId: MY_ID });
+        } catch (e) { console.error('hangup error', e); }
+    }
+
+    // ─ マイク / カメラ ON/OFF ─────────────────────────────────────
+    function toggleMic(btn) {
+        if (!localStream) return;
+        isMicOn = !isMicOn;
+        localStream.getAudioTracks().forEach(t => { t.enabled = isMicOn; });
+        if (btn) {
+            btn.classList.toggle('muted', !isMicOn);
+            btn.innerHTML = isMicOn
+                ? '<i class="fa-solid fa-microphone"></i>'
+                : '<i class="fa-solid fa-microphone-slash"></i>';
+            btn.title = isMicOn ? 'マイク OFF' : 'マイク ON';
+        }
+    }
+
+    function toggleCam(btn) {
+        if (!localStream) return;
+        isCamOn = !isCamOn;
+        localStream.getVideoTracks().forEach(t => { t.enabled = isCamOn; });
+        if (btn) {
+            btn.classList.toggle('muted', !isCamOn);
+            btn.innerHTML = isCamOn
+                ? '<i class="fa-solid fa-video"></i>'
+                : '<i class="fa-solid fa-video-slash"></i>';
+            btn.title = isCamOn ? 'カメラ OFF' : 'カメラ ON';
+        }
+    }
+
+    // ─ 画面共有 ────────────────────────────────────────────────────
+    // 通話中でなければ先に通話を開始してから画面共有に切り替える
+    async function doShareScreen() {
+        if (!TARGET_ID) return alert('相手が選択されていません');
+        try {
+            // 画面共有ストリーム取得
+            screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: 'always' }, audio: false });
+
+            // 通話がなければ先に発信
+            if (!callPC) {
+                await doStartCall(TARGET_ID);
+                // offer 送信後、callPC は確立されている
+            }
+
+            // 映像トラックを画面共有に切り替え
+            const sender = callPC && callPC.getSenders().find(s => s.track && s.track.kind === 'video');
+            if (sender) await sender.replaceTrack(screenStream.getVideoTracks()[0]);
+
+            const btn = document.getElementById('ctrl-screen');
+            if (btn) btn.classList.add('active-feature');
+
+            socket.emit('screen_share_started', { toUserId: TARGET_ID, fromUserId: MY_ID });
+            showCallOverlay('画面共有中');
+
+            // 共有停止時（ブラウザの共有停止ボタンも含む）
+            screenStream.getVideoTracks()[0].addEventListener('ended', async () => {
+                await stopScreenShare();
+            });
+        } catch (e) {
+            if (e.name !== 'NotAllowedError') console.error('screen share failed', e);
+            if (screenStream) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; }
+        }
+    }
+
+    async function stopScreenShare() {
+        if (screenStream) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; }
+        // カメラに戻す
+        if (localStream && callPC) {
+            const camTrack = localStream.getVideoTracks()[0];
+            const sender = callPC.getSenders().find(s => s.track && s.track.kind === 'video');
+            if (sender && camTrack) await sender.replaceTrack(camTrack);
+        }
+        const btn = document.getElementById('ctrl-screen');
+        if (btn) btn.classList.remove('active-feature');
+        socket.emit('screen_share_stopped', { toUserId: TARGET_ID, fromUserId: MY_ID });
+        showCallOverlay('通話中');
+    }
+
+    // ─ 遠隔操作（ポインタ共有） ────────────────────────────────────
+    // ブラウザの制限により、相手のOSを直接操作することはできません。
+    // 代わりに「自分のマウス位置をリアルタイムで相手の画面に表示する」ポインタ共有を実装します。
+    let remotePointerHandler = null;
+
+    function requestRemote() {
+        if (!TARGET_ID) return alert('相手が選択されていません');
+        if (!callPC) return alert('通話中でないと遠隔操作できません');
+        socket.emit('remote_control_request', { toUserId: TARGET_ID, fromUserId: MY_ID, fromName: MY_NAME });
+        alert('遠隔操作リクエストを送りました。相手が許可すると操作が開始されます。');
+    }
+
+    function startRemoteControl() {
+        if (isRemoteCtrl) return;
+        isRemoteCtrl = true;
+        const videos = document.getElementById('call-videos');
+        const rb = document.getElementById('remote-ctrl-bar');
+        if (rb) rb.style.display = 'flex';
+        const btn = document.getElementById('ctrl-remote');
+        if (btn) btn.classList.add('active-feature');
+
+        remotePointerHandler = (ev) => {
+            const rv = document.getElementById('remote-video');
+            if (!rv) return;
+            const rect = rv.getBoundingClientRect();
+            const x = ((ev.clientX - rect.left) / rect.width).toFixed(4);
+            const y = ((ev.clientY - rect.top)  / rect.height).toFixed(4);
+            if (x >= 0 && x <= 1 && y >= 0 && y <= 1)
+                socket.emit('remote_pointer', { toUserId: TARGET_ID, fromUserId: MY_ID, x: +x, y: +y });
+        };
+        if (videos) videos.addEventListener('mousemove', remotePointerHandler);
+    }
+
+    function stopRemote() {
+        if (!isRemoteCtrl) return;
+        isRemoteCtrl = false;
+        const videos = document.getElementById('call-videos');
+        if (videos && remotePointerHandler) videos.removeEventListener('mousemove', remotePointerHandler);
+        remotePointerHandler = null;
+        const rb = document.getElementById('remote-ctrl-bar');
+        if (rb) rb.style.display = 'none';
+        const btn = document.getElementById('ctrl-remote');
+        if (btn) btn.classList.remove('active-feature');
+        clearPointerCanvas();
+    }
+
+    // 相手のポインタをキャンバスに描画
+    function drawRemotePointer(xRatio, yRatio) {
+        const canvas = document.getElementById('remote-pointer-canvas');
+        if (!canvas) return;
+        const rv = document.getElementById('remote-video');
+        if (!rv) return;
+        canvas.width  = rv.offsetWidth  || rv.clientWidth;
+        canvas.height = rv.offsetHeight || rv.clientHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const cx = xRatio * canvas.width;
+        const cy = yRatio * canvas.height;
+        // ポインタ描画
+        ctx.strokeStyle = '#ef4444';
+        ctx.fillStyle   = 'rgba(239,68,68,0.2)';
+        ctx.lineWidth   = 2;
+        ctx.beginPath(); ctx.arc(cx, cy, 14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        // 十字線
+        ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(cx - 20, cy); ctx.lineTo(cx + 20, cy); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx, cy - 20); ctx.lineTo(cx, cy + 20); ctx.stroke();
+    }
+
+    function clearPointerCanvas() {
+        const canvas = document.getElementById('remote-pointer-canvas');
+        if (!canvas) return;
+        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // ─ Socket イベント（通話シグナリング） ──────────────────────────
+    socket.on('call_incoming', (data) => {
+        // call_initiate → server → call_incoming
+        // offer SDP が同梱されているので pendingOffer に保存
+        if (!data) return;
+        pendingOffer = { fromUserId: data.fromUserId, sdp: data.sdp };
+        showIncomingModal(data.fromName || TARGET_NAME || '不明');
+
+        // 着信側も 30秒無視したら自動的に「不在着信」として処理
+        clearTimeout(incomingTimer);
+        incomingTimer = setTimeout(() => {
+            if (!pendingOffer) return; // すでに応答・拒否済み
+            const { fromUserId } = pendingOffer;
+            pendingOffer = null;
+            hideIncomingModal();
+            // 発信側に「不在」を通知
+            socket.emit('call_missed', { toUserId: fromUserId, fromUserId: MY_ID });
+        }, 30000);
+    });
+
+    // 発信側がキャンセル（タイムアウト or 手動キャンセル）→ 着信モーダルを閉じる
+    socket.on('call_cancelled', () => {
+        clearTimeout(incomingTimer); incomingTimer = null;
+        pendingOffer = null;
+        hideIncomingModal();
+        // 不在着信をチャットに表示（着信側）
+        const bar = document.getElementById('sc-typing');
+        if (bar) { bar.textContent = TARGET_NAME + ' からの着信がありました（不在着信）'; setTimeout(() => { if (bar) bar.textContent = ''; }, 6000); }
+    });
+
+    // 発信側：相手が無視してタイムアウト → 「応答なし」
+    socket.on('call_missed', () => {
+        clearTimeout(callTimeoutTimer); callTimeoutTimer = null;
+        doHangup();
+        const bar = document.getElementById('sc-typing');
+        if (bar) { bar.textContent = TARGET_NAME + ' は応答しませんでした'; setTimeout(() => { if (bar) bar.textContent = ''; }, 5000); }
+    });
+
+    socket.on('call_accepted', async (data) => {
+        // 相手が着信を応答した。answer SDP が届く
+        clearTimeout(callTimeoutTimer); callTimeoutTimer = null; // タイムアウト解除
+        try {
+            if (!callPC || !data || !data.sdp) return;
+            await callPC.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
+            // connectionstatechange で '通話中' に変わる
+        } catch (e) { console.error('call_accepted error', e); }
+    });
+
+    socket.on('call_rejected', () => {
+        clearTimeout(callTimeoutTimer); callTimeoutTimer = null;
+        doHangup();
+        const n = TARGET_NAME || '相手';
+        const bar = document.getElementById('sc-typing');
+        if (bar) { bar.textContent = n + ' が通話を拒否しました'; setTimeout(() => { if (bar) bar.textContent = ''; }, 4000); }
+    });
+
+    socket.on('webrtc-candidate', async (data) => {
+        try {
+            if (!callPC || !data || !data.candidate) return;
+            await callPC.addIceCandidate(new RTCIceCandidate(data.candidate));
+        } catch (e) { /* ignore benign candidate errors */ }
+    });
+
+    socket.on('call_ended', () => { doHangup(); });
+
+    socket.on('screen_share_started', (data) => {
+        const sl = document.getElementById('call-status-label');
+        if (sl) sl.textContent = '相手が画面共有中';
+    });
+    socket.on('screen_share_stopped', (data) => {
+        const sl = document.getElementById('call-status-label');
+        if (sl) sl.textContent = '通話中';
+    });
+
+    socket.on('remote_control_request', (data) => {
+        if (!data) return;
+        // 着信モーダルと干渉しないようダイアログを使わずカスタムバナーを出す
+        const bar = document.getElementById('sc-typing');
+        if (bar) {
+            bar.innerHTML = (data.fromName || '相手') + ' が遠隔操作を求めています '
+                + '<button onclick="window._chat_webrtc._grantRemote(\'' + (data.fromUserId||'') + '\', true)"  style="margin:0 4px;padding:2px 8px;background:#22c55e;color:#fff;border:none;border-radius:4px;cursor:pointer">許可</button>'
+                + '<button onclick="window._chat_webrtc._grantRemote(\'' + (data.fromUserId||'') + '\', false)" style="margin:0 4px;padding:2px 8px;background:#ef4444;color:#fff;border:none;border-radius:4px;cursor:pointer">拒否</button>';
+        }
+    });
+
+    socket.on('remote_control_grant', (data) => {
+        if (!data) return;
+        const bar = document.getElementById('sc-typing');
+        if (data.granted) {
+            if (bar) bar.textContent = '遠隔操作が許可されました。映像上でマウスを動かしてください。';
+            setTimeout(() => { if (bar) bar.textContent = ''; }, 4000);
+            startRemoteControl();
+        } else {
+            if (bar) { bar.textContent = '遠隔操作リクエストが拒否されました'; setTimeout(() => { if (bar) bar.textContent = ''; }, 3000); }
+        }
+    });
+
+    socket.on('remote_pointer', (data) => {
+        if (!data) return;
+        drawRemotePointer(data.x, data.y);
+    });
+
+    // ─ 公開API（HTMLのonclick / _chat_webrtc 経由） ──────────────
+    window._chat_webrtc = {
+        hangupCall:   doHangup,
+        toggleMic,
+        toggleCam,
+        shareScreen:  doShareScreen,
+        requestRemote,
+        stopRemote,
+        acceptCall,
+        rejectCall,
+        _grantRemote: (fromUserId, granted) => {
+            const bar = document.getElementById('sc-typing');
+            if (bar) bar.innerHTML = '';
+            socket.emit('remote_control_grant', { toUserId: fromUserId, fromUserId: MY_ID, granted });
+        },
+    };
+
+    // ─ ヘッダーボタン の紐付け ────────────────────────────────────
+    function wireCallButtons() {
+        const callBtn   = document.getElementById('call-btn');
+        const screenBtn = document.getElementById('screen-btn');
+        const remoteBtn = document.getElementById('remote-btn');
+        if (callBtn && !callBtn._wired) {
+            callBtn._wired = true;
+            callBtn.addEventListener('click', () => {
+                if (!TARGET_ID) return;
+                if (callPC) { doHangup(); } else { doStartCall(TARGET_ID); }
+            });
+        }
+        if (screenBtn && !screenBtn._wired) {
+            screenBtn._wired = true;
+            screenBtn.addEventListener('click', () => {
+                if (screenStream) { stopScreenShare(); } else { doShareScreen(); }
+            });
+        }
+        if (remoteBtn && !remoteBtn._wired) {
+            remoteBtn._wired = true;
+            remoteBtn.addEventListener('click', requestRemote);
+        }
+    }
+    wireCallButtons();
 
     // ── 公開 API ──────────────────────────────────────────────
     window.chatApp = {

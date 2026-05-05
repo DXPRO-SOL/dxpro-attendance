@@ -421,6 +421,40 @@ router.post('/api/chat/room', requireLogin, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+router.post('/api/chat/missed-call', requireLogin, async (req, res) => {
+    try {
+        const { toUserId } = req.body;
+        if (!toUserId) return res.status(400).json({ error: 'toUserId が必要です' });
+        const fromId = req.session.userId;
+        // 不在着信をシステムメッセージとして両者のDMに保存
+        const msg = await ChatMessage.create({
+            fromUserId: fromId,
+            toUserId,
+            content: '📵 不在着信',
+            attachments: [],
+            isMissedCall: true,
+        });
+        const payload = {
+            _id: String(msg._id),
+            fromUserId: String(fromId),
+            toUserId:   String(toUserId),
+            roomId:     null,
+            content:    msg.content,
+            attachments: [],
+            isMissedCall: true,
+            createdAt:  msg.createdAt,
+            reactions:  [],
+            senderName: '',
+        };
+        // リアルタイムで両者に通知
+        if (global.io) {
+            global.io.to('u_' + String(toUserId)).emit('new_message', payload);
+            global.io.to('u_' + String(fromId)).emit('new_message', payload);
+        }
+        res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.put('/api/chat/room/:id', requireLogin, async (req, res) => {
     try {
         const room = await ChatRoom.findOne({ _id: req.params.id, admins: req.session.userId });
@@ -487,9 +521,10 @@ function buildPage(data) {
 </div>
 ${buildGroupCreateModal(allUsers)}
 ${buildRoomSettingsModal()}
+${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
-<script src="/chat-app.js?v=3"></script>`;
+<script src="/chat-app.js?v=4"></script>`;
 }
 
 function buildSidebarHtml(d) {
@@ -628,7 +663,12 @@ function buildMainHtml(data) {
             <span class="sc-pip ${STATUS_CLS[data.targetStatus || 'offline']}" id="target-pip"></span></div>
             <div><div class="sc-hd-name">${escHtml(data.targetName || '')}</div>
             <div class="sc-hd-sub" id="target-sub">${STATUS_LABEL[data.targetStatus || 'offline']}${data.targetDept ? ' · ' + escHtml(data.targetDept) : ''}</div></div></div>
-            <div class="sc-hd-actions"><div class="sc-hd-search"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="msg-search" placeholder="会話内を検索..." oninput="chatApp.filterMessages(this.value)"></div></div>
+            <div class="sc-hd-actions">
+                <button class="sc-hd-btn sc-call-btn" id="call-btn" title="音声・ビデオ通話"><i class="fa-solid fa-phone"></i></button>
+                <button class="sc-hd-btn sc-call-btn" id="screen-btn" title="画面共有"><i class="fa-solid fa-desktop"></i></button>
+                <button class="sc-hd-btn sc-call-btn" id="remote-btn" title="遠隔操作リクエスト"><i class="fa-solid fa-mouse-pointer"></i></button>
+                <div class="sc-hd-search"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="msg-search" placeholder="会話内を検索..." oninput="chatApp.filterMessages(this.value)"></div>
+            </div>
         </div>`;
     return `${headerHtml}
 <div class="sc-typing-bar" id="sc-typing"></div>
@@ -710,6 +750,17 @@ function buildMessagesHtml(data) {
     for (const m of messages) {
         if (m.deleted) {
             html += '<div class="sc-msg sc-msg-del" data-id="' + m._id + '"><span class="sc-del-icon">🗑</span><span class="sc-del-text">このメッセージは削除されました</span></div>';
+            prevFrom = null; continue;
+        }
+        // 不在着信システムメッセージ
+        if (m.isMissedCall) {
+            const isMine = String(m.fromUserId) === String(myId);
+            const dt2 = new Date(m.createdAt);
+            const timeStr2 = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+            html += '<div class="sc-missed-call" data-id="' + m._id + '">'
+                + '<span class="sc-missed-icon">📵</span>'
+                + (isMine ? '不在着信（発信）' : '不在着信')
+                + '<span class="sc-missed-time">' + timeStr2 + '</span></div>';
             prevFrom = null; continue;
         }
         const isMine     = String(m.fromUserId) === String(myId);
@@ -1009,7 +1060,85 @@ function chatStyles() {
 .sc-btn-cancel:hover{background:#f5f4f0}
 .sc-btn-primary{padding:8px 18px;background:#44403c;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:.85rem;font-weight:600;transition:.15s}
 .sc-btn-primary:hover{background:#1c1917}
+.sc-missed-call{display:flex;align-items:center;gap:8px;padding:6px 18px;color:#78716c;font-size:.82rem;font-style:italic}
+.sc-missed-icon{font-size:1rem}
+.sc-missed-time{margin-left:auto;font-size:.68rem;color:#a8a29e}
+/* ── 通話UI ── */
+.sc-call-btn{color:#22c55e!important}
+.sc-call-btn:hover{background:#f0fdf4!important}
+.call-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:500;display:flex;align-items:center;justify-content:center}
+.call-box{background:#1c1917;border-radius:16px;width:560px;max-width:96vw;box-shadow:0 8px 40px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column}
+.call-header{display:flex;flex-direction:column;align-items:center;padding:14px 20px 6px;color:#e8e0d5;gap:2px}
+.call-header span:first-child{font-size:.72rem;color:#78716c;letter-spacing:.04em}
+.call-partner-name{font-size:1.1rem;font-weight:700}
+.call-videos{position:relative;background:#111;height:280px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.call-vid-remote{width:100%;height:280px;object-fit:cover;background:#111;display:block}
+.call-vid-local{position:absolute;bottom:10px;right:10px;width:100px;height:72px;object-fit:cover;border-radius:8px;border:2px solid #44403c;z-index:2}
+.call-pointer-canvas{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none}
+.call-controls{display:flex;justify-content:center;gap:12px;padding:14px 14px 10px}
+.call-ctrl-btn{width:46px;height:46px;border-radius:50%;border:none;background:#2a2724;color:#e8e0d5;font-size:.95rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s}
+.call-ctrl-btn:hover{background:#3a3733}.call-ctrl-btn.muted{background:#78350f;color:#fed7aa}
+.call-ctrl-btn.active-feature{background:#1e3a5f;color:#bfdbfe}
+.call-end-btn{background:#ef4444!important;color:#fff!important}
+.call-end-btn:hover{background:#b91c1c!important}
+.call-remote-bar{font-size:.75rem;color:#a8a29e;background:#0f0f0f;padding:6px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.call-remote-bar button{background:none;border:1px solid #44403c;color:#a8a29e;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:.72rem}
+.call-remote-bar button:hover{background:#2a2724;color:#e8e0d5}
+/* 着信モーダル */
+.call-incoming-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:600;display:flex;align-items:center;justify-content:center}
+.call-incoming-box{background:#fff;border-radius:16px;padding:32px 40px;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.2);min-width:280px}
+.call-incoming-ring{font-size:3rem;margin-bottom:10px;animation:ring .6s ease-in-out infinite alternate}
+@keyframes ring{from{transform:rotate(-15deg)}to{transform:rotate(15deg)}}
+.call-incoming-name{font-size:1.3rem;font-weight:700;color:#1c1917;margin-bottom:4px}
+.call-incoming-sub{font-size:.8rem;color:#78716c;margin-bottom:24px}
+.call-incoming-btns{display:flex;gap:14px;justify-content:center}
+.call-accept-btn{padding:12px 28px;background:#22c55e;color:#fff;border:none;border-radius:50px;font-size:.9rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;transition:.15s}
+.call-accept-btn:hover{background:#16a34a}
+.call-reject-btn{padding:12px 28px;background:#ef4444;color:#fff;border:none;border-radius:50px;font-size:.9rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;transition:.15s}
+.call-reject-btn:hover{background:#b91c1c}
 </style>`;
+}
+
+function buildCallOverlay() {
+    return `
+<!-- 通話UI オーバーレイ -->
+<div id="call-overlay" style="display:none" class="call-overlay">
+    <div class="call-box">
+        <div class="call-header">
+            <span id="call-status-label">通話中...</span>
+            <span id="call-target-name" class="call-partner-name"></span>
+        </div>
+        <div class="call-videos" id="call-videos">
+            <video id="remote-video" autoplay playsinline class="call-vid call-vid-remote"></video>
+            <canvas id="remote-pointer-canvas" class="call-pointer-canvas"></canvas>
+            <video id="local-video"  autoplay playsinline muted class="call-vid call-vid-local"></video>
+        </div>
+        <div class="call-controls">
+            <button class="call-ctrl-btn" id="ctrl-mic"    title="マイク ON/OFF"  onclick="window._chat_webrtc.toggleMic(this)"><i class="fa-solid fa-microphone"></i></button>
+            <button class="call-ctrl-btn" id="ctrl-cam"    title="カメラ ON/OFF"  onclick="window._chat_webrtc.toggleCam(this)"><i class="fa-solid fa-video"></i></button>
+            <button class="call-ctrl-btn" id="ctrl-screen" title="画面共有"        onclick="window._chat_webrtc.shareScreen()"><i class="fa-solid fa-desktop"></i></button>
+            <button class="call-ctrl-btn" id="ctrl-remote" title="遠隔操作リクエスト" onclick="window._chat_webrtc.requestRemote()"><i class="fa-solid fa-mouse-pointer"></i></button>
+            <button class="call-ctrl-btn call-end-btn" id="ctrl-hangup" title="通話終了" onclick="window._chat_webrtc.hangupCall()"><i class="fa-solid fa-phone-slash"></i></button>
+        </div>
+        <div id="remote-ctrl-bar" class="call-remote-bar" style="display:none">
+            🖱 遠隔操作中 — 映像の上でマウスを動かすと相手に位置が表示されます
+            <button onclick="window._chat_webrtc.stopRemote()">操作停止</button>
+        </div>
+    </div>
+</div>
+
+<!-- 着信モーダル -->
+<div id="call-incoming-modal" style="display:none" class="call-incoming-modal">
+    <div class="call-incoming-box">
+        <div class="call-incoming-ring">📞</div>
+        <div class="call-incoming-name" id="call-incoming-name">着信中...</div>
+        <div class="call-incoming-sub">ビデオ通話の着信があります</div>
+        <div class="call-incoming-btns">
+            <button class="call-reject-btn"  onclick="window._chat_webrtc.rejectCall()"><i class="fa-solid fa-phone-slash"></i> 拒否</button>
+            <button class="call-accept-btn"  onclick="window._chat_webrtc.acceptCall()"><i class="fa-solid fa-phone"></i> 応答</button>
+        </div>
+    </div>
+</div>`;
 }
 
 module.exports = router;

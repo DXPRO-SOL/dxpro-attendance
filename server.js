@@ -29,6 +29,60 @@ io.on('connection', (socket) => {
         if (data.toUserId) socket.to('u_' + data.toUserId).emit('stop_typing', data);
         if (data.roomId)   socket.to('r_' + data.roomId).emit('stop_typing', data);
     });
+  // --- WebRTC signaling / call control ---
+  socket.on('call_initiate', (data) => {
+    // data: { toUserId, fromUserId }
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('call_incoming', data);
+  });
+  socket.on('call_end', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('call_ended', data);
+  });
+  socket.on('webrtc-offer', (data) => {
+    // data: { toUserId, sdp }
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('webrtc-offer', data);
+  });
+  socket.on('webrtc-answer', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('webrtc-answer', data);
+  });
+  socket.on('webrtc-candidate', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('webrtc-candidate', data);
+  });
+  socket.on('screen_share_started', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('screen_share_started', data);
+  });
+  socket.on('screen_share_stopped', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('screen_share_stopped', data);
+  });
+  // callee accepts call (has answer SDP)
+  socket.on('call_accept', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('call_accepted', data);
+  });
+  // callee rejects call
+  socket.on('call_reject', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('call_rejected', data);
+  });
+  // caller cancelled (timed out / hung up before answer)
+  socket.on('call_cancel', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('call_cancelled', data);
+  });
+  // missed call (callee was not reachable / timed out on callee side)
+  socket.on('call_missed', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('call_missed', data);
+  });
+  socket.on('remote_control_request', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_control_request', data);
+  });
+  socket.on('remote_control_grant', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_control_grant', data);
+  });
+  // remote pointer position (for pointer overlay on screen share)
+  socket.on('remote_pointer', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_pointer', data);
+  });
+  // remote click event
+  socket.on('remote_click', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_click', data);
+  });
 });
 
 // Render/Cloudflare環境ではプロキシを信頼してHTTPS判定を正しく行う
@@ -212,9 +266,9 @@ httpServer.listen(PORT, "0.0.0.0", async () => {
   console.log(`${CYAN}${BOLD}  ██║╚██╗██║██║   ██║██╔═██╗ ██║   ██║██╔══██╗██║${RESET}`);
   console.log(`${CYAN}${BOLD}  ██║ ╚████║╚██████╔╝██║  ██╗╚██████╔╝██║  ██║██║${RESET}`);
   console.log(`${CYAN}${BOLD}  ╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝${RESET}`);
-  console.log(`${CYAN}${DIM}  ── by DXPRO Solutions ─────────────────────────────${RESET}`);
+  console.log(`${CYAN}${DIM}  ── by DXPRO SOLUTIONS ─────────────────────────────${RESET}`);
   console.log(`${CYAN}  Attendance & HR Management Platform${RESET}`);
-  console.log(`${DIM}  Version 2.0.0  |  Node ${process.version}  |  ${process.platform}${RESET}`);
+  console.log(`${DIM}  Version 1.0.0  |  Node ${process.version}  |  ${process.platform}${RESET}`);
   console.log('');
 
   // ── フェーズ 1: コアシステム初期化 ──────────────────────────
@@ -370,7 +424,7 @@ httpServer.listen(PORT, "0.0.0.0", async () => {
   // ── 起動完了 ─────────────────────────────────────────────────
   console.log('');
   console.log(`${GREEN}${BOLD}  ╔═══════════════════════════════════════════════════╗${RESET}`);
-  console.log(`${GREEN}${BOLD}  ║   🚀  NOKORI by DXPRO Solutions — READY          ║${RESET}`);
+  console.log(`${GREEN}${BOLD}  ║   🚀  NOKORI by DXPRO SOLUTIONS — READY          ║${RESET}`);
   console.log(`${GREEN}${BOLD}  ║                                                   ║${RESET}`);
   console.log(`${GREEN}${BOLD}  ║   http://localhost:${String(PORT).padEnd(32)}║${RESET}`);
   console.log(`${GREEN}${BOLD}  ║   Environment : ${(process.env.NODE_ENV || 'development').padEnd(34)}║${RESET}`);
