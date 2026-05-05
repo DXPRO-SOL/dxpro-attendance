@@ -762,7 +762,16 @@
     // ─ メディア取得 ──────────────────────────────────────────────
     async function getLocalStream() {
         if (localStream) return localStream;
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        } catch (e) {
+            // カメラが使えない場合は音声のみにフォールバック
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            } catch (e2) {
+                throw new Error('マイクへのアクセスが拒否されました。ブラウザの設定をご確認ください。');
+            }
+        }
         const lv = document.getElementById('local-video');
         if (lv) lv.srcObject = localStream;
         return localStream;
@@ -800,30 +809,39 @@
     async function doStartCall(targetId) {
         try {
             showCallOverlay('発信中... 📞');
+
+            // メディア取得（カメラなしでも音声のみで継続）
             await getLocalStream();
+
+            // RTCPeerConnection を作成してトラック追加
             createPC(targetId);
             localStream.getTracks().forEach(t => callPC.addTrack(t, localStream));
+
+            // Offer 作成 → 相手に送信
             const offer = await callPC.createOffer();
             await callPC.setLocalDescription(offer);
-            socket.emit('call_initiate', { toUserId: targetId, fromUserId: MY_ID, fromName: MY_NAME, sdp: offer.sdp });
+            socket.emit('call_initiate', {
+                toUserId: targetId,
+                fromUserId: MY_ID,
+                fromName: MY_NAME,
+                sdp: offer.sdp,
+                type: offer.type,
+            });
 
             // ── 30秒タイムアウト ────────────────────────────────────
             clearTimeout(callTimeoutTimer);
             callTimeoutTimer = setTimeout(async () => {
                 if (!callPC || callPC.connectionState === 'connected') return;
-                // まだ接続されていない = 応答なし
                 socket.emit('call_cancel', { toUserId: targetId, fromUserId: MY_ID });
-                // 不在着信をチャットに保存
                 await fetch('/api/chat/missed-call', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ toUserId: targetId }),
                 }).catch(() => {});
                 doHangup();
-                // 「応答なし」をタイピングバーに表示
                 const bar = document.getElementById('sc-typing');
                 if (bar) { bar.textContent = TARGET_NAME + ' が応答しませんでした'; setTimeout(() => { if (bar) bar.textContent = ''; }, 5000); }
-            }, 30000); // 30秒
+            }, 30000);
         } catch (e) {
             console.error('startCall error', e);
             hideCallOverlay();
