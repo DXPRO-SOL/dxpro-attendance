@@ -455,6 +455,86 @@ router.post('/api/chat/missed-call', requireLogin, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// 通話履歴（通話終了時に保存）
+router.post('/api/chat/call-history', requireLogin, async (req, res) => {
+    try {
+        const { toUserId, duration } = req.body;   // duration は秒
+        if (!toUserId) return res.status(400).json({ error: 'toUserId が必要です' });
+        const fromId = req.session.userId;
+        const mins = Math.floor((duration || 0) / 60);
+        const secs = (duration || 0) % 60;
+        const durStr = mins > 0 ? `${mins}分${secs}秒` : `${secs}秒`;
+        const msg = await ChatMessage.create({
+            fromUserId: fromId,
+            toUserId,
+            content: `📞 通話終了 — ${durStr}`,
+            attachments: [],
+            isCallHistory: true,
+            callDuration: duration || 0,
+        });
+        const payload = {
+            _id: String(msg._id),
+            fromUserId: String(fromId),
+            toUserId:   String(toUserId),
+            roomId:     null,
+            content:    msg.content,
+            attachments: [],
+            isCallHistory: true,
+            callDuration:  duration || 0,
+            createdAt:  msg.createdAt,
+            reactions:  [],
+            senderName: '',
+        };
+        if (global.io) {
+            global.io.to('u_' + String(toUserId)).emit('new_message', payload);
+            global.io.to('u_' + String(fromId)).emit('new_message', payload);
+        }
+        res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 録画ファイルアップロード → チャットメッセージとして保存
+router.post('/api/chat/recording', requireLogin, chatUpload.single('recording'), async (req, res) => {
+    try {
+        const { toUserId, roomId } = req.body;
+        if (!req.file) return res.status(400).json({ error: 'ファイルがありません' });
+        const fromId = req.session.userId;
+        const attachment = {
+            name:     req.file.originalname || `recording_${Date.now()}.webm`,
+            url:      '/uploads/chat/' + req.file.filename,
+            mimeType: req.file.mimetype || 'video/webm',
+            size:     req.file.size,
+        };
+        const msgData = {
+            fromUserId:  fromId,
+            attachments: [attachment],
+            content:     '🎥 通話録画',
+        };
+        if (toUserId)  msgData.toUserId = toUserId;
+        if (roomId)    msgData.roomId   = roomId;
+        const msg = await ChatMessage.create(msgData);
+        const payload = {
+            _id:         String(msg._id),
+            fromUserId:  String(fromId),
+            toUserId:    toUserId  ? String(toUserId)  : null,
+            roomId:      roomId    ? String(roomId)    : null,
+            content:     msg.content,
+            attachments: [attachment],
+            createdAt:   msg.createdAt,
+            reactions:   [],
+            senderName:  '',
+        };
+        if (global.io) {
+            if (toUserId) {
+                global.io.to('u_' + String(toUserId)).emit('new_message', payload);
+                global.io.to('u_' + String(fromId)).emit('new_message', payload);
+            }
+            if (roomId) global.io.to('r_' + roomId).emit('new_message', payload);
+        }
+        res.json({ ok: true, url: attachment.url });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.put('/api/chat/room/:id', requireLogin, async (req, res) => {
     try {
         const room = await ChatRoom.findOne({ _id: req.params.id, admins: req.session.userId });
@@ -763,6 +843,18 @@ function buildMessagesHtml(data) {
                 + '<span class="sc-missed-time">' + timeStr2 + '</span></div>';
             prevFrom = null; continue;
         }
+        // 通話履歴システムメッセージ
+        if (m.isCallHistory) {
+            const dt2 = new Date(m.createdAt);
+            const timeStr2 = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+            const mins = Math.floor((m.callDuration || 0) / 60);
+            const secs = (m.callDuration || 0) % 60;
+            const durStr = mins > 0 ? mins + '分' + secs + '秒' : secs + '秒';
+            html += '<div class="sc-call-history" data-id="' + m._id + '">'
+                + '<span>📞</span> 通話 — ' + durStr
+                + '<span class="sc-missed-time">' + timeStr2 + '</span></div>';
+            prevFrom = null; continue;
+        }
         const isMine     = String(m.fromUserId) === String(myId);
         const senderName = isRoom ? (memberNameMap[String(m.fromUserId)] || '不明') : (isMine ? myName : data.targetName);
         const initial    = (senderName || '?').charAt(0).toUpperCase();
@@ -1061,6 +1153,8 @@ function chatStyles() {
 .sc-btn-primary{padding:8px 18px;background:#44403c;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:.85rem;font-weight:600;transition:.15s}
 .sc-btn-primary:hover{background:#1c1917}
 .sc-missed-call{display:flex;align-items:center;gap:8px;padding:6px 18px;color:#78716c;font-size:.82rem;font-style:italic}
+.sc-call-history{display:flex;align-items:center;gap:8px;padding:6px 18px;color:#4ade80;font-size:.82rem;justify-content:center}
+.sc-missed-time{margin-left:auto;font-size:.75rem;opacity:.6}
 .sc-missed-icon{font-size:1rem}
 .sc-missed-time{margin-left:auto;font-size:.68rem;color:#a8a29e}
 /* ── 通話UI ── */
@@ -1082,6 +1176,11 @@ function chatStyles() {
 .call-end-btn{background:#ef4444!important;color:#fff!important}
 .call-end-btn:hover{background:#b91c1c!important}
 .call-remote-bar{font-size:.75rem;color:#a8a29e;background:#0f0f0f;padding:6px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.call-inner-notice{background:#1e3a5f;color:#e0f0ff;padding:8px 16px;font-size:.82rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center}
+.call-inner-notice button{padding:3px 12px;border:none;border-radius:5px;cursor:pointer;font-size:.8rem}
+.call-record-dot{animation:blink 1s step-start infinite}
+@keyframes blink{50%{opacity:0}}
+.ctrl-recording{background:#ef4444!important;color:#fff!important}
 .call-remote-bar button{background:none;border:1px solid #44403c;color:#a8a29e;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:.72rem}
 .call-remote-bar button:hover{background:#2a2724;color:#e8e0d5}
 /* 着信モーダル */
@@ -1108,6 +1207,8 @@ function buildCallOverlay() {
             <span id="call-status-label">通話中...</span>
             <span id="call-target-name" class="call-partner-name"></span>
         </div>
+        <!-- 通話内通知バナー（遠隔操作承認など） -->
+        <div id="call-inner-notice" style="display:none" class="call-inner-notice"></div>
         <div class="call-videos" id="call-videos">
             <video id="remote-video" autoplay playsinline class="call-vid call-vid-remote"></video>
             <canvas id="remote-pointer-canvas" class="call-pointer-canvas"></canvas>
@@ -1118,6 +1219,7 @@ function buildCallOverlay() {
             <button class="call-ctrl-btn" id="ctrl-cam"    title="カメラ ON/OFF"  onclick="window._chat_webrtc.toggleCam(this)"><i class="fa-solid fa-video"></i></button>
             <button class="call-ctrl-btn" id="ctrl-screen" title="画面共有"        onclick="window._chat_webrtc.shareScreen()"><i class="fa-solid fa-desktop"></i></button>
             <button class="call-ctrl-btn" id="ctrl-remote" title="遠隔操作リクエスト" onclick="window._chat_webrtc.requestRemote()"><i class="fa-solid fa-mouse-pointer"></i></button>
+            <button class="call-ctrl-btn" id="ctrl-record" title="録画 開始/停止"  onclick="window._chat_webrtc.toggleRecord(this)"><i class="fa-solid fa-circle-dot"></i></button>
             <button class="call-ctrl-btn call-end-btn" id="ctrl-hangup" title="通話終了" onclick="window._chat_webrtc.hangupCall()"><i class="fa-solid fa-phone-slash"></i></button>
         </div>
         <div id="remote-ctrl-bar" class="call-remote-bar" style="display:none">

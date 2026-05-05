@@ -162,6 +162,23 @@
             return;
         }
 
+        // 通話履歴メッセージの専用表示
+        if (msg.isCallHistory) {
+            const dt2  = new Date(msg.createdAt);
+            const time2 = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+            const mins = Math.floor((msg.callDuration || 0) / 60);
+            const secs = (msg.callDuration || 0) % 60;
+            const durStr = mins > 0 ? mins + '分' + secs + '秒' : secs + '秒';
+            const el2 = document.createElement('div');
+            el2.className = 'sc-call-history';
+            el2.dataset.id = msg._id;
+            el2.innerHTML = '<span>📞</span> 通話 — ' + durStr
+                + '<span class="sc-missed-time">' + time2 + '</span>';
+            container.insertBefore(el2, bottom);
+            scrollBottom(true);
+            return;
+        }
+
         const isMine     = msg.fromUserId === MY_ID;
         const senderName = isMine ? MY_NAME : (msg.senderName || TARGET_NAME || 'ユーザー');
         const initial    = (senderName || '?').charAt(0).toUpperCase();
@@ -734,6 +751,10 @@
     let pendingOffer     = null;   // 着信時に保存する offer { fromUserId, sdp }
     let callTimeoutTimer = null;   // 発信側 30秒タイムアウトタイマー
     let incomingTimer    = null;   // 着信側 30秒タイムアウトタイマー（無視された場合）
+    let callStartTime    = null;   // 通話開始時刻（ms）
+    let mediaRecorder    = null;   // 録画用 MediaRecorder
+    let recordChunks     = [];     // 録画データバッファ
+    let callTargetId     = null;   // 現在通話中の相手 userId（doHangup で参照）
 
     // ─ UI helpers ───────────────────────────────────────────────
     function showCallOverlay(label) {
@@ -809,6 +830,7 @@
     async function doStartCall(targetId) {
         try {
             showCallOverlay('発信中... 📞');
+            callTargetId = targetId;
 
             // メディア取得（カメラなしでも音声のみで継続）
             await getLocalStream();
@@ -860,6 +882,7 @@
         pendingOffer = null;
         try {
             showCallOverlay('接続中...');
+            callTargetId = fromUserId;
             await getLocalStream();
             createPC(fromUserId);
             await callPC.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
@@ -867,6 +890,7 @@
             const answer = await callPC.createAnswer();
             await callPC.setLocalDescription(answer);
             socket.emit('call_accept', { toUserId: fromUserId, fromUserId: MY_ID, sdp: answer.sdp });
+            callStartTime = Date.now(); // 応答側も開始時刻を記録
         } catch (e) {
             console.error('acceptCall error', e);
             hideCallOverlay();
@@ -894,11 +918,32 @@
             isMicOn = true; isCamOn = true; isRemoteCtrl = false;
             hideCallOverlay();
             hideIncomingModal();
+            hideNoticeBar();
             pendingOffer = null;
             clearPointerCanvas();
             const rb = document.getElementById('remote-ctrl-bar');
             if (rb) rb.style.display = 'none';
-            if (TARGET_ID) socket.emit('call_end', { toUserId: TARGET_ID, fromUserId: MY_ID });
+
+            // 通話履歴を保存
+            const target = callTargetId || TARGET_ID;
+            if (callStartTime && target) {
+                const duration = Math.round((Date.now() - callStartTime) / 1000);
+                callStartTime = null;
+                fetch('/api/chat/call-history', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ toUserId: target, duration }),
+                }).catch(() => {});
+            }
+            callStartTime = null;
+            callTargetId  = null;
+
+            // 録画停止（録画中であれば）
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop(); // onstop で保存処理
+            }
+
+            if (target) socket.emit('call_end', { toUserId: target, fromUserId: MY_ID });
         } catch (e) { console.error('hangup error', e); }
     }
 
@@ -1023,6 +1068,53 @@
         clearPointerCanvas();
     }
 
+    // ─ 録画 ──────────────────────────────────────────────────────
+    async function toggleRecord(btn) {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+            // 停止
+            mediaRecorder.stop();
+            return;
+        }
+        if (!callPC) return showNoticeBar('通話中でないと録画できません', 3000);
+
+        // 録画対象ストリームを組み立て（リモート映像 + ローカル音声）
+        const tracks = [];
+        const rv = document.getElementById('remote-video');
+        if (rv && rv.srcObject) rv.srcObject.getTracks().forEach(t => tracks.push(t));
+        if (localStream) localStream.getAudioTracks().forEach(t => tracks.push(t));
+        if (tracks.length === 0) return showNoticeBar('録画できるストリームがありません', 3000);
+
+        const stream = new MediaStream(tracks);
+        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+            ? 'video/webm;codecs=vp9,opus'
+            : 'video/webm';
+        recordChunks  = [];
+        mediaRecorder = new MediaRecorder(stream, { mimeType });
+        mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordChunks.push(e.data); };
+        mediaRecorder.onstop = async () => {
+            if (btn) { btn.classList.remove('ctrl-recording'); btn.innerHTML = '<i class="fa-solid fa-circle-dot"></i>'; }
+            showNoticeBar('🎥 録画を保存中...', 0);
+            const blob = new Blob(recordChunks, { type: mimeType });
+            recordChunks = [];
+            mediaRecorder = null;
+            const target = callTargetId || TARGET_ID;
+            if (!target || blob.size === 0) { hideNoticeBar(); return; }
+            const fd = new FormData();
+            fd.append('recording', blob, `recording_${Date.now()}.webm`);
+            fd.append('toUserId', target);
+            if (ROOM_ID) fd.append('roomId', ROOM_ID);
+            try {
+                await fetch('/api/chat/recording', { method: 'POST', body: fd });
+                showNoticeBar('✅ 録画をチャットに保存しました', 3000);
+            } catch (e) {
+                showNoticeBar('⚠️ 録画の保存に失敗しました', 3000);
+            }
+        };
+        mediaRecorder.start(1000); // 1秒ごとにデータを収集
+        if (btn) { btn.classList.add('ctrl-recording'); btn.innerHTML = '<i class="fa-solid fa-stop"></i> <span class="call-record-dot">●</span>'; }
+        showNoticeBar('🔴 録画中...', 0);
+    }
+
     // 相手のポインタをキャンバスに描画
     function drawRemotePointer(xRatio, yRatio) {
         const canvas = document.getElementById('remote-pointer-canvas');
@@ -1052,10 +1144,20 @@
         canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
     }
 
-    // ─ 通知バナー（入力欄を壊さない浮遊バナー） ──────────────────
+    // ─ 通知バナー（通話オーバーレイ内 or 画面下部） ────────────────
     let _noticeBannerEl = null;
     let _noticeBannerTimer = null;
     function showNoticeBar(html, duration) {
+        // 通話オーバーレイが表示中なら内部バナーを使う
+        const inner = document.getElementById('call-inner-notice');
+        if (inner) {
+            inner.innerHTML = html;
+            inner.style.display = 'flex';
+            clearTimeout(_noticeBannerTimer);
+            if (duration) _noticeBannerTimer = setTimeout(() => hideNoticeBar(), duration);
+            return;
+        }
+        // 通話外のとき：画面下部フローティングバナー
         if (!_noticeBannerEl) {
             _noticeBannerEl = document.createElement('div');
             _noticeBannerEl.id = 'call-notice-bar';
@@ -1072,6 +1174,8 @@
         if (duration) _noticeBannerTimer = setTimeout(() => hideNoticeBar(), duration);
     }
     function hideNoticeBar() {
+        const inner = document.getElementById('call-inner-notice');
+        if (inner) { inner.style.display = 'none'; inner.innerHTML = ''; }
         if (_noticeBannerEl) _noticeBannerEl.style.display = 'none';
     }
 
@@ -1116,6 +1220,7 @@
     socket.on('call_accepted', async (data) => {
         // 相手が着信を応答した。answer SDP が届く
         clearTimeout(callTimeoutTimer); callTimeoutTimer = null; // タイムアウト解除
+        callStartTime = Date.now(); // 通話開始時刻を記録
         try {
             if (!callPC || !data || !data.sdp) return;
             await callPC.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
@@ -1189,6 +1294,7 @@
         stopRemote,
         acceptCall,
         rejectCall,
+        toggleRecord,
         _grantRemote: (fromUserId, granted) => {
             hideNoticeBar();
             socket.emit('remote_control_grant', { toUserId: fromUserId, fromUserId: MY_ID, granted });
