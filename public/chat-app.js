@@ -986,7 +986,7 @@
         if (!TARGET_ID) return alert('相手が選択されていません');
         if (!callPC) return alert('通話中でないと遠隔操作できません');
         socket.emit('remote_control_request', { toUserId: TARGET_ID, fromUserId: MY_ID, fromName: MY_NAME });
-        alert('遠隔操作リクエストを送りました。相手が許可すると操作が開始されます。');
+        showNoticeBar('遠隔操作リクエストを送信しました。相手の許可を待っています...', 5000);
     }
 
     function startRemoteControl() {
@@ -1050,6 +1050,29 @@
         const canvas = document.getElementById('remote-pointer-canvas');
         if (!canvas) return;
         canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // ─ 通知バナー（入力欄を壊さない浮遊バナー） ──────────────────
+    let _noticeBannerEl = null;
+    let _noticeBannerTimer = null;
+    function showNoticeBar(html, duration) {
+        if (!_noticeBannerEl) {
+            _noticeBannerEl = document.createElement('div');
+            _noticeBannerEl.id = 'call-notice-bar';
+            _noticeBannerEl.style.cssText =
+                'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
+                'background:#1e293b;color:#f1f5f9;padding:10px 18px;border-radius:10px;' +
+                'font-size:13px;z-index:700;box-shadow:0 4px 16px rgba(0,0,0,.4);' +
+                'display:flex;align-items:center;gap:10px;max-width:480px;';
+            document.body.appendChild(_noticeBannerEl);
+        }
+        _noticeBannerEl.innerHTML = html;
+        _noticeBannerEl.style.display = 'flex';
+        clearTimeout(_noticeBannerTimer);
+        if (duration) _noticeBannerTimer = setTimeout(() => hideNoticeBar(), duration);
+    }
+    function hideNoticeBar() {
+        if (_noticeBannerEl) _noticeBannerEl.style.display = 'none';
     }
 
     // ─ Socket イベント（通話シグナリング） ──────────────────────────
@@ -1128,24 +1151,26 @@
 
     socket.on('remote_control_request', (data) => {
         if (!data) return;
-        // 着信モーダルと干渉しないようダイアログを使わずカスタムバナーを出す
-        const bar = document.getElementById('sc-typing');
-        if (bar) {
-            bar.innerHTML = (data.fromName || '相手') + ' が遠隔操作を求めています '
-                + '<button onclick="window._chat_webrtc._grantRemote(\'' + (data.fromUserId||'') + '\', true)"  style="margin:0 4px;padding:2px 8px;background:#22c55e;color:#fff;border:none;border-radius:4px;cursor:pointer">許可</button>'
-                + '<button onclick="window._chat_webrtc._grantRemote(\'' + (data.fromUserId||'') + '\', false)" style="margin:0 4px;padding:2px 8px;background:#ef4444;color:#fff;border:none;border-radius:4px;cursor:pointer">拒否</button>';
-        }
+        const fromUserId = data.fromUserId || '';
+        const fromName   = data.fromName   || '相手';
+        // 入力欄を破壊しないよう専用バナーに表示
+        showNoticeBar(
+            '<span>' + fromName + ' が遠隔操作（ポインタ共有）を求めています</span>' +
+            '<button onclick="window._chat_webrtc._grantRemote(\'' + fromUserId + '\',true)"'  +
+            ' style="padding:3px 10px;background:#22c55e;color:#fff;border:none;border-radius:5px;cursor:pointer;white-space:nowrap">許可</button>' +
+            '<button onclick="window._chat_webrtc._grantRemote(\'' + fromUserId + '\',false)"' +
+            ' style="padding:3px 10px;background:#ef4444;color:#fff;border:none;border-radius:5px;cursor:pointer;white-space:nowrap">拒否</button>'
+        );
     });
 
     socket.on('remote_control_grant', (data) => {
         if (!data) return;
-        const bar = document.getElementById('sc-typing');
+        hideNoticeBar();
         if (data.granted) {
-            if (bar) bar.textContent = '遠隔操作が許可されました。映像上でマウスを動かしてください。';
-            setTimeout(() => { if (bar) bar.textContent = ''; }, 4000);
+            showNoticeBar('✅ 遠隔操作が許可されました。映像上でマウスを動かしてください。', 4000);
             startRemoteControl();
         } else {
-            if (bar) { bar.textContent = '遠隔操作リクエストが拒否されました'; setTimeout(() => { if (bar) bar.textContent = ''; }, 3000); }
+            showNoticeBar('❌ 遠隔操作リクエストが拒否されました', 3000);
         }
     });
 
@@ -1159,14 +1184,13 @@
         hangupCall:   doHangup,
         toggleMic,
         toggleCam,
-        shareScreen:  doShareScreen,
+        shareScreen:  () => { if (screenStream) { stopScreenShare(); } else { doShareScreen(); } },
         requestRemote,
         stopRemote,
         acceptCall,
         rejectCall,
         _grantRemote: (fromUserId, granted) => {
-            const bar = document.getElementById('sc-typing');
-            if (bar) bar.innerHTML = '';
+            hideNoticeBar();
             socket.emit('remote_control_grant', { toUserId: fromUserId, fromUserId: MY_ID, granted });
         },
     };
