@@ -1836,6 +1836,17 @@
         _grantRemote: (fromUserId, granted) => {
             hideNoticeBar();
             socket.emit('remote_control_grant', { toUserId: fromUserId, fromUserId: MY_ID, granted });
+            if (granted) {
+                // 許可した側に「エージェント起動が必要」を大きく表示
+                const serverUrl = location.origin;
+                const uid = MY_ID;
+                const modal = document.getElementById('agent-setup-modal');
+                const cmdEl = document.getElementById('agent-cmd-text');
+                if (modal && cmdEl) {
+                    cmdEl.textContent = `node remote-agent.js ${uid} ${serverUrl}`;
+                    modal.style.display = 'flex';
+                }
+            }
         },
     };
 

@@ -662,7 +662,7 @@ ${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/call-sounds.js"></script>
-<script src="/chat-app.js?v=20"></script>`;
+<script src="/chat-app.js?v=21"></script>`;
 }
 
 function buildSidebarHtml(d) {
@@ -1339,21 +1339,22 @@ function buildCallOverlay() {
 
 <!-- 遠隔操作エージェント説明モーダル -->
 <div id="agent-setup-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:700;align-items:center;justify-content:center;display:none">
-  <div style="background:#1c1917;border-radius:14px;padding:28px 32px;max-width:500px;width:92vw;color:#e8e0d5;box-shadow:0 8px 40px rgba(0,0,0,.5)">
-    <div style="font-size:1.15rem;font-weight:700;margin-bottom:14px">🖥 TeamViewer相当の遠隔操作を有効にする</div>
-    <p style="font-size:.85rem;color:#a8a29e;margin-bottom:14px">
-      ブラウザだけではOSレベルの操作（他のアプリ・デスクトップ全体）はできません。<br>
-      <strong style="color:#fbbf24">遠隔操作エージェント</strong>をローカルで起動することで、TeamViewerと同等の操作が可能になります。
+  <div style="background:#1c1917;border-radius:14px;padding:28px 32px;max-width:520px;width:92vw;color:#e8e0d5;box-shadow:0 8px 40px rgba(0,0,0,.5)">
+    <div style="font-size:1.15rem;font-weight:700;margin-bottom:8px">🖥 あと1ステップで遠隔操作が使えます</div>
+    <p style="font-size:.85rem;color:#a8a29e;margin-bottom:4px">
+      ブラウザはセキュリティ上、OSの操作ができません。<br>
+      下のコマンドを <strong style="color:#fbbf24">このPC のターミナル</strong> で実行してください（1回だけ）。
     </p>
+    <p style="font-size:.8rem;color:#6ee7b7;margin-bottom:12px">✔ 実行後、相手のクリック・キーボード操作がこのPCで即座に動きます。</p>
     <div style="background:#0f0f0f;border-radius:8px;padding:14px;font-family:monospace;font-size:.82rem;margin-bottom:14px;line-height:1.7">
-      <div style="color:#6ee7b7"># ① このコマンドをターミナルで実行（操作される側のPCで）</div>
-      <div id="agent-cmd-text" style="color:#fef3c7;word-break:break-all"></div>
-      <div style="color:#6ee7b7;margin-top:8px"># macOS: アクセシビリティ権限が必要</div>
-      <div style="color:#a8a29e"># システム設定 → プライバシー → アクセシビリティ → ターミナルを許可</div>
+      <div style="color:#6ee7b7"># ターミナルにコピペして実行</div>
+      <div id="agent-cmd-text" style="color:#fef3c7;word-break:break-all;margin-top:4px"></div>
+      <div style="color:#a8a29e;margin-top:8px;font-size:.75rem">※ macOS: システム設定→プライバシー→アクセシビリティ→ターミナルを許可</div>
     </div>
+    <div style="font-size:.8rem;color:#78716c;margin-bottom:14px">毎回実行したくない場合は <code style="color:#a8a29e">bash install-agent.sh &lt;ユーザーID&gt;</code> で自動起動に設定できます。</div>
     <div style="display:flex;gap:10px;justify-content:flex-end">
       <button onclick="document.getElementById('agent-setup-modal').style.display='none'" style="padding:8px 18px;background:#2a2724;border:1px solid #44403c;color:#e8e0d5;border-radius:7px;cursor:pointer">閉じる</button>
-      <button onclick="navigator.clipboard&&navigator.clipboard.writeText(document.getElementById('agent-cmd-text').textContent);this.textContent='コピー済み✔'" style="padding:8px 18px;background:#1e3a5f;border:none;color:#bfdbfe;border-radius:7px;cursor:pointer">コマンドをコピー</button>
+      <button onclick="navigator.clipboard&&navigator.clipboard.writeText(document.getElementById('agent-cmd-text').textContent);this.textContent='コピー済み ✔';setTimeout(()=>this.textContent='コマンドをコピー',2000)" style="padding:8px 18px;background:#1e3a5f;border:none;color:#bfdbfe;border-radius:7px;cursor:pointer">コマンドをコピー</button>
     </div>
   </div>
 </div>
