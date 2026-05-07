@@ -821,27 +821,93 @@ router.get('/dashboard', requireLogin, async (req, res) => {
                         </div>
                     </div>
 
-                    <!-- ── フィードバックフォーム ── -->
-                    <div class="semi-feedback-form" style="margin-top:14px">
-                        <label>この評価についてフィードバックをお寄せください</label>
-                        <div class="semi-radio-group">
-                            <label><input type="radio" name="sfAgree" value="true"> 妥当だと思う</label>
-                            <label><input type="radio" name="sfAgree" value="false"> 違うと思う</label>
+                    <!-- ── 自己評価・コミットメント ── -->
+                    <div style="margin-top:16px;border:1.5px solid #e0e8ff;border-radius:14px;overflow:hidden">
+                        <!-- ヘッダー -->
+                        <div style="background:linear-gradient(135deg,#eff6ff,#f5f3ff);padding:13px 16px;border-bottom:1px solid #e0e8ff;display:flex;align-items:center;gap:8px">
+                            <i class="fa-solid fa-pen-to-square" style="color:#7c3aed;font-size:14px"></i>
+                            <span style="font-size:13px;font-weight:700;color:#1e1b4b">自己評価・コミットメントを記録する</span>
+                            <span style="margin-left:auto;font-size:10px;color:#9ca3af">管理者に共有されます</span>
                         </div>
-                        <textarea id="sfComment" placeholder="コメント（任意）"></textarea>
-                        <div style="text-align:right;margin-top:8px">
-                            <button type="button" id="sfSubmit" class="btn-semi-submit">フィードバックを送信</button>
+                        <div style="padding:14px 16px">
+
+                            <!-- カテゴリ別 自己評価（星） -->
+                            <div style="font-size:11.5px;font-weight:700;color:#6b7280;margin-bottom:10px;text-transform:uppercase;letter-spacing:.4px">カテゴリ別 自己評価（1〜5）</div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+                                ${[
+                                    ['attendance','出勤・時間管理','fa-calendar-check','#2563eb'],
+                                    ['goal','目標管理','fa-bullseye','#16a34a'],
+                                    ['quality','業務品質','fa-file-lines','#0891b2'],
+                                    ['overtime','残業管理','fa-moon','#7c3aed'],
+                                    ['leave','休暇管理','fa-umbrella-beach','#d97706'],
+                                ].map(([key,label,icon,color])=>`
+                                <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px">
+                                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+                                        <i class="fa-solid ${icon}" style="color:${color};font-size:12px"></i>
+                                        <span style="font-size:11.5px;font-weight:700;color:#374151">${label}</span>
+                                    </div>
+                                    <div class="sf-stars" data-key="${key}" style="display:flex;gap:4px">
+                                        ${[1,2,3,4,5].map(n=>`<span class="sf-star" data-val="${n}" style="font-size:22px;cursor:pointer;color:#d1d5db;line-height:1;transition:color .12s">★</span>`).join('')}
+                                    </div>
+                                </div>`).join('')}
+                                <!-- 5番目の空セル用ダミー（grid調整） -->
+                                <div></div>
+                            </div>
+
+                            <!-- 次期コミットメント -->
+                            <div style="margin-bottom:12px">
+                                <label style="display:block;font-size:12px;font-weight:700;color:#374151;margin-bottom:5px">
+                                    <i class="fa-solid fa-rocket" style="color:#7c3aed;margin-right:4px"></i>次の半期に向けた取り組み・コミットメント
+                                </label>
+                                <textarea id="sfCommitment" placeholder="例：毎朝 10 分前に席につき、月間遅刻ゼロを目指します。目標は週次で進捗更新します。" style="width:100%;min-height:68px;border:1px solid #e5e7eb;border-radius:8px;padding:9px 11px;font-size:12.5px;resize:vertical;font-family:inherit;color:#111827;background:#fff;outline:none" onfocus="this.style.borderColor='#7c3aed';this.style.boxShadow='0 0 0 3px rgba(124,58,237,.1)'" onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'" maxlength="500"></textarea>
+                                <div style="text-align:right;font-size:10px;color:#9ca3af;margin-top:2px">最大500文字</div>
+                            </div>
+
+                            <!-- 上司へのアピール -->
+                            <div style="margin-bottom:14px">
+                                <label style="display:block;font-size:12px;font-weight:700;color:#374151;margin-bottom:5px">
+                                    <i class="fa-solid fa-bullhorn" style="color:#2563eb;margin-right:4px"></i>上司・管理者への補足・アピール <span style="font-size:10px;font-weight:400;color:#9ca3af">（任意）</span>
+                                </label>
+                                <textarea id="sfAppeal" placeholder="例：AIスコアに反映されていない貢献（社内勉強会の企画・後輩のサポートなど）があれば記載してください。" style="width:100%;min-height:60px;border:1px solid #e5e7eb;border-radius:8px;padding:9px 11px;font-size:12.5px;resize:vertical;font-family:inherit;color:#111827;background:#fff;outline:none" onfocus="this.style.borderColor='#2563eb';this.style.boxShadow='0 0 0 3px rgba(37,99,235,.1)'" onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'" maxlength="500"></textarea>
+                            </div>
+
+                            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                                <div style="font-size:11px;color:#9ca3af"><i class="fa-solid fa-shield-halved" style="margin-right:3px"></i>送信内容は管理者のみ閲覧できます</div>
+                                <button type="button" id="sfSubmit" style="background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;border:none;padding:9px 22px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'">
+                                    <i class="fa-solid fa-paper-plane"></i> 送信する
+                                </button>
+                            </div>
                         </div>
                     </div>
+
+                    <!-- 過去の自己評価履歴 -->
                     ${feedbackHistory.length ? `
                     <div style="margin-top:14px">
-                        <div style="font-size:12px;font-weight:700;color:var(--c-muted);margin-bottom:8px">過去のフィードバック</div>
-                        ${feedbackHistory.slice(0,3).map(f=>`
-                        <div style="padding:8px 10px;border-radius:8px;background:#f8faff;border:1px solid #e0e8ff;margin-bottom:6px">
-                            <div style="font-size:12px;font-weight:600">Grade ${escapeHtml(f.predictedGrade||'')} / ${f.predictedScore||0}点 &nbsp;<span style="color:${f.agree?'var(--c-success)':'var(--c-danger)'}">${f.agree?'妥当':'違う'}</span></div>
-                            <div style="font-size:11px;color:var(--c-sub)">${moment(f.createdAt).format('YYYY/MM/DD')}</div>
-                            ${f.comment ? `<div style="font-size:12px;margin-top:4px">${escapeHtml(f.comment)}</div>` : ''}
-                        </div>`).join('')}
+                        <div style="font-size:12px;font-weight:700;color:var(--c-muted);margin-bottom:8px"><i class="fa-solid fa-clock-rotate-left" style="margin-right:5px"></i>過去の自己評価記録</div>
+                        ${feedbackHistory.slice(0,3).map(f=>{
+                            const ratings = f.selfRatings || {};
+                            const catKeys = ['attendance','goal','quality','overtime','leave'];
+                            const catLabels = ['出勤','目標','品質','残業','休暇'];
+                            const avgRating = catKeys.filter(k=>ratings[k]).length
+                                ? Math.round(catKeys.reduce((s,k)=>s+(ratings[k]||0),0) / catKeys.filter(k=>ratings[k]).length * 10)/10
+                                : null;
+                            return `
+                        <div style="padding:11px 13px;border-radius:10px;background:#f8faff;border:1px solid #e0e8ff;margin-bottom:8px">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                                <div style="font-size:12px;font-weight:700;color:#1e40af">Grade ${escapeHtml(f.predictedGrade||'')} &nbsp;<span style="color:#6b7280;font-weight:400">/ ${f.predictedScore||0}点</span></div>
+                                <div style="font-size:11px;color:#9ca3af">${moment(f.createdAt).format('YYYY/MM/DD')}</div>
+                            </div>
+                            ${avgRating !== null ? `
+                            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+                                ${catKeys.map((k,i)=>ratings[k]?`
+                                <div style="font-size:10px;background:#eff6ff;color:#2563eb;padding:2px 8px;border-radius:999px;font-weight:600">
+                                    ${catLabels[i]} ${'★'.repeat(ratings[k])}${'☆'.repeat(5-ratings[k])}
+                                </div>`:'').join('')}
+                            </div>` : ''}
+                            ${f.commitment ? `<div style="font-size:11.5px;color:#374151;background:white;border-radius:6px;padding:6px 9px;border:1px solid #e5e7eb;margin-bottom:5px"><i class="fa-solid fa-rocket" style="color:#7c3aed;font-size:9px;margin-right:4px"></i>${escapeHtml(f.commitment)}</div>` : ''}
+                            ${f.appeal ? `<div style="font-size:11.5px;color:#374151;background:white;border-radius:6px;padding:6px 9px;border:1px solid #bfdbfe"><i class="fa-solid fa-bullhorn" style="color:#2563eb;font-size:9px;margin-right:4px"></i>${escapeHtml(f.appeal)}</div>` : ''}
+                        </div>`;
+                        }).join('')}
                     </div>` : ''}
                 </div>
             </div>
@@ -1053,23 +1119,65 @@ router.get('/dashboard', requireLogin, async (req, res) => {
             });
         })();
 
-        // ── Semi-annual feedback submit ──
+        // ── Semi-annual self-assessment submit ──
         (function(){
+            // 星評価インタラクション
+            document.querySelectorAll('.sf-stars').forEach(container => {
+                const stars = container.querySelectorAll('.sf-star');
+                let selected = 0;
+                const paint = (val) => stars.forEach(s => {
+                    s.style.color = parseInt(s.dataset.val) <= val ? '#f59e0b' : '#d1d5db';
+                });
+                stars.forEach(s => {
+                    s.addEventListener('mouseenter', () => paint(parseInt(s.dataset.val)));
+                    s.addEventListener('mouseleave', () => paint(selected));
+                    s.addEventListener('click', () => {
+                        selected = parseInt(s.dataset.val);
+                        container.dataset.selected = selected;
+                        paint(selected);
+                    });
+                });
+            });
+
             const btn = document.getElementById('sfSubmit');
             if(!btn) return;
             btn.addEventListener('click', async ()=>{
-                const agree = document.querySelector('input[name="sfAgree"]:checked');
-                const comment = document.getElementById('sfComment').value;
+                const selfRatings = {};
+                document.querySelectorAll('.sf-stars').forEach(c => {
+                    if(c.dataset.selected) selfRatings[c.dataset.key] = parseInt(c.dataset.selected);
+                });
+                const commitment = (document.getElementById('sfCommitment')||{}).value || '';
+                const appeal     = (document.getElementById('sfAppeal')||{}).value || '';
+                if(!Object.keys(selfRatings).length && !commitment.trim()) {
+                    alert('カテゴリ評価またはコミットメントを入力してください。');
+                    return;
+                }
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 送信中...';
                 try {
                     const r = await fetch('/feedback/semi',{
                         method:'POST',
                         headers:{'Content-Type':'application/json'},
-                        body: JSON.stringify({ predictedGrade:'${escapeHtml(semi.grade)}', predictedScore:${semi.score}, agree: agree ? agree.value==='true' : null, comment })
+                        body: JSON.stringify({
+                            predictedGrade:'${escapeHtml(semi.grade)}',
+                            predictedScore:${semi.score},
+                            selfRatings, commitment, appeal
+                        })
                     });
                     const j = await r.json();
-                    if(j.ok){ btn.textContent='✓ 送信済み'; btn.disabled=true; }
-                    else alert('送信に失敗しました');
-                } catch(e){ alert('送信エラー'); }
+                    if(j.ok){
+                        btn.innerHTML = '<i class="fa-solid fa-check"></i> 送信しました';
+                        btn.style.background = 'linear-gradient(135deg,#16a34a,#15803d)';
+                    } else {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> 送信する';
+                        alert('送信に失敗しました');
+                    }
+                } catch(e){
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> 送信する';
+                    alert('送信エラー');
+                }
             });
         })();
 
@@ -1129,8 +1237,16 @@ router.post('/feedback/semi', requireLogin, async (req, res) => {
     try {
         const user = await User.findById(req.session.userId);
         const employee = await Employee.findOne({ userId: user._id });
-        const { predictedGrade, predictedScore, agree, comment } = req.body;
-        const fb = new SemiAnnualFeedback({ userId: user._id, employeeId: employee ? employee._id : null, predictedGrade, predictedScore, agree: !!agree, comment });
+        const { predictedGrade, predictedScore, selfRatings, commitment, appeal } = req.body;
+        const fb = new SemiAnnualFeedback({
+            userId: user._id,
+            employeeId: employee ? employee._id : null,
+            predictedGrade,
+            predictedScore,
+            selfRatings: selfRatings || {},
+            commitment: commitment || '',
+            appeal: appeal || '',
+        });
         await fb.save();
         return res.json({ ok: true });
     } catch (err) {

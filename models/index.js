@@ -378,6 +378,18 @@ const SemiAnnualFeedbackSchema = new mongoose.Schema({
   predictedScore: Number,
   agree: { type: Boolean },
   comment: String,
+  // 自己評価（各カテゴリ 1〜5 の星評価）
+  selfRatings: {
+    attendance: { type: Number, min: 1, max: 5 },
+    goal:       { type: Number, min: 1, max: 5 },
+    quality:    { type: Number, min: 1, max: 5 },
+    overtime:   { type: Number, min: 1, max: 5 },
+    leave:      { type: Number, min: 1, max: 5 },
+  },
+  // 次期コミットメント
+  commitment: { type: String, maxlength: 500 },
+  // 上司へのアピール（管理者側に表示）
+  appeal: { type: String, maxlength: 500 },
   createdAt: { type: Date, default: Date.now },
 });
 

@@ -5,7 +5,7 @@ const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const moment = require('moment-timezone');
 const pdf = require('html-pdf');
-const { User, Employee, Attendance, ApprovalRequest, LeaveRequest, PayrollSlip, Goal } = require('../models');
+const { User, Employee, Attendance, ApprovalRequest, LeaveRequest, PayrollSlip, Goal, SemiAnnualFeedback } = require('../models');
 const { requireLogin, isAdmin } = require('../middleware/auth');
 const { sendMail } = require('../config/mailer');
 const { escapeHtml } = require('../lib/helpers');
@@ -117,6 +117,11 @@ router.get('/admin', requireLogin, isAdmin, async (req, res) => {
                         <div class="admin-desc">管理者権限の付与・剥奪、パスワードリセットを行います。</div>
                     </a>
 
+                    <a class="admin-card" href="/admin/semi-assessments" style="border:1.5px solid #ede9fe;background:linear-gradient(180deg,#faf5ff,#fff);">
+                        <div class="admin-head"><div class="admin-icon" style="background:linear-gradient(90deg,#ede9fe,#ddd6fe);color:#7c3aed;">🤖</div><div class="admin-title" style="color:#5b21b6;">AI評価 自己評価レポート</div></div>
+                        <div class="admin-desc" style="color:#6b7280;">社員が送信した自己評価・コミットメント・アピール文を一覧で確認します。</div>
+                    </a>
+
                     <a class="admin-card" href="/admin/chat-management" style="border:1.5px solid #fecaca;background:linear-gradient(180deg,#fff5f5,#fff);">
                         <div class="admin-head"><div class="admin-icon" style="background:linear-gradient(90deg,#fee2e2,#fef2f2);color:#ef4444">🗑</div><div class="admin-title">チャット管理</div></div>
                         <div class="admin-desc">従業員・グループのチャット履歴を削除します。</div>
@@ -135,6 +140,150 @@ router.get('/admin/register-employee', requireLogin, isAdmin, (req, res) => {
 });
 router.post('/admin/register-employee', requireLogin, isAdmin, (req, res) => {
     res.redirect('/hr/add');
+});
+
+router.get('/admin/register-employee', requireLogin, isAdmin, (req, res) => {
+    res.redirect('/hr/add');
+});
+router.post('/admin/register-employee', requireLogin, isAdmin, (req, res) => {
+    res.redirect('/hr/add');
+});
+
+// ── AI評価 自己評価レポート（管理者閲覧）──
+router.get('/admin/semi-assessments', requireLogin, isAdmin, async (req, res) => {
+    try {
+        // 全フィードバックを取得（ユーザー・従業員情報を結合）
+        const feedbacks = await SemiAnnualFeedback.find().sort({ createdAt: -1 }).limit(200).lean();
+        const userIds = [...new Set(feedbacks.map(f => String(f.userId)))];
+        const [users, employees] = await Promise.all([
+            User.find({ _id: { $in: userIds } }).lean(),
+            Employee.find({ userId: { $in: userIds } }).lean(),
+        ]);
+        const userMap = Object.fromEntries(users.map(u => [String(u._id), u]));
+        const empMap  = Object.fromEntries(employees.map(e => [String(e.userId), e]));
+
+        const catKeys   = ['attendance','goal','quality','overtime','leave'];
+        const catLabels = ['出勤・時間管理','目標管理','業務品質','残業管理','休暇管理'];
+        const catColors = ['#2563eb','#16a34a','#0891b2','#7c3aed','#d97706'];
+
+        const rows = feedbacks.map(f => {
+            const u = userMap[String(f.userId)] || {};
+            const e = empMap[String(f.userId)] || {};
+            const ratings = f.selfRatings || {};
+            const stars = n => n ? '★'.repeat(n) + '☆'.repeat(5-n) : '—';
+            return { f, u, e, ratings, stars };
+        });
+
+        const html = `
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+<style>
+body{font-family:Inter,'Noto Sans JP',system-ui,sans-serif;background:#f5f6fa;margin:0;color:#111827}
+.wrap{max-width:1100px;margin:28px auto;padding:0 16px 48px}
+.page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px}
+.page-title{font-size:20px;font-weight:800;color:#1e1b4b;display:flex;align-items:center;gap:8px}
+.back-btn{font-size:12px;color:#6b7280;text-decoration:none;border:1px solid #e5e7eb;padding:5px 12px;border-radius:8px;display:inline-flex;align-items:center;gap:5px}
+.back-btn:hover{background:#f3f4f6}
+.card{background:#fff;border-radius:14px;border:1px solid #e5e7eb;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:16px;overflow:hidden}
+.card-head{background:linear-gradient(135deg,#faf5ff,#eff6ff);padding:13px 18px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.emp-name{font-size:14px;font-weight:800;color:#1e1b4b}
+.emp-meta{font-size:11.5px;color:#6b7280}
+.grade-badge{font-size:18px;font-weight:900;padding:2px 14px;border-radius:999px;background:#ede9fe;color:#7c3aed}
+.date-badge{font-size:11px;color:#9ca3af}
+.card-body{padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:640px){.card-body{grid-template-columns:1fr}}
+.section-label{font-size:10.5px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.star-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.star-label{font-size:12px;color:#374151;width:110px;flex-shrink:0}
+.stars{font-size:14px;color:#f59e0b;letter-spacing:1px}
+.stars .empty{color:#d1d5db}
+.text-box{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;font-size:12.5px;color:#374151;line-height:1.6;white-space:pre-wrap;min-height:44px}
+.no-data{color:#9ca3af;font-style:italic;font-size:12px}
+.empty-state{text-align:center;padding:60px 20px;color:#9ca3af}
+.filter-bar{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;align-items:center}
+.filter-bar input,.filter-bar select{border:1px solid #e5e7eb;border-radius:8px;padding:7px 12px;font-size:13px;outline:none;background:#fff}
+.filter-bar input:focus{border-color:#7c3aed}
+.count-badge{font-size:12px;color:#6b7280;background:#f3f4f6;padding:3px 10px;border-radius:999px}
+</style>
+<div class="wrap">
+    <div class="page-head">
+        <div class="page-title"><i class="fa-solid fa-robot" style="color:#7c3aed"></i>AI評価 自己評価レポート</div>
+        <a href="/admin" class="back-btn"><i class="fa-solid fa-arrow-left"></i> 管理メニューへ戻る</a>
+    </div>
+
+    <div class="filter-bar">
+        <input type="text" id="filterName" placeholder="🔍 名前・ユーザー名で絞り込み" style="min-width:220px">
+        <select id="filterGrade">
+            <option value="">すべてのグレード</option>
+            ${['S+','S','A+','A','B+','B','C','D'].map(g=>`<option value="${g}">${g}</option>`).join('')}
+        </select>
+        <span class="count-badge" id="visibleCount">${rows.length}件</span>
+    </div>
+
+    ${rows.length === 0 ? `
+    <div class="empty-state">
+        <i class="fa-solid fa-inbox" style="font-size:40px;margin-bottom:12px;display:block"></i>
+        まだ自己評価の送信がありません
+    </div>` : rows.map(({f, u, e, ratings, stars}) => `
+    <div class="card assess-card" data-name="${escapeHtml((e.name||u.username||'').toLowerCase())}" data-grade="${escapeHtml(f.predictedGrade||'')}">
+        <div class="card-head">
+            <div>
+                <div class="emp-name"><i class="fa-solid fa-user" style="color:#7c3aed;margin-right:5px"></i>${escapeHtml(e.name || u.username || '不明')}</div>
+                <div class="emp-meta">${escapeHtml(e.department||'')}${e.position?' · '+escapeHtml(e.position):''} &nbsp;@${escapeHtml(u.username||'')}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <span class="grade-badge">${escapeHtml(f.predictedGrade||'?')}</span>
+                <span style="font-size:13px;color:#6b7280;font-weight:600">${f.predictedScore||0}点</span>
+                <span class="date-badge"><i class="fa-regular fa-clock" style="margin-right:3px"></i>${moment(f.createdAt).format('YYYY/MM/DD HH:mm')}</span>
+            </div>
+        </div>
+        <div class="card-body">
+            <!-- 左：カテゴリ別自己評価 -->
+            <div>
+                <div class="section-label"><i class="fa-solid fa-star" style="color:#f59e0b;margin-right:4px"></i>カテゴリ別 自己評価</div>
+                ${catKeys.map((k,i) => `
+                <div class="star-row">
+                    <span class="star-label" style="color:${catColors[i]};font-weight:600">${catLabels[i]}</span>
+                    ${ratings[k] ? `<span class="stars">${'★'.repeat(ratings[k])}<span class="empty">${'★'.repeat(5-ratings[k])}</span></span>
+                    <span style="font-size:11px;color:#9ca3af">${ratings[k]}/5</span>` : `<span class="no-data">未回答</span>`}
+                </div>`).join('')}
+            </div>
+            <!-- 右：コミットメント・アピール -->
+            <div>
+                <div class="section-label"><i class="fa-solid fa-rocket" style="color:#7c3aed;margin-right:4px"></i>次期コミットメント</div>
+                ${f.commitment ? `<div class="text-box">${escapeHtml(f.commitment)}</div>` : `<div class="no-data">（記入なし）</div>`}
+                <div class="section-label" style="margin-top:12px"><i class="fa-solid fa-bullhorn" style="color:#2563eb;margin-right:4px"></i>上司へのアピール</div>
+                ${f.appeal ? `<div class="text-box" style="border-color:#bfdbfe;background:#eff6ff">${escapeHtml(f.appeal)}</div>` : `<div class="no-data">（記入なし）</div>`}
+            </div>
+        </div>
+    </div>`).join('')}
+</div>
+
+<script>
+(function(){
+    const nameIn  = document.getElementById('filterName');
+    const gradeIn = document.getElementById('filterGrade');
+    const countEl = document.getElementById('visibleCount');
+    function filter(){
+        const nm = nameIn.value.toLowerCase();
+        const gr = gradeIn.value;
+        let cnt = 0;
+        document.querySelectorAll('.assess-card').forEach(c => {
+            const show = (!nm || c.dataset.name.includes(nm)) && (!gr || c.dataset.grade === gr);
+            c.style.display = show ? '' : 'none';
+            if(show) cnt++;
+        });
+        countEl.textContent = cnt + '件';
+    }
+    nameIn.addEventListener('input', filter);
+    gradeIn.addEventListener('change', filter);
+})();
+</script>`;
+
+        renderPage(req, res, 'AI評価 自己評価レポート', '管理者 / AI評価レポート', html);
+    } catch (err) {
+        console.error('semi-assessments error', err);
+        res.status(500).send('エラーが発生しました');
+    }
 });
 
 // 管理者月別勤怠照会ページ
