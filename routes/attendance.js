@@ -708,8 +708,11 @@ router.post('/update-attendance/:id', requireLogin, async (req, res) => {
         attendance.status = req.body.status;
         attendance.notes = req.body.notes || null;
       
-        // 勤務時間再計算
-        if (attendance.checkOut) {
+        // 勤務時間再計算（欠勤の場合は0にリセット）
+        if (attendance.status === '欠勤') {
+            attendance.workingHours = 0;
+            attendance.totalHours = 0;
+        } else if (attendance.checkOut) {
             const totalMs = attendance.checkOut - attendance.checkIn;
             let lunchMs = 0;
             
@@ -1231,10 +1234,13 @@ router.post('/attendance/bulk-register', requireLogin, async (req, res) => {
             const lunchStartDate = parseTimeAsJST(date, lunchStart);
             const lunchEndDate   = parseTimeAsJST(date, lunchEnd);
 
-            // 勤務時間計算
+            // 勤務時間計算（欠勤の場合は0）
             let workingHours = null;
             let totalHours   = null;
-            if (checkInDate && checkOutDate) {
+            if (status === '欠勤') {
+                workingHours = 0;
+                totalHours   = 0;
+            } else if (checkInDate && checkOutDate) {
                 const totalMs = checkOutDate - checkInDate;
                 const lunchMs = (lunchStartDate && lunchEndDate) ? (lunchEndDate - lunchStartDate) : 0;
                 workingHours = parseFloat(((totalMs - lunchMs) / 3600000).toFixed(1));
@@ -1326,7 +1332,10 @@ router.post('/save-attendance', requireLogin, async (req, res) => {
         });
 
         // 근무 시간 계산 (일본 시간대 기준)
-        if (attendance.checkOut) {
+        if (attendance.status === '欠勤') {
+            attendance.workingHours = 0;
+            attendance.totalHours = 0;
+        } else if (attendance.checkOut) {
             const totalMs = attendance.checkOut - attendance.checkIn;
             let lunchMs = 0;
             
@@ -1606,7 +1615,7 @@ router.get('/my-monthly-attendance', requireLogin, async (req, res) => {
         }
 
         // 統計計算
-        const totalWork   = attendances.reduce((s, a) => s + (a.workingHours || 0), 0);
+        const totalWork   = attendances.filter(a => a.status !== '欠勤').reduce((s, a) => s + (a.workingHours || 0), 0);
         const countWork   = attendances.filter(a => a.status !== '欠勤').length;
         const countAbsent = attendances.filter(a => a.status === '欠勤').length;
         const countLate   = attendances.filter(a => a.status === '遅刻').length;
@@ -1873,7 +1882,7 @@ router.get('/print-attendance', requireLogin, async (req, res) => {
         }).sort({ date: 1 });
         
         // 総勤務時間計算
-        const totalWorkingHours = attendances.reduce((sum, att) => sum + (att.workingHours || 0), 0);
+        const totalWorkingHours = attendances.filter(a => a.status !== '欠勤').reduce((sum, att) => sum + (att.workingHours || 0), 0);
         
         res.send(`
             <!DOCTYPE html>

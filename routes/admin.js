@@ -311,7 +311,7 @@ router.get('/admin/monthly-attendance', requireLogin, isAdmin, async (req, res) 
                 month
             });
 
-            const totalHours = attendances.reduce((s, a) => s + (a.workingHours || 0), 0);
+            const totalHours = attendances.filter(a => a.status !== '欠勤').reduce((s, a) => s + (a.workingHours || 0), 0);
             const cntAbsent  = attendances.filter(a => a.status === '欠勤').length;
             const cntLate    = attendances.filter(a => a.status === '遅刻').length;
 
@@ -599,7 +599,7 @@ router.get('/admin/print-attendance', requireLogin, isAdmin, async (req, res) =>
         }).sort({ date: 1 });
         
         // 総勤務時間計算
-        const totalWorkingHours = attendances.reduce((sum, att) => sum + (att.workingHours || 0), 0);
+        const totalWorkingHours = attendances.filter(a => a.status !== '欠勤').reduce((sum, att) => sum + (att.workingHours || 0), 0);
         
         res.send(`
             <!DOCTYPE html>
@@ -1026,7 +1026,7 @@ router.get('/admin/approve-request/:id', requireLogin, isAdmin, async (req, res)
             }).sort({ date: 1 });
 
             // 3. 총 근무 시간 계산
-            const totalWorkingHours = attendances.reduce((sum, att) => sum + (att.workingHours || 0), 0);
+            const totalWorkingHours = attendances.filter(a => a.status !== '欠勤').reduce((sum, att) => sum + (att.workingHours || 0), 0);
 
             // 4. HTML 생성 (기존 print-attendance 페이지와 동일한 형식)
             const html = `
@@ -1258,7 +1258,7 @@ router.get('/admin/view-attendance/:userId/:year/:month', requireLogin, isAdmin,
             return `<span style="background:${st.bg};color:${st.color};border:1.5px solid ${st.border};padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">${s||'正常'}</span>`;
         };
 
-        const totalHours = attendances.reduce((s, a) => s + (a.workingHours || 0), 0);
+        const totalHours = attendances.filter(a => a.status !== '欠勤').reduce((s, a) => s + (a.workingHours || 0), 0);
 
         const html = `
         <style>
