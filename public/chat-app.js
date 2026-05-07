@@ -879,6 +879,9 @@
             showCallOverlay('発信中... 📞');
             callTargetId = targetId;
 
+            // 発信音を開始
+            if (window.CallSounds) CallSounds.startDialing();
+
             // メディア取得（カメラなしでも音声のみで継続）
             await getLocalStream();
 
@@ -901,6 +904,7 @@
             clearTimeout(callTimeoutTimer);
             callTimeoutTimer = setTimeout(async () => {
                 if (!callPC || callPC.connectionState === 'connected') return;
+                if (window.CallSounds) CallSounds.stopDialing();
                 socket.emit('call_cancel', { toUserId: targetId, fromUserId: MY_ID });
                 await fetch('/api/chat/missed-call', {
                     method: 'POST',
@@ -913,6 +917,7 @@
             }, 30000);
         } catch (e) {
             console.error('startCall error', e);
+            if (window.CallSounds) CallSounds.stopDialing();
             hideCallOverlay();
             alert('通話を開始できませんでした: ' + (e.message || e));
             doHangup();
@@ -924,6 +929,7 @@
     async function acceptCall() {
         clearTimeout(incomingTimer); incomingTimer = null;
         hideIncomingModal();
+        if (window.CallSounds) { CallSounds.stopIncoming(); CallSounds.stopDialing(); }
         if (!pendingOffer) { console.warn('[acceptCall] pendingOffer が null です'); return; }
         const { fromUserId, sdp } = pendingOffer;
         pendingOffer = null;
@@ -958,6 +964,7 @@
     function rejectCall() {
         clearTimeout(incomingTimer); incomingTimer = null;
         hideIncomingModal();
+        if (window.CallSounds) { CallSounds.stopIncoming(); CallSounds.playReject(); }
         if (!pendingOffer) return;
         const { fromUserId } = pendingOffer;
         pendingOffer = null;
@@ -969,6 +976,11 @@
         try {
             clearTimeout(callTimeoutTimer); callTimeoutTimer = null;
             clearTimeout(incomingTimer);    incomingTimer    = null;
+            if (window.CallSounds) {
+                CallSounds.stopDialing();
+                CallSounds.stopIncoming();
+                CallSounds.playHangup();
+            }
             if (callPC) { callPC.close(); callPC = null; }
             if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
             if (screenStream) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; }
@@ -1244,6 +1256,15 @@
         if (!data) return;
         pendingOffer = { fromUserId: data.fromUserId, sdp: data.sdp };
         showIncomingModal(data.fromName || TARGET_NAME || '不明');
+        if (window.CallSounds) CallSounds.startIncoming();
+
+        // 他ページから「応答」ボタンを押してチャットページに遷移してきた場合は自動応答
+        const autoAcceptId = sessionStorage.getItem('cl_auto_accept');
+        if (autoAcceptId && autoAcceptId === data.fromUserId) {
+            sessionStorage.removeItem('cl_auto_accept');
+            setTimeout(() => acceptCall(), 800); // ページが安定してから応答
+            return;
+        }
 
         // 着信側も 30秒無視したら自動的に「不在着信」として処理
         clearTimeout(incomingTimer);
@@ -1261,6 +1282,7 @@
     socket.on('call_cancelled', () => {
         clearTimeout(incomingTimer); incomingTimer = null;
         pendingOffer = null;
+        if (window.CallSounds) CallSounds.stopIncoming();
         hideIncomingModal();
         // 不在着信をチャットに表示（着信側）
         const bar = document.getElementById('sc-typing');
@@ -1278,6 +1300,7 @@
     socket.on('call_accepted', async (data) => {
         // 相手が着信を応答した。answer SDP が届く
         clearTimeout(callTimeoutTimer); callTimeoutTimer = null; // タイムアウト解除
+        if (window.CallSounds) CallSounds.stopDialing(); // 発信音を止める
         callStartTime = Date.now(); // 通話開始時刻を記録
         try {
             if (!callPC) { console.warn('[call_accepted] callPC が null'); return; }
@@ -1296,6 +1319,7 @@
 
     socket.on('call_rejected', () => {
         clearTimeout(callTimeoutTimer); callTimeoutTimer = null;
+        if (window.CallSounds) { CallSounds.stopDialing(); CallSounds.playReject(); }
         doHangup();
         const n = TARGET_NAME || '相手';
         const bar = document.getElementById('sc-typing');

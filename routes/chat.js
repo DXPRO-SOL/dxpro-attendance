@@ -604,7 +604,8 @@ ${buildRoomSettingsModal()}
 ${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
-<script src="/chat-app.js?v=4"></script>`;
+<script src="/call-sounds.js"></script>
+<script src="/chat-app.js?v=5"></script>`;
 }
 
 function buildSidebarHtml(d) {
