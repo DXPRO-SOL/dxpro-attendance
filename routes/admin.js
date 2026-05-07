@@ -116,6 +116,11 @@ router.get('/admin', requireLogin, isAdmin, async (req, res) => {
                         <div class="admin-head"><div class="admin-icon">🔑</div><div class="admin-title">ユーザー権限管理</div></div>
                         <div class="admin-desc">管理者権限の付与・剥奪、パスワードリセットを行います。</div>
                     </a>
+
+                    <a class="admin-card" href="/admin/chat-management" style="border:1.5px solid #fecaca;background:linear-gradient(180deg,#fff5f5,#fff);">
+                        <div class="admin-head"><div class="admin-icon" style="background:linear-gradient(90deg,#fee2e2,#fef2f2);color:#ef4444">🗑</div><div class="admin-title">チャット管理</div></div>
+                        <div class="admin-desc">従業員・グループのチャット履歴を削除します。</div>
+                    </a>
                 </div>
             </div>
         </div>
@@ -1445,6 +1450,142 @@ router.get('/admin/api/employees', async (req, res) => {
         const emps = await EmpModel.find().select('_id name department position').lean();
         res.json(emps);
     } catch (e) { res.status(500).json([]); }
+});
+
+// ── チャット管理（管理者マスタ）──────────────────────────────
+router.get('/admin/chat-management', requireLogin, isAdmin, async (req, res) => {
+    const { User: UserModel, ChatMessage, ChatRoom } = require('../models');
+    const users = await UserModel.find({}, '_id username name').lean();
+    // 各ユーザーのメッセージ件数
+    const counts = await ChatMessage.aggregate([
+        { $group: { _id: '$fromUserId', count: { $sum: 1 } } }
+    ]);
+    const countMap = {};
+    counts.forEach(c => { countMap[String(c._id)] = c.count; });
+    const rooms = await ChatRoom.find({}, '_id name members').lean();
+
+    const html = `
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+<style>
+body{font-family:Inter,system-ui,'Noto Sans JP',sans-serif;background:#f5f7fb;margin:0}
+.wrap{max-width:1000px;margin:28px auto;padding:20px}
+h2{font-size:1.3rem;font-weight:800;margin-bottom:18px;display:flex;align-items:center;gap:8px}
+.card{background:#fff;border-radius:14px;box-shadow:0 4px 20px rgba(0,0,0,.07);padding:24px;margin-bottom:24px}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th{background:#f8f7f5;padding:10px 14px;text-align:left;font-weight:700;color:#555;border-bottom:2px solid #eee}
+td{padding:10px 14px;border-bottom:1px solid #f0ede8;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+.badge{display:inline-block;background:#fef3c7;color:#92400e;font-size:.75rem;padding:2px 8px;border-radius:99px;font-weight:600}
+.btn-del{background:#ef4444;color:#fff;border:none;padding:6px 14px;border-radius:7px;cursor:pointer;font-size:.82rem;font-weight:600;display:inline-flex;align-items:center;gap:5px;transition:.15s}
+.btn-del:hover{background:#dc2626}
+.btn-del:disabled{background:#fca5a5;cursor:not-allowed}
+.section-title{font-size:1rem;font-weight:700;margin-bottom:14px;color:#374151;border-left:3px solid #ef4444;padding-left:10px}
+.back-btn{display:inline-flex;align-items:center;gap:6px;color:#6b7280;text-decoration:none;font-size:.88rem;margin-bottom:16px}
+.back-btn:hover{color:#111}
+.warn-box{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;color:#b91c1c;font-size:.85rem;margin-bottom:18px;display:flex;align-items:center;gap:8px}
+</style>
+<div class="wrap">
+<a href="/admin" class="back-btn"><i class="fa-solid fa-arrow-left"></i> 管理者トップ</a>
+<h2><i class="fa-solid fa-comments" style="color:#ef4444"></i> チャット管理</h2>
+<div class="warn-box"><i class="fa-solid fa-triangle-exclamation"></i> 削除したメッセージは復元できません。慎重に操作してください。</div>
+
+<div class="card">
+  <div class="section-title">ユーザー別チャット削除</div>
+  <table>
+    <thead><tr><th>ユーザー</th><th>送信メッセージ数</th><th>操作</th></tr></thead>
+    <tbody>
+    ${users.map(u => `
+      <tr>
+        <td><b>${escapeHtml(u.name || u.username)}</b><br><span style="color:#9ca3af;font-size:.78rem">@${escapeHtml(u.username)}</span></td>
+        <td><span class="badge">${countMap[String(u._id)] || 0} 件</span></td>
+        <td>
+          <button class="btn-del" onclick="delUser('${u._id}','${escapeHtml(u.name || u.username)}')">
+            <i class="fa-solid fa-trash"></i> メッセージ全削除
+          </button>
+        </td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <div class="section-title">グループチャット削除</div>
+  <table>
+    <thead><tr><th>グループ名</th><th>メンバー数</th><th>操作</th></tr></thead>
+    <tbody>
+    ${rooms.map(r => `
+      <tr>
+        <td><b>${escapeHtml(r.name)}</b></td>
+        <td>${r.members.length} 人</td>
+        <td>
+          <button class="btn-del" onclick="delRoom('${r._id}','${escapeHtml(r.name)}')">
+            <i class="fa-solid fa-trash"></i> 全メッセージ削除
+          </button>
+        </td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+</div>
+</div>
+
+<script>
+async function delUser(userId, name) {
+    if (!confirm(name + ' さんの送信メッセージをすべて削除しますか？\\nこの操作は元に戻せません。')) return;
+    const res = await fetch('/admin/api/chat/delete-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId })
+    });
+    const data = await res.json();
+    if (data.ok) { alert('削除しました（' + data.deleted + ' 件）'); location.reload(); }
+    else alert('エラー: ' + (data.error || '不明'));
+}
+async function delRoom(roomId, name) {
+    if (!confirm('グループ「' + name + '」のメッセージをすべて削除しますか？\\nこの操作は元に戻せません。')) return;
+    const res = await fetch('/admin/api/chat/delete-room', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId })
+    });
+    const data = await res.json();
+    if (data.ok) { alert('削除しました（' + data.deleted + ' 件）'); location.reload(); }
+    else alert('エラー: ' + (data.error || '不明'));
+}
+</script>`;
+    renderPage(req, res, 'チャット管理', 'チャット管理', html);
+});
+
+// ユーザーのメッセージ全削除 API
+router.post('/admin/api/chat/delete-user', requireLogin, isAdmin, async (req, res) => {
+    try {
+        const { ChatMessage } = require('../models');
+        const mongoose = require('mongoose');
+        const { userId } = req.body;
+        if (!userId) return res.status(400).json({ error: 'userId が必要です' });
+        const uid = new mongoose.Types.ObjectId(String(userId));
+        const result = await ChatMessage.deleteMany({
+            $or: [{ fromUserId: uid }, { toUserId: uid }]
+        });
+        if (global.io) {
+            global.io.to('u_' + String(userId)).emit('chat_cleared', { adminClear: true });
+        }
+        res.json({ ok: true, deleted: result.deletedCount });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// グループのメッセージ全削除 API
+router.post('/admin/api/chat/delete-room', requireLogin, isAdmin, async (req, res) => {
+    try {
+        const { ChatMessage, ChatRoom } = require('../models');
+        const mongoose = require('mongoose');
+        const { roomId } = req.body;
+        if (!roomId) return res.status(400).json({ error: 'roomId が必要です' });
+        const result = await ChatMessage.deleteMany({ roomId: new mongoose.Types.ObjectId(String(roomId)) });
+        if (global.io) {
+            global.io.to('r_' + String(roomId)).emit('chat_cleared', { adminClear: true, roomId });
+        }
+        res.json({ ok: true, deleted: result.deletedCount });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;

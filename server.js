@@ -86,6 +86,13 @@ io.on('connection', (socket) => {
   socket.on('remote_click', (data) => {
     if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_click', data);
   });
+  // 録画開始・停止通知（相手側の録画ボタンを排他制御）
+  socket.on('recording_started', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('recording_started', data);
+  });
+  socket.on('recording_stopped', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('recording_stopped', data);
+  });
 });
 
 // Render/Cloudflare環境ではプロキシを信頼してHTTPS判定を正しく行う

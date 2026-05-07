@@ -95,19 +95,17 @@
         }
     });
 
-    socket.on('chat_cleared', ({ fromUserId, toUserId, roomId }) => {
+    socket.on('chat_cleared', ({ fromUserId, toUserId, roomId, adminClear }) => {
         const isRoom = MODE === 'room' && roomId && roomId === ROOM_ID;
         const isDM   = MODE === 'dm'   && fromUserId === MY_ID && toUserId === TARGET_ID;
-        if (!isDM && !isRoom) return;
+        const isAdmin = adminClear && (
+            (MODE === 'dm') ||
+            (MODE === 'room' && roomId === ROOM_ID)
+        );
+        if (!isDM && !isRoom && !isAdmin) return;
         const container = document.getElementById('sc-messages');
         if (!container) return;
-        if (isRoom) {
-            // グループ全削除
-            container.innerHTML = '<div class="sc-no-msg" style="padding:2rem;text-align:center;color:#aaa;">チャット履歴がクリアされました</div>';
-        } else {
-            // DM: 自分が送ったメッセージ（sc-msg-mine クラス）だけ削除
-            container.querySelectorAll('.sc-msg-mine, .sc-msg-cont.sc-msg-mine').forEach(el => el.remove());
-        }
+        container.innerHTML = '<div class="sc-no-msg" style="padding:2rem;text-align:center;color:#aaa;">チャット履歴がクリアされました</div>';
     });
 
     socket.on('msg_reaction', ({ _id, reactions }) => {
@@ -1285,6 +1283,10 @@
         recordChunks  = [];
         mediaRecorder = new MediaRecorder(stream, { mimeType });
 
+        // 相手に録画開始を通知（相手側の録画ボタンを無効化させる）
+        const recTarget = callTargetId || TARGET_ID;
+        if (recTarget) socket.emit('recording_started', { toUserId: recTarget, fromUserId: MY_ID });
+
         // 録画タイマー
         let recSeconds = 0;
         const recTimerInterval = setInterval(() => {
@@ -1302,7 +1304,9 @@
         mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordChunks.push(e.data); };
         mediaRecorder.onstop = async () => {
             clearInterval(recTimerInterval);
-            if (btn) { btn.classList.remove('ctrl-recording'); btn.innerHTML = '<i class="fa-solid fa-circle-dot"></i>'; }
+            // 相手に録画停止を通知（相手側の録画ボタンを再有効化）
+            if (recTarget) socket.emit('recording_stopped', { toUserId: recTarget, fromUserId: MY_ID });
+            if (btn) { btn.classList.remove('ctrl-recording'); btn.innerHTML = '<i class="fa-solid fa-circle-dot"></i>'; btn.disabled = false; }
             showNoticeBar('🎥 録画を保存中...', 0);
             const blob = new Blob(recordChunks, { type: mimeType });
             recordChunks = [];
@@ -1312,6 +1316,7 @@
             const fd = new FormData();
             fd.append('recording', blob, `recording_${Date.now()}.webm`);
             fd.append('toUserId', target);
+            fd.append('duration', recSeconds);
             if (ROOM_ID) fd.append('roomId', ROOM_ID);
             try {
                 await fetch('/api/chat/recording', { method: 'POST', body: fd });
@@ -1522,6 +1527,28 @@
     socket.on('remote_pointer', (data) => {
         if (!data) return;
         drawRemotePointer(data.x, data.y);
+    });
+
+    // 相手が録画開始 → こちらの録画ボタンを無効化
+    socket.on('recording_started', (data) => {
+        const recBtn = document.getElementById('ctrl-record');
+        if (recBtn) {
+            recBtn.disabled = true;
+            recBtn.title = '相手が録画中です';
+            recBtn.style.opacity = '0.4';
+        }
+        showNoticeBar('🔴 相手が録画中です', 0);
+    });
+
+    // 相手が録画停止 → こちらの録画ボタンを再有効化
+    socket.on('recording_stopped', (data) => {
+        const recBtn = document.getElementById('ctrl-record');
+        if (recBtn) {
+            recBtn.disabled = false;
+            recBtn.title = '録画';
+            recBtn.style.opacity = '';
+        }
+        hideNoticeBar();
     });
 
     // ─ 公開API（HTMLのonclick / _chat_webrtc 経由） ──────────────

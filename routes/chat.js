@@ -550,14 +550,16 @@ router.post('/api/chat/call-history', requireLogin, async (req, res) => {
 // 録画ファイルアップロード → チャットメッセージとして保存
 router.post('/api/chat/recording', requireLogin, chatUpload.single('recording'), async (req, res) => {
     try {
-        const { toUserId, roomId } = req.body;
+        const { toUserId, roomId, duration } = req.body;
         if (!req.file) return res.status(400).json({ error: 'ファイルがありません' });
         const fromId = req.session.userId;
+        const durSec = parseInt(duration, 10) || 0;
         const attachment = {
             name:     req.file.originalname || `recording_${Date.now()}.webm`,
             url:      '/uploads/chat/' + req.file.filename,
             mimeType: req.file.mimetype || 'video/webm',
             size:     req.file.size,
+            duration: durSec,
         };
         const msgData = {
             fromUserId:  fromId,
@@ -590,34 +592,6 @@ router.post('/api/chat/recording', requireLogin, chatUpload.single('recording'),
 });
 
 // DM チャット履歴クリア（自分の画面からのみ非表示 / 物理削除は双方合意後）
-router.post('/api/chat/clear', requireLogin, async (req, res) => {
-    try {
-        const myId = req.session.userId;
-        const { toUserId, roomId } = req.body;
-        if (!toUserId && !roomId) return res.status(400).json({ error: 'toUserId または roomId が必要です' });
-
-        if (toUserId) {
-            // DM: 自分が送ったメッセージのみ削除（相手側には影響なし）
-            const myOid = new mongoose.Types.ObjectId(String(myId));
-            const toOid = new mongoose.Types.ObjectId(String(toUserId));
-            await ChatMessage.deleteMany({ fromUserId: myOid, toUserId: toOid });
-            // 自分の画面だけクリア通知（相手には送らない）
-            if (global.io) {
-                global.io.to('u_' + String(myId)).emit('chat_cleared', { fromUserId: String(myId), toUserId: String(toUserId), roomId: null });
-            }
-        } else {
-            // グループ: 管理者のみ全削除、全メンバーに通知
-            const room = await ChatRoom.findOne({ _id: roomId, admins: myId });
-            if (!room) return res.status(403).json({ error: '管理者権限が必要です' });
-            await ChatMessage.deleteMany({ roomId });
-            if (global.io) {
-                global.io.to('r_' + roomId).emit('chat_cleared', { fromUserId: null, toUserId: null, roomId });
-            }
-        }
-        res.json({ ok: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
 router.put('/api/chat/room/:id', requireLogin, async (req, res) => {
     try {
         const room = await ChatRoom.findOne({ _id: req.params.id, admins: req.session.userId });
@@ -688,7 +662,7 @@ ${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/call-sounds.js"></script>
-<script src="/chat-app.js?v=15"></script>`;
+<script src="/chat-app.js?v=17"></script>`;
 }
 
 function buildSidebarHtml(d) {
@@ -832,7 +806,6 @@ function buildMainHtml(data) {
                 <button class="sc-hd-btn sc-call-btn" id="screen-btn" title="画面共有"><i class="fa-solid fa-desktop"></i></button>
                 <button class="sc-hd-btn sc-call-btn" id="remote-btn" title="遠隔操作リクエスト"><i class="fa-solid fa-mouse-pointer"></i></button>
                 <div class="sc-hd-search"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="msg-search" placeholder="会話内を検索..." oninput="chatApp.filterMessages(this.value)"></div>
-                <button class="sc-hd-btn sc-clear-btn" id="clear-chat-btn" title="チャット履歴をクリア" onclick="chatApp.clearChat()"><i class="fa-solid fa-trash"></i></button>
             </div>
         </div>`;
     return `${headerHtml}
@@ -1000,10 +973,20 @@ function buildAttachmentsHtml(attachments) {
         if (type === 'image') return '<a href="' + a.url + '" target="_blank" class="sc-att-img-wrap"><img src="' + a.url + '" alt="' + escHtml(a.name) + '" class="sc-att-img" loading="lazy"></a>';
         if (type === 'video') {
             const sz = a.size ? (a.size > 1048576 ? (a.size / 1048576).toFixed(1) + 'MB' : Math.ceil(a.size / 1024) + 'KB') : '';
+            const durSec = parseInt(a.duration, 10) || 0;
+            const durStr = durSec > 0
+                ? (durSec >= 3600
+                    ? Math.floor(durSec/3600) + ':' + String(Math.floor((durSec%3600)/60)).padStart(2,'0') + ':' + String(durSec%60).padStart(2,'0')
+                    : String(Math.floor(durSec/60)).padStart(2,'0') + ':' + String(durSec%60).padStart(2,'0'))
+                : '';
+            const durAttr = durStr ? ' data-duration="' + durStr + '"' : '';
             return '<div class="sc-att-video">'
-                + '<video src="' + a.url + '" controls preload="metadata" class="sc-att-video-player"></video>'
+                + '<video src="' + a.url + '" controls preload="metadata" class="sc-att-video-player"' + durAttr
+                + ' onloadedmetadata="if(isFinite(this.duration)){var s=Math.round(this.duration);var ds=s>=3600?Math.floor(s/3600)+\':\'+String(Math.floor((s%3600)/60)).padStart(2,\'0\')+\':\'+String(s%60).padStart(2,\'0\'):String(Math.floor(s/60)).padStart(2,\'0\')+\':\'+String(s%60).padStart(2,\'0\');var el=this.parentNode&&this.parentNode.querySelector(\'.sc-att-vid-dur\');if(el)el.textContent=ds;}"'
+                + '></video>'
                 + '<div class="sc-att-video-info"><span class="sc-att-icon">🎬</span>'
-                + '<div><div class="sc-att-name">' + escHtml(a.name) + '</div><div class="sc-att-size">' + sz + '</div></div>'
+                + '<div><div class="sc-att-name">' + escHtml(a.name) + '</div>'
+                + '<div class="sc-att-size">' + (durStr ? '<span class="sc-att-vid-dur">⏱ ' + durStr + '</span>' + (sz ? '  ' + sz : '') : sz) + '</div></div>'
                 + '<a href="' + a.url + '" download="' + escHtml(a.name) + '" class="sc-att-dl-btn" title="ダウンロード">⬇</a>'
                 + '</div></div>';
         }
