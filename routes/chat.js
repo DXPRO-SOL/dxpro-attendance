@@ -659,7 +659,7 @@ ${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/call-sounds.js"></script>
-<script src="/chat-app.js?v=9"></script>`;
+<script src="/chat-app.js?v=10"></script>`;
 }
 
 function buildSidebarHtml(d) {
@@ -1221,15 +1221,29 @@ function chatStyles() {
 .sc-call-btn{color:#22c55e!important}
 .sc-call-btn:hover{background:#f0fdf4!important}
 .call-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:500;display:flex;align-items:center;justify-content:center}
-.call-box{background:#1c1917;border-radius:16px;width:560px;max-width:96vw;box-shadow:0 8px 40px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column}
-.call-header{display:flex;flex-direction:column;align-items:center;padding:14px 20px 6px;color:#e8e0d5;gap:2px}
-.call-header span:first-child{font-size:.72rem;color:#78716c;letter-spacing:.04em}
+.call-box{background:#1c1917;border-radius:16px;width:560px;max-width:96vw;box-shadow:0 8px 40px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column;transition:all .2s}
+/* フルスクリーン時 */
+.call-box.call-fullscreen{width:100vw;max-width:100vw;height:100vh;border-radius:0}
+.call-box.call-fullscreen .call-videos{min-height:0;flex:1}
+.call-box.call-fullscreen .call-vid-remote{max-height:none;height:100%}
+/* ネイティブFullscreen API 時 */
+:fullscreen .call-box,:fullscreen .call-overlay{width:100vw;height:100vh;border-radius:0;max-width:100vw}
+:fullscreen .call-videos{flex:1;min-height:0}
+:fullscreen .call-vid-remote{max-height:none;height:100%}
+:-webkit-full-screen .call-box{width:100vw;height:100vh;border-radius:0;max-width:100vw}
+:-webkit-full-screen .call-videos{flex:1;min-height:0}
+:-webkit-full-screen .call-vid-remote{max-height:none;height:100%}
+.call-header{display:flex;flex-direction:row;align-items:center;padding:10px 14px 6px;color:#e8e0d5;gap:8px;position:relative}
+.call-header-center{display:flex;flex-direction:column;align-items:center;flex:1;gap:2px}
+.call-header span.call-status-sm{font-size:.72rem;color:#78716c;letter-spacing:.04em}
 .call-partner-name{font-size:1.1rem;font-weight:700}
+.call-fullscreen-btn{background:none;border:none;color:#a8a29e;font-size:1.1rem;cursor:pointer;padding:4px 8px;border-radius:6px;transition:.15s;flex-shrink:0}
+.call-fullscreen-btn:hover{background:#2a2724;color:#e8e0d5}
 .call-videos{position:relative;background:#111;min-height:280px;display:flex;align-items:center;justify-content:center;overflow:hidden}
 .call-vid-remote{width:100%;max-height:70vh;object-fit:contain;background:#111;display:block}
 .call-vid-local{position:absolute;bottom:10px;right:10px;width:100px;height:72px;object-fit:cover;border-radius:8px;border:2px solid #44403c;z-index:2}
 .call-pointer-canvas{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none}
-.call-controls{display:flex;justify-content:center;gap:12px;padding:14px 14px 10px}
+.call-controls{display:flex;justify-content:center;gap:12px;padding:14px 14px 10px;flex-shrink:0}
 .call-ctrl-btn{width:46px;height:46px;border-radius:50%;border:none;background:#2a2724;color:#e8e0d5;font-size:.95rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s}
 .call-ctrl-btn:hover{background:#3a3733}.call-ctrl-btn.muted{background:#78350f;color:#fed7aa}
 .call-ctrl-btn.active-feature{background:#1e3a5f;color:#bfdbfe}
@@ -1262,10 +1276,15 @@ function buildCallOverlay() {
     return `
 <!-- 通話UI オーバーレイ -->
 <div id="call-overlay" style="display:none" class="call-overlay">
-    <div class="call-box">
+    <div class="call-box" id="call-box">
         <div class="call-header">
-            <span id="call-status-label">通話中...</span>
-            <span id="call-target-name" class="call-partner-name"></span>
+            <div class="call-header-center">
+                <span id="call-status-label" class="call-status-sm">通話中...</span>
+                <span id="call-target-name" class="call-partner-name"></span>
+            </div>
+            <button class="call-fullscreen-btn" id="ctrl-fullscreen" title="全画面 / 元に戻す" onclick="window._chat_webrtc.toggleFullscreen()">
+                <i class="fa-solid fa-expand" id="fullscreen-icon"></i>
+            </button>
         </div>
         <!-- 通話内通知バナー（遠隔操作承認など） -->
         <div id="call-inner-notice" style="display:none" class="call-inner-notice"></div>

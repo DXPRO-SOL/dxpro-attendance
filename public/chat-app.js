@@ -1489,6 +1489,49 @@
     });
 
     // ─ 公開API（HTMLのonclick / _chat_webrtc 経由） ──────────────
+    // ─ フルスクリーン切り替え ──────────────────────────────────────
+    function toggleFullscreen() {
+        const box  = document.getElementById('call-box');
+        const icon = document.getElementById('fullscreen-icon');
+        if (!box) return;
+
+        // ネイティブ Fullscreen API を優先（より完全な全画面）
+        const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+        if (!fsEl) {
+            // 全画面に入る
+            const req = box.requestFullscreen || box.webkitRequestFullscreen;
+            if (req) {
+                req.call(box).catch(() => _toggleCSSFullscreen(box, icon));
+            } else {
+                _toggleCSSFullscreen(box, icon);
+            }
+        } else {
+            // 全画面を抜ける
+            const exit = document.exitFullscreen || document.webkitExitFullscreen;
+            if (exit) exit.call(document);
+        }
+    }
+
+    function _toggleCSSFullscreen(box, icon) {
+        // Fullscreen API が使えないブラウザ向け CSS フォールバック
+        const isFull = box.classList.toggle('call-fullscreen');
+        if (icon) icon.className = isFull ? 'fa-solid fa-compress' : 'fa-solid fa-expand';
+    }
+
+    // ネイティブ Fullscreen 変化を CSS アイコンに反映
+    document.addEventListener('fullscreenchange',        _onFsChange);
+    document.addEventListener('webkitfullscreenchange',  _onFsChange);
+    function _onFsChange() {
+        const icon = document.getElementById('fullscreen-icon');
+        const inFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+        if (icon) icon.className = inFs ? 'fa-solid fa-compress' : 'fa-solid fa-expand';
+    }
+
+    // 映像エリアをダブルクリックしても全画面切り替え
+    document.addEventListener('dblclick', (e) => {
+        if (e.target.closest('#call-videos')) toggleFullscreen();
+    });
+
     window._chat_webrtc = {
         hangupCall:   doHangup,
         toggleMic,
@@ -1499,6 +1542,7 @@
         acceptCall,
         rejectCall,
         toggleRecord,
+        toggleFullscreen,
         _grantRemote: (fromUserId, granted) => {
             hideNoticeBar();
             socket.emit('remote_control_grant', { toUserId: fromUserId, fromUserId: MY_ID, granted });
