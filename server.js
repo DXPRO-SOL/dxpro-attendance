@@ -82,9 +82,18 @@ io.on('connection', (socket) => {
   socket.on('remote_pointer', (data) => {
     if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_pointer', data);
   });
-  // remote click event
+  // remote control events (click / dblclick / key / scroll)
   socket.on('remote_click', (data) => {
     if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_click', data);
+  });
+  socket.on('remote_dblclick', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_dblclick', data);
+  });
+  socket.on('remote_key', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_key', data);
+  });
+  socket.on('remote_scroll', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_scroll', data);
   });
   // 録画開始・停止通知（相手側の録画ボタンを排他制御）
   socket.on('recording_started', (data) => {

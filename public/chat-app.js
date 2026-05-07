@@ -1218,6 +1218,10 @@
     // ブラウザの制限により、相手のOSを直接操作することはできません。
     // 代わりに「自分のマウス位置をリアルタイムで相手の画面に表示する」ポインタ共有を実装します。
     let remotePointerHandler = null;
+    let remoteClickHandler   = null;
+    let remoteDblHandler     = null;
+    let remoteScrollHandler  = null;
+    let remoteKeyHandler     = null;
 
     function requestRemote() {
         if (!TARGET_ID) return alert('相手が選択されていません');
@@ -1229,14 +1233,18 @@
     function startRemoteControl() {
         if (isRemoteCtrl) return;
         isRemoteCtrl = true;
+        const rv     = document.getElementById('remote-video');
         const videos = document.getElementById('call-videos');
-        const rb = document.getElementById('remote-ctrl-bar');
+        const rb     = document.getElementById('remote-ctrl-bar');
         if (rb) rb.style.display = 'flex';
         const btn = document.getElementById('ctrl-remote');
         if (btn) btn.classList.add('active-feature');
 
+        // カーソルをクロスヘアに変更
+        if (rv) rv.style.cursor = 'crosshair';
+
+        // ─ マウスムーブ（ポインタ位置共有）───────────────────────────
         remotePointerHandler = (ev) => {
-            const rv = document.getElementById('remote-video');
             if (!rv) return;
             const rect = rv.getBoundingClientRect();
             const x = ((ev.clientX - rect.left) / rect.width).toFixed(4);
@@ -1244,15 +1252,87 @@
             if (x >= 0 && x <= 1 && y >= 0 && y <= 1)
                 socket.emit('remote_pointer', { toUserId: TARGET_ID, fromUserId: MY_ID, x: +x, y: +y });
         };
-        if (videos) videos.addEventListener('mousemove', remotePointerHandler);
+
+        // ─ クリック ─────────────────────────────────────────────────
+        remoteClickHandler = (ev) => {
+            if (!rv) return;
+            ev.preventDefault();
+            const rect = rv.getBoundingClientRect();
+            const x = +((ev.clientX - rect.left) / rect.width).toFixed(4);
+            const y = +((ev.clientY - rect.top)  / rect.height).toFixed(4);
+            if (x < 0 || x > 1 || y < 0 || y > 1) return;
+            socket.emit('remote_click', { toUserId: TARGET_ID, fromUserId: MY_ID, x, y, button: ev.button });
+        };
+
+        // ─ ダブルクリック ────────────────────────────────────────────
+        remoteDblHandler = (ev) => {
+            if (!rv) return;
+            ev.preventDefault();
+            const rect = rv.getBoundingClientRect();
+            const x = +((ev.clientX - rect.left) / rect.width).toFixed(4);
+            const y = +((ev.clientY - rect.top)  / rect.height).toFixed(4);
+            if (x < 0 || x > 1 || y < 0 || y > 1) return;
+            socket.emit('remote_dblclick', { toUserId: TARGET_ID, fromUserId: MY_ID, x, y });
+        };
+
+        // ─ スクロール ────────────────────────────────────────────────
+        remoteScrollHandler = (ev) => {
+            if (!rv) return;
+            ev.preventDefault();
+            socket.emit('remote_scroll', { toUserId: TARGET_ID, fromUserId: MY_ID, deltaX: ev.deltaX, deltaY: ev.deltaY });
+        };
+
+        // ─ キーボード（遠隔操作中はページ全体から拾う）────────────────
+        remoteKeyHandler = (ev) => {
+            // テキスト入力欄は自分のブラウザに任せる（遠隔キーのみ転送対象）
+            const tag = (document.activeElement || {}).tagName || '';
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+            ev.preventDefault();
+            socket.emit('remote_key', {
+                toUserId: TARGET_ID, fromUserId: MY_ID,
+                type: ev.type, key: ev.key, code: ev.code,
+                shiftKey: ev.shiftKey, ctrlKey: ev.ctrlKey,
+                altKey: ev.altKey, metaKey: ev.metaKey
+            });
+        };
+
+        if (rv) {
+            rv.addEventListener('mousemove',  remotePointerHandler);
+            rv.addEventListener('click',      remoteClickHandler);
+            rv.addEventListener('dblclick',   remoteDblHandler);
+            rv.addEventListener('wheel',      remoteScrollHandler, { passive: false });
+        }
+        document.addEventListener('keydown', remoteKeyHandler);
+        document.addEventListener('keyup',   (ev) => {
+            const tag = (document.activeElement || {}).tagName || '';
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+            socket.emit('remote_key', {
+                toUserId: TARGET_ID, fromUserId: MY_ID,
+                type: 'keyup', key: ev.key, code: ev.code,
+                shiftKey: ev.shiftKey, ctrlKey: ev.ctrlKey,
+                altKey: ev.altKey, metaKey: ev.metaKey
+            });
+        });
     }
 
     function stopRemote() {
         if (!isRemoteCtrl) return;
         isRemoteCtrl = false;
+        const rv     = document.getElementById('remote-video');
         const videos = document.getElementById('call-videos');
-        if (videos && remotePointerHandler) videos.removeEventListener('mousemove', remotePointerHandler);
+        if (rv) {
+            rv.style.cursor = '';
+            if (remotePointerHandler) rv.removeEventListener('mousemove', remotePointerHandler);
+            if (remoteClickHandler)   rv.removeEventListener('click',     remoteClickHandler);
+            if (remoteDblHandler)     rv.removeEventListener('dblclick',  remoteDblHandler);
+            if (remoteScrollHandler)  rv.removeEventListener('wheel',     remoteScrollHandler);
+        }
+        if (remoteKeyHandler) document.removeEventListener('keydown', remoteKeyHandler);
         remotePointerHandler = null;
+        remoteClickHandler   = null;
+        remoteDblHandler     = null;
+        remoteScrollHandler  = null;
+        remoteKeyHandler     = null;
         const rb = document.getElementById('remote-ctrl-bar');
         if (rb) rb.style.display = 'none';
         const btn = document.getElementById('ctrl-remote');
@@ -1527,6 +1607,71 @@
     socket.on('remote_pointer', (data) => {
         if (!data) return;
         drawRemotePointer(data.x, data.y);
+    });
+
+    // ─ リモート操作受信（操作される側） ─────────────────────────────
+
+    // クリック：座標からDOM要素を特定してクリック実行
+    socket.on('remote_click', (data) => {
+        if (!data) return;
+        const x = data.x * window.innerWidth;
+        const y = data.y * window.innerHeight;
+        const el = document.elementFromPoint(x, y);
+        if (!el) return;
+        el.focus();
+        ['mousedown','mouseup','click'].forEach(type => {
+            el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: data.button || 0 }));
+        });
+        // リンクはナビゲート
+        if (el.tagName === 'A' && el.href) { try { el.click(); } catch(e) {} }
+        // 入力欄はフォーカス
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') el.focus();
+    });
+
+    // ダブルクリック
+    socket.on('remote_dblclick', (data) => {
+        if (!data) return;
+        const x = data.x * window.innerWidth;
+        const y = data.y * window.innerHeight;
+        const el = document.elementFromPoint(x, y);
+        if (!el) return;
+        el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+    });
+
+    // キーボード：アクティブ要素に送信 + テキスト入力も反映
+    socket.on('remote_key', (data) => {
+        if (!data) return;
+        const el = document.activeElement || document.body;
+        const opts = { key: data.key, code: data.code, shiftKey: !!data.shiftKey, ctrlKey: !!data.ctrlKey, altKey: !!data.altKey, metaKey: !!data.metaKey, bubbles: true, cancelable: true };
+        el.dispatchEvent(new KeyboardEvent(data.type, opts));
+
+        // テキスト入力欄の場合は値も直接更新
+        if (data.type === 'keydown' && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
+            if (data.key === 'Backspace') {
+                const s = el.selectionStart || 0, e2 = el.selectionEnd || s;
+                if (s === e2 && s > 0) { el.value = el.value.slice(0, s - 1) + el.value.slice(s); el.setSelectionRange(s - 1, s - 1); }
+                else if (s !== e2) { el.value = el.value.slice(0, s) + el.value.slice(e2); el.setSelectionRange(s, s); }
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+            } else if (data.key === 'Delete') {
+                const s = el.selectionStart || 0, e2 = el.selectionEnd || s;
+                if (s === e2 && s < el.value.length) { el.value = el.value.slice(0, s) + el.value.slice(s + 1); el.setSelectionRange(s, s); }
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+            } else if (data.key === 'Enter') {
+                if (el.tagName === 'TEXTAREA') { const s = el.selectionStart || 0; el.value = el.value.slice(0, s) + '\n' + el.value.slice(el.selectionEnd || s); el.setSelectionRange(s + 1, s + 1); el.dispatchEvent(new Event('input', { bubbles: true })); }
+                else { el.form && el.form.requestSubmit && el.form.requestSubmit(); }
+            } else if (data.key.length === 1 && !data.ctrlKey && !data.altKey && !data.metaKey) {
+                const s = el.selectionStart || 0, e2 = el.selectionEnd || s;
+                el.value = el.value.slice(0, s) + data.key + el.value.slice(e2);
+                el.setSelectionRange(s + 1, s + 1);
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        }
+    });
+
+    // スクロール
+    socket.on('remote_scroll', (data) => {
+        if (!data) return;
+        window.scrollBy({ left: data.deltaX || 0, top: data.deltaY || 0, behavior: 'auto' });
     });
 
     // 相手が録画開始 → こちらの録画ボタンを無効化

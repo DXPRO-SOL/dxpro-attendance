@@ -662,7 +662,7 @@ ${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/call-sounds.js"></script>
-<script src="/chat-app.js?v=17"></script>`;
+<script src="/chat-app.js?v=18"></script>`;
 }
 
 function buildSidebarHtml(d) {
@@ -1326,7 +1326,7 @@ function buildCallOverlay() {
             <button class="call-ctrl-btn call-end-btn" id="ctrl-hangup" title="通話終了" onclick="window._chat_webrtc.hangupCall()"><i class="fa-solid fa-phone-slash"></i></button>
         </div>
         <div id="remote-ctrl-bar" class="call-remote-bar" style="display:none">
-            🖱 遠隔操作中 — 映像の上でマウスを動かすと相手に位置が表示されます
+            🖱 <strong style="color:#fbbf24">遠隔操作中</strong> — クリック・キーボード・スクロールが相手のブラウザに転送されます
             <button onclick="window._chat_webrtc.stopRemote()">操作停止</button>
         </div>
     </div>
