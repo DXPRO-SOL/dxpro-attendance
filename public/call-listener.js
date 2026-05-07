@@ -60,10 +60,12 @@
         }
 
         let pendingFrom = null;
+        let pendingSdp  = null;
         let incomingTimer = null;
 
-        function showModal(fromUserId, fromName) {
+        function showModal(fromUserId, fromName, sdp) {
             pendingFrom = fromUserId;
+            pendingSdp  = sdp || null;
             document.getElementById('cl-from-name').textContent = (fromName || '不明') + ' から着信中';
             modal.style.display = 'flex';
             startRing();
@@ -81,11 +83,13 @@
             stopRing();
         }
 
-        // 応答：DM チャットページへ遷移（chat-app.js が着信処理する）
+        // 応答：DM チャットページへ遷移（SDP も sessionStorage に保存して引き継ぐ）
         document.getElementById('cl-accept-btn').addEventListener('click', () => {
             if (!pendingFrom) return;
-            // セッションストレージに「自動応答フラグ」を保存してからページ遷移
-            sessionStorage.setItem('cl_auto_accept', pendingFrom);
+            sessionStorage.setItem('cl_auto_accept', JSON.stringify({
+                fromUserId: pendingFrom,
+                sdp: pendingSdp,
+            }));
             hideModal();
             window.location.href = '/chat/dm/' + pendingFrom;
         });
@@ -101,7 +105,7 @@
         // ── Socket イベント ──────────────────────────────────────
         socket.on('call_incoming', (data) => {
             if (!data) return;
-            showModal(data.fromUserId, data.fromName);
+            showModal(data.fromUserId, data.fromName, data.sdp);
         });
 
         socket.on('call_cancelled', () => {

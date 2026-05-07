@@ -37,6 +37,28 @@
     socket.emit('join_rooms', { userId: MY_ID, roomIds: ROOM_IDS });
     if (ROOM_ID) socket.emit('join_room', { roomId: ROOM_ID });
 
+    // ── 他ページ着信「応答」→ チャットページ遷移の自動応答処理 ──────
+    // call-listener.js が sessionStorage に SDP を保存して遷移してくる
+    if (MODE === 'dm' && TARGET_ID) {
+        try {
+            const _raw = sessionStorage.getItem('cl_auto_accept');
+            if (_raw) {
+                const _d = JSON.parse(_raw);
+                if (_d.fromUserId === TARGET_ID && _d.sdp) {
+                    sessionStorage.removeItem('cl_auto_accept');
+                    pendingOffer = { fromUserId: _d.fromUserId, sdp: _d.sdp };
+                    // ページの準備が整ってから自動応答（1秒待機）
+                    setTimeout(() => {
+                        if (pendingOffer) {
+                            console.log('[call-listener] 自動応答: pendingOffer を復元して acceptCall()');
+                            acceptCall();
+                        }
+                    }, 1000);
+                }
+            }
+        } catch (_) {}
+    }
+
     // ── Socket イベント ───────────────────────────────────────
     socket.on('new_message', (msg) => {
         const relevantDM   = MODE === 'dm'   && msg.fromUserId !== MY_ID && (msg.toUserId === MY_ID || msg.fromUserId === TARGET_ID);
@@ -810,37 +832,43 @@
             { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
         ]};
-        callPC = new RTCPeerConnection(ICE);
+        // ★ ローカル変数 pc に保持 → 古い PC のハンドラが新しい callPC に干渉しない
+        const pc = new RTCPeerConnection(ICE);
+        callPC = pc;
         let iceRestartCount = 0;
 
-        callPC.onicecandidate = (ev) => {
+        pc.onicecandidate = (ev) => {
+            if (callPC !== pc) return; // このPCがもう使われていなければ無視
             if (ev.candidate)
                 socket.emit('webrtc-candidate', { toUserId: targetId, fromUserId: MY_ID, candidate: ev.candidate.toJSON() });
         };
-        callPC.ontrack = (ev) => {
+        pc.ontrack = (ev) => {
+            if (callPC !== pc) return;
             const rv = document.getElementById('remote-video');
             if (rv && ev.streams[0]) rv.srcObject = ev.streams[0];
         };
-        callPC.onconnectionstatechange = () => {
-            const s = callPC && callPC.connectionState;
+        pc.onconnectionstatechange = () => {
+            if (callPC !== pc) return; // 古いPCのイベントは無視
+            const s = pc.connectionState;
             console.log('[WebRTC] connectionState:', s);
             if (s === 'connected') {
                 iceRestartCount = 0;
                 showCallOverlay('通話中');
             }
-            // disconnected は一時的な場合があるので少し待ってから判断
-            if (s === 'failed' || s === 'closed') doHangup();
+            if (s === 'failed') doHangup();
+            // closed は doHangup() 内の pc.close() で起きるので無視（二重呼び出し防止）
             if (s === 'disconnected') {
                 setTimeout(() => {
-                    if (callPC && callPC.connectionState === 'disconnected') doHangup();
+                    if (callPC === pc && pc.connectionState === 'disconnected') doHangup();
                 }, 5000);
             }
         };
-        callPC.onicegatheringstatechange = () => {
-            console.log('[WebRTC] iceGatheringState:', callPC && callPC.iceGatheringState);
+        pc.onicegatheringstatechange = () => {
+            console.log('[WebRTC] iceGatheringState:', pc.iceGatheringState);
         };
-        callPC.oniceconnectionstatechange = () => {
-            const s = callPC && callPC.iceConnectionState;
+        pc.oniceconnectionstatechange = () => {
+            if (callPC !== pc) return;
+            const s = pc.iceConnectionState;
             console.log('[WebRTC] iceConnectionState:', s);
             if (s === 'failed') {
                 // ICE Restart を試みる（最大2回）
@@ -848,11 +876,12 @@
                     iceRestartCount++;
                     console.warn(`[WebRTC] ICE 失敗 → ICE Restart 試行 (${iceRestartCount}/2)`);
                     showCallOverlay('再接続中...');
-                    callPC.restartIce();
+                    pc.restartIce();
                     // 発信側の場合は新しい offer を再作成して送信
-                    if (callPC.localDescription && callPC.localDescription.type === 'offer') {
-                        callPC.createOffer({ iceRestart: true }).then(offer => {
-                            return callPC.setLocalDescription(offer).then(() => {
+                    if (pc.localDescription && pc.localDescription.type === 'offer') {
+                        pc.createOffer({ iceRestart: true }).then(offer => {
+                            if (callPC !== pc) return; // すでに hangup 済みなら中止
+                            return pc.setLocalDescription(offer).then(() => {
                                 socket.emit('webrtc-offer-restart', {
                                     toUserId: targetId, fromUserId: MY_ID,
                                     sdp: offer.sdp, type: offer.type,
@@ -866,7 +895,7 @@
                 }
             }
         };
-        return callPC;
+        return pc;
     }
 
     // ─ 発信（正しいフロー） ────────────────────────────────────────
@@ -972,7 +1001,10 @@
     }
 
     // ─ 終話 ─────────────────────────────────────────────────────
+    let _hangingUp = false; // 二重呼び出し防止フラグ
     function doHangup() {
+        if (_hangingUp) return;
+        _hangingUp = true;
         try {
             clearTimeout(callTimeoutTimer); callTimeoutTimer = null;
             clearTimeout(incomingTimer);    incomingTimer    = null;
@@ -981,7 +1013,7 @@
                 CallSounds.stopIncoming();
                 CallSounds.playHangup();
             }
-            if (callPC) { callPC.close(); callPC = null; }
+            if (callPC) { const _pc = callPC; callPC = null; _pc.close(); }
             if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
             if (screenStream) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; }
             isMicOn = true; isCamOn = true; isRemoteCtrl = false;
@@ -1015,6 +1047,7 @@
 
             if (target) socket.emit('call_end', { toUserId: target, fromUserId: MY_ID });
         } catch (e) { console.error('hangup error', e); }
+        finally { _hangingUp = false; }
     }
 
     // ─ マイク / カメラ ON/OFF ─────────────────────────────────────
@@ -1257,14 +1290,6 @@
         pendingOffer = { fromUserId: data.fromUserId, sdp: data.sdp };
         showIncomingModal(data.fromName || TARGET_NAME || '不明');
         if (window.CallSounds) CallSounds.startIncoming();
-
-        // 他ページから「応答」ボタンを押してチャットページに遷移してきた場合は自動応答
-        const autoAcceptId = sessionStorage.getItem('cl_auto_accept');
-        if (autoAcceptId && autoAcceptId === data.fromUserId) {
-            sessionStorage.removeItem('cl_auto_accept');
-            setTimeout(() => acceptCall(), 800); // ページが安定してから応答
-            return;
-        }
 
         // 着信側も 30秒無視したら自動的に「不在着信」として処理
         clearTimeout(incomingTimer);
