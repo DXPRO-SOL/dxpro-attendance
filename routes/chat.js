@@ -26,7 +26,7 @@ const chatUpload = multer({
     limits: { fileSize: 20 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
         const ext = path.extname(file.originalname).toLowerCase();
-        cb(null, /\.(jpg|jpeg|png|gif|webp|pdf|doc|docx|xls|xlsx|txt|zip|csv|mp4|mov|mp3)$/.test(ext));
+        cb(null, /\.(jpg|jpeg|png|gif|webp|pdf|doc|docx|xls|xlsx|txt|zip|csv|mp4|mov|mp3|webm)$/.test(ext));
     },
 });
 
@@ -589,6 +589,40 @@ router.post('/api/chat/recording', requireLogin, chatUpload.single('recording'),
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// DM チャット履歴クリア（自分の画面からのみ非表示 / 物理削除は双方合意後）
+router.post('/api/chat/clear', requireLogin, async (req, res) => {
+    try {
+        const myId = req.session.userId;
+        const { toUserId, roomId } = req.body;
+        if (!toUserId && !roomId) return res.status(400).json({ error: 'toUserId または roomId が必要です' });
+
+        if (toUserId) {
+            // DM: 自分が送受信したメッセージを削除
+            await ChatMessage.deleteMany({
+                $or: [
+                    { fromUserId: myId, toUserId: toUserId },
+                    { fromUserId: toUserId, toUserId: myId },
+                ],
+            });
+        } else {
+            // グループ: 管理者のみ削除可能
+            const room = await ChatRoom.findOne({ _id: roomId, admins: myId });
+            if (!room) return res.status(403).json({ error: '管理者権限が必要です' });
+            await ChatMessage.deleteMany({ roomId });
+        }
+        // クリアをリアルタイムで相手にも通知
+        if (global.io) {
+            if (toUserId) {
+                global.io.to('u_' + String(myId)).emit('chat_cleared', { toUserId, roomId: null });
+                global.io.to('u_' + String(toUserId)).emit('chat_cleared', { toUserId: myId, roomId: null });
+            } else {
+                global.io.to('r_' + roomId).emit('chat_cleared', { toUserId: null, roomId });
+            }
+        }
+        res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.put('/api/chat/room/:id', requireLogin, async (req, res) => {
     try {
         const room = await ChatRoom.findOne({ _id: req.params.id, admins: req.session.userId });
@@ -659,7 +693,7 @@ ${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/call-sounds.js"></script>
-<script src="/chat-app.js?v=10"></script>`;
+<script src="/chat-app.js?v=11"></script>`;
 }
 
 function buildSidebarHtml(d) {
@@ -803,6 +837,7 @@ function buildMainHtml(data) {
                 <button class="sc-hd-btn sc-call-btn" id="screen-btn" title="画面共有"><i class="fa-solid fa-desktop"></i></button>
                 <button class="sc-hd-btn sc-call-btn" id="remote-btn" title="遠隔操作リクエスト"><i class="fa-solid fa-mouse-pointer"></i></button>
                 <div class="sc-hd-search"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="msg-search" placeholder="会話内を検索..." oninput="chatApp.filterMessages(this.value)"></div>
+                <button class="sc-hd-btn sc-clear-btn" id="clear-chat-btn" title="チャット履歴をクリア" onclick="chatApp.clearChat()"><i class="fa-solid fa-trash"></i></button>
             </div>
         </div>`;
     return `${headerHtml}
@@ -968,7 +1003,16 @@ function buildAttachmentsHtml(attachments) {
     return '<div class="sc-atts">' + attachments.map(a => {
         const type = mimeToType(a.mimeType || '');
         if (type === 'image') return '<a href="' + a.url + '" target="_blank" class="sc-att-img-wrap"><img src="' + a.url + '" alt="' + escHtml(a.name) + '" class="sc-att-img" loading="lazy"></a>';
-        const icon = type === 'pdf' ? '📄' : type === 'video' ? '🎬' : '📎';
+        if (type === 'video') {
+            const sz = a.size ? (a.size > 1048576 ? (a.size / 1048576).toFixed(1) + 'MB' : Math.ceil(a.size / 1024) + 'KB') : '';
+            return '<div class="sc-att-video">'
+                + '<video src="' + a.url + '" controls preload="metadata" class="sc-att-video-player"></video>'
+                + '<div class="sc-att-video-info"><span class="sc-att-icon">🎬</span>'
+                + '<div><div class="sc-att-name">' + escHtml(a.name) + '</div><div class="sc-att-size">' + sz + '</div></div>'
+                + '<a href="' + a.url + '" download="' + escHtml(a.name) + '" class="sc-att-dl-btn" title="ダウンロード">⬇</a>'
+                + '</div></div>';
+        }
+        const icon = type === 'pdf' ? '📄' : '📎';
         const sz   = a.size ? (a.size > 1048576 ? (a.size / 1048576).toFixed(1) + 'MB' : Math.ceil(a.size / 1024) + 'KB') : '';
         return '<a href="' + a.url + '" target="_blank" download="' + escHtml(a.name) + '" class="sc-att-file"><span class="sc-att-icon">' + icon + '</span><div><div class="sc-att-name">' + escHtml(a.name) + '</div><div class="sc-att-size">' + sz + '</div></div></a>';
     }).join('') + '</div>';
@@ -1220,6 +1264,8 @@ function chatStyles() {
 /* ── 通話UI ── */
 .sc-call-btn{color:#22c55e!important}
 .sc-call-btn:hover{background:#f0fdf4!important}
+.sc-clear-btn{color:#ef4444!important}
+.sc-clear-btn:hover{background:#fef2f2!important}
 .call-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:500;display:flex;align-items:center;justify-content:center}
 .call-box{background:#1c1917;border-radius:16px;width:560px;max-width:96vw;box-shadow:0 8px 40px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column;transition:all .2s}
 /* フルスクリーン時 */

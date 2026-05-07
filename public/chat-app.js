@@ -95,6 +95,20 @@
         }
     });
 
+    socket.on('chat_cleared', ({ fromUserId, toUserId, roomId }) => {
+        // 自分が表示中の会話がクリアされた場合だけUIを更新
+        const isMine = MODE === 'dm' && (
+            (fromUserId === MY_ID && toUserId === TARGET_ID) ||
+            (fromUserId === TARGET_ID && toUserId === MY_ID)
+        );
+        const isRoom = MODE === 'room' && roomId && roomId === ROOM_ID;
+        if (!isMine && !isRoom) return;
+        const container = document.getElementById('sc-messages');
+        if (container) {
+            container.innerHTML = '<div class="sc-no-msg" style="padding:2rem;text-align:center;color:#aaa;">チャット履歴がクリアされました</div>';
+        }
+    });
+
     socket.on('msg_reaction', ({ _id, reactions }) => {
         const wrap = document.querySelector('.sc-reactions[data-mid="' + _id + '"]');
         if (!wrap) return;
@@ -560,6 +574,24 @@
             const body = el.querySelector('.sc-msg-text');
             el.style.display = (body && body.textContent.toLowerCase().includes(lower)) ? '' : 'none';
         });
+    }
+
+    async function clearChat() {
+        if (!currentTarget) return;
+        const label = currentTarget.type === 'group' ? `グループ「${currentTarget.name}」` : `${currentTarget.name}さんとの`;
+        if (!confirm(`${label}チャット履歴をすべて削除しますか？\nこの操作は元に戻せません。`)) return;
+        const body = currentTarget.type === 'group'
+            ? { groupId: currentTarget.id }
+            : { toUserId: currentTarget.id };
+        const res = await fetch('/api/chat/clear', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            alert('削除失敗: ' + (err.error || res.status));
+        }
     }
 
     // ── サイドバー検索 ────────────────────────────────────────
@@ -1590,6 +1622,7 @@
         removeFile,
         filterMessages,
         filterSidebar,
+        clearChat,
         setStatus,
         openCreateRoom,
         createRoom,
