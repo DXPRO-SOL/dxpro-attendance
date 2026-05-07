@@ -597,26 +597,21 @@ router.post('/api/chat/clear', requireLogin, async (req, res) => {
         if (!toUserId && !roomId) return res.status(400).json({ error: 'toUserId または roomId が必要です' });
 
         if (toUserId) {
-            // DM: 自分が送受信したメッセージを削除
-            await ChatMessage.deleteMany({
-                $or: [
-                    { fromUserId: myId, toUserId: toUserId },
-                    { fromUserId: toUserId, toUserId: myId },
-                ],
-            });
+            // DM: 自分が送ったメッセージのみ削除（相手側には影響なし）
+            const myOid = new mongoose.Types.ObjectId(String(myId));
+            const toOid = new mongoose.Types.ObjectId(String(toUserId));
+            await ChatMessage.deleteMany({ fromUserId: myOid, toUserId: toOid });
+            // 自分の画面だけクリア通知（相手には送らない）
+            if (global.io) {
+                global.io.to('u_' + String(myId)).emit('chat_cleared', { fromUserId: String(myId), toUserId: String(toUserId), roomId: null });
+            }
         } else {
-            // グループ: 管理者のみ削除可能
+            // グループ: 管理者のみ全削除、全メンバーに通知
             const room = await ChatRoom.findOne({ _id: roomId, admins: myId });
             if (!room) return res.status(403).json({ error: '管理者権限が必要です' });
             await ChatMessage.deleteMany({ roomId });
-        }
-        // クリアをリアルタイムで相手にも通知
-        if (global.io) {
-            if (toUserId) {
-                global.io.to('u_' + String(myId)).emit('chat_cleared', { toUserId, roomId: null });
-                global.io.to('u_' + String(toUserId)).emit('chat_cleared', { toUserId: myId, roomId: null });
-            } else {
-                global.io.to('r_' + roomId).emit('chat_cleared', { toUserId: null, roomId });
+            if (global.io) {
+                global.io.to('r_' + roomId).emit('chat_cleared', { fromUserId: null, toUserId: null, roomId });
             }
         }
         res.json({ ok: true });
@@ -693,7 +688,7 @@ ${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/call-sounds.js"></script>
-<script src="/chat-app.js?v=11"></script>`;
+<script src="/chat-app.js?v=15"></script>`;
 }
 
 function buildSidebarHtml(d) {
@@ -866,10 +861,10 @@ function buildMainHtml(data) {
         ondragover="event.preventDefault();this.classList.add('drag-over')"
         ondragleave="this.classList.remove('drag-over')"
         ondrop="chatApp.handleDrop(event)">
-        <textarea id="sc-msg-input" placeholder="${isRoom ? escHtml(data.roomName) : escHtml(data.targetName || '')} へメッセージを送る... (Shift+Enter で改行)" rows="1" maxlength="4000" oninput="chatApp.onInput()" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chatApp.send();}"></textarea>
+        <textarea id="sc-msg-input" placeholder="${isRoom ? escHtml(data.roomName) : escHtml(data.targetName || '')} へメッセージを送る... (Shift+Enter で送信)" rows="1" maxlength="4000" oninput="chatApp.onInput()" onkeydown="if(event.key==='Enter'){if(event.shiftKey){event.preventDefault();chatApp.send();}else if(!event.altKey){event.preventDefault();}}"></textarea>
         <button class="sc-send-btn" id="sc-send-btn" disabled onclick="chatApp.send()"><i class="fa-solid fa-paper-plane"></i></button>
     </div>
-    <div class="sc-input-hint">Enter で送信 · Shift+Enter で改行 · ファイルをドロップで添付</div>
+    <div class="sc-input-hint">Shift+Enter で送信 · Enter / Alt+Enter で改行 · ファイルをドロップで添付</div>
 </div>`;
 }
 

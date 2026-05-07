@@ -96,16 +96,17 @@
     });
 
     socket.on('chat_cleared', ({ fromUserId, toUserId, roomId }) => {
-        // 自分が表示中の会話がクリアされた場合だけUIを更新
-        const isMine = MODE === 'dm' && (
-            (fromUserId === MY_ID && toUserId === TARGET_ID) ||
-            (fromUserId === TARGET_ID && toUserId === MY_ID)
-        );
         const isRoom = MODE === 'room' && roomId && roomId === ROOM_ID;
-        if (!isMine && !isRoom) return;
+        const isDM   = MODE === 'dm'   && fromUserId === MY_ID && toUserId === TARGET_ID;
+        if (!isDM && !isRoom) return;
         const container = document.getElementById('sc-messages');
-        if (container) {
+        if (!container) return;
+        if (isRoom) {
+            // グループ全削除
             container.innerHTML = '<div class="sc-no-msg" style="padding:2rem;text-align:center;color:#aaa;">チャット履歴がクリアされました</div>';
+        } else {
+            // DM: 自分が送ったメッセージ（sc-msg-mine クラス）だけ削除
+            container.querySelectorAll('.sc-msg-mine, .sc-msg-cont.sc-msg-mine').forEach(el => el.remove());
         }
     });
 
@@ -243,13 +244,13 @@
         }
 
         if (isCont) {
-            el.className = 'sc-msg sc-msg-cont';
+            el.className = 'sc-msg sc-msg-cont' + (isMine ? ' sc-msg-mine' : '');
             el.innerHTML = toolbar + '<div class="sc-ts-hover">' + timeStr + '</div>'
                 + '<div class="sc-body-wrap2">' + replyBlock
                 + '<div class="sc-msg-text" data-mid="' + msg._id + '">' + esc(msg.content || '') + '</div>'
                 + attachHtml + '<div class="sc-reactions" data-mid="' + msg._id + '"></div>' + readBadge + '</div>';
         } else {
-            el.className = 'sc-msg';
+            el.className = 'sc-msg' + (isMine ? ' sc-msg-mine' : '');
             el.innerHTML = toolbar
                 + '<div class="sc-av sc-av-c' + colorIdx + '">' + initial + '</div>'
                 + '<div class="sc-msg-right"><div class="sc-msg-meta"><span class="sc-sender">' + esc(senderName) + '</span><span class="sc-ts">' + timeStr + '</span></div>'
@@ -577,12 +578,15 @@
     }
 
     async function clearChat() {
-        if (!currentTarget) return;
-        const label = currentTarget.type === 'group' ? `グループ「${currentTarget.name}」` : `${currentTarget.name}さんとの`;
+        if (!MODE) return;
+        const nameEl = document.getElementById('target-name');
+        const label  = MODE === 'room'
+            ? `グループ「${nameEl ? nameEl.textContent : 'このグループ'}」`
+            : `${nameEl ? nameEl.textContent : 'この相手'}さんとの`;
         if (!confirm(`${label}チャット履歴をすべて削除しますか？\nこの操作は元に戻せません。`)) return;
-        const body = currentTarget.type === 'group'
-            ? { groupId: currentTarget.id }
-            : { toUserId: currentTarget.id };
+        const body = MODE === 'room'
+            ? { roomId: ROOM_ID }
+            : { toUserId: TARGET_ID };
         const res = await fetch('/api/chat/clear', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
