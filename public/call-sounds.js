@@ -65,19 +65,18 @@
     let _dialingInterval = null;
 
     function _sparkle(ctx, freq, startTime, vol) {
-        // 基音 + 3倍音で透明感のある音色
-        [1, 3, 6].forEach((h, i) => {
+        // 基音 + 2倍音のみ（6倍音は3000Hz超になり不快なので使わない）
+        [[1, vol], [2, vol * 0.3]].forEach(([h, v]) => {
             const osc = ctx.createOscillator();
             const env = ctx.createGain();
             osc.connect(env); env.connect(ctx.destination);
             osc.type = 'sine';
             osc.frequency.value = freq * h;
-            const v = vol / (i + 1);
             env.gain.setValueAtTime(0, startTime);
-            env.gain.linearRampToValueAtTime(v, startTime + 0.008); // 瞬間的に立ち上がる
-            env.gain.exponentialRampToValueAtTime(0.001, startTime + 0.7); // キラッと消える
+            env.gain.linearRampToValueAtTime(v, startTime + 0.008);
+            env.gain.exponentialRampToValueAtTime(0.001, startTime + 0.65);
             osc.start(startTime);
-            osc.stop(startTime + 0.72);
+            osc.stop(startTime + 0.66);
         });
     }
 

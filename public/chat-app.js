@@ -870,6 +870,13 @@
             if (callPC !== pc) return;
             const s = pc.iceConnectionState;
             console.log('[WebRTC] iceConnectionState:', s);
+            // オーバーレイにICE状態を表示（デバッグ用）
+            const sl = document.getElementById('call-status-label');
+            if (sl && s !== 'connected' && s !== 'completed') {
+                const labels = { checking: '接続確認中...', disconnected: '再接続中...', failed: '接続失敗', closed: '終了' };
+                if (labels[s]) sl.textContent = labels[s];
+            }
+            if (s === 'connected' || s === 'completed') showCallOverlay('通話中');
             if (s === 'failed') {
                 // ICE Restart を試みる（最大2回）
                 if (iceRestartCount < 2) {
@@ -1001,17 +1008,19 @@
     }
 
     // ─ 終話 ─────────────────────────────────────────────────────
-    let _hangingUp = false; // 二重呼び出し防止フラグ
-    function doHangup() {
+    let _hangingUp = false;
+    // silent=true: 相手側から call_ended を受け取った場合 → 音を鳴らさず、call_end も再送しない
+    function doHangup(silent) {
         if (_hangingUp) return;
         _hangingUp = true;
+        setTimeout(() => { _hangingUp = false; }, 2000); // 2秒クールダウン（二重呼び出し防止）
         try {
             clearTimeout(callTimeoutTimer); callTimeoutTimer = null;
             clearTimeout(incomingTimer);    incomingTimer    = null;
             if (window.CallSounds) {
                 CallSounds.stopDialing();
                 CallSounds.stopIncoming();
-                CallSounds.playHangup();
+                if (!silent) CallSounds.playHangup(); // 自分側からの終話のみ音を鳴らす
             }
             if (callPC) { const _pc = callPC; callPC = null; _pc.close(); }
             if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
@@ -1042,12 +1051,12 @@
 
             // 録画停止（録画中であれば）
             if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                mediaRecorder.stop(); // onstop で保存処理
+                mediaRecorder.stop();
             }
 
-            if (target) socket.emit('call_end', { toUserId: target, fromUserId: MY_ID });
+            // silent=false（自分側終話）のときのみ相手に通知 → 無限ループ防止
+            if (!silent && target) socket.emit('call_end', { toUserId: target, fromUserId: MY_ID });
         } catch (e) { console.error('hangup error', e); }
-        finally { _hangingUp = false; }
     }
 
     // ─ マイク / カメラ ON/OFF ─────────────────────────────────────
@@ -1363,7 +1372,7 @@
         } catch (e) { /* ignore benign candidate errors */ }
     });
 
-    socket.on('call_ended', () => { doHangup(); });
+    socket.on('call_ended', () => { doHangup(true); }); // silent=true: 音なし・再送なし
 
     // ICE Restart: 相手から再発信 offer が届いた場合に answer を返す
     socket.on('webrtc-offer-restart', async (data) => {
