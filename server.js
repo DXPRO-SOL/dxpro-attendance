@@ -9,6 +9,10 @@ const httpServer = http.createServer(app);
 const io = new SocketIO(httpServer);
 global.io = io;
 
+// ── 遠隔操作エージェント登録管理 ──────────────────────────────────
+// agentRegistry[userId] = { socketId, platform, screenW, screenH }
+const agentRegistry = {};
+
 // ── Socket.io ルーム管理 ─────────────────────────────────────
 io.on('connection', (socket) => {
     // クライアントが自分のユーザールームとグループルームに参加
@@ -29,6 +33,36 @@ io.on('connection', (socket) => {
         if (data.toUserId) socket.to('u_' + data.toUserId).emit('stop_typing', data);
         if (data.roomId)   socket.to('r_' + data.roomId).emit('stop_typing', data);
     });
+
+  // ── 遠隔操作エージェント登録 (remote-agent.js から接続) ─────────
+  socket.on('agent_register', (data) => {
+    if (!data || !data.userId) return;
+    agentRegistry[data.userId] = {
+      socketId: socket.id,
+      platform: data.platform || 'unknown',
+      screenW:  data.screenW  || 1920,
+      screenH:  data.screenH  || 1080,
+    };
+    socket.join('agent_' + data.userId);
+    socket.emit('agent_registered', { ok: true, screenW: data.screenW, screenH: data.screenH });
+    // ブラウザ側にもエージェント接続を通知
+    io.to('u_' + data.userId).emit('agent_ready', {
+      platform: data.platform, screenW: data.screenW, screenH: data.screenH
+    });
+    console.log(`[Agent] 登録: userId=${data.userId} platform=${data.platform} screen=${data.screenW}x${data.screenH}`);
+  });
+
+  // エージェント切断時のクリーンアップ
+  socket.on('disconnect', () => {
+    for (const uid of Object.keys(agentRegistry)) {
+      if (agentRegistry[uid] && agentRegistry[uid].socketId === socket.id) {
+        delete agentRegistry[uid];
+        io.to('u_' + uid).emit('agent_disconnected');
+        console.log(`[Agent] 切断: userId=${uid}`);
+      }
+    }
+  });
+
   // --- WebRTC signaling / call control ---
   socket.on('call_initiate', (data) => {
     // data: { toUserId, fromUserId }
@@ -78,22 +112,61 @@ io.on('connection', (socket) => {
   socket.on('remote_control_grant', (data) => {
     if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_control_grant', data);
   });
-  // remote pointer position (for pointer overlay on screen share)
+  // remote pointer position
   socket.on('remote_pointer', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_pointer', data);
+    if (!data || !data.toUserId) return;
+    socket.to('u_' + data.toUserId).emit('remote_pointer', data);
+    // エージェントにもマウス移動を転送
+    const agent = agentRegistry[data.toUserId];
+    if (agent) {
+      const sw = agent.screenW, sh = agent.screenH;
+      io.to('agent_' + data.toUserId).emit('agent_mouse_move', {
+        x: Math.round(data.x * sw), y: Math.round(data.y * sh)
+      });
+    }
   });
-  // remote control events (click / dblclick / key / scroll)
+  // remote control events → エージェントがいればOS操作、なければブラウザDOM操作
   socket.on('remote_click', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_click', data);
+    if (!data || !data.toUserId) return;
+    const agent = agentRegistry[data.toUserId];
+    if (agent) {
+      const sw = agent.screenW, sh = agent.screenH;
+      io.to('agent_' + data.toUserId).emit('agent_click', {
+        x: Math.round(data.x * sw), y: Math.round(data.y * sh), button: data.button || 0
+      });
+    } else {
+      socket.to('u_' + data.toUserId).emit('remote_click', data);
+    }
   });
   socket.on('remote_dblclick', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_dblclick', data);
+    if (!data || !data.toUserId) return;
+    const agent = agentRegistry[data.toUserId];
+    if (agent) {
+      const sw = agent.screenW, sh = agent.screenH;
+      io.to('agent_' + data.toUserId).emit('agent_dblclick', {
+        x: Math.round(data.x * sw), y: Math.round(data.y * sh)
+      });
+    } else {
+      socket.to('u_' + data.toUserId).emit('remote_dblclick', data);
+    }
   });
   socket.on('remote_key', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_key', data);
+    if (!data || !data.toUserId) return;
+    const agent = agentRegistry[data.toUserId];
+    if (agent) {
+      io.to('agent_' + data.toUserId).emit('agent_key', data);
+    } else {
+      socket.to('u_' + data.toUserId).emit('remote_key', data);
+    }
   });
   socket.on('remote_scroll', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_scroll', data);
+    if (!data || !data.toUserId) return;
+    const agent = agentRegistry[data.toUserId];
+    if (agent) {
+      io.to('agent_' + data.toUserId).emit('agent_scroll', data);
+    } else {
+      socket.to('u_' + data.toUserId).emit('remote_scroll', data);
+    }
   });
   // 録画開始・停止通知（相手側の録画ボタンを排他制御）
   socket.on('recording_started', (data) => {

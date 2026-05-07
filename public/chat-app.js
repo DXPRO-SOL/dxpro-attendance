@@ -1262,6 +1262,16 @@
     function requestRemote() {
         if (!TARGET_ID) return alert('相手が選択されていません');
         if (!callPC) return alert('通話中でないと遠隔操作できません');
+
+        // エージェント説明モーダルを表示してから送信
+        const modal = document.getElementById('agent-setup-modal');
+        const cmdEl = document.getElementById('agent-cmd-text');
+        if (modal && cmdEl) {
+            const serverUrl = location.origin;
+            cmdEl.textContent = `node remote-agent.js ${TARGET_ID} ${serverUrl}`;
+            modal.style.display = 'flex';
+        }
+
         socket.emit('remote_control_request', { toUserId: TARGET_ID, fromUserId: MY_ID, fromName: MY_NAME });
         showNoticeBar('遠隔操作リクエストを送信しました。相手の許可を待っています...', 5000);
     }
@@ -1619,6 +1629,24 @@
     socket.on('screen_share_stopped', (data) => {
         const sl = document.getElementById('call-status-label');
         if (sl) sl.textContent = '通話中';
+    });
+
+    // ─ エージェント接続/切断通知 ────────────────────────────────
+    socket.on('agent_ready', (data) => {
+        const ind = document.getElementById('agent-indicator');
+        if (ind) {
+            ind.style.display = '';
+            ind.title = `遠隔操作エージェント接続中 (${data.platform || ''} ${data.screenW || ''}x${data.screenH || ''})`;
+        }
+        const btn = document.getElementById('ctrl-remote');
+        if (btn) btn.title = '遠隔操作リクエスト（エージェント接続済み・OS操作可能）';
+        showNoticeBar('🖥 遠隔操作エージェントが接続されました。OS全体の操作が可能です。', 4000);
+    });
+    socket.on('agent_disconnected', () => {
+        const ind = document.getElementById('agent-indicator');
+        if (ind) ind.style.display = 'none';
+        const btn = document.getElementById('ctrl-remote');
+        if (btn) btn.title = '遠隔操作リクエスト';
     });
 
     socket.on('remote_control_request', (data) => {
