@@ -805,6 +805,9 @@
         const ICE = { iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun.services.mozilla.com' },
+            // TURN サーバーが利用可能な場合はここに追加
+            // { urls: 'turn:your.turn.server:3478', username: 'user', credential: 'pass' },
         ]};
         callPC = new RTCPeerConnection(ICE);
         callPC.onicecandidate = (ev) => {
@@ -817,8 +820,19 @@
         };
         callPC.onconnectionstatechange = () => {
             const s = callPC && callPC.connectionState;
+            console.log('[WebRTC] connectionState:', s);
             if (s === 'connected') showCallOverlay('通話中');
             if (s === 'disconnected' || s === 'failed' || s === 'closed') doHangup();
+        };
+        callPC.onicegatheringstatechange = () => {
+            console.log('[WebRTC] iceGatheringState:', callPC && callPC.iceGatheringState);
+        };
+        callPC.oniceconnectionstatechange = () => {
+            const s = callPC && callPC.iceConnectionState;
+            console.log('[WebRTC] iceConnectionState:', s);
+            if (s === 'failed') {
+                console.warn('[WebRTC] ICE 接続失敗。TURN サーバーが必要な可能性があります。');
+            }
         };
         return callPC;
     }
@@ -878,25 +892,30 @@
     async function acceptCall() {
         clearTimeout(incomingTimer); incomingTimer = null;
         hideIncomingModal();
-        if (!pendingOffer) return;
+        if (!pendingOffer) { console.warn('[acceptCall] pendingOffer が null です'); return; }
         const { fromUserId, sdp } = pendingOffer;
         pendingOffer = null;
         try {
             showCallOverlay('接続中...');
             callTargetId = fromUserId;
+            // 1. ローカルメディアを取得
             await getLocalStream();
+            // 2. RTCPeerConnection を作成し、トラックを先に追加してから offer をセット
             createPC(fromUserId);
+            localStream.getTracks().forEach(t => callPC.addTrack(t, localStream));
+            // 3. 相手の offer をリモート SDP としてセット
             await callPC.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
-            // バッファされていた ICE キャンディデートを追加
+            // 4. バッファされていた ICE キャンディデートを追加
             for (const c of pendingCandidates) {
                 try { await callPC.addIceCandidate(new RTCIceCandidate(c)); } catch (_) {}
             }
             pendingCandidates = [];
-            localStream.getTracks().forEach(t => callPC.addTrack(t, localStream));
+            // 5. Answer を作成して発信者に送信
             const answer = await callPC.createAnswer();
             await callPC.setLocalDescription(answer);
-            socket.emit('call_accept', { toUserId: fromUserId, fromUserId: MY_ID, sdp: answer.sdp });
+            socket.emit('call_accept', { toUserId: fromUserId, fromUserId: MY_ID, sdp: answer.sdp, type: answer.type });
             callStartTime = Date.now(); // 応答側も開始時刻を記録
+            console.log('[acceptCall] answer 送信完了 →', fromUserId);
         } catch (e) {
             console.error('acceptCall error', e);
             hideCallOverlay();
@@ -1229,13 +1248,16 @@
         clearTimeout(callTimeoutTimer); callTimeoutTimer = null; // タイムアウト解除
         callStartTime = Date.now(); // 通話開始時刻を記録
         try {
-            if (!callPC || !data || !data.sdp) return;
-            await callPC.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
+            if (!callPC) { console.warn('[call_accepted] callPC が null'); return; }
+            if (!data || !data.sdp) { console.warn('[call_accepted] sdp がない', data); return; }
+            console.log('[call_accepted] answer SDP をセット中...');
+            await callPC.setRemoteDescription(new RTCSessionDescription({ type: data.type || 'answer', sdp: data.sdp }));
             // バッファされていた ICE キャンディデートを追加
             for (const c of pendingCandidates) {
                 try { await callPC.addIceCandidate(new RTCIceCandidate(c)); } catch (_) {}
             }
             pendingCandidates = [];
+            console.log('[call_accepted] setRemoteDescription 完了。ICE ネゴシエーション開始...');
             // connectionstatechange で '通話中' に変わる
         } catch (e) { console.error('call_accepted error', e); }
     });
