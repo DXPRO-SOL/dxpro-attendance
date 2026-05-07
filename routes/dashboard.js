@@ -243,17 +243,71 @@ router.get('/dashboard', requireLogin, async (req, res) => {
         .card-body { padding: 16px 20px; }
 
         /* ── Quick actions ── */
-        .qa-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-        @media(max-width:600px){ .qa-grid { grid-template-columns: repeat(2,1fr); } }
-        .qa-btn {
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            gap: 8px; padding: 16px 10px; border-radius: var(--radius-md);
-            border: 1.5px solid var(--c-border); background: var(--c-surface);
-            color: var(--c-text); text-decoration: none; font-weight: 600; font-size: 12px;
-            text-align: center; transition: all .18s;
+        .qa-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 10px;
         }
-        .qa-btn:hover { border-color: var(--c-primary); background: var(--c-primary-light); color: var(--c-primary); transform: translateY(-2px); box-shadow: var(--shadow-hover); }
-        .qa-btn .qa-icon { width: 36px; height: 36px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 15px; }
+        @media(max-width:1100px){ .qa-grid { grid-template-columns: repeat(4,1fr); } }
+        @media(max-width:600px){  .qa-grid { grid-template-columns: repeat(3,1fr); } }
+        .qa-btn {
+            position: relative;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 10px; padding: 18px 8px 14px;
+            border-radius: 14px;
+            border: 1px solid transparent;
+            background: #fff;
+            color: var(--c-text); text-decoration: none;
+            font-weight: 600; font-size: 11.5px; text-align: center;
+            box-shadow: 0 1px 4px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.04);
+            transition: transform .2s cubic-bezier(.34,1.56,.64,1), box-shadow .2s ease, background .2s ease;
+            overflow: hidden;
+        }
+        .qa-btn::before {
+            content: '';
+            position: absolute; inset: 0;
+            opacity: 0;
+            transition: opacity .2s ease;
+            border-radius: inherit;
+        }
+        .qa-btn:hover {
+            transform: translateY(-4px) scale(1.03);
+            box-shadow: 0 8px 24px rgba(0,0,0,.11), 0 2px 6px rgba(0,0,0,.07);
+            text-decoration: none;
+        }
+        .qa-btn:hover::before { opacity: 1; }
+        .qa-btn:active { transform: translateY(-1px) scale(1.01); }
+        .qa-btn .qa-icon {
+            width: 44px; height: 44px; border-radius: 13px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; flex-shrink: 0;
+            transition: transform .2s cubic-bezier(.34,1.56,.64,1);
+        }
+        .qa-btn:hover .qa-icon { transform: scale(1.15) rotate(-4deg); }
+        .qa-btn .qa-label { font-size: 11px; font-weight: 700; letter-spacing: .2px; line-height: 1.3; }
+
+        /* color themes */
+        .qa-btn.qa-blue   { color: #1d4ed8; }
+        .qa-btn.qa-blue::before   { background: linear-gradient(145deg,#dbeafe,#eff6ff); }
+        .qa-btn.qa-blue   .qa-icon { background: linear-gradient(135deg,#3b82f6,#2563eb); color:#fff; box-shadow:0 4px 12px rgba(37,99,235,.35); }
+        .qa-btn.qa-orange { color: #c2410c; }
+        .qa-btn.qa-orange::before { background: linear-gradient(145deg,#ffedd5,#fff7ed); }
+        .qa-btn.qa-orange .qa-icon { background: linear-gradient(135deg,#fb923c,#ea580c); color:#fff; box-shadow:0 4px 12px rgba(234,88,12,.35); }
+        .qa-btn.qa-green  { color: #15803d; }
+        .qa-btn.qa-green::before  { background: linear-gradient(145deg,#dcfce7,#f0fdf4); }
+        .qa-btn.qa-green  .qa-icon { background: linear-gradient(135deg,#4ade80,#16a34a); color:#fff; box-shadow:0 4px 12px rgba(22,163,74,.35); }
+        .qa-btn.qa-purple { color: #6d28d9; }
+        .qa-btn.qa-purple::before { background: linear-gradient(145deg,#ede9fe,#faf5ff); }
+        .qa-btn.qa-purple .qa-icon { background: linear-gradient(135deg,#a78bfa,#7c3aed); color:#fff; box-shadow:0 4px 12px rgba(124,58,237,.35); }
+        .qa-btn.qa-cyan   { color: #0e7490; }
+        .qa-btn.qa-cyan::before   { background: linear-gradient(145deg,#cffafe,#ecfeff); }
+        .qa-btn.qa-cyan   .qa-icon { background: linear-gradient(135deg,#22d3ee,#0891b2); color:#fff; box-shadow:0 4px 12px rgba(8,145,178,.35); }
+        .qa-btn.qa-rose   { color: #be185d; }
+        .qa-btn.qa-rose::before   { background: linear-gradient(145deg,#fce7f3,#fdf2f8); }
+        .qa-btn.qa-rose   .qa-icon { background: linear-gradient(135deg,#f472b6,#db2777); color:#fff; box-shadow:0 4px 12px rgba(219,39,119,.35); }
+        .qa-btn.qa-amber  { color: #92400e; }
+        .qa-btn.qa-amber::before  { background: linear-gradient(145deg,#fef3c7,#fffbeb); }
+        .qa-btn.qa-amber  .qa-icon { background: linear-gradient(135deg,#fbbf24,#d97706); color:#fff; box-shadow:0 4px 12px rgba(217,119,6,.35); }
 
         /* ── Activity feed ── */
         .activity-feed { display: flex; flex-direction: column; }
@@ -435,33 +489,33 @@ router.get('/dashboard', requireLogin, async (req, res) => {
                 <div class="card-head"><h3><i class="fa-solid fa-bolt" style="color:var(--c-warn);margin-right:7px"></i>クイックアクション</h3></div>
                 <div class="card-body">
                     <div class="qa-grid">
-                        <a href="/attendance-main" class="qa-btn">
-                            <div class="qa-icon" style="background:var(--c-primary-light);color:var(--c-primary)"><i class="fa-solid fa-business-time"></i></div>
-                            勤怠打刻
+                        <a href="/attendance-main" class="qa-btn qa-blue">
+                            <div class="qa-icon"><i class="fa-solid fa-business-time"></i></div>
+                            <span class="qa-label">勤怠打刻</span>
                         </a>
-                        <a href="/leave/apply" class="qa-btn">
-                            <div class="qa-icon" style="background:var(--c-warn-light);color:var(--c-warn)"><i class="fa-solid fa-calendar-plus"></i></div>
-                            休暇申請
+                        <a href="/leave/apply" class="qa-btn qa-orange">
+                            <div class="qa-icon"><i class="fa-solid fa-calendar-plus"></i></div>
+                            <span class="qa-label">休暇申請</span>
                         </a>
-                        <a href="/goals" class="qa-btn">
-                            <div class="qa-icon" style="background:var(--c-success-light);color:var(--c-success)"><i class="fa-solid fa-bullseye"></i></div>
-                            目標管理
+                        <a href="/goals" class="qa-btn qa-green">
+                            <div class="qa-icon"><i class="fa-solid fa-bullseye"></i></div>
+                            <span class="qa-label">目標管理</span>
                         </a>
-                        <a href="/hr/daily-report" class="qa-btn">
-                            <div class="qa-icon" style="background:#f5f3ff;color:var(--c-purple)"><i class="fa-solid fa-pen-to-square"></i></div>
-                            日報入力
+                        <a href="/hr/daily-report" class="qa-btn qa-purple">
+                            <div class="qa-icon"><i class="fa-solid fa-pen-to-square"></i></div>
+                            <span class="qa-label">日報入力</span>
                         </a>
-                        <a href="/hr/payroll" class="qa-btn">
-                            <div class="qa-icon" style="background:var(--c-success-light);color:var(--c-success)"><i class="fa-solid fa-yen-sign"></i></div>
-                            給与明細
+                        <a href="/hr/payroll" class="qa-btn qa-cyan">
+                            <div class="qa-icon"><i class="fa-solid fa-yen-sign"></i></div>
+                            <span class="qa-label">給与明細</span>
                         </a>
-                        <a href="/board/new" class="qa-btn">
-                            <div class="qa-icon" style="background:#eff6ff;color:#2563eb"><i class="fa-solid fa-comments"></i></div>
-                            掲示板投稿
+                        <a href="/board/new" class="qa-btn qa-rose">
+                            <div class="qa-icon"><i class="fa-solid fa-comments"></i></div>
+                            <span class="qa-label">掲示板投稿</span>
                         </a>
-                        <a href="/overtime/new" class="qa-btn">
-                            <div class="qa-icon" style="background:#fff7ed;color:#ea580c"><i class="fa-solid fa-clock"></i></div>
-                            残業申請
+                        <a href="/overtime/new" class="qa-btn qa-amber">
+                            <div class="qa-icon"><i class="fa-solid fa-clock"></i></div>
+                            <span class="qa-label">残業申請</span>
                         </a>
                     </div>
                 </div>
@@ -553,32 +607,67 @@ router.get('/dashboard', requireLogin, async (req, res) => {
             <div class="card semi-card">
                 <div class="card-head">
                     <h3><i class="fa-solid fa-robot" style="color:var(--c-purple);margin-right:7px"></i>AI 半期評価予測</h3>
-                    <span class="semi-grade-badge"><i class="fa-solid fa-star" style="font-size:11px"></i> GRADE ${escapeHtml(semi.grade)} &nbsp; ${semi.score}点</span>
                 </div>
                 <div class="card-body">
+
+                    <!-- ── スコアヒーローエリア ── -->
+                    ${(()=>{
+                        const sc = semi.score;
+                        const gr = semi.grade;
+                        const scoreColor = sc>=96?'#9333ea':sc>=88?'#7c3aed':sc>=78?'#16a34a':sc>=67?'#2563eb':sc>=55?'#0891b2':sc>=43?'#d97706':sc>=28?'#ea580c':'#dc2626';
+                        const scoreBg   = sc>=96?'#faf5ff':sc>=88?'#f3effe':sc>=78?'#f0fdf4':sc>=67?'#eff6ff':sc>=55?'#ecfeff':sc>=43?'#fffbeb':sc>=28?'#fff7ed':'#fef2f2';
+                        const scoreBdr  = sc>=96?'#e9d5ff':sc>=88?'#ddd6fe':sc>=78?'#bbf7d0':sc>=67?'#bfdbfe':sc>=55?'#a5f3fc':sc>=43?'#fde68a':sc>=28?'#fed7aa':'#fecaca';
+                        const gradeLabel= sc>=96?'最高評価':sc>=88?'優秀':sc>=78?'良好':sc>=67?'標準以上':sc>=55?'標準':sc>=43?'要改善':sc>=28?'低評価':'要注意';
+                        const nextGrade = sc>=96?null:sc>=88?{name:'S+',need:96-sc}:sc>=78?{name:'S',need:88-sc}:sc>=67?{name:'A+',need:78-sc}:sc>=55?{name:'A',need:67-sc}:sc>=43?{name:'B+',need:55-sc}:sc>=28?{name:'B',need:43-sc}:{name:'C',need:28-sc};
+                        const circumference = 2 * Math.PI * 54; // r=54
+                        const dashOffset = circumference * (1 - sc / 100);
+                        return `
+                    <div style="background:${scoreBg};border:1.5px solid ${scoreBdr};border-radius:16px;padding:20px 16px 16px;margin-bottom:16px">
+                        <div style="display:flex;align-items:center;gap:16px">
+                            <!-- SVGサークルゲージ -->
+                            <div style="flex-shrink:0;position:relative;width:120px;height:120px">
+                                <svg width="120" height="120" viewBox="0 0 120 120" style="transform:rotate(-90deg)">
+                                    <circle cx="60" cy="60" r="54" fill="none" stroke="#e5e7eb" stroke-width="10"/>
+                                    <circle cx="60" cy="60" r="54" fill="none" stroke="${scoreColor}" stroke-width="10"
+                                        stroke-dasharray="${circumference.toFixed(2)}"
+                                        stroke-dashoffset="${dashOffset.toFixed(2)}"
+                                        stroke-linecap="round"
+                                        style="transition:stroke-dashoffset 1s ease"/>
+                                </svg>
+                                <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
+                                    <span style="font-size:30px;font-weight:900;color:${scoreColor};line-height:1">${sc}</span>
+                                    <span style="font-size:10px;color:#9ca3af;font-weight:500">/ 100点</span>
+                                </div>
+                            </div>
+                            <!-- グレード＋ラベル -->
+                            <div style="flex:1;min-width:0">
+                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                                    <span style="font-size:36px;font-weight:900;color:${scoreColor};line-height:1">${escapeHtml(gr)}</span>
+                                    <div>
+                                        <div style="font-size:13px;font-weight:700;color:${scoreColor}">${gradeLabel}</div>
+                                        <div style="font-size:11px;color:#9ca3af;margin-top:2px">GRADE</div>
+                                    </div>
+                                </div>
+                                <!-- グレードスケール -->
+                                <div style="display:flex;gap:2px;margin-bottom:8px">
+                                    ${[['D','#dc2626',0],['C','#ea580c',28],['B','#d97706',43],['B+','#0891b2',55],['A','#2563eb',67],['A+','#16a34a',78],['S','#7c3aed',88],['S+','#9333ea',96]].map(([g,c,min])=>{
+                                        const active = escapeHtml(gr) === g;
+                                        return `<div style="flex:1;text-align:center;padding:3px 0;border-radius:5px;background:${active?c+'22':'transparent'};border:${active?`1.5px solid ${c}`:'1px solid #e5e7eb'}">
+                                            <div style="font-size:9px;font-weight:${active?'800':'600'};color:${active?c:'#9ca3af'}">${g}</div>
+                                        </div>`;
+                                    }).join('')}
+                                </div>
+                                ${nextGrade ? `<div style="font-size:11.5px;color:#6b7280">次のグレード <strong style="color:${scoreColor}">${nextGrade.name}</strong> まで <strong style="font-size:14px;color:${scoreColor}">${nextGrade.need}点</strong></div>` : `<div style="font-size:11.5px;color:#16a34a;font-weight:700">🏆 最高グレード達成中！</div>`}
+                            </div>
+                        </div>
+                    </div>
 
                     <!-- AI分析コメント -->
                     <div style="background:#faf8ff;border:1px solid #ede9fe;border-radius:10px;padding:12px 14px;margin-bottom:16px">
                         <div style="font-size:11px;font-weight:700;color:#7c3aed;margin-bottom:5px"><i class="fa-solid fa-brain" style="margin-right:4px"></i>AI分析コメント</div>
                         <div style="font-size:12.5px;color:var(--c-text);line-height:1.7">${escapeHtml(semi.explanation)}</div>
-                    </div>
-
-                    <!-- 総合スコアバー -->
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
-                        <span style="font-size:12px;color:var(--c-muted);font-weight:600">総合スコア</span>
-                        <span style="font-size:14px;font-weight:800;color:${semi.score>=96?'#9333ea':semi.score>=88?'#7c3aed':semi.score>=78?'#16a34a':semi.score>=67?'#2563eb':semi.score>=55?'#0891b2':semi.score>=43?'#d97706':semi.score>=28?'#ea580c':'#dc2626'}">${semi.score} <span style="font-size:11px;font-weight:500;color:var(--c-muted)">/ 100点</span></span>
-                    </div>
-                    <div class="semi-score-bar"><div class="semi-score-fill" style="width:${Math.min(100, semi.score)}%"></div></div>
-                    <div style="display:grid;grid-template-columns:repeat(8,1fr);text-align:center;font-size:9.5px;color:var(--c-muted);margin-top:3px;margin-bottom:18px">
-                        <span style="color:#dc2626;font-weight:700">D<br><span style="color:#9ca3af;font-weight:400">〜27</span></span>
-                        <span style="color:#ea580c;font-weight:700">C<br><span style="color:#9ca3af;font-weight:400">28〜</span></span>
-                        <span style="color:#d97706;font-weight:700">B<br><span style="color:#9ca3af;font-weight:400">43〜</span></span>
-                        <span style="color:#0891b2;font-weight:700">B+<br><span style="color:#9ca3af;font-weight:400">55〜</span></span>
-                        <span style="color:#2563eb;font-weight:700">A<br><span style="color:#9ca3af;font-weight:400">67〜</span></span>
-                        <span style="color:#16a34a;font-weight:700">A+<br><span style="color:#9ca3af;font-weight:400">78〜</span></span>
-                        <span style="color:#7c3aed;font-weight:700">S<br><span style="color:#9ca3af;font-weight:400">88〜</span></span>
-                        <span style="color:#9333ea;font-weight:700">S+<br><span style="color:#9ca3af;font-weight:400">96〜</span></span>
-                    </div>
+                    </div>`;
+                    })()}
 
                     <!-- ── 5カテゴリ 詳細ブレークダウン ── -->
                     <div style="font-size:12px;font-weight:700;color:var(--c-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">評価カテゴリ詳細</div>
@@ -637,31 +726,39 @@ router.get('/dashboard', requireLogin, async (req, res) => {
                             const barColor = pct >= 80 ? '#16a34a' : pct >= 60 ? '#2563eb' : pct >= 40 ? '#d97706' : '#dc2626';
                             const subItems = cat.items.map(item => {
                                 const itemPct = Math.round((item.val / item.max) * 100);
-                                const dotColor = itemPct >= 80 ? '#16a34a' : itemPct >= 60 ? '#2563eb' : itemPct >= 40 ? '#d97706' : '#dc2626';
-                                return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px dashed #f3f4f6">
-                                    <span style="width:8px;height:8px;border-radius:50%;background:${dotColor};flex-shrink:0;display:inline-block"></span>
-                                    <span style="flex:1;font-size:12px;color:var(--c-text)">${escapeHtml(item.label)}</span>
-                                    <span style="font-size:11px;color:var(--c-muted)">${escapeHtml(item.tip)}</span>
-                                    <span style="font-size:12px;font-weight:700;color:${dotColor};min-width:38px;text-align:right">${item.val}<span style="font-size:10px;color:#9ca3af">/${item.max}</span></span>
+                                const iColor = itemPct >= 80 ? '#16a34a' : itemPct >= 60 ? '#2563eb' : itemPct >= 40 ? '#d97706' : '#dc2626';
+                                return `<div style="padding:8px 0;border-bottom:1px dashed #f3f4f6">
+                                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                                        <span style="flex:1;font-size:12px;color:var(--c-text);font-weight:600">${escapeHtml(item.label)}</span>
+                                        <span style="font-size:10.5px;color:var(--c-muted);background:#f3f4f6;padding:1px 7px;border-radius:999px">${escapeHtml(item.tip)}</span>
+                                        <span style="font-size:13px;font-weight:800;color:${iColor};min-width:46px;text-align:right">${item.val}<span style="font-size:10px;font-weight:500;color:#9ca3af"> / ${item.max}</span></span>
+                                    </div>
+                                    <div style="height:6px;background:#e5e7eb;border-radius:999px;overflow:hidden">
+                                        <div style="height:100%;width:${itemPct}%;background:${iColor};border-radius:999px;transition:width .8s ease"></div>
+                                    </div>
                                 </div>`;
                             }).join('');
 
-                            return `<div style="border:1px solid ${cat.color}22;border-radius:10px;overflow:hidden;margin-bottom:10px">
-                                <div style="background:${cat.bg};padding:10px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid ${cat.color}22">
-                                    <div style="display:flex;align-items:center;gap:8px">
-                                        <div style="width:28px;height:28px;border-radius:7px;background:white;border:1.5px solid ${cat.color}44;display:flex;align-items:center;justify-content:center;color:${cat.color};font-size:13px">
-                                            <i class="fa-solid ${cat.icon}"></i>
+                            return `<div style="border:1.5px solid ${cat.color}33;border-radius:12px;overflow:hidden;margin-bottom:10px">
+                                <div style="background:${cat.bg};padding:11px 14px;border-bottom:1.5px solid ${cat.color}22">
+                                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                                        <div style="display:flex;align-items:center;gap:8px">
+                                            <div style="width:30px;height:30px;border-radius:8px;background:white;border:1.5px solid ${cat.color}55;display:flex;align-items:center;justify-content:center;color:${cat.color};font-size:14px">
+                                                <i class="fa-solid ${cat.icon}"></i>
+                                            </div>
+                                            <span style="font-size:13px;font-weight:700;color:${cat.color}">${escapeHtml(cat.label)}</span>
                                         </div>
-                                        <span style="font-size:13px;font-weight:700;color:${cat.color}">${escapeHtml(cat.label)}</span>
+                                        <div style="text-align:right">
+                                            <span style="font-size:22px;font-weight:900;color:${barColor};line-height:1">${cat.score}</span>
+                                            <span style="font-size:11px;color:#9ca3af;font-weight:500"> / ${cat.max}点</span>
+                                            <div style="font-size:10px;color:${barColor};font-weight:700;margin-top:1px">${pct}%</div>
+                                        </div>
                                     </div>
-                                    <div style="display:flex;align-items:center;gap:10px">
-                                        <div style="width:80px;height:5px;background:#e5e7eb;border-radius:999px;overflow:hidden">
-                                            <div style="height:100%;width:${pct}%;background:${barColor};border-radius:999px"></div>
-                                        </div>
-                                        <span style="font-size:13px;font-weight:800;color:${barColor}">${cat.score}<span style="font-size:10px;font-weight:500;color:#9ca3af">/${cat.max}</span></span>
+                                    <div style="height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden">
+                                        <div style="height:100%;width:${pct}%;background:${barColor};border-radius:999px;transition:width .8s ease"></div>
                                     </div>
                                 </div>
-                                <div style="padding:6px 14px 2px">${subItems}</div>
+                                <div style="padding:4px 14px 6px">${subItems}</div>
                             </div>`;
                         }).join('');
                     })()}
@@ -703,14 +800,25 @@ router.get('/dashboard', requireLogin, async (req, res) => {
                     </div>`}
 
                     <!-- ── グレードアップヒント ── -->
-                    <div style="margin-top:14px;padding:11px 14px;background:linear-gradient(135deg,#f0f9ff,#faf5ff);border:1px solid #c7d2fe;border-radius:10px;font-size:12px;color:#1e40af">
-                        <i class="fa-solid fa-wand-magic-sparkles" style="margin-right:5px;color:#7c3aed"></i>
-                        <strong>次のグレードまで：</strong>
-                        ${semi.score >= 88 ? '🏆 最高グレード S 達成中！この状態を維持してください。' :
-                          semi.score >= 75 ? `あと <strong>${88 - semi.score}点</strong> でグレード <strong>S</strong> に到達。出勤の安定と目標完了が最短ルートです。` :
-                          semi.score >= 60 ? `あと <strong>${75 - semi.score}点</strong> でグレード <strong>A</strong> に到達。遅刻削減と目標進捗更新を優先してください。` :
-                          semi.score >= 45 ? `あと <strong>${60 - semi.score}点</strong> でグレード <strong>B</strong> に到達。目標登録と欠勤削減が最も効果的です。` :
-                          `あと <strong>${45 - semi.score}点</strong> でグレード <strong>C</strong> に到達。まず目標を1件登録するだけで大きく改善できます。`}
+                    <div style="margin-top:14px;padding:13px 16px;background:linear-gradient(135deg,#f0f9ff,#faf5ff);border:1.5px solid #c7d2fe;border-radius:12px">
+                        <div style="font-size:11px;font-weight:700;color:#7c3aed;margin-bottom:6px"><i class="fa-solid fa-wand-magic-sparkles" style="margin-right:5px"></i>次のグレードへの道</div>
+                        <div style="font-size:13px;color:#1e40af;font-weight:500">
+                        ${semi.score >= 96 ? '🏆 最高グレード S+ 達成中！この状態を維持してください。' :
+                          semi.score >= 88 ? `グレード <strong style="font-size:16px;color:#9333ea">S+</strong> まであと <strong style="font-size:20px;color:#9333ea">${96 - semi.score}</strong><span style="font-size:12px">点</span>` :
+                          semi.score >= 78 ? `グレード <strong style="font-size:16px;color:#7c3aed">S</strong> まであと <strong style="font-size:20px;color:#7c3aed">${88 - semi.score}</strong><span style="font-size:12px">点</span>` :
+                          semi.score >= 67 ? `グレード <strong style="font-size:16px;color:#16a34a">A+</strong> まであと <strong style="font-size:20px;color:#16a34a">${78 - semi.score}</strong><span style="font-size:12px">点</span>` :
+                          semi.score >= 55 ? `グレード <strong style="font-size:16px;color:#2563eb">A</strong> まであと <strong style="font-size:20px;color:#2563eb">${67 - semi.score}</strong><span style="font-size:12px">点</span>` :
+                          semi.score >= 43 ? `グレード <strong style="font-size:16px;color:#0891b2">B+</strong> まであと <strong style="font-size:20px;color:#0891b2">${55 - semi.score}</strong><span style="font-size:12px">点</span>` :
+                          semi.score >= 28 ? `グレード <strong style="font-size:16px;color:#d97706">B</strong> まであと <strong style="font-size:20px;color:#d97706">${43 - semi.score}</strong><span style="font-size:12px">点</span>` :
+                          `グレード <strong style="font-size:16px;color:#ea580c">C</strong> まであと <strong style="font-size:20px;color:#ea580c">${28 - semi.score}</strong><span style="font-size:12px">点</span>`}
+                        </div>
+                        <div style="font-size:11.5px;color:#6b7280;margin-top:5px">
+                        ${semi.score >= 96 ? '' :
+                          semi.score >= 75 ? '出勤の安定と目標完了が最短ルートです。' :
+                          semi.score >= 60 ? '遅刻削減と目標進捗更新を優先してください。' :
+                          semi.score >= 45 ? '目標登録と欠勤削減が最も効果的です。' :
+                          'まず目標を1件登録するだけで大きく改善できます。'}
+                        </div>
                     </div>
 
                     <!-- ── フィードバックフォーム ── -->
