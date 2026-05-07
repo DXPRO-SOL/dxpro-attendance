@@ -261,7 +261,17 @@
             if (/^image\//.test(a.mimeType || '')) {
                 return '<a href="' + a.url + '" target="_blank" class="sc-att-img-wrap"><img src="' + a.url + '" class="sc-att-img" loading="lazy"></a>';
             }
-            const icon = a.mimeType === 'application/pdf' ? '📄' : /^video\//.test(a.mimeType || '') ? '🎬' : '📎';
+            // 動画ファイルはインライン再生プレイヤーで表示
+            if (/^video\//.test(a.mimeType || '') || /\.webm$/i.test(a.url || '')) {
+                const sz = a.size ? (a.size > 1048576 ? (a.size / 1048576).toFixed(1) + 'MB' : Math.ceil(a.size / 1024) + 'KB') : '';
+                return '<div class="sc-att-video">'
+                    + '<video src="' + a.url + '" controls preload="metadata" class="sc-att-video-player"></video>'
+                    + '<div class="sc-att-video-info"><span class="sc-att-icon">🎬</span>'
+                    + '<div><div class="sc-att-name">' + esc(a.name) + '</div><div class="sc-att-size">' + sz + '</div></div>'
+                    + '<a href="' + a.url + '" download="' + esc(a.name) + '" class="sc-att-dl-btn" title="ダウンロード">⬇</a>'
+                    + '</div></div>';
+            }
+            const icon = a.mimeType === 'application/pdf' ? '📄' : '📎';
             const sz   = a.size ? (a.size > 1048576 ? (a.size / 1048576).toFixed(1) + 'MB' : Math.ceil(a.size / 1024) + 'KB') : '';
             return '<a href="' + a.url + '" target="_blank" download="' + esc(a.name) + '" class="sc-att-file"><span class="sc-att-icon">' + icon + '</span><div><div class="sc-att-name">' + esc(a.name) + '</div><div class="sc-att-size">' + sz + '</div></div></a>';
         }).join('') + '</div>';
@@ -1071,9 +1081,9 @@
             const rb = document.getElementById('remote-ctrl-bar');
             if (rb) rb.style.display = 'none';
 
-            // 通話履歴を保存
+            // 通話履歴を保存（自分から切った側だけが保存 → 重複防止）
             const target = callTargetId || TARGET_ID;
-            if (callStartTime && target) {
+            if (!silent && callStartTime && target) {
                 const duration = Math.round((Date.now() - callStartTime) / 1000);
                 callStartTime = null;
                 fetch('/api/chat/call-history', {
@@ -1238,8 +1248,24 @@
             : 'video/webm';
         recordChunks  = [];
         mediaRecorder = new MediaRecorder(stream, { mimeType });
+
+        // 録画タイマー
+        let recSeconds = 0;
+        const recTimerInterval = setInterval(() => {
+            recSeconds++;
+            const h = Math.floor(recSeconds / 3600);
+            const m = Math.floor((recSeconds % 3600) / 60);
+            const s = recSeconds % 60;
+            const timeStr = h > 0
+                ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+                : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+            if (btn) btn.innerHTML = `<i class="fa-solid fa-stop"></i> <span class="call-record-dot">●</span> ${timeStr}`;
+            showNoticeBar(`🔴 録画中 ${timeStr}`, 0);
+        }, 1000);
+
         mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordChunks.push(e.data); };
         mediaRecorder.onstop = async () => {
+            clearInterval(recTimerInterval);
             if (btn) { btn.classList.remove('ctrl-recording'); btn.innerHTML = '<i class="fa-solid fa-circle-dot"></i>'; }
             showNoticeBar('🎥 録画を保存中...', 0);
             const blob = new Blob(recordChunks, { type: mimeType });
@@ -1259,8 +1285,8 @@
             }
         };
         mediaRecorder.start(1000); // 1秒ごとにデータを収集
-        if (btn) { btn.classList.add('ctrl-recording'); btn.innerHTML = '<i class="fa-solid fa-stop"></i> <span class="call-record-dot">●</span>'; }
-        showNoticeBar('🔴 録画中...', 0);
+        if (btn) { btn.classList.add('ctrl-recording'); btn.innerHTML = '<i class="fa-solid fa-stop"></i> <span class="call-record-dot">●</span> 00:00'; }
+        showNoticeBar('🔴 録画中 00:00', 0);
     }
 
     // 相手のポインタをキャンバスに描画

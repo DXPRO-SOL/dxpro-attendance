@@ -659,7 +659,7 @@ ${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/call-sounds.js"></script>
-<script src="/chat-app.js?v=8"></script>`;
+<script src="/chat-app.js?v=9"></script>`;
 }
 
 function buildSidebarHtml(d) {
@@ -1212,6 +1212,11 @@ function chatStyles() {
 .sc-missed-time{margin-left:auto;font-size:.75rem;opacity:.6}
 .sc-missed-icon{font-size:1rem}
 .sc-missed-time{margin-left:auto;font-size:.68rem;color:#a8a29e}
+/* ── 録画ビデオ表示 ── */
+.sc-att-video{margin-top:6px;border-radius:10px;overflow:hidden;background:#111;max-width:360px}
+.sc-att-video-player{width:100%;max-height:220px;display:block;background:#000}
+.sc-att-video-info{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#1c1917;color:#e8e0d5;font-size:.78rem}
+.sc-att-dl-btn{margin-left:auto;text-decoration:none;font-size:1rem;opacity:.7;transition:.1s}.sc-att-dl-btn:hover{opacity:1}
 /* ── 通話UI ── */
 .sc-call-btn{color:#22c55e!important}
 .sc-call-btn:hover{background:#f0fdf4!important}
