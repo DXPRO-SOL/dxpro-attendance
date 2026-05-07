@@ -852,8 +852,14 @@
 
         pc.onicecandidate = (ev) => {
             if (callPC !== pc) return; // このPCがもう使われていなければ無視
-            if (ev.candidate)
-                socket.emit('webrtc-candidate', { toUserId: targetId, fromUserId: MY_ID, candidate: ev.candidate.toJSON() });
+            if (ev.candidate) {
+                // 候補タイプをログ（host=ローカル, srflx=STUN公開IP, relay=TURN中継）
+                const c = ev.candidate;
+                console.log(`[ICE candidate] type=${c.type || 'unknown'} proto=${c.protocol} addr=${c.address || '?'} port=${c.port}`);
+                socket.emit('webrtc-candidate', { toUserId: targetId, fromUserId: MY_ID, candidate: c.toJSON() });
+            } else {
+                console.log('[ICE gathering] 完了（null candidate）');
+            }
         };
         pc.ontrack = (ev) => {
             if (callPC !== pc) return;
