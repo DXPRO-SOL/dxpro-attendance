@@ -2,64 +2,110 @@ const mongoose = require("mongoose");
 
 // ユーザースキーマ
 const UserSchema = new mongoose.Schema({
-    username: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    isAdmin: { type: Boolean, default: false },
-    // Issue #19: 中間ロール拡張
-    // 'admin' | 'manager' | 'team_leader' | 'employee'
-    role: { type: String, enum: ['admin', 'manager', 'team_leader', 'employee', 'test_user'], default: 'employee' },
-    // チャットステータス
-    chatStatus: { type: String, enum: ['online', 'offline', 'break'], default: 'offline' },
-    lastSeenAt: { type: Date, default: Date.now },
-    createdAt: { type: Date, default: Date.now }
+  username: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  isAdmin: { type: Boolean, default: false },
+  // Issue #19: 中間ロール拡張
+  // 'admin' | 'manager' | 'team_leader' | 'employee'
+  role: {
+    type: String,
+    enum: ["admin", "manager", "team_leader", "employee", "test_user"],
+    default: "employee",
+  },
+  // チャットステータス
+  chatStatus: {
+    type: String,
+    enum: ["online", "offline", "break"],
+    default: "offline",
+  },
+  lastSeenAt: { type: Date, default: Date.now },
+  createdAt: { type: Date, default: Date.now },
 });
 
 // グループチャットルームスキーマ
-const ChatRoomSchema = new mongoose.Schema({
-    name:          { type: String, required: true },
-    description:   { type: String, default: '' },
-    icon:          { type: String, default: '💬' },
-    members:       [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    admins:        [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    createdBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+const ChatRoomSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    description: { type: String, default: "" },
+    icon: { type: String, default: "💬" },
+    members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    admins: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
     lastMessageAt: { type: Date, default: Date.now },
-}, { timestamps: true });
+  },
+  { timestamps: true },
+);
 ChatRoomSchema.index({ members: 1, lastMessageAt: -1 });
 
 // チャットメッセージスキーマ（全面拡張版）
-const ChatMessageSchema = new mongoose.Schema({
-    fromUserId:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    toUserId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },    // DM
-    roomId:      { type: mongoose.Schema.Types.ObjectId, ref: 'ChatRoom', default: null },// グループ
-    content:     { type: String, default: '' },
+const ChatMessageSchema = new mongoose.Schema(
+  {
+    fromUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    toUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    }, // DM
+    roomId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ChatRoom",
+      default: null,
+    }, // グループ
+    content: { type: String, default: "" },
     // ファイル添付
-    attachments: [{
-        name:     { type: String },
-        url:      { type: String },
+    attachments: [
+      {
+        name: { type: String },
+        url: { type: String },
         mimeType: { type: String },
-        size:     { type: Number },
-    }],
+        size: { type: Number },
+      },
+    ],
     // 既読（DM用）
-    read:     { type: Boolean, default: false },
-    readAt:   { type: Date },
+    read: { type: Boolean, default: false },
+    readAt: { type: Date },
     // 既読（グループ用）
-    readBy:   [{ userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, readAt: { type: Date } }],
+    readBy: [
+      {
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        readAt: { type: Date },
+      },
+    ],
     // リプライ
-    replyTo:      { type: mongoose.Schema.Types.ObjectId, ref: 'ChatMessage', default: null },
+    replyTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ChatMessage",
+      default: null,
+    },
     replyPreview: { type: String, default: null },
     // リアクション
-    reactions: [{ emoji: { type: String }, userIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }] }],
+    reactions: [
+      {
+        emoji: { type: String },
+        userIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+      },
+    ],
     // 削除・編集
-    deleted:  { type: Boolean, default: false },
+    deleted: { type: Boolean, default: false },
     deletedAt: { type: Date },
-    edited:   { type: Boolean, default: false },
+    edited: { type: Boolean, default: false },
     editedAt: { type: Date },
     // 不在着信
     isMissedCall: { type: Boolean, default: false },
     // 通話履歴
     isCallHistory: { type: Boolean, default: false },
-    callDuration:  { type: Number,  default: 0 },  // 秒
-}, { timestamps: true });
+    callDuration: { type: Number, default: 0 }, // 秒
+  },
+  { timestamps: true },
+);
 
 // インデックス
 ChatMessageSchema.index({ fromUserId: 1, toUserId: 1, createdAt: -1 });
@@ -730,8 +776,8 @@ const IntegrationConfig = mongoose.model(
   IntegrationConfigSchema,
 );
 
-const ChatRoom    = mongoose.model('ChatRoom', ChatRoomSchema);
-const ChatMessage = mongoose.model('ChatMessage', ChatMessageSchema);
+const ChatRoom = mongoose.model("ChatRoom", ChatRoomSchema);
+const ChatMessage = mongoose.model("ChatMessage", ChatMessageSchema);
 
 // ─── ユーザー別タスク接続設定 ──────────────────────────────────────────────
 const UserTaskConfigSchema = new mongoose.Schema({
@@ -760,33 +806,45 @@ const TaskDueDateSchema = new mongoose.Schema({
 TaskDueDateSchema.index({ userId: 1, service: 1, taskId: 1 }, { unique: true });
 const TaskDueDate = mongoose.model("TaskDueDate", TaskDueDateSchema);
 
+// ─── タスク備考（ユーザー共通・自由記述） ────────────────────────────────────
+const TaskNoteSchema = new mongoose.Schema({
+  service: { type: String, required: true },
+  taskId: { type: String, required: true },
+  notes: { type: String, default: "" },
+  updatedAt: { type: Date, default: Date.now },
+  updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+});
+TaskNoteSchema.index({ service: 1, taskId: 1 }, { unique: true });
+const TaskNote = mongoose.model("TaskNote", TaskNoteSchema);
+
 module.exports = {
-    ChatRoom,
-    ChatMessage,
-    User,
-    Attendance,
-    Employee,
-    BoardPost,
-    BoardComment,
-    PayrollSlip,
-    PayrollRun,
-    PayrollMaster,
-    ApprovalRequest,
-    Goal,
-    LeaveRequest,
-    SemiAnnualFeedback,
-    PretestSubmission,
-    LeaveBalance,
-    CompanyRule,
-    DailyReport,
-    SkillSheet,
-    Notification,
-    OvertimeRequest,
-    ApprovedLocation,
-    PretestConfig,
-    IntegrationConfig,
-    Department,
-    PayrollSetting,
-    UserTaskConfig,
-    TaskDueDate,
+  ChatRoom,
+  ChatMessage,
+  User,
+  Attendance,
+  Employee,
+  BoardPost,
+  BoardComment,
+  PayrollSlip,
+  PayrollRun,
+  PayrollMaster,
+  ApprovalRequest,
+  Goal,
+  LeaveRequest,
+  SemiAnnualFeedback,
+  PretestSubmission,
+  LeaveBalance,
+  CompanyRule,
+  DailyReport,
+  SkillSheet,
+  Notification,
+  OvertimeRequest,
+  ApprovedLocation,
+  PretestConfig,
+  IntegrationConfig,
+  Department,
+  PayrollSetting,
+  UserTaskConfig,
+  TaskDueDate,
+  TaskNote,
 };

@@ -5,7 +5,7 @@
 const express = require("express");
 const router = express.Router();
 const { buildPageShell, pageFooter } = require("../lib/renderPage");
-const { UserTaskConfig, TaskDueDate } = require("../models");
+const { UserTaskConfig, TaskDueDate, TaskNote } = require("../models");
 const { requireLogin } = require("../middleware/auth");
 const { encrypt, decrypt } = require("../lib/integrations");
 const { escapeHtml } = require("../lib/helpers");
@@ -923,30 +923,27 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
       }
     }
 
-    // 期限日はNOKORI上のDBのみで管理（外部ツールの値は無視）
+    // 期限日は各ツールのAPIから取得済みの値をそのまま使用
+    // 備考はユーザー共通でDBから取得
     taskRows.forEach((r) => {
-      r.dueDate = "";
+      r.notes = "";
     });
     if (taskRows.length > 0) {
       const rawIds = taskRows.map((r) => String(r.rawId || r.no));
-      const dueDocs = await TaskDueDate.find({
-        userId: req.session.userId,
+      const noteDocs = await TaskNote.find({
         service: tool,
         taskId: { $in: rawIds },
       })
         .lean()
         .catch(() => []);
-      const dueMap = {};
-      dueDocs.forEach((d) => {
-        dueMap[d.taskId] = d.dueDate || "";
+      const noteMap = {};
+      noteDocs.forEach((d) => {
+        noteMap[d.taskId] = d.notes || "";
       });
       taskRows.forEach((r) => {
-        r.dueDate = dueMap[String(r.rawId || r.no)] || "";
+        r.notes = noteMap[String(r.rawId || r.no)] || "";
       });
     }
-
-    // 期限日変更権限
-    const canEdit = canEditDue(role, isAdmin);
 
     // ツール切り替えタブ
     const switchTabsHtml = TASK_TOOLS.map(
@@ -1095,7 +1092,7 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
       "ステータス",
       "タイトル",
       "プロジェクト/リポジトリ",
-      "ラベル",
+      "ラベル/カテゴリー",
       "優先度",
       "担当者",
       "期限日",
@@ -1162,17 +1159,17 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
             ? String((String(r.no).match(/(\d+)$/) || [])[1]).padStart(10, "0")
             : String(r.no);
           const rawId = escapeHtml(String(r.rawId || r.no));
-          const dueDateDisplay = r.dueDate
-            ? escapeHtml(r.dueDate)
-            : '<span class="tkl-due-unset">未設定</span>';
-          const dueDateCell = canEdit
-            ? `<span class="tkl-due-cell" data-taskid="${rawId}" data-tool="${escapeHtml(tool)}">
-                 <span class="tkl-due-val">${dueDateDisplay}</span>
-                 <button type="button" class="tkl-due-btn" title="期限日を変更" onclick="openDueEdit(this)">
-                   <i class="fa-solid fa-pen-to-square"></i>
-                 </button>
-               </span>`
-            : `<span class="tkl-due-cell">${dueDateDisplay}</span>`;
+          const dueDateDisplay = r.dueDate ? escapeHtml(r.dueDate) : "";
+          const dueDateCell = dueDateDisplay;
+          const notesDisplay = r.notes
+            ? escapeHtml(String(r.notes))
+            : '<span class="tkl-notes-unset">未入力</span>';
+          const notesCell = `<span class="tkl-notes-cell" data-taskid="${rawId}" data-tool="${escapeHtml(tool)}">
+               <span class="tkl-notes-val">${notesDisplay}</span>
+               <button type="button" class="tkl-notes-btn" title="備考を編集" onclick="openNotesEdit(this)">
+                 <i class="fa-solid fa-pen-to-square"></i>
+               </button>
+             </span>`;
           return `<tr>
             <td data-sort="${noSortKey}"><a href="/tasks/${tool}/${encodeURIComponent(r.rawId || r.no)}" class="tkl-no-link">${escapeHtml(String(r.no))}</a></td>
             <td data-sort="${escapeHtml(String(r.type))}"><span class="tkl-type-badge">${escapeHtml(String(r.type))}</span></td>
@@ -1182,9 +1179,9 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
             <td data-sort="${escapeHtml(String(r.labels))}">${escapeHtml(String(r.labels))}</td>
             <td data-sort="${escapeHtml(String(r.priority))}">${escapeHtml(String(r.priority))}</td>
             <td data-sort="${escapeHtml(String(r.assignee))}">${escapeHtml(String(r.assignee))}</td>
-            <td data-sort="${r.dueDate || ""}" style="white-space:nowrap">${dueDateCell}</td>
+            <td data-sort="${r.dueDate || ""}">${dueDateCell}</td>
             <td data-sort="${escapeHtml(String(r.updatedAt))}">${escapeHtml(String(r.updatedAt))}</td>
-            <td data-sort="${escapeHtml(String(r.notes))}">${escapeHtml(String(r.notes))}</td>
+            <td data-sort="${escapeHtml(String(r.notes))}">${notesCell}</td>
         </tr>`;
         })
         .join("");
@@ -1262,6 +1259,22 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
 .tkl-due-popup-clear:hover { background:#fecaca; }
 .tkl-due-popup-cancel { background:#f1f5f9; color:#374151; border:none; border-radius:8px; padding:8px 12px; font-size:13px; cursor:pointer; }
 .tkl-due-popup-cancel:hover { background:#e2e8f0; }
+.tkl-notes-cell { display:inline-flex; align-items:center; gap:4px; max-width:100%; }
+.tkl-notes-val { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
+.tkl-notes-unset { color:#94a3b8; font-style:italic; }
+.tkl-notes-btn { background:none; border:none; cursor:pointer; color:#64748b; padding:2px 4px; border-radius:4px; font-size:12px; line-height:1; transition:color .15s,background .15s; vertical-align:middle; flex-shrink:0; }
+.tkl-notes-btn:hover { color:#1d4ed8; background:#eff6ff; }
+.tkl-notes-popup { position:fixed; z-index:9999; background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,.15); padding:16px 18px; min-width:280px; max-width:400px; }
+.tkl-notes-popup h4 { margin:0 0 12px; font-size:13px; font-weight:700; color:#0f172a; }
+.tkl-notes-popup textarea { width:100%; padding:8px 10px; border:1px solid #e2e8f0; border-radius:8px; font-size:13px; margin-bottom:10px; box-sizing:border-box; resize:vertical; min-height:80px; }
+.tkl-notes-popup textarea:focus { outline:none; border-color:#93c5fd; box-shadow:0 0 0 3px rgba(59,130,246,.15); }
+.tkl-notes-popup-actions { display:flex; gap:8px; }
+.tkl-notes-popup-save { flex:1; background:#1d4ed8; color:#fff; border:none; border-radius:8px; padding:8px; font-size:13px; font-weight:600; cursor:pointer; }
+.tkl-notes-popup-save:hover { background:#1e40af; }
+.tkl-notes-popup-clear { background:#fee2e2; color:#dc2626; border:none; border-radius:8px; padding:8px 12px; font-size:13px; font-weight:600; cursor:pointer; }
+.tkl-notes-popup-clear:hover { background:#fecaca; }
+.tkl-notes-popup-cancel { background:#f1f5f9; color:#374151; border:none; border-radius:8px; padding:8px 12px; font-size:13px; cursor:pointer; }
+.tkl-notes-popup-cancel:hover { background:#e2e8f0; }
 @media (max-width:700px) {
     .tkl-topbar { flex-direction:column; align-items:flex-start; }
     .tkl-filter-item { min-width:100%; }
@@ -1461,8 +1474,8 @@ function openDueEdit(btn) {
     '</div>';
 
   var rect = btn.getBoundingClientRect();
-  popup.style.top  = (rect.bottom + window.scrollY + 6) + 'px';
-  popup.style.left = Math.max(8, rect.left + window.scrollX - 60) + 'px';
+  popup.style.top  = (rect.bottom + 6) + 'px';
+  popup.style.left = Math.max(8, rect.left - 60) + 'px';
   document.body.appendChild(popup);
 
   var dateInput = popup.querySelector('#duePopupDate');
@@ -1513,6 +1526,86 @@ async function saveDue(taskId, toolKey, clear) {
       if (td) td.setAttribute('data-sort', dateVal);
     }
     closeDuePopup();
+  } catch(e) {
+    alert('通信エラー: ' + e.message);
+  }
+}
+
+// ―― 備考インライン編集 ―――――――――――――――――――――――――――――――――――――――――――――――――――――
+var _notesPopup = null;
+
+function openNotesEdit(btn) {
+  closeNotesPopup();
+  var cell = btn.closest('.tkl-notes-cell');
+  var taskId = cell.dataset.taskid;
+  var toolKey = cell.dataset.tool;
+  var valEl = cell.querySelector('.tkl-notes-val');
+  var currentVal = valEl ? (valEl.innerText || valEl.textContent || '') : '';
+  if (currentVal === '未入力') currentVal = '';
+
+  var popup = document.createElement('div');
+  popup.className = 'tkl-notes-popup';
+  popup.innerHTML =
+    '<h4><i class="fa-solid fa-note-sticky" style="margin-right:6px;color:#1d4ed8"></i>備考を編集</h4>' +
+    '<textarea id="notesPopupText" placeholder="自由記述（誰でも編集可）"></textarea>' +
+    '<div class="tkl-notes-popup-actions">' +
+      '<button class="tkl-notes-popup-save">保存</button>' +
+      '<button class="tkl-notes-popup-clear" title="備考をクリア">クリア</button>' +
+      '<button class="tkl-notes-popup-cancel">キャンセル</button>' +
+    '</div>';
+
+  var rect = btn.getBoundingClientRect();
+  popup.style.top  = (rect.bottom + 6) + 'px';
+  popup.style.left = Math.max(8, rect.left - 60) + 'px';
+  document.body.appendChild(popup);
+
+  var textInput = popup.querySelector('#notesPopupText');
+  textInput.value = currentVal;
+  textInput.focus();
+  popup.querySelector('.tkl-notes-popup-save').addEventListener('click', function() { saveNotes(taskId, toolKey, false); });
+  popup.querySelector('.tkl-notes-popup-clear').addEventListener('click', function() { saveNotes(taskId, toolKey, true); });
+  popup.querySelector('.tkl-notes-popup-cancel').addEventListener('click', closeNotesPopup);
+
+  _notesPopup = { popup: popup, cell: cell };
+
+  var pRect = popup.getBoundingClientRect();
+  if (pRect.right > window.innerWidth - 8) {
+    popup.style.left = (window.innerWidth - pRect.width - 12) + 'px';
+  }
+  setTimeout(function(){ document.addEventListener('click', outsideNotesClick); }, 10);
+}
+
+function outsideNotesClick(e) {
+  if (_notesPopup && !_notesPopup.popup.contains(e.target)) closeNotesPopup();
+}
+
+function closeNotesPopup() {
+  if (_notesPopup) {
+    _notesPopup.popup.remove();
+    _notesPopup = null;
+    document.removeEventListener('click', outsideNotesClick);
+  }
+}
+
+async function saveNotes(taskId, toolKey, clear) {
+  var notesVal = clear ? '' : (document.getElementById('notesPopupText') || {}).value || '';
+  try {
+    var r = await fetch('/tasks/' + toolKey + '/' + encodeURIComponent(taskId) + '/note', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: notesVal })
+    });
+    var d = await r.json();
+    if (!d.ok) { alert('保存失敗: ' + (d.error || '不明なエラー')); return; }
+    if (_notesPopup) {
+      var valEl = _notesPopup.cell.querySelector('.tkl-notes-val');
+      var td = _notesPopup.cell.closest('td');
+      if (valEl) valEl.innerHTML = notesVal
+        ? notesVal.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
+        : '<span class="tkl-notes-unset">未入力</span>';
+      if (td) td.setAttribute('data-sort', notesVal);
+    }
+    closeNotesPopup();
   } catch(e) {
     alert('通信エラー: ' + e.message);
   }
@@ -2682,34 +2775,22 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
     const task = taskData.task;
     const fetchError = taskData.error;
 
-    // 期限日はNOKORI DBのみで管理（外部ツールの値は無視）
-    let dbDueDate = "";
+    // 備考はユーザー共通でDBから取得
+    let dbNotes = "";
     if (task) {
       const rawId = String(task.rawId || task.no || id);
-      const dueDoc = await TaskDueDate.findOne({
-        userId: req.session.userId,
-        service: tool,
-        taskId: rawId,
-      })
+      const noteDoc = await TaskNote.findOne({ service: tool, taskId: rawId })
         .lean()
         .catch(() => null);
-      dbDueDate = dueDoc ? dueDoc.dueDate || "" : "";
-      task.dueDate = "";
+      dbNotes = noteDoc ? noteDoc.notes || "" : "";
     }
-    const canEdit = canEditDue(role, isAdmin);
 
     const ai = task ? generateAiAnalysis(task, dbDueDate) : null;
     const taskRawId = task
       ? escapeHtml(String(task.rawId || task.no || id))
       : "";
-    const dueDateDetailHtml = canEdit
-      ? `<span class="tkl-due-cell" data-taskid="${taskRawId}" data-tool="${escapeHtml(tool)}">
-           <span class="tkl-due-val">${dbDueDate ? escapeHtml(dbDueDate) : '<span class="tkl-due-unset">未設定</span>'}</span>
-           <button type="button" class="tkl-due-btn" title="期限日を変更" onclick="openDueEdit(this)">
-             <i class="fa-solid fa-pen-to-square"></i>
-           </button>
-         </span>`
-      : `<span>${dbDueDate ? escapeHtml(dbDueDate) : "—"}</span>`;
+    const taskDueDate = task ? task.dueDate || "" : "";
+    const dueDateDetailHtml = taskDueDate ? escapeHtml(taskDueDate) : "—";
 
     // 詳細セクション HTML
     const detailHtml = task
@@ -2753,6 +2834,15 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
               : "<span style='color:#94a3b8'>なし</span>"
           }
         </div>
+      </div>
+      <div class="tkd-section">
+        <div class="tkd-section-title"><i class="fa-solid fa-note-sticky"></i> 備考</div>
+        <span class="tkl-notes-cell" data-taskid="${taskRawId}" data-tool="${escapeHtml(tool)}">
+          <span class="tkd-notes-val">${dbNotes ? escapeHtml(dbNotes).replace(/\n/g, "<br>") : '<span class="tkl-notes-unset">未入力</span>'}</span>
+          <button type="button" class="tkl-notes-btn" title="備考を編集" onclick="openNotesEdit(this)">
+            <i class="fa-solid fa-pen-to-square"></i>
+          </button>
+        </span>
       </div>
       <div class="tkd-section">
         <div class="tkd-section-title"><i class="fa-regular fa-comments"></i> コメント履歴</div>
@@ -2918,6 +3008,22 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
 .tkl-due-popup-clear:hover { background:#fecaca; }
 .tkl-due-popup-cancel { background:#f1f5f9; color:#374151; border:none; border-radius:8px; padding:8px 12px; font-size:13px; cursor:pointer; }
 .tkl-due-popup-cancel:hover { background:#e2e8f0; }
+.tkl-notes-cell { display:inline-flex; align-items:flex-start; gap:6px; width:100%; }
+.tkd-notes-val { font-size:13px; color:#1e293b; line-height:1.7; word-break:break-word; flex:1; min-width:0; }
+.tkl-notes-unset { color:#94a3b8; font-style:italic; }
+.tkl-notes-btn { background:none; border:none; cursor:pointer; color:#64748b; padding:2px 4px; border-radius:4px; font-size:13px; line-height:1; transition:color .15s,background .15s; flex-shrink:0; margin-top:1px; }
+.tkl-notes-btn:hover { color:#1d4ed8; background:#eff6ff; }
+.tkl-notes-popup { position:fixed; z-index:9999; background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,.15); padding:16px 18px; min-width:300px; max-width:420px; }
+.tkl-notes-popup h4 { margin:0 0 12px; font-size:13px; font-weight:700; color:#0f172a; }
+.tkl-notes-popup textarea { width:100%; padding:8px 10px; border:1px solid #e2e8f0; border-radius:8px; font-size:13px; margin-bottom:10px; box-sizing:border-box; resize:vertical; min-height:90px; }
+.tkl-notes-popup textarea:focus { outline:none; border-color:#93c5fd; box-shadow:0 0 0 3px rgba(59,130,246,.15); }
+.tkl-notes-popup-actions { display:flex; gap:8px; }
+.tkl-notes-popup-save { flex:1; background:#1d4ed8; color:#fff; border:none; border-radius:8px; padding:8px; font-size:13px; font-weight:600; cursor:pointer; }
+.tkl-notes-popup-save:hover { background:#1e40af; }
+.tkl-notes-popup-clear { background:#fee2e2; color:#dc2626; border:none; border-radius:8px; padding:8px 12px; font-size:13px; font-weight:600; cursor:pointer; }
+.tkl-notes-popup-clear:hover { background:#fecaca; }
+.tkl-notes-popup-cancel { background:#f1f5f9; color:#374151; border:none; border-radius:8px; padding:8px 12px; font-size:13px; cursor:pointer; }
+.tkl-notes-popup-cancel:hover { background:#e2e8f0; }
 </style>
 <script>
 // AI修正例 トグル
@@ -2969,8 +3075,8 @@ function openDueEdit(btn) {
       '<button class="tkl-due-popup-cancel">キャンセル</button>' +
     '</div>';
   var rect = btn.getBoundingClientRect();
-  popup.style.top  = (rect.bottom + window.scrollY + 6) + 'px';
-  popup.style.left = Math.max(8, rect.left + window.scrollX - 60) + 'px';
+  popup.style.top  = (rect.bottom + 6) + 'px';
+  popup.style.left = Math.max(8, rect.left - 60) + 'px';
   document.body.appendChild(popup);
   var dateInput = popup.querySelector('#duePopupDate');
   dateInput.value = currentVal;
@@ -3013,6 +3119,75 @@ async function saveDue(taskId, toolKey, clear) {
       if (valEl) valEl.innerHTML = dateVal ? dateVal : '<span class="tkl-due-unset">未設定</span>';
     }
     closeDuePopup();
+  } catch(e) {
+    alert('通信エラー: ' + e.message);
+  }
+}
+
+// ―― 備考インライン編集（詳細ページ用）
+var _notesPopupD = null;
+function openNotesEdit(btn) {
+  closeNotesPopupD();
+  var cell = btn.closest('.tkl-notes-cell');
+  var taskId = cell.dataset.taskid;
+  var toolKey = cell.dataset.tool;
+  var valEl = cell.querySelector('.tkd-notes-val');
+  var currentVal = valEl ? (valEl.innerText || valEl.textContent || '') : '';
+  if (currentVal === '未入力') currentVal = '';
+  var popup = document.createElement('div');
+  popup.className = 'tkl-notes-popup';
+  popup.innerHTML =
+    '<h4><i class="fa-solid fa-note-sticky" style="margin-right:6px;color:#1d4ed8"></i>備考を編集</h4>' +
+    '<textarea id="notesPopupTextD" placeholder="自由記述（誰でも編集可）"></textarea>' +
+    '<div class="tkl-notes-popup-actions">' +
+      '<button class="tkl-notes-popup-save">保存</button>' +
+      '<button class="tkl-notes-popup-clear" title="備考をクリア">クリア</button>' +
+      '<button class="tkl-notes-popup-cancel">キャンセル</button>' +
+    '</div>';
+  var rect = btn.getBoundingClientRect();
+  popup.style.top  = (rect.bottom + 6) + 'px';
+  popup.style.left = Math.max(8, rect.left - 60) + 'px';
+  document.body.appendChild(popup);
+  var textInput = popup.querySelector('#notesPopupTextD');
+  textInput.value = currentVal;
+  textInput.focus();
+  popup.querySelector('.tkl-notes-popup-save').addEventListener('click', function() { saveNotesD(taskId, toolKey, false); });
+  popup.querySelector('.tkl-notes-popup-clear').addEventListener('click', function() { saveNotesD(taskId, toolKey, true); });
+  popup.querySelector('.tkl-notes-popup-cancel').addEventListener('click', closeNotesPopupD);
+  _notesPopupD = { popup: popup, cell: cell };
+  var pRect = popup.getBoundingClientRect();
+  if (pRect.right > window.innerWidth - 8) {
+    popup.style.left = (window.innerWidth - pRect.width - 12) + 'px';
+  }
+  setTimeout(function(){ document.addEventListener('click', outsideNotesDClick); }, 10);
+}
+function outsideNotesDClick(e) {
+  if (_notesPopupD && !_notesPopupD.popup.contains(e.target)) closeNotesPopupD();
+}
+function closeNotesPopupD() {
+  if (_notesPopupD) {
+    _notesPopupD.popup.remove();
+    _notesPopupD = null;
+    document.removeEventListener('click', outsideNotesDClick);
+  }
+}
+async function saveNotesD(taskId, toolKey, clear) {
+  var notesVal = clear ? '' : (document.getElementById('notesPopupTextD') || {}).value || '';
+  try {
+    var r = await fetch('/tasks/' + toolKey + '/' + encodeURIComponent(taskId) + '/note', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: notesVal })
+    });
+    var d = await r.json();
+    if (!d.ok) { alert('保存失敗: ' + (d.error || '不明なエラー')); return; }
+    if (_notesPopupD) {
+      var valEl = _notesPopupD.cell.querySelector('.tkd-notes-val');
+      if (valEl) valEl.innerHTML = notesVal
+        ? notesVal.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/\\n/g,'<br>')
+        : '<span class="tkl-notes-unset">未入力</span>';
+    }
+    closeNotesPopupD();
   } catch(e) {
     alert('通信エラー: ' + e.message);
   }
@@ -3088,6 +3263,36 @@ router.post("/tasks/:tool/:id/duedate", requireLogin, async (req, res) => {
     res.json({ ok: true, dueDate: rawDate });
   } catch (err) {
     console.error("[tasks] POST duedate error:", err);
+    res.status(500).json({ ok: false, error: "サーバーエラーが発生しました" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// POST /tasks/:tool/:id/note - 備考をDBに保存（全ユーザー共通）
+// ─────────────────────────────────────────────────────────────
+router.post("/tasks/:tool/:id/note", requireLogin, async (req, res) => {
+  const tool = req.params.tool;
+  const taskId = req.params.id;
+  if (!TASK_TOOLS.find((t) => t.key === tool))
+    return res.json({ ok: false, error: "不明なツール" });
+  try {
+    const rawNotes = String(req.body.notes || "")
+      .trim()
+      .slice(0, 1000);
+    await TaskNote.findOneAndUpdate(
+      { service: tool, taskId },
+      {
+        $set: {
+          notes: rawNotes,
+          updatedAt: new Date(),
+          updatedBy: req.session.userId || null,
+        },
+      },
+      { upsert: true, new: true },
+    );
+    res.json({ ok: true, notes: rawNotes });
+  } catch (err) {
+    console.error("[tasks] POST note error:", err);
     res.status(500).json({ ok: false, error: "サーバーエラーが発生しました" });
   }
 });
