@@ -341,7 +341,22 @@ router.get('/dashboard', requireLogin, async (req, res) => {
         .pager { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 10px 20px 12px; }
         .pager a { font-size: 12px; color: var(--c-primary); text-decoration: none; padding: 4px 10px; border-radius: 6px; border: 1px solid #dbeafe; background: var(--c-primary-light); font-weight: 600; }
         .pager span { font-size: 12px; color: var(--c-muted); }
+
+        /* ── Animated Background Canvas ── */
+        #db-bg-canvas {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .db-wrap {
+            position: relative;
+            z-index: 1;
+        }
         </style>
+
+        <canvas id="db-bg-canvas"></canvas>
 
         <div class="db-wrap">
 
@@ -948,6 +963,49 @@ router.get('/dashboard', requireLogin, async (req, res) => {
                     else alert('送信に失敗しました');
                 } catch(e){ alert('送信エラー'); }
             });
+        })();
+
+        // ── Soft enterprise gradient orbs background ──
+        (function(){
+            const canvas = document.getElementById('db-bg-canvas');
+            if(!canvas) return;
+            const ctx = canvas.getContext('2d');
+            let W, H;
+
+            const orbs = [
+                { x:0.15, y:0.15, r:0.45, c:'147,197,253', a:0.38, vx:0.00042, vy:0.00028 },
+                { x:0.80, y:0.20, r:0.38, c:'196,181,253', a:0.33, vx:-0.00035, vy:0.00038 },
+                { x:0.50, y:0.80, r:0.46, c:'125,211,252', a:0.30, vx:0.00030, vy:-0.00040 },
+                { x:0.88, y:0.72, r:0.34, c:'134,239,172', a:0.28, vx:-0.00038, vy:-0.00028 },
+                { x:0.38, y:0.42, r:0.32, c:'249,168,212', a:0.25, vx:0.00028, vy:0.00048 },
+            ];
+
+            function resize(){
+                W = canvas.width  = window.innerWidth;
+                H = canvas.height = window.innerHeight;
+            }
+
+            function draw(){
+                ctx.clearRect(0, 0, W, H);
+                for(const o of orbs){
+                    o.x += o.vx;
+                    o.y += o.vy;
+                    if(o.x < -0.2 || o.x > 1.2) o.vx *= -1;
+                    if(o.y < -0.2 || o.y > 1.2) o.vy *= -1;
+                    const gx = o.x * W, gy = o.y * H, gr = o.r * Math.max(W, H);
+                    const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
+                    g.addColorStop(0,   'rgba('+o.c+','+o.a+')');
+                    g.addColorStop(0.4, 'rgba('+o.c+','+(o.a*0.3)+')');
+                    g.addColorStop(1,   'rgba('+o.c+',0)');
+                    ctx.fillStyle = g;
+                    ctx.fillRect(0, 0, W, H);
+                }
+                requestAnimationFrame(draw);
+            }
+
+            window.addEventListener('resize', resize);
+            resize();
+            draw();
         })();
         </script>
     `);
