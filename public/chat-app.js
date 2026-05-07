@@ -867,14 +867,21 @@
             const rv = document.getElementById('remote-video');
             if (!rv) return;
             if (ev.streams && ev.streams[0]) {
-                rv.srcObject = ev.streams[0];
+                // ストリームが同じなら srcObject を再セットしない（AbortError 防止）
+                if (rv.srcObject !== ev.streams[0]) {
+                    rv.srcObject = ev.streams[0];
+                }
             } else {
                 // Firefox 等で ev.streams が空の場合は手動でストリームに追加
-                let stream = rv.srcObject instanceof MediaStream ? rv.srcObject : new MediaStream();
-                stream.addTrack(ev.track);
-                rv.srcObject = stream;
+                if (!(rv.srcObject instanceof MediaStream)) {
+                    rv.srcObject = new MediaStream();
+                }
+                rv.srcObject.addTrack(ev.track);
             }
-            rv.play().catch(e => console.warn('[WebRTC] remote video play() failed:', e));
+            // autoplay 属性で自動再生されるが、念のため paused の場合だけ play()
+            if (rv.paused) {
+                rv.play().catch(() => {}); // 失敗しても無視（autoplay が処理する）
+            }
         };
         pc.onconnectionstatechange = () => {
             if (callPC !== pc) return; // 古いPCのイベントは無視

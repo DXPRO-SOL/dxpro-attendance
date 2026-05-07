@@ -422,38 +422,56 @@ router.post('/api/chat/room', requireLogin, async (req, res) => {
 });
 
 // ICE サーバー設定を返すエンドポイント（複数 TURN を動的提供）
-router.get('/api/webrtc/ice', requireLogin, (req, res) => {
-    // 環境変数 METERED_API_KEY が設定されている場合は動的取得 URL を返す
-    // （クライアント側で fetch して使う想定）
-    const meteredKey = process.env.METERED_API_KEY || '';
+router.get('/api/webrtc/ice', requireLogin, async (req, res) => {
     const iceServers = [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        // ── Metered.ca（API キーなし・コミュニティ枠） ──────────────────
-        { urls: 'turn:a.relay.metered.ca:80',                  username: 'a',  credential: 'a' },
-        { urls: 'turn:a.relay.metered.ca:80?transport=tcp',    username: 'a',  credential: 'a' },
-        { urls: 'turn:a.relay.metered.ca:443',                 username: 'a',  credential: 'a' },
-        { urls: 'turns:a.relay.metered.ca:443',                username: 'a',  credential: 'a' },
-        // ── Open Relay Project（旧・フォールバック） ─────────────────────
-        { urls: 'turn:openrelay.metered.ca:80',                username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:80?transport=tcp',  username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turns:openrelay.metered.ca:443',              username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turns:openrelay.metered.ca:443?transport=tcp',username: 'openrelayproject', credential: 'openrelayproject' },
-        // ── freeturn.net ────────────────────────────────────────────────
+        { urls: 'stun:stun.cloudflare.com:3478' },
+    ];
+
+    // ── 最優先: Metered.ca REST API（時限トークン方式・最も確実） ────────
+    const meteredKey     = process.env.METERED_API_KEY  || '';
+    const meteredAppName = process.env.METERED_APP_NAME || '';
+    if (meteredKey && meteredAppName) {
+        try {
+            const r = await fetch(
+                `https://${meteredAppName}.metered.live/api/v1/turn/credentials?apiKey=${meteredKey}`
+            );
+            if (r.ok) {
+                const turns = await r.json();
+                iceServers.push(...turns);
+                console.log('[ICE] Metered.ca API から TURN 取得:', turns.length, '件');
+                return res.json({ iceServers });
+            }
+            console.warn('[ICE] Metered API HTTP error:', r.status);
+        } catch (e) {
+            console.warn('[ICE] Metered.ca API 失敗、固定 Credential へ:', e.message);
+        }
+    }
+
+    // ── 第2: 固定 Credential（API が落ちた場合のフォールバック） ─────────
+    const mUser = process.env.METERED_TURN_USERNAME   || '';
+    const mCred = process.env.METERED_TURN_CREDENTIAL || '';
+    if (mUser && mCred) {
+        iceServers.push(
+            { urls: 'turn:a.relay.metered.ca:80',                 username: mUser, credential: mCred },
+            { urls: 'turn:a.relay.metered.ca:80?transport=tcp',   username: mUser, credential: mCred },
+            { urls: 'turn:a.relay.metered.ca:443',                username: mUser, credential: mCred },
+            { urls: 'turns:a.relay.metered.ca:443',               username: mUser, credential: mCred },
+            { urls: 'turns:a.relay.metered.ca:443?transport=tcp', username: mUser, credential: mCred },
+        );
+        console.log('[ICE] Metered.ca 固定 Credential を使用');
+        return res.json({ iceServers });
+    }
+
+    // ── 最終フォールバック（TURN 設定なし環境向け） ──────────────────────
+    iceServers.push(
+        { urls: 'turn:openrelay.metered.ca:80',               username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turns:openrelay.metered.ca:443',             username: 'openrelayproject', credential: 'openrelayproject' },
         { urls: 'turn:freeturn.net:3478',  username: 'free', credential: 'free' },
         { urls: 'turns:freeturn.net:5349', username: 'free', credential: 'free' },
-    ];
-    // METERED_API_KEY が設定されていれば上書き（最も信頼性が高い）
-    if (meteredKey) {
-        iceServers.unshift(
-            { urls: `turn:a.relay.metered.ca:80`,               username: meteredKey, credential: meteredKey },
-            { urls: `turn:a.relay.metered.ca:80?transport=tcp`, username: meteredKey, credential: meteredKey },
-            { urls: `turn:a.relay.metered.ca:443`,              username: meteredKey, credential: meteredKey },
-            { urls: `turns:a.relay.metered.ca:443`,             username: meteredKey, credential: meteredKey },
-        );
-    }
+    );
     res.json({ iceServers });
 });
 
@@ -641,7 +659,7 @@ ${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/call-sounds.js"></script>
-<script src="/chat-app.js?v=7"></script>`;
+<script src="/chat-app.js?v=8"></script>`;
 }
 
 function buildSidebarHtml(d) {
