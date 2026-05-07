@@ -817,7 +817,7 @@
             }
         }
         const lv = document.getElementById('local-video');
-        if (lv) lv.srcObject = localStream;
+        if (lv) { lv.srcObject = localStream; lv.play().catch(() => {}); }
         return localStream;
     }
 
@@ -857,8 +857,18 @@
         };
         pc.ontrack = (ev) => {
             if (callPC !== pc) return;
+            console.log('[WebRTC] ontrack fired, track:', ev.track.kind, 'streams:', ev.streams.length);
             const rv = document.getElementById('remote-video');
-            if (rv && ev.streams[0]) rv.srcObject = ev.streams[0];
+            if (!rv) return;
+            if (ev.streams && ev.streams[0]) {
+                rv.srcObject = ev.streams[0];
+            } else {
+                // Firefox 等で ev.streams が空の場合は手動でストリームに追加
+                let stream = rv.srcObject instanceof MediaStream ? rv.srcObject : new MediaStream();
+                stream.addTrack(ev.track);
+                rv.srcObject = stream;
+            }
+            rv.play().catch(e => console.warn('[WebRTC] remote video play() failed:', e));
         };
         pc.onconnectionstatechange = () => {
             if (callPC !== pc) return; // 古いPCのイベントは無視

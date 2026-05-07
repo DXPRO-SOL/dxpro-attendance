@@ -623,7 +623,7 @@ ${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/call-sounds.js"></script>
-<script src="/chat-app.js?v=5"></script>`;
+<script src="/chat-app.js?v=6"></script>`;
 }
 
 function buildSidebarHtml(d) {
@@ -1184,8 +1184,8 @@ function chatStyles() {
 .call-header{display:flex;flex-direction:column;align-items:center;padding:14px 20px 6px;color:#e8e0d5;gap:2px}
 .call-header span:first-child{font-size:.72rem;color:#78716c;letter-spacing:.04em}
 .call-partner-name{font-size:1.1rem;font-weight:700}
-.call-videos{position:relative;background:#111;height:280px;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.call-vid-remote{width:100%;height:280px;object-fit:cover;background:#111;display:block}
+.call-videos{position:relative;background:#111;min-height:280px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.call-vid-remote{width:100%;max-height:70vh;object-fit:contain;background:#111;display:block}
 .call-vid-local{position:absolute;bottom:10px;right:10px;width:100px;height:72px;object-fit:cover;border-radius:8px;border:2px solid #44403c;z-index:2}
 .call-pointer-canvas{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none}
 .call-controls{display:flex;justify-content:center;gap:12px;padding:14px 14px 10px}
