@@ -112,6 +112,9 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
 .tag--late{background:#ffb020}
 .tag--early{background:#ff6b6b}
 .tag--absent{background:#9ca3af}
+.tag--paid{background:#3b82f6}
+.tag--half{background:#8b5cf6}
+.tag--vacation{background:#06b6d4}
 .note-cell{max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 .aside{display:flex;flex-direction:column;gap:12px;align-self:start}
@@ -281,7 +284,7 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
             <tbody>
               ${monthlyAttendance.map(record => {
                   const lunch = record.lunchStart ? `${moment(record.lunchStart).tz('Asia/Tokyo').format('HH:mm')}～${record.lunchEnd ? moment(record.lunchEnd).tz('Asia/Tokyo').format('HH:mm') : '-'}` : '-';
-                  const statusClass = record.status === '正常' ? 'tag--normal' : record.status === '遅刻' ? 'tag--late' : record.status === '早退' ? 'tag--early' : 'tag--absent';
+                  const statusClass = record.status === '正常' ? 'tag--normal' : record.status === '遅刻' ? 'tag--late' : record.status === '早退' ? 'tag--early' : record.status === '有休' ? 'tag--paid' : ['午前休','午後休'].includes(record.status) ? 'tag--half' : record.status === '休暇' ? 'tag--vacation' : 'tag--absent';
                   return `
                     <tr>
                       <td>${moment(record.date).tz('Asia/Tokyo').format('MM/DD')}</td>
@@ -1615,10 +1618,12 @@ router.get('/my-monthly-attendance', requireLogin, async (req, res) => {
         }
 
         // 統計計算
-        const totalWork   = attendances.filter(a => a.status !== '欠勤').reduce((s, a) => s + (a.workingHours || 0), 0);
-        const countWork   = attendances.filter(a => a.status !== '欠勤').length;
+        const NON_WORK_STATUSES = ['欠勤', '休暇'];
+        const totalWork   = attendances.reduce((s, a) => s + (a.workingHours || 0), 0);
+        const countWork   = attendances.filter(a => !NON_WORK_STATUSES.includes(a.status)).length;
         const countAbsent = attendances.filter(a => a.status === '欠勤').length;
         const countLate   = attendances.filter(a => a.status === '遅刻').length;
+        const countLeave  = attendances.filter(a => ['有休','午前休','午後休','休暇'].includes(a.status)).length;
 
         const canEdit = !approvalRequest || approvalRequest.status === 'returned';
 
@@ -1690,6 +1695,10 @@ router.get('/my-monthly-attendance', requireLogin, async (req, res) => {
     <div class="stat-card">
         <div class="s-label">欠勤</div>
         <div class="s-value" style="color:#ef4444">${countAbsent}</div>
+    </div>
+    <div class="stat-card">
+        <div class="s-label">有休・休暇</div>
+        <div class="s-value" style="color:#3b82f6">${countLeave}</div>
     </div>
 </div>
 

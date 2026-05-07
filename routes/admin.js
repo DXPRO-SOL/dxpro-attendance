@@ -311,7 +311,7 @@ router.get('/admin/monthly-attendance', requireLogin, isAdmin, async (req, res) 
                 month
             });
 
-            const totalHours = attendances.filter(a => a.status !== '欠勤').reduce((s, a) => s + (a.workingHours || 0), 0);
+            const totalHours = attendances.reduce((s, a) => s + (a.workingHours || 0), 0);
             const cntAbsent  = attendances.filter(a => a.status === '欠勤').length;
             const cntLate    = attendances.filter(a => a.status === '遅刻').length;
 
@@ -1258,7 +1258,7 @@ router.get('/admin/view-attendance/:userId/:year/:month', requireLogin, isAdmin,
             return `<span style="background:${st.bg};color:${st.color};border:1.5px solid ${st.border};padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">${s||'正常'}</span>`;
         };
 
-        const totalHours = attendances.filter(a => a.status !== '欠勤').reduce((s, a) => s + (a.workingHours || 0), 0);
+        const totalHours = attendances.reduce((s, a) => s + (a.workingHours || 0), 0);
 
         const html = `
         <style>

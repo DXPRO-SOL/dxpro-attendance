@@ -79,7 +79,7 @@ const AttendanceSchema = new mongoose.Schema({
   taskDescription: { type: String },
   status: {
     type: String,
-    enum: ["正常", "遅刻", "早退", "欠勤"],
+    enum: ["正常", "遅刻", "早退", "欠勤", "有休", "午前休", "午後休", "休暇"],
     default: "正常",
   },
   isConfirmed: { type: Boolean, default: false },

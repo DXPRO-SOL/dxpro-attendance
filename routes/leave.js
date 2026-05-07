@@ -3,7 +3,7 @@
 // ==============================
 const router = require('express').Router();
 const moment = require('moment-timezone');
-const { User, Employee, LeaveRequest, LeaveBalance } = require('../models');
+const { User, Employee, LeaveRequest, LeaveBalance, Attendance } = require('../models');
 const { requireLogin, isAdmin } = require('../middleware/auth');
 const { sendMail } = require('../config/mailer');
 const { renderPage } = require('../lib/renderPage');
@@ -15,6 +15,84 @@ const { notifyEvent } = require('../lib/integrations');
 const leaveTypeToField = { '有給': 'paid', '病欠': 'sick', '慶弔': 'special', 'その他': 'other', '午前休': 'paid', '午後休': 'paid', '早退': 'paid' };
 // 半日扱い（0.5日消費）
 const HALF_DAY_TYPES = new Set(['午前休', '午後休', '早退']);
+
+// ── 次回有給付与スケジュール計算 ──────────────────────
+// 労働基準法に基づく付与スケジュール
+const PAID_LEAVE_SCHEDULE = [
+    { months:  6, days: 10 },
+    { months: 18, days: 11 },
+    { months: 30, days: 12 },
+    { months: 42, days: 14 },
+    { months: 54, days: 16 },
+    { months: 66, days: 18 },
+    { months: 78, days: 20 },
+];
+function calcNextPaidLeaveGrant(joinDate) {
+    if (!joinDate) return null;
+    const now  = moment.tz('Asia/Tokyo');
+    const join = moment.tz(joinDate, 'Asia/Tokyo').startOf('day');
+    if (now.isBefore(join)) return null;
+
+    // スケジュール内の次回付与日を検索
+    for (const s of PAID_LEAVE_SCHEDULE) {
+        const grantDate = join.clone().add(s.months, 'months');
+        if (grantDate.isAfter(now, 'day')) {
+            return {
+                grantDate:  grantDate.format('YYYY年MM月DD日'),
+                grantDays:  s.days,
+                daysUntil:  grantDate.diff(now.startOf('day'), 'days'),
+                monthsMark: s.months,
+            };
+        }
+    }
+    // 6年6ヶ月以上 → 以降は12ヶ月ごとに20日
+    let m = 78;
+    while (m < 78 + 12 * 50) { // 最大50年分
+        m += 12;
+        const grantDate = join.clone().add(m, 'months');
+        if (grantDate.isAfter(now, 'day')) {
+            return {
+                grantDate:  grantDate.format('YYYY年MM月DD日'),
+                grantDays:  20,
+                daysUntil:  grantDate.diff(now.startOf('day'), 'days'),
+                monthsMark: m,
+            };
+        }
+    }
+    return null;
+}
+// 現在の勤続年数ラベル
+function tenureLabel(joinDate) {
+    if (!joinDate) return '';
+    const months = moment.tz('Asia/Tokyo').diff(moment.tz(joinDate, 'Asia/Tokyo'), 'months');
+    const y = Math.floor(months / 12);
+    const m = months % 12;
+    return y > 0 ? `${y}年${m}ヶ月` : `${m}ヶ月`;
+}
+// 次回付与バナーHTML生成
+function buildNextGrantBanner(joinDate) {
+    const next = calcNextPaidLeaveGrant(joinDate);
+    if (!next) return '';
+    const urgent = next.daysUntil <= 30;
+    const bg     = urgent ? '#fff7ed' : '#eff6ff';
+    const border = urgent ? '#fdba74' : '#bfdbfe';
+    const icon   = urgent ? '🔔' : '📅';
+    const color  = urgent ? '#92400e' : '#1d4ed8';
+    const tenure = tenureLabel(joinDate);
+    return `
+<div style="background:${bg};border:1.5px solid ${border};border-radius:12px;padding:14px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div>
+        <div style="font-weight:700;font-size:15px;color:${color}">${icon} 次回有給付与のお知らせ</div>
+        <div style="font-size:13px;color:${color};margin-top:4px">
+            勤続 <strong>${tenure}</strong> ／ 付与日：<strong>${next.grantDate}</strong>（あと <strong style="font-size:16px">${next.daysUntil}</strong> 日）
+        </div>
+    </div>
+    <div style="background:${color};color:#fff;border-radius:10px;padding:10px 20px;text-align:center;min-width:90px">
+        <div style="font-size:22px;font-weight:900;line-height:1">${next.grantDays}日</div>
+        <div style="font-size:11px;margin-top:2px;opacity:.85">付与予定</div>
+    </div>
+</div>`;
+}
 
 // ── 残日数を取得（なければ作成）──────────────────────
 async function getOrCreateBalance(employeeId) {
@@ -65,6 +143,8 @@ router.get('/leave/apply', requireLogin, async (req, res) => {
                     <div class="bal-card"><div class="bal-num">${bal.special}</div><div class="bal-label">慶弔（日）</div></div>
                     <div class="bal-card"><div class="bal-num">${bal.other}</div><div class="bal-label">その他（日）</div></div>
                 </div>
+
+                ${buildNextGrantBanner(employee.joinDate)}
 
                 <!-- 早退申請バナー -->
                 <div class="early-banner">
@@ -380,7 +460,9 @@ router.get('/leave/my-requests', requireLogin, async (req, res) => {
                     <div class="bal-card"><div class="bal-num">${bal.sick}</div><div class="bal-label">病欠</div></div>
                     <div class="bal-card"><div class="bal-num">${bal.special}</div><div class="bal-label">慶弔</div></div>
                     <div class="bal-card"><div class="bal-num">${bal.other}</div><div class="bal-label">その他</div></div>
-                </div>` : ''}
+                </div>
+                ${employee ? buildNextGrantBanner(employee.joinDate) : ''}
+                ` : ''}
 
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
                     <h3 style="margin:0">申請履歴</h3>
@@ -482,6 +564,63 @@ router.post('/admin/approve-leave/:id', requireLogin, isAdmin, async (req, res) 
         request.processedAt = new Date();
         request.processedBy = req.session.userId;
         await request.save();
+
+        // ─── 勤怠レコードへの自動反映 ───────────────────────────────
+        if (employee && employee.userId) {
+            // 休暇種別 → 勤怠ステータス・勤務時間のマッピング
+            const leaveToAttendance = {
+                '有給':  { status: '有休', workingHours: 8 },  // 有給は出勤日扱い
+                '病欠':  { status: '欠勤', workingHours: 0 },
+                '慶弔':  { status: '休暇', workingHours: 0 },
+                'その他':{ status: '休暇', workingHours: 0 },
+                '午前休':{ status: '午前休', workingHours: 4 }, // 午後から出社
+                '午後休':{ status: '午後休', workingHours: 4 }, // 午前出社・午後退社
+                '早退':  { status: '早退', workingHours: 4 },
+            };
+            const attMap = leaveToAttendance[request.leaveType];
+            if (attMap) {
+                try {
+                    const cur = moment.tz(request.startDate, 'Asia/Tokyo').startOf('day');
+                    const end = moment.tz(request.endDate || request.startDate, 'Asia/Tokyo').startOf('day');
+                    let created = 0, updated = 0;
+                    while (cur.isSameOrBefore(end)) {
+                        const dow = cur.day(); // 0=日, 6=土
+                        if (dow !== 0 && dow !== 6) {
+                            const dayStart = cur.clone().toDate();
+                            const dayEnd   = cur.clone().endOf('day').toDate();
+                            const existing = await Attendance.findOne({
+                                userId: employee.userId,
+                                date: { $gte: dayStart, $lte: dayEnd }
+                            });
+                            if (existing) {
+                                existing.status = attMap.status;
+                                if (!['午前休', '午後休', '早退'].includes(request.leaveType)) {
+                                    existing.workingHours = attMap.workingHours;
+                                    existing.totalHours   = attMap.workingHours;
+                                }
+                                await existing.save();
+                                updated++;
+                            } else {
+                                await Attendance.create({
+                                    userId: employee.userId,
+                                    date:   dayStart,
+                                    status: attMap.status,
+                                    workingHours: attMap.workingHours,
+                                    totalHours:   attMap.workingHours,
+                                });
+                                created++;
+                            }
+                        }
+                        cur.add(1, 'day');
+                    }
+                    console.log(`[leave approve] 勤怠反映完了: ${employee.name} ${request.leaveType} 作成=${created} 更新=${updated}`);
+                } catch (attErr) {
+                    console.error('[leave approve] 勤怠レコード作成エラー:', attErr.message);
+                }
+            }
+        } else {
+            console.warn('[leave approve] 社員が見つからないため勤怠反映スキップ:', request.employeeId);
+        }
 
         // 申請者に承認通知
         if (employee && employee.userId) {
