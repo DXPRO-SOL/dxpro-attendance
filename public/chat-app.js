@@ -822,16 +822,29 @@
     }
 
     // ─ RTCPeerConnection 作成 ─────────────────────────────────────
-    function createPC(targetId) {
+    let _cachedIceServers = null; // ICE設定キャッシュ（ページ内で1回だけ取得）
+
+    async function getIceServers() {
+        if (_cachedIceServers) return _cachedIceServers;
+        try {
+            const r = await fetch('/api/webrtc/ice');
+            const j = await r.json();
+            _cachedIceServers = j.iceServers;
+            console.log('[WebRTC] ICE servers loaded:', _cachedIceServers.length, '件');
+        } catch (e) {
+            console.warn('[WebRTC] ICE設定の取得失敗。デフォルトSTUNを使用:', e);
+            _cachedIceServers = [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+            ];
+        }
+        return _cachedIceServers;
+    }
+
+    async function createPC(targetId) {
         if (callPC) return callPC;
-        const ICE = { iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            // 無料パブリック TURN サーバー（登録不要）
-            { urls: 'turn:openrelay.metered.ca:80',  username: 'openrelayproject', credential: 'openrelayproject' },
-            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-        ]};
+        const iceServers = await getIceServers();
+        const ICE = { iceServers };
         // ★ ローカル変数 pc に保持 → 古い PC のハンドラが新しい callPC に干渉しない
         const pc = new RTCPeerConnection(ICE);
         callPC = pc;
@@ -855,8 +868,8 @@
                 iceRestartCount = 0;
                 showCallOverlay('通話中');
             }
-            if (s === 'failed') doHangup();
-            // closed は doHangup() 内の pc.close() で起きるので無視（二重呼び出し防止）
+            // 'failed' は oniceconnectionstatechange 側で ICE Restart してから処理
+            // ここでは doHangup しない（二重起動防止）
             if (s === 'disconnected') {
                 setTimeout(() => {
                     if (callPC === pc && pc.connectionState === 'disconnected') doHangup();
@@ -922,7 +935,7 @@
             await getLocalStream();
 
             // RTCPeerConnection を作成してトラック追加
-            createPC(targetId);
+            await createPC(targetId);
             localStream.getTracks().forEach(t => callPC.addTrack(t, localStream));
 
             // Offer 作成 → 相手に送信
@@ -975,7 +988,7 @@
             // 1. ローカルメディアを取得
             await getLocalStream();
             // 2. RTCPeerConnection を作成し、トラックを先に追加してから offer をセット
-            createPC(fromUserId);
+            await createPC(fromUserId);
             localStream.getTracks().forEach(t => callPC.addTrack(t, localStream));
             // 3. 相手の offer をリモート SDP としてセット
             await callPC.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));

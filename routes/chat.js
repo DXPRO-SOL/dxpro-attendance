@@ -421,6 +421,24 @@ router.post('/api/chat/room', requireLogin, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ICE サーバー設定を返すエンドポイント（複数 TURN を動的提供）
+router.get('/api/webrtc/ice', requireLogin, (req, res) => {
+    const iceServers = [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        // Open Relay Project (無料 TURN)
+        { urls: 'turn:openrelay.metered.ca:80',               username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443',              username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turns:openrelay.metered.ca:443',             username: 'openrelayproject', credential: 'openrelayproject' },
+        // freeturn.net (別プロバイダ・無料)
+        { urls: 'turn:freeturn.net:3478',  username: 'free', credential: 'free' },
+        { urls: 'turns:freeturn.net:5349', username: 'free', credential: 'free' },
+    ];
+    res.json({ iceServers });
+});
+
 router.post('/api/chat/missed-call', requireLogin, async (req, res) => {
     try {
         const { toUserId } = req.body;
