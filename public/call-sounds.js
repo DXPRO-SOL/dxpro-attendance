@@ -9,86 +9,97 @@
     let _ctx = null;
     function getCtx() {
         if (!_ctx) _ctx = new (window.AudioContext || window.webkitAudioContext)();
-        // Safari などで suspended になる場合は resume
         if (_ctx.state === 'suspended') _ctx.resume();
         return _ctx;
     }
 
-    // ── 共通ユーティリティ ────────────────────────────────────
-    function makeGain(ctx, value) {
-        const g = ctx.createGain();
-        g.gain.setValueAtTime(value, ctx.currentTime);
-        return g;
+    // ── 共通: デジタルベル1音 ────────────────────────────────
+    // 倍音を重ねてベルらしい音色を作る。瞬時立ち上がり→ゆっくり減衰。
+    function _bell(ctx, freq, startTime, volume) {
+        const harmonics = [1, 2, 3, 4.2];
+        const gains     = [0.5, 0.25, 0.12, 0.06];
+        const master    = ctx.createGain();
+        master.connect(ctx.destination);
+        master.gain.setValueAtTime(0, startTime);
+        master.gain.linearRampToValueAtTime(volume, startTime + 0.01);
+        master.gain.exponentialRampToValueAtTime(0.001, startTime + 1.2);
+        harmonics.forEach((h, i) => {
+            const osc = ctx.createOscillator();
+            const g   = ctx.createGain();
+            osc.connect(g); g.connect(master);
+            osc.type = 'sine';
+            osc.frequency.value = freq * h;
+            g.gain.value = gains[i];
+            osc.start(startTime);
+            osc.stop(startTime + 1.3);
+        });
     }
 
-    // ── 着信音（日本の電話風: 1秒ON → 2秒OFF を繰り返す） ──────
-    // 425 Hz の正弦波。ビブラートなし。
+    // ── 着信音（Teams 風: ミ→ソ→ド 上昇3音） ───────────────────
     let _incomingInterval = null;
 
     function _playIncomingBeep() {
         try {
             const ctx = getCtx();
             const t   = ctx.currentTime;
-            const osc = ctx.createOscillator();
-            const env = ctx.createGain();
-            osc.connect(env); env.connect(ctx.destination);
-            osc.type            = 'sine';
-            osc.frequency.value = 425;          // 日本標準着信音の周波数
-            env.gain.setValueAtTime(0,   t);
-            env.gain.linearRampToValueAtTime(0.4, t + 0.02); // フェードイン
-            env.gain.setValueAtTime(0.4, t + 0.9);
-            env.gain.linearRampToValueAtTime(0,   t + 1.0);  // フェードアウト
-            osc.start(t);
-            osc.stop(t + 1.0);
+            // Teams 風: ミ(659Hz) → ソ(784Hz) → ド(1047Hz) の上昇3音
+            _bell(ctx, 659,  t,        0.22);
+            _bell(ctx, 784,  t + 0.22, 0.22);
+            _bell(ctx, 1047, t + 0.44, 0.26);
         } catch (_) {}
     }
 
     function startIncoming() {
         stopIncoming();
         _playIncomingBeep();
-        // 3秒ごとに再生（1秒鳴って2秒休止）
-        _incomingInterval = setInterval(_playIncomingBeep, 3000);
+        // 2.8秒ごとに繰り返す
+        _incomingInterval = setInterval(_playIncomingBeep, 2800);
     }
 
     function stopIncoming() {
         if (_incomingInterval) { clearInterval(_incomingInterval); _incomingInterval = null; }
     }
 
-    // ── 発信音（海外風コール音: 400+450 Hz デュアルトーン） ─────
-    // 2秒ON → 4秒OFF を繰り返す
+    // ── 発信音（ディズニー風 魔法のきらきら音） ──────────────────
+    // C→E→G→C の上昇アルペジオ＋余韻でキラキラ感を演出
     let _dialingInterval = null;
+
+    function _sparkle(ctx, freq, startTime, vol) {
+        // 基音 + 3倍音で透明感のある音色
+        [1, 3, 6].forEach((h, i) => {
+            const osc = ctx.createOscillator();
+            const env = ctx.createGain();
+            osc.connect(env); env.connect(ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.value = freq * h;
+            const v = vol / (i + 1);
+            env.gain.setValueAtTime(0, startTime);
+            env.gain.linearRampToValueAtTime(v, startTime + 0.008); // 瞬間的に立ち上がる
+            env.gain.exponentialRampToValueAtTime(0.001, startTime + 0.7); // キラッと消える
+            osc.start(startTime);
+            osc.stop(startTime + 0.72);
+        });
+    }
 
     function _playDialingBeep() {
         try {
             const ctx = getCtx();
             const t   = ctx.currentTime;
-            const merger = ctx.createChannelMerger(1);
-            const env    = ctx.createGain();
-            merger.connect(env); env.connect(ctx.destination);
-
-            [400, 450].forEach(freq => {
-                const osc = ctx.createOscillator();
-                const g   = ctx.createGain();
-                osc.connect(g); g.connect(merger);
-                osc.type            = 'sine';
-                osc.frequency.value = freq;
-                g.gain.value        = 0.2;
-                osc.start(t);
-                osc.stop(t + 2.0);
+            // ド(C5)→ミ(E5)→ソ(G5)→ド(C6) きらきらアルペジオ
+            const notes = [523, 659, 784, 1047];
+            notes.forEach((freq, i) => {
+                _sparkle(ctx, freq, t + i * 0.13, 0.18);
             });
-
-            env.gain.setValueAtTime(0,   t);
-            env.gain.linearRampToValueAtTime(1, t + 0.05);
-            env.gain.setValueAtTime(1,   t + 1.9);
-            env.gain.linearRampToValueAtTime(0, t + 2.0);
+            // 最後にキラーン余韻（高めのCを少し遅らせてもう一度）
+            _sparkle(ctx, 1047, t + notes.length * 0.13 + 0.05, 0.09);
         } catch (_) {}
     }
 
     function startDialing() {
         stopDialing();
         _playDialingBeep();
-        // 6秒ごとに再生（2秒鳴って4秒休止）
-        _dialingInterval = setInterval(_playDialingBeep, 6000);
+        // 2.5秒ごとに繰り返す
+        _dialingInterval = setInterval(_playDialingBeep, 2500);
     }
 
     function stopDialing() {
