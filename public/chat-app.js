@@ -755,6 +755,7 @@
     let mediaRecorder    = null;   // 録画用 MediaRecorder
     let recordChunks     = [];     // 録画データバッファ
     let callTargetId     = null;   // 現在通話中の相手 userId（doHangup で参照）
+    let pendingCandidates = [];    // setRemoteDescription 前に届いた ICE キャンディデートのバッファ
 
     // ─ UI helpers ───────────────────────────────────────────────
     function showCallOverlay(label) {
@@ -886,6 +887,11 @@
             await getLocalStream();
             createPC(fromUserId);
             await callPC.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
+            // バッファされていた ICE キャンディデートを追加
+            for (const c of pendingCandidates) {
+                try { await callPC.addIceCandidate(new RTCIceCandidate(c)); } catch (_) {}
+            }
+            pendingCandidates = [];
             localStream.getTracks().forEach(t => callPC.addTrack(t, localStream));
             const answer = await callPC.createAnswer();
             await callPC.setLocalDescription(answer);
@@ -916,6 +922,7 @@
             if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
             if (screenStream) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; }
             isMicOn = true; isCamOn = true; isRemoteCtrl = false;
+            pendingCandidates = [];
             hideCallOverlay();
             hideIncomingModal();
             hideNoticeBar();
@@ -1224,6 +1231,11 @@
         try {
             if (!callPC || !data || !data.sdp) return;
             await callPC.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
+            // バッファされていた ICE キャンディデートを追加
+            for (const c of pendingCandidates) {
+                try { await callPC.addIceCandidate(new RTCIceCandidate(c)); } catch (_) {}
+            }
+            pendingCandidates = [];
             // connectionstatechange で '通話中' に変わる
         } catch (e) { console.error('call_accepted error', e); }
     });
@@ -1238,7 +1250,12 @@
 
     socket.on('webrtc-candidate', async (data) => {
         try {
-            if (!callPC || !data || !data.candidate) return;
+            if (!data || !data.candidate) return;
+            // callPC がない、または remoteDescription がまだ設定されていない場合はバッファに積む
+            if (!callPC || !callPC.remoteDescription) {
+                pendingCandidates.push(data.candidate);
+                return;
+            }
             await callPC.addIceCandidate(new RTCIceCandidate(data.candidate));
         } catch (e) { /* ignore benign candidate errors */ }
     });
