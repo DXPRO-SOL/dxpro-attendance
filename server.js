@@ -12,6 +12,7 @@ global.io = io;
 // ── 遠隔操作エージェント登録管理 ──────────────────────────────────
 // agentRegistry[userId] = { socketId, platform, screenW, screenH }
 const agentRegistry = {};
+global.agentRegistry = agentRegistry;
 
 // ── Socket.io ルーム管理 ─────────────────────────────────────
 io.on('connection', (socket) => {

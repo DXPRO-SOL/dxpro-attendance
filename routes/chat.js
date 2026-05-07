@@ -104,6 +104,209 @@ async function buildSidebarData(myId) {
 
 // ── ページルート ──────────────────────────────────────────────
 
+// エージェントスクリプトのダウンロード
+router.get('/chat/agent/download', requireLogin, (req, res) => {
+    const fs = require('fs');
+    const agentPath = path.join(__dirname, '..', 'remote-agent.js');
+    if (!fs.existsSync(agentPath)) return res.status(404).send('Not found');
+    res.setHeader('Content-Disposition', 'attachment; filename="remote-agent.js"');
+    res.setHeader('Content-Type', 'application/javascript');
+    res.sendFile(agentPath);
+});
+
+// エージェント セットアップページ
+router.get('/chat/agent/setup', requireLogin, async (req, res) => {
+    const { renderPage } = require('../lib/renderPage');
+    const myId   = req.session.userId;
+    const myUser = await require('../models').User.findById(myId).lean();
+    const SERVER_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 10000}`;
+
+    const html = `
+<style>
+.agent-wizard{max-width:720px;margin:32px auto;padding:0 16px}
+.agent-wizard h1{font-size:1.4rem;font-weight:700;margin-bottom:6px}
+.agent-wizard .sub{color:#78716c;font-size:.9rem;margin-bottom:28px}
+.steps{display:flex;flex-direction:column;gap:20px}
+.step{background:#fff;border:1.5px solid #e7e5e0;border-radius:12px;padding:20px 24px}
+.step-num{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:#1c1917;color:#fff;border-radius:50%;font-weight:700;font-size:.85rem;margin-right:10px;vertical-align:middle}
+.step-title{font-weight:700;font-size:1rem;display:inline;vertical-align:middle}
+.step-body{margin-top:12px;font-size:.88rem;color:#44403c;line-height:1.7}
+.os-tabs{display:flex;gap:8px;margin:12px 0 8px}
+.os-tab{padding:5px 14px;border:1.5px solid #e7e5e0;border-radius:20px;cursor:pointer;font-size:.82rem;background:#fff;transition:.15s}
+.os-tab.active,.os-tab:hover{background:#1c1917;color:#fff;border-color:#1c1917}
+.os-block{display:none}.os-block.active{display:block}
+.cmd-box{background:#0f0f0f;color:#fef3c7;border-radius:8px;padding:12px 16px;font-family:monospace;font-size:.83rem;line-height:1.7;position:relative;margin:8px 0}
+.cmd-copy{position:absolute;top:8px;right:10px;background:#2a2724;border:none;color:#a8a29e;border-radius:5px;padding:3px 10px;cursor:pointer;font-size:.75rem}
+.cmd-copy:hover{background:#44403c;color:#fff}
+.note{background:#fefce8;border:1px solid #fde047;border-radius:8px;padding:10px 14px;font-size:.82rem;color:#713f12;margin:10px 0}
+.success-check{color:#22c55e;font-size:1.1rem;margin-right:6px}
+.agent-status{padding:12px 16px;border-radius:8px;font-size:.88rem;margin-top:8px;display:flex;align-items:center;gap:10px}
+.agent-status.checking{background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd}
+.agent-status.connected{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
+.agent-status.disconnected{background:#fef2f2;color:#991b1b;border:1px solid #fecaca}
+</style>
+
+<div class="agent-wizard">
+  <h1>🖥 遠隔操作エージェント セットアップ</h1>
+  <p class="sub">このPCを遠隔操作してもらうには、以下の手順を実行してください。一度だけ設定すれば以後は自動起動できます。</p>
+
+  <div id="agent-live-status" class="agent-status checking">
+    <span>⏳</span> エージェントの接続状態を確認中...
+  </div>
+
+  <div class="steps">
+    <!-- STEP 1 -->
+    <div class="step">
+      <span class="step-num">1</span>
+      <span class="step-title">Node.js がインストールされているか確認</span>
+      <div class="step-body">
+        <div class="os-tabs">
+          <button class="os-tab active" onclick="switchOS('win',this)">Windows</button>
+          <button class="os-tab" onclick="switchOS('mac',this)">macOS</button>
+        </div>
+        <div id="os-win" class="os-block active">
+          コマンドプロンプト（Win+R → <code>cmd</code>）を開いて実行：
+          <div class="cmd-box">node --version<button class="cmd-copy" onclick="copyCmd(this)">コピー</button></div>
+          <code>v20.x.x</code> のように表示されればOK。表示されない場合は
+          <a href="https://nodejs.org/ja/" target="_blank" style="color:#1d4ed8">nodejs.org</a> からインストールしてください。
+        </div>
+        <div id="os-mac" class="os-block">
+          ターミナルを開いて実行：
+          <div class="cmd-box">node --version<button class="cmd-copy" onclick="copyCmd(this)">コピー</button></div>
+          表示されない場合は <a href="https://nodejs.org/ja/" target="_blank" style="color:#1d4ed8">nodejs.org</a> からインストール。
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 2 -->
+    <div class="step">
+      <span class="step-num">2</span>
+      <span class="step-title">エージェントをダウンロード</span>
+      <div class="step-body">
+        <a href="/chat/agent/download" download="remote-agent.js"
+           style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:#1c1917;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:.9rem">
+          ⬇️ remote-agent.js をダウンロード
+        </a>
+        <p style="margin-top:10px;color:#78716c">ダウンロードしたファイルを <code>デスクトップ</code> や <code>C:\\nokori\\</code> など好きな場所に置いてください。</p>
+      </div>
+    </div>
+
+    <!-- STEP 3 -->
+    <div class="step">
+      <span class="step-num">3</span>
+      <span class="step-title">エージェントを起動</span>
+      <div class="step-body">
+        <div class="os-tabs">
+          <button class="os-tab active" onclick="switchOS2('win',this)">Windows</button>
+          <button class="os-tab" onclick="switchOS2('mac',this)">macOS</button>
+        </div>
+        <div id="os2-win" class="os-block active">
+          コマンドプロンプトで実行（ファイルを置いた場所に移動してから）：
+          <div class="cmd-box" id="win-cmd">node remote-agent.js ${myId} ${SERVER_URL}<button class="cmd-copy" onclick="copyCmd(this)">コピー</button></div>
+          <div class="note">⚠️ コマンドプロンプトは <strong>起動したまま</strong> にしてください。閉じると操作できなくなります。</div>
+        </div>
+        <div id="os2-mac" class="os-block">
+          ターミナルで実行：
+          <div class="cmd-box" id="mac-cmd">node remote-agent.js ${myId} ${SERVER_URL}<button class="cmd-copy" onclick="copyCmd(this)">コピー</button></div>
+          <div class="note">⚠️ macOS は初回のみアクセシビリティ許可が必要です（下記 STEP 4 参照）</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 4 macOS only -->
+    <div class="step" id="mac-only-step" style="display:none">
+      <span class="step-num">4</span>
+      <span class="step-title">【macOSのみ】アクセシビリティ許可</span>
+      <div class="step-body">
+        <ol style="padding-left:20px;line-height:2">
+          <li>Apple メニュー → <strong>システム設定</strong></li>
+          <li><strong>プライバシーとセキュリティ</strong> → <strong>アクセシビリティ</strong></li>
+          <li><strong>ターミナル</strong>（または使っているターミナルアプリ）を追加してトグルをONに</li>
+          <li>エージェントを再起動</li>
+        </ol>
+      </div>
+    </div>
+
+    <!-- STEP 自動起動 -->
+    <div class="step">
+      <span class="step-num" style="background:#7c3aed">★</span>
+      <span class="step-title">【推奨】PC起動時に自動起動する設定</span>
+      <div class="step-body">
+        <div class="os-tabs">
+          <button class="os-tab active" onclick="switchOS3('win',this)">Windows</button>
+          <button class="os-tab" onclick="switchOS3('mac',this)">macOS</button>
+        </div>
+        <div id="os3-win" class="os-block active">
+          <p>以下の内容で <code>nokori-agent.bat</code> というファイルを作り、<strong>スタートアップフォルダ</strong> に置く：</p>
+          <div class="cmd-box">@echo off
+node C:\\path\\to\\remote-agent.js ${myId} ${SERVER_URL}<button class="cmd-copy" onclick="copyCmd(this)">コピー</button></div>
+          <p>スタートアップフォルダを開く：Win+R → <code>shell:startup</code></p>
+        </div>
+        <div id="os3-mac" class="os-block">
+          <p>ターミナルで一度だけ実行：</p>
+          <div class="cmd-box">bash install-agent.sh ${myId} ${SERVER_URL}<button class="cmd-copy" onclick="copyCmd(this)">コピー</button></div>
+          <p>これ以降、Macを起動するたびに自動でエージェントが起動します。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:24px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;font-size:.88rem;color:#166534">
+    ✅ エージェントが起動すると「<strong>✔ 登録完了！遠隔操作が使えます。</strong>」と表示されます。<br>
+    その後、チャットの通話画面で相手が遠隔操作ボタンを押すと操作できるようになります。
+  </div>
+</div>
+
+<script>
+function switchOS(os, btn) {
+  document.querySelectorAll('#os-win, #os-mac').forEach(e => e.classList.remove('active'));
+  document.getElementById('os-' + os).classList.add('active');
+  btn.closest('.os-tabs').querySelectorAll('.os-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (os === 'mac') document.getElementById('mac-only-step').style.display = '';
+  else document.getElementById('mac-only-step').style.display = 'none';
+}
+function switchOS2(os, btn) {
+  document.querySelectorAll('#os2-win, #os2-mac').forEach(e => e.classList.remove('active'));
+  document.getElementById('os2-' + os).classList.add('active');
+  btn.closest('.os-tabs').querySelectorAll('.os-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function switchOS3(os, btn) {
+  document.querySelectorAll('#os3-win, #os3-mac').forEach(e => e.classList.remove('active'));
+  document.getElementById('os3-' + os).classList.add('active');
+  btn.closest('.os-tabs').querySelectorAll('.os-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function copyCmd(btn) {
+  const text = btn.parentElement.childNodes[0].textContent.trim();
+  navigator.clipboard && navigator.clipboard.writeText(text);
+  const orig = btn.textContent; btn.textContent = 'コピー済み ✔';
+  setTimeout(() => btn.textContent = orig, 2000);
+}
+// エージェント接続状態チェック
+const statusEl = document.getElementById('agent-live-status');
+const socket = window.parent && window.parent._nokoriSocket ? window.parent._nokoriSocket : null;
+// SocketIOでエージェント状態をポーリング
+fetch('/api/chat/agent-status')
+  .then(r => r.json())
+  .then(d => {
+    if (d.connected) {
+      statusEl.className = 'agent-status connected';
+      statusEl.innerHTML = '<span>✅</span> エージェントは接続済みです。遠隔操作の準備ができています！';
+    } else {
+      statusEl.className = 'agent-status disconnected';
+      statusEl.innerHTML = '<span>❌</span> エージェント未接続 — 上の手順に従って起動してください。';
+    }
+  }).catch(() => {
+    statusEl.className = 'agent-status disconnected';
+    statusEl.innerHTML = '<span>❌</span> 状態を取得できませんでした。';
+  });
+</script>
+`;
+    return renderPage(req, res, { title: '遠隔操作セットアップ', body: html });
+});
+
 router.get('/chat', requireLogin, async (req, res) => {
     try {
         const myId = req.session.userId;
@@ -241,6 +444,13 @@ router.get('/api/chat/unread-count', requireLogin, async (req, res) => {
         ]);
         res.json({ count: dmCount + roomCount });
     } catch (e) { res.json({ count: 0 }); }
+});
+
+router.get('/api/chat/agent-status', requireLogin, (req, res) => {
+    const agentRegistry = global.agentRegistry || {};
+    const uid = String(req.session.userId);
+    const agent = agentRegistry[uid];
+    res.json({ connected: !!agent, platform: agent ? agent.platform : null });
 });
 
 router.post('/api/chat/status', requireLogin, async (req, res) => {
