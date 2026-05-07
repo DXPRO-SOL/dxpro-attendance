@@ -662,7 +662,7 @@ ${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/call-sounds.js"></script>
-<script src="/chat-app.js?v=18"></script>`;
+<script src="/chat-app.js?v=19"></script>`;
 }
 
 function buildSidebarHtml(d) {
