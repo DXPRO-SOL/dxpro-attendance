@@ -805,11 +805,14 @@
         const ICE = { iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun.services.mozilla.com' },
-            // TURN サーバーが利用可能な場合はここに追加
-            // { urls: 'turn:your.turn.server:3478', username: 'user', credential: 'pass' },
+            // 無料パブリック TURN サーバー（登録不要）
+            { urls: 'turn:openrelay.metered.ca:80',  username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
         ]};
         callPC = new RTCPeerConnection(ICE);
+        let iceRestartCount = 0;
+
         callPC.onicecandidate = (ev) => {
             if (ev.candidate)
                 socket.emit('webrtc-candidate', { toUserId: targetId, fromUserId: MY_ID, candidate: ev.candidate.toJSON() });
@@ -821,8 +824,17 @@
         callPC.onconnectionstatechange = () => {
             const s = callPC && callPC.connectionState;
             console.log('[WebRTC] connectionState:', s);
-            if (s === 'connected') showCallOverlay('通話中');
-            if (s === 'disconnected' || s === 'failed' || s === 'closed') doHangup();
+            if (s === 'connected') {
+                iceRestartCount = 0;
+                showCallOverlay('通話中');
+            }
+            // disconnected は一時的な場合があるので少し待ってから判断
+            if (s === 'failed' || s === 'closed') doHangup();
+            if (s === 'disconnected') {
+                setTimeout(() => {
+                    if (callPC && callPC.connectionState === 'disconnected') doHangup();
+                }, 5000);
+            }
         };
         callPC.onicegatheringstatechange = () => {
             console.log('[WebRTC] iceGatheringState:', callPC && callPC.iceGatheringState);
@@ -831,7 +843,27 @@
             const s = callPC && callPC.iceConnectionState;
             console.log('[WebRTC] iceConnectionState:', s);
             if (s === 'failed') {
-                console.warn('[WebRTC] ICE 接続失敗。TURN サーバーが必要な可能性があります。');
+                // ICE Restart を試みる（最大2回）
+                if (iceRestartCount < 2) {
+                    iceRestartCount++;
+                    console.warn(`[WebRTC] ICE 失敗 → ICE Restart 試行 (${iceRestartCount}/2)`);
+                    showCallOverlay('再接続中...');
+                    callPC.restartIce();
+                    // 発信側の場合は新しい offer を再作成して送信
+                    if (callPC.localDescription && callPC.localDescription.type === 'offer') {
+                        callPC.createOffer({ iceRestart: true }).then(offer => {
+                            return callPC.setLocalDescription(offer).then(() => {
+                                socket.emit('webrtc-offer-restart', {
+                                    toUserId: targetId, fromUserId: MY_ID,
+                                    sdp: offer.sdp, type: offer.type,
+                                });
+                            });
+                        }).catch(e => console.error('[WebRTC] ICE restart offer 失敗', e));
+                    }
+                } else {
+                    console.error('[WebRTC] ICE 接続に失敗しました（再試行上限）。通話を終了します。');
+                    doHangup();
+                }
             }
         };
         return callPC;
@@ -1283,6 +1315,19 @@
     });
 
     socket.on('call_ended', () => { doHangup(); });
+
+    // ICE Restart: 相手から再発信 offer が届いた場合に answer を返す
+    socket.on('webrtc-offer-restart', async (data) => {
+        if (!data || !data.sdp || !callPC) return;
+        try {
+            showCallOverlay('再接続中...');
+            await callPC.setRemoteDescription(new RTCSessionDescription({ type: data.type || 'offer', sdp: data.sdp }));
+            const answer = await callPC.createAnswer();
+            await callPC.setLocalDescription(answer);
+            socket.emit('call_accept', { toUserId: data.fromUserId, fromUserId: MY_ID, sdp: answer.sdp, type: answer.type });
+            console.log('[WebRTC] ICE Restart: answer 送信完了');
+        } catch (e) { console.error('[WebRTC] ICE restart answer 失敗', e); }
+    });
 
     socket.on('screen_share_started', (data) => {
         const sl = document.getElementById('call-status-label');

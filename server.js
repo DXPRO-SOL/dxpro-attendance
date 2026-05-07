@@ -41,6 +41,9 @@ io.on('connection', (socket) => {
     // data: { toUserId, sdp }
     if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('webrtc-offer', data);
   });
+  socket.on('webrtc-offer-restart', (data) => {
+    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('webrtc-offer-restart', data);
+  });
   socket.on('webrtc-answer', (data) => {
     if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('webrtc-answer', data);
   });
