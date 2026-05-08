@@ -64,11 +64,11 @@ router.get("/login", (req, res) => {
                 
                 .login-container {
                     width: 100%;
-                    max-width: 400px;
-                    padding: 1.2rem 1.5rem;
+                    max-width: 520px;
+                    padding: 2.2rem 2.6rem;
                     background: var(--white);
-                    border-radius: 12px;
-                    box-shadow: 0 10px 30px rgba(0, 86, 179, 0.1);
+                    border-radius: 16px;
+                    box-shadow: 0 10px 40px rgba(0, 86, 179, 0.13);
                     position: relative;
                     overflow: hidden;
                 }
@@ -251,7 +251,7 @@ router.get("/login", (req, res) => {
                 
                 .current-time {
                     text-align: center;
-                    margin-bottom: 0.5rem;
+                    margin-bottom: 20px;
                     font-size: 0.85rem;
                     color: var(--dark-gray);
                     font-weight: 500;
@@ -268,6 +268,8 @@ router.get("/login", (req, res) => {
                     .login-container {
                         padding: 1.5rem;
                         margin: 1rem;
+                        padding-top: 50px;
+                        padding-bottom: 50px;
                     }
                     
                     .logo h1 {
@@ -279,7 +281,7 @@ router.get("/login", (req, res) => {
         <body>
             <div class="login-container">
                 <div class="logo">
-                <img src="/nokori-logo.png" alt="Nokori">
+                <img src="/nokori-logo.png" alt="Nokori" style="width: 250px;">
                     <div class="subtitle">クラウド業務支援システム</div>
                 </div>
                 
