@@ -548,61 +548,12 @@ router.post("/change-password", requireLogin, async (req, res) => {
   }
 });
 
+// /register は無効化済み（セキュリティリスクのため削除）
 router.get("/register", (req, res) => {
-  res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>新規登録</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-            <link rel="stylesheet" href="/styles.css">
-            <script>
-                function updateClock() {
-                    const now = new Date();
-                    document.getElementById('current-time').textContent = 
-                        '現在時刻: ' + now.toLocaleTimeString('ja-JP');
-                }
-                setInterval(updateClock, 1000);
-                window.onload = updateClock;
-            </script>
-        </head>
-        <body>
-            <div class="container">
-                <h2>新規登録</h2>
-                <div id="current-time" class="clock"></div>
-                ${req.query.error ? `<p class="error">${getErrorMessageJP(req.query.error)}</p>` : ""}
-                <form action="/register" method="POST">
-                    <div class="form-group">
-                        <label for="username">ユーザー名:</label>
-                        <input type="text" id="username" name="username" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="password">パスワード:</label>
-                        <input type="password" id="password" name="password" required>
-                    </div>
-                    <button type="submit" class="btn">登録</button>
-                </form>
-                <p>既にアカウントをお持ちですか？ <a href="/login">ログイン</a></p>
-            </div>
-        </body>
-        </html>
-    `);
+  res.redirect("/login");
 });
-
-// 新規登録処理
-router.post("/register", async (req, res) => {
-  try {
-    const hashedPassword = await bcrypt.hash(req.body.password, 10);
-    const user = new User({
-      username: req.body.username,
-      password: hashedPassword,
-    });
-    await user.save();
-    res.redirect("/login");
-  } catch (error) {
-    console.error("新規登録エラー:", error);
-    res.redirect("/register?error=username_taken");
-  }
+router.post("/register", (req, res) => {
+  res.redirect("/login");
 });
 
 router.get("/logout", (req, res) => {
