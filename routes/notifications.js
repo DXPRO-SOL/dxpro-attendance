@@ -19,6 +19,12 @@ function escapeHtml(s) {
 async function createNotification({ userId, type, title, body, link, fromUserId, fromName, meta }) {
     try {
         await Notification.create({ userId, type, title, body: body || '', link: link || '', fromUserId, fromName: fromName || '', meta: meta || {}, isRead: false });
+        // リアルタイム通知（Socket.IO）
+        if (global.io) {
+            global.io.to('u_' + String(userId)).emit('notification_new', {
+                type, title, body: body || '', link: link || '', fromName: fromName || '',
+            });
+        }
     } catch (e) {
         console.error('[Notification] 作成失敗:', e.message);
     }

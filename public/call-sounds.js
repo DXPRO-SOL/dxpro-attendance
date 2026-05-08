@@ -143,6 +143,56 @@
         } catch (_) {}
     }
 
+    // ── メッセージ送信音（軽いポップ音） ─────────────────────────
+    function playSend() {
+        try {
+            const ctx = getCtx();
+            const t   = ctx.currentTime;
+            // 短い上昇2音（ポップ）
+            [[880, 0], [1100, 0.07]].forEach(([freq, delay]) => {
+                const osc = ctx.createOscillator();
+                const env = ctx.createGain();
+                osc.connect(env); env.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.value = freq;
+                env.gain.setValueAtTime(0, t + delay);
+                env.gain.linearRampToValueAtTime(0.18, t + delay + 0.006);
+                env.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.12);
+                osc.start(t + delay);
+                osc.stop(t + delay + 0.13);
+            });
+        } catch (_) {}
+    }
+
+    // ── メッセージ受信音（柔らかいチャイム） ────────────────────
+    function playReceive() {
+        try {
+            const ctx = getCtx();
+            const t   = ctx.currentTime;
+            // ソ→ド 下降2音（軽やか）
+            [[784, 0], [523, 0.1]].forEach(([freq, delay]) => {
+                const osc = ctx.createOscillator();
+                const env = ctx.createGain();
+                osc.connect(env); env.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.value = freq;
+                env.gain.setValueAtTime(0, t + delay);
+                env.gain.linearRampToValueAtTime(0.15, t + delay + 0.008);
+                env.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.45);
+                osc.start(t + delay);
+                osc.stop(t + delay + 0.46);
+            });
+        } catch (_) {}
+    }
+
+    // ── 通知音（短いベル1音） ──────────────────────────────────
+    function playNotification() {
+        try {
+            const ctx = getCtx();
+            _bell(ctx, 880, ctx.currentTime, 0.2);
+        } catch (_) {}
+    }
+
     // 公開API
-    window.CallSounds = { startIncoming, stopIncoming, startDialing, stopDialing, playHangup, playReject };
+    window.CallSounds = { startIncoming, stopIncoming, startDialing, stopDialing, playHangup, playReject, playSend, playReceive, playNotification };
 })();

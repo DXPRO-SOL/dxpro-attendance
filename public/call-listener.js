@@ -112,6 +112,82 @@
             pendingFrom = null;
             hideModal();
         });
+
+        // ── チャット外でのメッセージ受信トースト ──────────────────
+        socket.on('new_message', (msg) => {
+            if (!msg || msg.fromUserId === userId) return;
+            // チャットページ（chat-app.js）が既にある場合は何もしない
+            if (document.getElementById('sc-init')) return;
+            const senderName = msg.senderName || msg.fromName || msg.fromUserId || '新しいメッセージ';
+            const preview    = (msg.content || '').slice(0, 60) + ((msg.content || '').length > 60 ? '…' : '');
+            const chatUrl    = msg.fromUserId ? '/chat/dm/' + msg.fromUserId : '/chat';
+            showToast('💬 ' + senderName, preview || 'ファイルが届きました', chatUrl, 'msg');
+            if (window.CallSounds) CallSounds.playReceive();
+        });
+
+        // ── 通知リアルタイム受信 ──────────────────────────────────
+        socket.on('notification_new', (data) => {
+            if (!data) return;
+            const NOTIF_ICON = {
+                comment:'💬', reaction:'😀', goal_deadline:'🎯',
+                attendance_missing:'⏰', leave_approved:'✅', leave_rejected:'❌',
+                ai_advice:'🤖', system:'📢', mention:'📢',
+                overtime_request:'⏰', overtime_approved:'✅', overtime_rejected:'❌',
+            };
+            const icon = NOTIF_ICON[data.type] || '🔔';
+            showToast(icon + ' ' + (data.title || '通知'), data.body || '', data.link || '/notifications', 'notif');
+            if (window.CallSounds) CallSounds.playNotification();
+            // トップバーの通知バッジを更新
+            const badge = document.getElementById('notif-bell-badge');
+            if (badge) {
+                const cur = parseInt(badge.textContent, 10) || 0;
+                badge.textContent = (cur + 1) > 99 ? '99+' : (cur + 1);
+                badge.classList.add('show');
+            }
+        });
+    }
+
+    // ── トースト通知 ──────────────────────────────────────────────
+    function showToast(title, body, url, kind) {
+        let container = document.getElementById('cl-toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'cl-toast-container';
+            container.style.cssText =
+                'position:fixed;bottom:24px;right:24px;z-index:99998;' +
+                'display:flex;flex-direction:column;gap:8px;pointer-events:none;';
+            document.body.appendChild(container);
+        }
+        const toast = document.createElement('div');
+        const color = kind === 'notif' ? '#3b82f6' : '#22c55e';
+        toast.style.cssText =
+            'background:#1e293b;border-radius:12px;padding:14px 18px;pointer-events:all;cursor:pointer;' +
+            'box-shadow:0 8px 30px rgba(0,0,0,.4);border-left:4px solid ' + color + ';' +
+            'min-width:280px;max-width:360px;animation:cl-slide-in .25s ease;';
+        toast.innerHTML =
+            '<div style="font-size:13px;font-weight:700;color:#f1f5f9;margin-bottom:3px;">' +
+            escToast(title) + '</div>' +
+            (body ? '<div style="font-size:12px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escToast(body) + '</div>' : '');
+        if (url) toast.addEventListener('click', () => { window.location.href = url; });
+        container.appendChild(toast);
+        // 4秒後に消える
+        setTimeout(() => {
+            toast.style.transition = 'opacity .4s';
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 420);
+        }, 4000);
+    }
+
+    function escToast(s) {
+        return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // アニメーション用スタイル追加
+    if (!document.getElementById('cl-toast-style')) {
+        const style = document.createElement('style');
+        style.id = 'cl-toast-style';
+        style.textContent = '@keyframes cl-slide-in{from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}';
+        document.head.appendChild(style);
     }
 
     // socket.io.js が読み込まれている場合はすぐ実行、なければ動的ロード

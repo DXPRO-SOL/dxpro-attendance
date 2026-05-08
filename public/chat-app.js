@@ -67,6 +67,8 @@
         if (!relevantDM && !relevantDMMy && !relevantRoom) return;
         appendMessage(msg);
         scrollBottom(true);
+        // 受信音（他ユーザーからのメッセージのみ）
+        if (msg.fromUserId !== MY_ID && window.CallSounds) CallSounds.playReceive();
         // DM受信→既読マーク
         if (MODE === 'dm' && msg.fromUserId === TARGET_ID) {
             markRead(msg._id);
@@ -333,6 +335,8 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
         });
+        // 送信音
+        if (window.CallSounds) CallSounds.playSend();
     }
 
     // ── 既読マーク ────────────────────────────────────────────
