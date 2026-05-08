@@ -1384,10 +1384,10 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                     <!-- ── 自己評価・コミットメント ── -->
                     <div style="margin-top:16px;border:1.5px solid #e0e8ff;border-radius:14px;overflow:hidden">
                         <!-- ヘッダー -->
-                        <div style="background:linear-gradient(135deg,#eff6ff,#f5f3ff);padding:13px 16px;border-bottom:1px solid #e0e8ff;display:flex;align-items:center;gap:8px">
+                        <div style="background:linear-gradient(135deg,#eff6ff,#f5f3ff);padding:13px 16px;border-bottom:1px solid #e0e8ff;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                             <i class="fa-solid fa-pen-to-square" style="color:#7c3aed;font-size:14px"></i>
-                            <span style="font-size:13px;font-weight:700;color:#1e1b4b">自己評価・コミットメントを記録する</span>
-                            <span style="margin-left:auto;font-size:10px;color:#9ca3af">管理者に共有されます</span>
+                            <span style="font-size:13px;font-weight:700;color:#1e1b4b;flex:1;min-width:0">自己評価・コミットメントを記録する</span>
+                            <span style="font-size:10px;color:#9ca3af;white-space:nowrap">管理者に共有されます</span>
                         </div>
                         <div style="padding:14px 16px">
 
@@ -1460,9 +1460,9 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                                 <textarea id="sfAppeal" placeholder="例：AIスコアに反映されていない貢献（社内勉強会の企画・後輩のサポートなど）があれば記載してください。" style="width:100%;min-height:60px;border:1px solid #e5e7eb;border-radius:8px;padding:9px 11px;font-size:12.5px;resize:vertical;font-family:inherit;color:#111827;background:#fff;outline:none" onfocus="this.style.borderColor='#2563eb';this.style.boxShadow='0 0 0 3px rgba(37,99,235,.1)'" onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'" maxlength="500"></textarea>
                             </div>
 
-                            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
                                 <div style="font-size:11px;color:#9ca3af"><i class="fa-solid fa-shield-halved" style="margin-right:3px"></i>送信内容は管理者のみ閲覧できます</div>
-                                <button type="button" id="sfSubmit" style="background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;border:none;padding:9px 22px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'">
+                                <button type="button" id="sfSubmit" style="background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;border:none;padding:9px 22px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;transition:opacity .15s;white-space:nowrap" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'">
                                     <i class="fa-solid fa-paper-plane"></i> 送信する
                                 </button>
                             </div>

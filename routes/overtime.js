@@ -89,7 +89,11 @@ const COMMON_CSS = `
     .ot-textarea{resize:vertical;min-height:100px;line-height:1.7}
     .ot-row2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
     @media(max-width:560px){.ot-row2{grid-template-columns:1fr}}
-    .ot-foot{display:flex;justify-content:flex-end;gap:10px;padding-top:12px;border-top:1px solid #f1f5f9}
+    .ot-foot{display:flex;justify-content:flex-end;gap:10px;padding-top:12px;border-top:1px solid #f1f5f9;flex-wrap:wrap}
+    @media(max-width:560px){
+        .ot-foot{flex-direction:column-reverse;gap:8px}
+        .ot-submit-btn,.ot-ghost-btn{width:100%;justify-content:center;text-align:center;display:flex;align-items:center}
+    }
     .ot-submit-btn{display:inline-flex;align-items:center;gap:7px;padding:10px 22px;border-radius:10px;font-size:14px;font-weight:700;border:none;cursor:pointer;text-decoration:none;transition:opacity .15s}
     .ot-submit-btn:hover{opacity:.9}
     .ot-submit-pre{background:linear-gradient(90deg,#0b5fff,#184df2);color:#fff;box-shadow:0 6px 18px rgba(11,95,255,.25)}

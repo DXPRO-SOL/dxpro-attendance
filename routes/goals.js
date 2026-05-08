@@ -64,6 +64,13 @@ body { margin: 0; font-family: 'Inter','Noto Sans JP',system-ui,sans-serif; back
 .g-page-header .left .breadcrumb { font-size: 12px; color: var(--g-muted); margin-bottom: 4px; }
 .g-page-header .left .page-title { font-size: 22px; font-weight: 800; color: var(--g-text); letter-spacing: -.3px; }
 .g-page-header .right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+@media(max-width:600px){
+    .g-page-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .g-page-header .right { width: 100%; flex-wrap: wrap; }
+    .g-page-header .right .g-btn { flex: 1 1 auto; justify-content: center; font-size: 12px; padding: 7px 10px; }
+    .g-form-actions { flex-wrap: wrap; }
+    .g-form-actions .g-btn { flex: 1 1 auto; justify-content: center; }
+}
 
 /* ── カード ── */
 .g-card { background: var(--g-surface); border: 1px solid var(--g-border); border-radius: var(--g-radius); box-shadow: var(--g-shadow); padding: 24px; }
