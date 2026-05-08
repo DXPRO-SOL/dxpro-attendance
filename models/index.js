@@ -760,6 +760,45 @@ const UserTaskConfigSchema = new mongoose.Schema({
 UserTaskConfigSchema.index({ userId: 1, service: 1 }, { unique: true });
 const UserTaskConfig = mongoose.model("UserTaskConfig", UserTaskConfigSchema);
 
+// ─── クラウドドライブ: フォルダ ────────────────────────────────────────────
+const CloudFolderSchema = new mongoose.Schema({
+  name:       { type: String, required: true },
+  ownerId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  parentId:   { type: mongoose.Schema.Types.ObjectId, ref: 'CloudFolder', default: null },
+  isPublic:   { type: Boolean, default: false }, // 全社員に公開
+  sharedWith: [{
+    userId:  { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    canEdit: { type: Boolean, default: false },
+  }],
+  color: { type: String, default: '#f59e0b' }, // フォルダアイコン色
+}, { timestamps: true });
+CloudFolderSchema.index({ ownerId: 1, parentId: 1 });
+const CloudFolder = mongoose.model('CloudFolder', CloudFolderSchema);
+
+// ─── クラウドドライブ: ファイル ────────────────────────────────────────────
+const CloudFileSchema = new mongoose.Schema({
+  name:         { type: String, required: true },       // 表示名（変更可）
+  originalName: { type: String, required: true },       // アップロード時の元ファイル名
+  filePath:     { type: String, default: null },        // ディスク上のパス（バイナリ系）
+  mimeType:     { type: String, default: 'application/octet-stream' },
+  size:         { type: Number, default: 0 },           // bytes
+  folderId:     { type: mongoose.Schema.Types.ObjectId, ref: 'CloudFolder', default: null },
+  ownerId:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  isPublic:     { type: Boolean, default: false },
+  sharedWith:   [{
+    userId:  { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    canEdit: { type: Boolean, default: false },
+  }],
+  // テキスト系ファイルのリアルタイム同時編集用
+  textContent:  { type: String, default: null },
+  version:      { type: Number, default: 0 },           // 楽観的ロック
+  lastEditedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  lastEditedAt: { type: Date, default: null },
+}, { timestamps: true });
+CloudFileSchema.index({ ownerId: 1, folderId: 1 });
+CloudFileSchema.index({ isPublic: 1 });
+const CloudFile = mongoose.model('CloudFile', CloudFileSchema);
+
 // ─── ユーザー別タスク期限日ローカル上書き ───────────────────────────────────
 const TaskDueDateSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -801,4 +840,6 @@ module.exports = {
     PayrollSetting,
     UserTaskConfig,
     TaskDueDate,
+    CloudFolder,
+    CloudFile,
 };

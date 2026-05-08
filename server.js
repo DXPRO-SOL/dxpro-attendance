@@ -62,6 +62,19 @@ io.on('connection', (socket) => {
         console.log(`[Agent] 切断: userId=${uid}`);
       }
     }
+    // クラウドドライブのdocルームからも退出
+    if (global.docRooms) {
+      for (const fileId of Object.keys(global.docRooms)) {
+        if (global.docRooms[fileId] && global.docRooms[fileId].has(socket.id)) {
+          global.docRooms[fileId].delete(socket.id);
+          if (global.docRooms[fileId].size === 0) delete global.docRooms[fileId];
+          else {
+            const users = Array.from(global.docRooms[fileId].values());
+            io.to('doc_' + fileId).emit('cloud_doc_users', users);
+          }
+        }
+      }
+    }
   });
 
   // --- WebRTC signaling / call control ---
@@ -176,6 +189,36 @@ io.on('connection', (socket) => {
   socket.on('recording_stopped', (data) => {
     if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('recording_stopped', data);
   });
+
+  // ── クラウドドライブ: リアルタイム同時編集 ───────────────────
+  // docRooms[fileId] = Map<userId, { username, canEdit, socketId }>
+  socket.on('cloud_join_doc', ({ fileId, username, canEdit }) => {
+    if (!fileId) return;
+    socket.join('doc_' + fileId);
+    if (!global.docRooms) global.docRooms = {};
+    if (!global.docRooms[fileId]) global.docRooms[fileId] = new Map();
+    global.docRooms[fileId].set(socket.id, { username: username || '?', canEdit: !!canEdit, socketId: socket.id });
+    // ルーム内の全員にオンラインユーザーリストを送る
+    const users = Array.from(global.docRooms[fileId].values());
+    io.to('doc_' + fileId).emit('cloud_doc_users', users);
+  });
+  socket.on('cloud_doc_change', ({ fileId, content, username, userId, version }) => {
+    if (!fileId) return;
+    // 変更を送信者以外の全員にブロードキャスト
+    socket.to('doc_' + fileId).emit('cloud_doc_update', { content, username, userId, version });
+  });
+  socket.on('cloud_leave_doc', ({ fileId }) => {
+    if (!fileId) return;
+    socket.leave('doc_' + fileId);
+    if (global.docRooms && global.docRooms[fileId]) {
+      global.docRooms[fileId].delete(socket.id);
+      if (global.docRooms[fileId].size === 0) delete global.docRooms[fileId];
+      else {
+        const users = Array.from(global.docRooms[fileId].values());
+        io.to('doc_' + fileId).emit('cloud_doc_users', users);
+      }
+    }
+  });
 });
 
 // Render/Cloudflare環境ではプロキシを信頼してHTTPS判定を正しく行う
@@ -252,6 +295,7 @@ app.use("/", require("./routes/integrations"));
 app.use("/", require("./routes/organization"));
 app.use("/", require("./routes/tasks"));
 app.use("/", require("./routes/chat"));
+app.use("/", require("./routes/cloud"));
 
 // ── グローバルエラーハンドラー（500エラーでプロセスをクラッシュさせない） ─
 app.use((err, req, res, next) => {
@@ -450,6 +494,8 @@ httpServer.listen(PORT, "0.0.0.0", async () => {
   logOk('Router: /board               掲示板 / アナウンス / コメント');
   await sleep(50);
   logOk('Router: /chat                DM / グループチャット / ファイル添付');
+  await sleep(50);
+  logOk('Router: /cloud               クラウドドライブ / ファイル共有 / 同時編集');
   await sleep(50);
   logOk('Router: /chatbot             AIチャットボット (OpenAI)');
   await sleep(50);
