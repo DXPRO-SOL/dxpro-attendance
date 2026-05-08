@@ -65,11 +65,17 @@ body { margin: 0; font-family: 'Inter','Noto Sans JP',system-ui,sans-serif; back
 .g-page-header .left .page-title { font-size: 22px; font-weight: 800; color: var(--g-text); letter-spacing: -.3px; }
 .g-page-header .right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 @media(max-width:600px){
+    .g-wrap { padding: 12px 0 40px; }
     .g-page-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .g-page-header .left .page-title { font-size: 18px; }
     .g-page-header .right { width: 100%; flex-wrap: wrap; }
-    .g-page-header .right .g-btn { flex: 1 1 auto; justify-content: center; font-size: 12px; padding: 7px 10px; }
+    .g-page-header .right .g-btn { flex: 1 1 auto; justify-content: center; font-size: 12px; padding: 7px 10px; white-space: normal; text-align: center; }
     .g-form-actions { flex-wrap: wrap; }
     .g-form-actions .g-btn { flex: 1 1 auto; justify-content: center; }
+    .g-card { padding: 16px; }
+    .g-kpi-grid { gap: 8px; }
+    .g-approval-grid { grid-template-columns: 1fr; }
+    .g-dl { grid-template-columns: 100px 1fr; }
 }
 
 /* ── カード ── */

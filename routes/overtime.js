@@ -113,6 +113,21 @@ const COMMON_CSS = `
     .ot-timing-tab.pre-tab.active{background:#0b5fff;color:#fff}
     .ot-timing-tab.post-tab{color:#d97706;background:#fff;border-left:1.5px solid #e5e7eb}
     .ot-timing-tab.post-tab.active{background:#f59e0b;color:#fff}
+    @media(max-width:640px){
+        .ot-wrap{max-width:100%}
+        .ot-hero{padding:18px 16px;border-radius:14px}
+        .ot-hero-title{font-size:17px}
+        .ot-hero-btns{width:100%;flex-direction:column;gap:8px}
+        .ot-new-btn{width:100%;justify-content:center}
+        .ot-form-body{padding:18px 16px}
+        .ot-form-wrap{max-width:100%}
+        .ot-card-body{padding:14px;gap:10px}
+        .ot-card-date{min-width:58px;font-size:16px;padding:8px 8px}
+        .ot-card-info{min-width:0;flex:1}
+        .ot-card-actions{width:100%;margin-left:0;justify-content:flex-end}
+        .ot-tabs{width:100%;justify-content:stretch}
+        .ot-tab{flex:1;text-align:center;padding:8px 10px;font-size:12px}
+    }
 `;
 
 // ─────────────────────────────────────────────────────────────────────────────
