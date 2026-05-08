@@ -1,19 +1,22 @@
 // ==============================
 // routes/auth.js - 認証・ログイン
 // ==============================
-const router = require('express').Router();
-const bcrypt = require('bcryptjs');
-const { User, Employee } = require('../models');
-const { requireLogin } = require('../middleware/auth');
-const { getErrorMessageJP, getPasswordErrorMessage } = require('../lib/helpers');
+const router = require("express").Router();
+const bcrypt = require("bcryptjs");
+const { User, Employee } = require("../models");
+const { requireLogin } = require("../middleware/auth");
+const {
+  getErrorMessageJP,
+  getPasswordErrorMessage,
+} = require("../lib/helpers");
 
-router.get('/', requireLogin, (req, res) => {
-    res.redirect('/attendance-main');
+router.get("/", requireLogin, (req, res) => {
+  res.redirect("/attendance-main");
 });
 
 // ログインページ
-router.get('/login', (req, res) => {
-    res.send(`
+router.get("/login", (req, res) => {
+  res.send(`
         <!DOCTYPE html>
         <html lang="ja">
         <head>
@@ -42,22 +45,27 @@ router.get('/login', (req, res) => {
                     box-sizing: border-box;
                 }
                 
+                html, body {
+                    height: 100%;
+                    overflow: hidden;
+                }
+                
                 body {
                     font-family: 'Noto Sans JP', 'Roboto', sans-serif;
                     background-color: var(--light-gray);
                     color: var(--text-color);
-                    line-height: 1.6;
+                    line-height: 1.4;
                     display: flex;
                     justify-content: center;
                     align-items: center;
-                    min-height: 100vh;
+                    height: 100vh;
                     background-image: linear-gradient(135deg, var(--dxpro-light-blue) 0%, var(--white) 100%);
                 }
                 
                 .login-container {
                     width: 100%;
-                    max-width: 420px;
-                    padding: 1.5rem;
+                    max-width: 400px;
+                    padding: 1.2rem 1.5rem;
                     background: var(--white);
                     border-radius: 12px;
                     box-shadow: 0 10px 30px rgba(0, 86, 179, 0.1);
@@ -80,9 +88,9 @@ router.get('/login', (req, res) => {
                 }
                 
                 .logo img {
-                    width: 180px;
-                    height: 180px;
-                    margin-bottom: 1rem;
+                    width: 200px;
+                    height: auto;
+                    margin-bottom: 0.4rem;
                 }
                 
                 .logo h1 {
@@ -95,17 +103,17 @@ router.get('/login', (req, res) => {
                 
                 .logo .subtitle {
                     color: var(--dark-gray);
-                    font-size: 1.5rem;
+                    font-size: 1rem;
                     font-weight: 400;
-                    margin-bottom: 2rem;
+                    margin-bottom: 0.8rem;
                 }
                 
                 .login-form {
-                    margin-top: 0.5rem;
+                    margin-top: 0.2rem;
                 }
                 
                 .form-group {
-                    margin-bottom: 1.5rem;
+                    margin-bottom: 0.8rem;
                 }
                 
                 .form-group label {
@@ -118,10 +126,10 @@ router.get('/login', (req, res) => {
                 
                 .form-control {
                     width: 100%;
-                    padding: 0.8rem 1rem;
+                    padding: 0.6rem 1rem;
                     border: 1px solid var(--medium-gray);
                     border-radius: 6px;
-                    font-size: 1rem;
+                    font-size: 0.95rem;
                     transition: all 0.3s ease;
                     background-color: var(--light-gray);
                 }
@@ -133,12 +141,39 @@ router.get('/login', (req, res) => {
                     background-color: var(--white);
                 }
                 
+                .password-wrapper {
+                    position: relative;
+                }
+                
+                .password-wrapper .form-control {
+                    padding-right: 3rem;
+                }
+                
+                .toggle-password {
+                    position: absolute;
+                    right: 0.85rem;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    background: none;
+                    border: none;
+                    cursor: pointer;
+                    padding: 0;
+                    color: var(--dark-gray);
+                    display: flex;
+                    align-items: center;
+                    transition: color 0.2s;
+                }
+                
+                .toggle-password:hover {
+                    color: var(--dxpro-blue);
+                }
+                
                 .btn {
                     width: 100%;
-                    padding: 1rem;
+                    padding: 0.7rem;
                     border: none;
                     border-radius: 6px;
-                    font-size: 1rem;
+                    font-size: 0.95rem;
                     font-weight: 600;
                     cursor: pointer;
                     transition: all 0.3s ease;
@@ -150,7 +185,7 @@ router.get('/login', (req, res) => {
                 .btn-login {
                     background-color: var(--dxpro-blue);
                     color: var(--white);
-                    margin-top: 0.5rem;
+                    margin-top: 0.2rem;
                 }
                 
                 .btn-login:hover {
@@ -164,7 +199,7 @@ router.get('/login', (req, res) => {
                 }
                 
                 .links {
-                    margin-top: 1.5rem;
+                    margin-top: 0.8rem;
                     text-align: center;
                     font-size: 0.9rem;
                 }
@@ -184,7 +219,7 @@ router.get('/login', (req, res) => {
                 .divider {
                     display: flex;
                     align-items: center;
-                    margin: 1.5rem 0;
+                    margin: 0.8rem 0;
                     color: var(--dark-gray);
                     font-size: 0.8rem;
                 }
@@ -216,14 +251,14 @@ router.get('/login', (req, res) => {
                 
                 .current-time {
                     text-align: center;
-                    margin-bottom: 1rem;
-                    font-size: 0.9rem;
+                    margin-bottom: 0.5rem;
+                    font-size: 0.85rem;
                     color: var(--dark-gray);
                     font-weight: 500;
                 }
                 
                 .footer {
-                    margin-top: 2rem;
+                    margin-top: 0.8rem;
                     text-align: center;
                     font-size: 0.8rem;
                     color: var(--dark-gray);
@@ -244,17 +279,21 @@ router.get('/login', (req, res) => {
         <body>
             <div class="login-container">
                 <div class="logo">
-                <img src="/nokori.png" alt="DXPRO" width="100" height="100">
+                <img src="/nokori-logo.png" alt="Nokori">
                     <div class="subtitle">クラウド業務支援システム</div>
                 </div>
                 
                 <div class="current-time" id="current-time"></div>
                 
-                ${req.query.error ? `
+                ${
+                  req.query.error
+                    ? `
                     <div class="error-message">
                         ${getErrorMessageJP(req.query.error)}
                     </div>
-                ` : ''}
+                `
+                    : ""
+                }
                 
                 <form class="login-form" action="/login" method="POST">
                     <div class="form-group">
@@ -264,7 +303,19 @@ router.get('/login', (req, res) => {
                     
                     <div class="form-group">
                         <label for="password">パスワード</label>
-                        <input type="password" id="password" name="password" class="form-control" placeholder="パスワードを入力" required>
+                        <div class="password-wrapper">
+                            <input type="password" id="password" name="password" class="form-control" placeholder="パスワードを入力" required>
+                            <button type="button" class="toggle-password" id="togglePassword" aria-label="パスワードを表示/非表示">
+                                <svg id="eye-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                                <svg id="eye-off-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                     
                     <button type="submit" class="btn btn-login">
@@ -306,44 +357,62 @@ router.get('/login', (req, res) => {
                 }
                 setInterval(updateClock, 1000);
                 window.onload = updateClock;
+
+                document.getElementById('togglePassword').addEventListener('click', function () {
+                    const input = document.getElementById('password');
+                    const eyeIcon = document.getElementById('eye-icon');
+                    const eyeOffIcon = document.getElementById('eye-off-icon');
+                    if (input.type === 'password') {
+                        input.type = 'text';
+                        eyeIcon.style.display = 'none';
+                        eyeOffIcon.style.display = 'block';
+                    } else {
+                        input.type = 'password';
+                        eyeIcon.style.display = 'block';
+                        eyeOffIcon.style.display = 'none';
+                    }
+                });
             </script>
         </body>
         </html>
     `);
 });
 
-router.post('/login', async (req, res) => {
-    try {
-        const user = await User.findOne({ username: req.body.username });
-        if (!user) {
-            console.log('ユーザーが見つかりません:', req.body.username);
-            return res.redirect('/login?error=user_not_found');
-        }
-        
-        const isPasswordValid = await bcrypt.compare(req.body.password, user.password);
-        if (!isPasswordValid) {
-            console.log('パスワード誤り:', req.body.username);
-            return res.redirect('/login?error=invalid_password');
-        }
-        
-        // セッションにユーザー情報保存
-        req.session.userId = user._id;
-        req.session.isAdmin = user.isAdmin;
-        req.session.username = user.username;
-        // Issue #19: orgRoleをセッションに保存
-        req.session.orgRole = user.role || (user.isAdmin ? 'admin' : 'employee');
-        req.session.isTestUser = (user.role === 'test_user');
-        
-        console.log('ログイン成功:', user.username, '管理者:', user.isAdmin);
-        return res.redirect('/dashboard');
-    } catch (error) {
-        console.error('ログインエラー:', error);
-        res.redirect('/login?error=server_error');
+router.post("/login", async (req, res) => {
+  try {
+    const user = await User.findOne({ username: req.body.username });
+    if (!user) {
+      console.log("ユーザーが見つかりません:", req.body.username);
+      return res.redirect("/login?error=user_not_found");
     }
+
+    const isPasswordValid = await bcrypt.compare(
+      req.body.password,
+      user.password,
+    );
+    if (!isPasswordValid) {
+      console.log("パスワード誤り:", req.body.username);
+      return res.redirect("/login?error=invalid_password");
+    }
+
+    // セッションにユーザー情報保存
+    req.session.userId = user._id;
+    req.session.isAdmin = user.isAdmin;
+    req.session.username = user.username;
+    // Issue #19: orgRoleをセッションに保存
+    req.session.orgRole = user.role || (user.isAdmin ? "admin" : "employee");
+    req.session.isTestUser = user.role === "test_user";
+
+    console.log("ログイン成功:", user.username, "管理者:", user.isAdmin);
+    return res.redirect("/dashboard");
+  } catch (error) {
+    console.error("ログインエラー:", error);
+    res.redirect("/login?error=server_error");
+  }
 });
 
-router.get('/change-password', requireLogin, (req, res) => {
-    res.send(`
+router.get("/change-password", requireLogin, (req, res) => {
+  res.send(`
         <!DOCTYPE html>
         <html lang="ja">
         <head>
@@ -424,17 +493,25 @@ router.get('/change-password', requireLogin, (req, res) => {
             <div class="password-container">
                 <h2 class="password-title">パスワード変更</h2>
                 
-                ${req.query.error ? `
+                ${
+                  req.query.error
+                    ? `
                     <div class="password-message error-message">
                         ${getPasswordErrorMessage(req.query.error)}
                     </div>
-                ` : ''}
+                `
+                    : ""
+                }
                 
-                ${req.query.success ? `
+                ${
+                  req.query.success
+                    ? `
                     <div class="password-message success-message">
                         パスワードが正常に変更されました
                     </div>
-                ` : ''}
+                `
+                    : ""
+                }
                 
                 <form class="password-form" action="/change-password" method="POST">
                     <div class="form-group">
@@ -462,42 +539,44 @@ router.get('/change-password', requireLogin, (req, res) => {
     `);
 });
 
-router.post('/change-password', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
-        
-        // 1. 현재 패스워드 확인
-        const isMatch = await bcrypt.compare(req.body.currentPassword, user.password);
-        if (!isMatch) {
-            return res.redirect('/change-password?error=current_password_wrong');
-        }
-        
-        // 2. 새 패스워드 일치 확인
-        if (req.body.newPassword !== req.body.confirmPassword) {
-            return res.redirect('/change-password?error=new_password_mismatch');
-        }
-        
-        // 3. 새 패스워드 유효성 검사 (최소 8자)
-        if (req.body.newPassword.length < 8) {
-            return res.redirect('/change-password?error=password_too_short');
-        }
-        
-        // 4. 패스워드 업데이트
-        const hashedPassword = await bcrypt.hash(req.body.newPassword, 10);
-        user.password = hashedPassword;
-        await user.save();
-        
-        // 5. 성공 리다이렉트
-        return res.redirect('/change-password?success=true');
-        
-    } catch (error) {
-        console.error('패스워드 변경 오류:', error);
-        return res.redirect('/change-password?error=server_error');
+router.post("/change-password", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
+
+    // 1. 현재 패스워드 확인
+    const isMatch = await bcrypt.compare(
+      req.body.currentPassword,
+      user.password,
+    );
+    if (!isMatch) {
+      return res.redirect("/change-password?error=current_password_wrong");
     }
+
+    // 2. 새 패스워드 일치 확인
+    if (req.body.newPassword !== req.body.confirmPassword) {
+      return res.redirect("/change-password?error=new_password_mismatch");
+    }
+
+    // 3. 새 패스워드 유효성 검사 (최소 8자)
+    if (req.body.newPassword.length < 8) {
+      return res.redirect("/change-password?error=password_too_short");
+    }
+
+    // 4. 패스워드 업데이트
+    const hashedPassword = await bcrypt.hash(req.body.newPassword, 10);
+    user.password = hashedPassword;
+    await user.save();
+
+    // 5. 성공 리다이렉트
+    return res.redirect("/change-password?success=true");
+  } catch (error) {
+    console.error("패스워드 변경 오류:", error);
+    return res.redirect("/change-password?error=server_error");
+  }
 });
 
-router.get('/register', (req, res) => {
-    res.send(`
+router.get("/register", (req, res) => {
+  res.send(`
         <!DOCTYPE html>
         <html>
         <head>
@@ -518,7 +597,7 @@ router.get('/register', (req, res) => {
             <div class="container">
                 <h2>新規登録</h2>
                 <div id="current-time" class="clock"></div>
-                ${req.query.error ? `<p class="error">${getErrorMessageJP(req.query.error)}</p>` : ''}
+                ${req.query.error ? `<p class="error">${getErrorMessageJP(req.query.error)}</p>` : ""}
                 <form action="/register" method="POST">
                     <div class="form-group">
                         <label for="username">ユーザー名:</label>
@@ -538,27 +617,27 @@ router.get('/register', (req, res) => {
 });
 
 // 新規登録処理
-router.post('/register', async (req, res) => {
-    try {
-        const hashedPassword = await bcrypt.hash(req.body.password, 10);
-        const user = new User({
-            username: req.body.username,
-            password: hashedPassword
-        });
-        await user.save();
-        res.redirect('/login');
-    } catch (error) {
-        console.error('新規登録エラー:', error);
-        res.redirect('/register?error=username_taken');
-    }
+router.post("/register", async (req, res) => {
+  try {
+    const hashedPassword = await bcrypt.hash(req.body.password, 10);
+    const user = new User({
+      username: req.body.username,
+      password: hashedPassword,
+    });
+    await user.save();
+    res.redirect("/login");
+  } catch (error) {
+    console.error("新規登録エラー:", error);
+    res.redirect("/register?error=username_taken");
+  }
 });
 
-router.get('/logout', (req, res) => {
-    req.session.destroy(err => {
-        if (err) console.error('セッション削除エラー:', err);
-        res.clearCookie('connect.sid');
-        res.redirect('/login');
-    });
+router.get("/logout", (req, res) => {
+  req.session.destroy((err) => {
+    if (err) console.error("セッション削除エラー:", err);
+    res.clearCookie("connect.sid");
+    res.redirect("/login");
+  });
 });
 
 module.exports = router;
