@@ -457,21 +457,50 @@
     }
 
     // ── 絵文字ピッカー ────────────────────────────────────────
+    function _positionPicker(picker, trigRect) {
+        const PICKER_W = 300;
+        const PICKER_H = 360;
+        // 横位置: ボタンの左に合わせるが右端にはみ出る場合は右揃え
+        let left = trigRect.left;
+        if (left + PICKER_W > window.innerWidth - 8) {
+            left = trigRect.right - PICKER_W;
+        }
+        if (left < 8) left = 8;
+        // 縦位置: ボタンの上に表示、上にはみ出る場合は下に
+        let bottom = window.innerHeight - trigRect.top + 6;
+        if (trigRect.top - PICKER_H < 8) {
+            // 上に収まらない場合はボタンの下に表示
+            picker.style.bottom = 'auto';
+            picker.style.top    = (trigRect.bottom + 6) + 'px';
+        } else {
+            picker.style.top    = 'auto';
+            picker.style.bottom = bottom + 'px';
+        }
+        picker.style.left  = left + 'px';
+        picker.style.right = 'auto';
+    }
+
     function toggleInputEmoji() {
         emojiForMsgId = null;
         const picker = document.getElementById('sc-emoji-picker');
         if (!picker) return;
-        if (picker.style.display === 'none') {
+        if (picker.style.display === 'none' || !picker.style.display) {
             const btn = document.querySelector('.sc-tool-btn[title="絵文字を挿入"]');
-            if (btn) {
-                const r = btn.getBoundingClientRect();
-                picker.style.bottom = (window.innerHeight - r.top + 6) + 'px';
-                picker.style.left   = r.left + 'px';
-            }
+            if (btn) _positionPicker(picker, btn.getBoundingClientRect());
             picker.style.display = 'flex';
         } else {
             picker.style.display = 'none';
         }
+    }
+
+    function switchEmojiTab(catId, btn) {
+        const picker = document.getElementById('sc-emoji-picker');
+        if (!picker) return;
+        picker.querySelectorAll('.sc-ep-tab').forEach(t => t.classList.remove('active'));
+        picker.querySelectorAll('.sc-ep-panel').forEach(p => p.classList.add('sc-ep-hidden'));
+        if (btn) btn.classList.add('active');
+        const panel = picker.querySelector('[data-panel="' + catId + '"]');
+        if (panel) panel.classList.remove('sc-ep-hidden');
     }
 
     function pickEmoji(emoji) {
@@ -499,9 +528,7 @@
             emojiForMsgId = trig.dataset.mid;
             const picker  = document.getElementById('sc-emoji-picker');
             if (!picker) return;
-            const r = trig.getBoundingClientRect();
-            picker.style.bottom = (window.innerHeight - r.top + 8) + 'px';
-            picker.style.left   = r.left + 'px';
+            _positionPicker(picker, trig.getBoundingClientRect());
             picker.style.display = 'flex';
             return;
         }
@@ -1889,6 +1916,7 @@
         deleteMsg,
         toggleReact,
         pickEmoji,
+        switchEmojiTab,
         toggleInputEmoji,
         handleFileSelect,
         handleDrop,

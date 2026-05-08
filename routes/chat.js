@@ -995,7 +995,32 @@ function buildMainHtml(data) {
 </div>`;
     }
     const isRoom = data.mode === 'room';
-    const EMOJIS = ['👍','👎','❤️','😂','😮','🎉','🙏','💪','✅','❓','🔥','👀','😅','🤔','💯'];
+    const EMOJI_CATS = [
+        {
+            id: 'reaction', label: '\u{1F60A} \u30EA\u30A2\u30AF\u30B7\u30E7\u30F3',
+            items: ['\u{1F44D}','\u{1F44E}','\u2764\uFE0F','\u{1F525}','\u{1F602}','\u{1F62E}','\u{1F389}','\u{1F64F}','\u{1F4AA}','\u2705','\u2753','\u{1F440}','\u{1F605}','\u{1F914}','\u{1F4AF}','\u{1F60A}','\u{1F62D}','\u{1F979}','\u{1F929}','\u{1F621}','\u{1F92F}','\u{1F973}','\u{1F634}','\u{1F44F}','\u{1FAF1}','\u{1F91F}','\u{1F497}','\u2B50','\u{1F197}','\u{1F199}','\u{1F192}','\u{1F4AC}','\u{1F4CC}','\u26A1','\u{1F680}']
+        },
+        {
+            id: 'biz', label: '\u{1F4BC} \u696D\u52D9\u7528',
+            items: ['\u2705\u4E86\u89E3\u3067\u3059','\u2705\u627F\u77E5\u3044\u305F\u3057\u307E\u3057\u305F','\u2705\u78BA\u8A8D\u3057\u307E\u3057\u305F','\u{1F50D}\u78BA\u8A8D\u3057\u307E\u3059','\u{1F504}\u78BA\u8A8D\u4E2D','\u2714\uFE0F\u78BA\u8A8D\u6E08','\u2699\uFE0F\u5BFE\u5FDC\u4E2D','\u2705\u5BFE\u5FDC\u3057\u307E\u3057\u305F','\u{1F4DD}\u4FEE\u6B63\u3057\u307E\u3059','\u{1F4DD}\u4FEE\u6B63\u4E2D','\u{1F4DD}\u4FEE\u6B63\u3057\u307E\u3057\u305F','\u23F3\u304A\u5F85\u3061\u304F\u3060\u3055\u3044','\u{1F4E2}\u5171\u6709\u3057\u307E\u3059','\u{1F440}\u78BA\u8A8D\u304A\u9858\u3044\u3057\u307E\u3059','\u{1F4CB}\u5831\u544A\u3057\u307E\u3059','\u{1F64F}\u3088\u308D\u3057\u304F\u304A\u9858\u3044\u3057\u307E\u3059','\u{1F64F}\u304A\u75B2\u308C\u69D8\u3067\u3059','\u{1F647}\u5931\u793C\u3057\u307E\u3059','\u{1F389}\u304A\u75B2\u308C\u69D8\u3067\u3057\u305F','\u{1F4C5}\u5F8C\u3067\u78BA\u8A8D\u3057\u307E\u3059','\u2757\u8981\u78BA\u8A8D','\u274C\u5BFE\u5FDC\u4E0D\u53EF','\u{1F501}\u3084\u308A\u76F4\u3057\u307E\u3059','\u{1F4A1}\u63D0\u6848\u304C\u3042\u308A\u307E\u3059','\u{1F4E3}\u5468\u77E5\u3057\u307E\u3057\u305F','\u{1F197}\u554F\u984C\u3042\u308A\u307E\u305B\u3093','\u26A0\uFE0F\u8981\u6CE8\u610F','\u{1F6D1}\u4E00\u6642\u4E2D\u65AD','\u25B6\uFE0F\u518D\u958B\u3057\u307E\u3059','\u{1F3C1}\u5B8C\u4E86\u3057\u307E\u3057\u305F']
+        },
+    ];
+    function buildEmojiPicker() {
+        const tabs = EMOJI_CATS.map((cat, i) =>
+            `<button class="sc-ep-tab${i===0?' active':''}" data-cat="${cat.id}" onclick="chatApp.switchEmojiTab('${cat.id}',this)">${cat.label}</button>`
+        ).join('');
+        const panels = EMOJI_CATS.map((cat, i) => {
+            const btns = cat.items.map(e => {
+                const safe = e.replace(/'/g, "\\'");
+                return `<button class="sc-emoji-btn" onclick="chatApp.pickEmoji('${safe}')" title="${e}">${e}</button>`;
+            }).join('');
+            return `<div class="sc-ep-panel${i===0?'':' sc-ep-hidden'}" data-panel="${cat.id}">${btns}</div>`;
+        }).join('');
+        return `<div class="sc-emoji-picker" id="sc-emoji-picker" style="display:none">
+<div class="sc-ep-tabs">${tabs}</div>
+<div class="sc-ep-body">${panels}</div>
+</div>`;
+    }
     const headerHtml = isRoom
         ? `<div class="sc-main-hd">
             <div class="sc-hd-left"><div class="sc-room-icon-lg">${escHtml(data.roomIcon || '💬')}</div>
@@ -1028,7 +1053,20 @@ function buildMainHtml(data) {
     </div>
     ${isRoom ? buildMemberPanel(data) : ''}
 </div>
-<div class="sc-emoji-picker" id="sc-emoji-picker" style="display:none">${EMOJIS.map(e => '<button class="sc-emoji-btn" onclick="chatApp.pickEmoji(\'' + e + '\')">' + e + '</button>').join('')}</div>
+<div class="sc-emoji-picker" id="sc-emoji-picker" style="display:none">
+<div class="sc-ep-tabs">
+  ${EMOJI_CATS.map((cat, i) => `<button class="sc-ep-tab${i===0?' active':''}" data-cat="${cat.id}" onclick="chatApp.switchEmojiTab('${cat.id}',this)">${cat.label}</button>`).join('')}
+</div>
+<div class="sc-ep-body">
+  ${EMOJI_CATS.map((cat, i) => {
+    const btns = cat.items.map(e => {
+        const safe = e.replace(/'/g, "\\'");
+        return `<button class="sc-emoji-btn" onclick="chatApp.pickEmoji('${safe}')" title="${e}">${e}</button>`;
+    }).join('');
+    return `<div class="sc-ep-panel${i===0?'':' sc-ep-hidden'}" data-panel="${cat.id}">${btns}</div>`;
+  }).join('')}
+</div>
+</div>
 <div class="sc-reply-bar" id="sc-reply-bar" style="display:none">
     <span class="sc-reply-icon">↩</span><span id="sc-reply-text" class="sc-reply-txt"></span>
     <button onclick="chatApp.cancelReply()" class="sc-reply-close">×</button>
@@ -1440,9 +1478,16 @@ function chatStyles() {
 .sc-reply-close:hover{color:var(--c-text-primary);background:var(--c-border)}
 
 /* ── Emoji picker ── */
-.sc-emoji-picker{position:fixed;z-index:200;background:#fff;border:1px solid var(--c-border);border-radius:var(--radius-lg);padding:10px;box-shadow:var(--shadow-lg);display:flex;flex-wrap:wrap;gap:3px;width:228px}
-.sc-emoji-btn{width:32px;height:32px;border:none;background:transparent;border-radius:var(--radius-sm);font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.12s}
-.sc-emoji-btn:hover{background:var(--c-main-surface);transform:scale(1.15)}
+.sc-emoji-picker{position:fixed;z-index:9999;background:#fff;border:1px solid var(--c-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);display:none;flex-direction:column;width:300px;max-height:360px;overflow:hidden}
+.sc-ep-tabs{display:flex;border-bottom:1px solid var(--c-border);background:#f8fafc;flex-shrink:0}
+.sc-ep-tab{flex:1;padding:7px 6px;font-size:.75rem;font-weight:600;border:none;background:transparent;cursor:pointer;color:var(--c-text-secondary);border-bottom:2px solid transparent;transition:.12s;white-space:nowrap}
+.sc-ep-tab.active{color:var(--c-accent);border-bottom-color:var(--c-accent);background:#fff}
+.sc-ep-tab:hover:not(.active){background:#f1f5f9}
+.sc-ep-body{overflow-y:auto;padding:8px}
+.sc-ep-panel{display:flex;flex-wrap:wrap;gap:3px}
+.sc-ep-panel.sc-ep-hidden{display:none}
+.sc-emoji-btn{border:none;background:transparent;border-radius:var(--radius-sm);font-size:.82rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.12s;padding:4px 5px;min-width:32px;height:32px;white-space:nowrap;line-height:1.2}
+.sc-emoji-btn:hover{background:var(--c-main-surface);transform:scale(1.08)}
 
 /* ── Input area ── */
 .sc-input-area{padding:10px 20px 14px;flex-shrink:0;background:#fff;border-top:1px solid var(--c-border)}
