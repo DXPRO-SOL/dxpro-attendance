@@ -173,276 +173,632 @@ router.get('/cloud', requireLogin, async (req, res) => {
 
     const usersOptions = users.filter(u => u._id.toString() !== userId).map(u => `<option value="${u._id}">${escH(u.username)}</option>`).join('');
 
-    renderPage(req, res, 'クラウドドライブ', 'みんなでファイル共有・同時編集', `
+    // ファイルタイプバッジ情報
+    const FILE_TYPE_MAP = {
+      '.xlsx':{ bg:'#217346',label:'XLS' },'.xls':{ bg:'#217346',label:'XLS' },
+      '.docx':{ bg:'#2b579a',label:'DOC' },'.doc':{ bg:'#2b579a',label:'DOC' },
+      '.pdf': { bg:'#dc2626',label:'PDF' },
+      '.pptx':{ bg:'#d24726',label:'PPT' },'.ppt':{ bg:'#d24726',label:'PPT' },
+      '.txt': { bg:'#64748b',label:'TXT' },'.md': { bg:'#7c3aed',label:'MD'  },
+      '.csv': { bg:'#059669',label:'CSV' },'.json':{ bg:'#d97706',label:'JSON'},
+      '.js':  { bg:'#ca8a04',label:'JS'  },'.ts': { bg:'#3178c6',label:'TS'  },
+      '.py':  { bg:'#3776ab',label:'PY'  },'.html':{ bg:'#ea580c',label:'HTML'},
+      '.css': { bg:'#0284c7',label:'CSS' },'.sql': { bg:'#dc2626',label:'SQL' },
+      '.zip': { bg:'#92400e',label:'ZIP' },'.tar': { bg:'#92400e',label:'TAR' },
+      '.jpg': { bg:'#7c3aed',label:'IMG' },'.jpeg':{ bg:'#7c3aed',label:'IMG' },
+      '.png': { bg:'#7c3aed',label:'IMG' },'.gif': { bg:'#7c3aed',label:'GIF' },
+      '.svg': { bg:'#0891b2',label:'SVG' },'.mp4': { bg:'#ec4899',label:'MP4' },
+    };
+    function ftInfo(fname) {
+      const e = path.extname(fname||'').toLowerCase();
+      return FILE_TYPE_MAP[e] || { bg:'#64748b', label:(e.replace('.','').toUpperCase().substring(0,4)||'FILE') };
+    }
+
+    // 合計サイズ計算
+    const totalSize  = files.reduce((s,f) => s + (f.size||0), 0);
+    const fmtSizeStr = totalSize > 1024*1024*1024 ? (totalSize/1024/1024/1024).toFixed(1)+' GB'
+                      : totalSize > 1024*1024 ? (totalSize/1024/1024).toFixed(1)+' MB'
+                      : totalSize > 1024 ? (totalSize/1024).toFixed(1)+' KB'
+                      : totalSize + ' B';
+
+    // フォルダカード HTML
+    const folderCards = folders.map(f => {
+      const owned = f.ownerId && f.ownerId.toString() === userId;
+      const shareLabel = f.isPublic ? '<span class="drv-badge drv-badge-pub">全員</span>'
+                       : f.sharedWith && f.sharedWith.length ? '<span class="drv-badge drv-badge-share">共有</span>' : '';
+      return `
+      <div class="drv-folder-card" ondblclick="location.href='/cloud?folder=${f._id}'" data-name="${escH(f.name)}" data-type="folder" data-id="${f._id}">
+        <div class="drv-folder-icon-wrap">
+          <svg width="44" height="36" viewBox="0 0 44 36" fill="none"><path d="M2 8C2 5.8 3.8 4 6 4h13l4 4h13c2.2 0 4 1.8 4 4v20c0 2.2-1.8 4-4 4H6c-2.2 0-4-1.8-4-4V8z" fill="${f.color||'#f59e0b'}" opacity=".9"/><path d="M2 12h40v20c0 2.2-1.8 4-4 4H6c-2.2 0-4-1.8-4-4V12z" fill="${f.color||'#f59e0b'}"/></svg>
+        </div>
+        <div class="drv-folder-name">${escH(f.name)}</div>
+        <div class="drv-folder-meta">${shareLabel}</div>
+        <div class="drv-card-actions">
+          <a href="/cloud?folder=${f._id}" class="drv-act-btn" title="開く"><i class="fa-solid fa-folder-open"></i></a>
+          ${owned ? `<button class="drv-act-btn" title="共有" onclick="event.stopPropagation();openShareModal('folder','${f._id}','${escH(f.name)}',${f.isPublic})"><i class="fa-solid fa-user-plus"></i></button>` : ''}
+          ${owned ? `<button class="drv-act-btn drv-act-del" title="削除" onclick="event.stopPropagation();deleteItem('folder','${f._id}','${escH(f.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    // ファイルカード HTML
+    const fileCards = files.map(f => {
+      const fi     = ftInfo(f.originalName||f.name);
+      const ext    = path.extname(f.originalName||f.name||'').toLowerCase();
+      const isImg  = ['.jpg','.jpeg','.png','.gif','.webp','.svg'].includes(ext);
+      const etype  = getEditorType(f.originalName||f.name);
+      const owned  = f.ownerId && f.ownerId.toString() === userId;
+      const editable = etype && (owned || canEdit(f, userId));
+      const sz     = fmtSize(f.size);
+      const modBy  = f.lastEditedBy ? userMap[f.lastEditedBy.toString()]||'?' : '';
+      const shareLabel = f.isPublic ? '<span class="drv-badge drv-badge-pub">全員</span>'
+                       : f.sharedWith && f.sharedWith.length ? '<span class="drv-badge drv-badge-share">共有</span>' : '';
+      const imgThumb = isImg && f.filePath
+        ? `<div class="drv-file-thumb" style="background-image:url('/uploads/cloud/${path.basename(f.filePath)}')"></div>`
+        : `<div class="drv-file-typebadge" style="background:${fi.bg}">${fi.label}</div>`;
+      return `
+      <div class="drv-file-card" data-name="${escH(f.name)}" data-ext="${ext}" data-size="${f.size||0}" data-modified="${f.updatedAt||''}">
+        <div class="drv-file-preview">${imgThumb}</div>
+        <div class="drv-file-body">
+          <div class="drv-file-name" title="${escH(f.name)}">${escH(f.name)}</div>
+          <div class="drv-file-meta">${sz}${modBy ? ' · '+escH(modBy) : ''}${shareLabel ? ' '+shareLabel : ''}</div>
+        </div>
+        <div class="drv-card-actions">
+          ${editable ? `<a href="/cloud/file/${f._id}/edit" class="drv-act-btn drv-act-edit" title="編集"><i class="fa-solid fa-pen"></i></a>` : ''}
+          ${isImg    ? `<a href="/uploads/cloud/${path.basename(f.filePath||'')}" target="_blank" class="drv-act-btn" title="プレビュー"><i class="fa-solid fa-eye"></i></a>` : ''}
+          <a href="/cloud/file/${f._id}/download" class="drv-act-btn" title="ダウンロード"><i class="fa-solid fa-download"></i></a>
+          ${owned ? `<button class="drv-act-btn" title="共有" onclick="event.stopPropagation();openShareModal('file','${f._id}','${escH(f.name)}',${f.isPublic})"><i class="fa-solid fa-user-plus"></i></button>` : ''}
+          ${owned ? `<button class="drv-act-btn drv-act-del" title="削除" onclick="event.stopPropagation();deleteItem('file','${f._id}','${escH(f.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    // パンくず
+    const crumbParts = [
+      `<a href="/cloud" class="drv-crumb-link"><i class="fa-solid fa-house" style="font-size:13px"></i> マイドライブ</a>`,
+      ...breadcrumb.map(b => `<a href="/cloud?folder=${b.id}" class="drv-crumb-link">${escH(b.name)}</a>`),
+    ];
+
+    renderPage(req, res, 'クラウドドライブ', 'ファイル共有・同時編集', `
 <style>
-.cd-wrap{max-width:1100px;margin:0 auto}
-.cd-topbar{display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap}
-.cd-breadcrumb{flex:1;display:flex;align-items:center;gap:4px;font-size:13px;color:#6b7280;flex-wrap:wrap}
-.cd-crumb-link{color:#2563eb;text-decoration:none;font-weight:600}
-.cd-crumb-link:hover{text-decoration:underline}
-.cd-crumb-sep{color:#d1d5db;padding:0 4px}
-.cd-actions{display:flex;gap:8px;flex-wrap:wrap}
-.cd-btn{display:inline-flex;align-items:center;gap:5px;padding:8px 16px;border-radius:9px;font-size:13px;font-weight:700;border:none;cursor:pointer;text-decoration:none;transition:all .15s}
-.cd-btn-primary{background:linear-gradient(90deg,#2563eb,#1d4ed8);color:#fff;box-shadow:0 4px 12px rgba(37,99,235,.25)}
-.cd-btn-primary:hover{opacity:.9}
-.cd-btn-secondary{background:#f1f5f9;color:#374151}
-.cd-btn-secondary:hover{background:#e5e7eb}
-.cd-btn-sm{padding:5px 12px;font-size:12px;border-radius:7px;background:#f1f5f9;color:#374151;border:none;cursor:pointer}
-.cd-btn-sm:hover{background:#e5e7eb}
-.cd-btn-edit{background:#ede9fe!important;color:#7c3aed!important}
-.cd-btn-edit:hover{background:#ddd6fe!important}
-.cd-btn-share{background:#ecfdf5!important;color:#059669!important}
-.cd-btn-share:hover{background:#d1fae5!important}
-.cd-btn-del{background:#fef2f2!important;color:#dc2626!important}
-.cd-btn-del:hover{background:#fee2e2!important}
-.cd-grid{display:flex;flex-direction:column;gap:8px}
-.cd-section-title{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#9ca3af;margin:18px 0 8px}
-.cd-item{display:flex;align-items:center;gap:14px;background:#fff;border:1.5px solid #f1f5f9;border-radius:14px;padding:14px 18px;transition:all .15s;cursor:default}
-.cd-item:hover{border-color:#dbeafe;box-shadow:0 4px 16px rgba(37,99,235,.08);transform:translateY(-1px)}
-.cd-folder{cursor:pointer}
-.cd-item-icon{font-size:28px;width:40px;text-align:center;flex-shrink:0}
-.cd-file-icon{font-size:26px}
-.cd-item-info{flex:1;min-width:0}
-.cd-item-name{font-size:14px;font-weight:700;color:#1f2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cd-item-meta{font-size:12px;color:#9ca3af;margin-top:2px}
-.cd-item-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.cd-empty{text-align:center;padding:48px;color:#9ca3af;font-size:14px}
-.cd-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center}
-.cd-modal-overlay.active{display:flex}
-.cd-modal{background:#fff;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,.2);width:480px;max-width:95vw;padding:28px}
-.cd-modal h3{margin:0 0 20px;font-size:18px;font-weight:800;color:#1f2937}
-.cd-field{margin-bottom:16px}
-.cd-label{display:block;font-size:12px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
-.cd-input,.cd-select{width:100%;padding:10px 14px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;background:#fafafa;box-sizing:border-box;transition:border .15s}
-.cd-input:focus,.cd-select:focus{border-color:#2563eb;outline:none;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
-.cd-modal-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
-.cd-upload-zone{border:2px dashed #d1d5db;border-radius:14px;padding:32px;text-align:center;cursor:pointer;transition:all .2s;color:#9ca3af;font-size:14px}
-.cd-upload-zone:hover,.cd-upload-zone.drag-over{border-color:#2563eb;background:#eff6ff;color:#2563eb}
-.cd-upload-zone input{display:none}
-.cd-progress{margin-top:12px;display:none}
-.cd-progress-bar{height:6px;background:#e5e7eb;border-radius:99px;overflow:hidden}
-.cd-progress-fill{height:100%;background:linear-gradient(90deg,#2563eb,#7c3aed);border-radius:99px;width:0;transition:width .3s}
+/* ─── Base ─── */
+.drv-root{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:#1e293b;min-height:80vh}
+
+/* ─── Toolbar ─── */
+.drv-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+.drv-breadcrumb{display:flex;align-items:center;gap:2px;flex:1;min-width:0;flex-wrap:wrap}
+.drv-crumb-link{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:6px;font-size:13px;font-weight:600;color:#2563eb;text-decoration:none;transition:background .12s}
+.drv-crumb-link:hover{background:#eff6ff}
+.drv-crumb-sep{color:#cbd5e1;font-size:16px;padding:0 2px;user-select:none}
+.drv-toolbar-right{display:flex;align-items:center;gap:8px}
+
+/* ─── New button dropdown ─── */
+.drv-new-wrap{position:relative}
+.drv-new-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 20px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:24px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(37,99,235,.35);transition:all .15s;letter-spacing:.01em;white-space:nowrap;line-height:1}
+.drv-new-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(37,99,235,.4)}
+.drv-new-btn i{font-size:14px}
+.drv-new-menu{display:none;position:absolute;top:calc(100% + 6px);right:0;left:auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,.16);min-width:220px;padding:6px;z-index:2000;animation:drv-fadein .15s ease}
+.drv-new-menu.open{display:block}
+@keyframes drv-fadein{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+.drv-new-item{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:9px;font-size:13px;font-weight:600;color:#1e293b;cursor:pointer;transition:background .1s;white-space:nowrap}
+.drv-new-item:hover{background:#f1f5f9}
+.drv-new-item-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+
+/* ─── View/Sort controls ─── */
+.drv-view-btns{display:flex;background:#f1f5f9;border-radius:8px;padding:2px;gap:1px}
+.drv-view-btn{padding:5px 10px;border:none;background:transparent;border-radius:6px;cursor:pointer;color:#64748b;transition:all .12s;font-size:13px}
+.drv-view-btn.active{background:#fff;color:#2563eb;box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.drv-sort-select{padding:6px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;color:#64748b;background:#fff;cursor:pointer;outline:none}
+
+/* ─── Stats bar ─── */
+.drv-stats{display:flex;align-items:center;gap:16px;padding:10px 16px;background:#f8fafc;border:1px solid #f1f5f9;border-radius:10px;margin-bottom:20px;flex-wrap:wrap}
+.drv-stat{display:flex;align-items:center;gap:6px;font-size:12px;color:#64748b}
+.drv-stat strong{color:#1e293b;font-size:13px}
+.drv-stat-divider{width:1px;height:16px;background:#e2e8f0}
+.drv-search{flex:1;min-width:180px;display:flex;align-items:center;gap:8px;padding:6px 12px;background:#fff;border:1.5px solid #e2e8f0;border-radius:8px;color:#94a3b8;font-size:13px;transition:border .15s}
+.drv-search:focus-within{border-color:#2563eb}
+.drv-search input{border:none;outline:none;flex:1;font-size:13px;color:#1e293b;background:transparent}
+.drv-search input::placeholder{color:#94a3b8}
+
+/* ─── Section heading ─── */
+.drv-section-head{display:flex;align-items:center;gap:8px;margin:24px 0 12px;font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#94a3b8}
+.drv-section-head::after{content:'';flex:1;height:1px;background:#f1f5f9;margin-left:8px}
+
+/* ─── Folder grid ─── */
+.drv-folders-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.drv-folder-card{position:relative;background:#fff;border:1.5px solid #f1f5f9;border-radius:14px;padding:16px;cursor:pointer;transition:all .15s;overflow:hidden}
+.drv-folder-card:hover{border-color:#bfdbfe;box-shadow:0 4px 18px rgba(37,99,235,.1);transform:translateY(-2px)}
+.drv-folder-icon-wrap{margin-bottom:10px}
+.drv-folder-name{font-size:13px;font-weight:700;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px}
+.drv-folder-meta{font-size:11px;color:#94a3b8;min-height:16px}
+.drv-card-actions{display:none;position:absolute;top:8px;right:8px;background:rgba(255,255,255,.95);border-radius:8px;border:1px solid #e2e8f0;box-shadow:0 2px 8px rgba(0,0,0,.08);padding:2px;gap:1px;flex-direction:column}
+.drv-folder-card:hover .drv-card-actions,.drv-file-card:hover .drv-card-actions{display:flex}
+.drv-act-btn{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:none;background:transparent;border-radius:6px;cursor:pointer;color:#64748b;font-size:12px;text-decoration:none;transition:all .1s}
+.drv-act-btn:hover{background:#f1f5f9;color:#2563eb}
+.drv-act-edit:hover{color:#7c3aed!important;background:#ede9fe!important}
+.drv-act-del:hover{color:#dc2626!important;background:#fef2f2!important}
+
+/* ─── File grid ─── */
+.drv-files-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.drv-file-card{position:relative;background:#fff;border:1.5px solid #f1f5f9;border-radius:14px;overflow:hidden;transition:all .15s}
+.drv-file-card:hover{border-color:#bfdbfe;box-shadow:0 4px 18px rgba(37,99,235,.1);transform:translateY(-2px)}
+.drv-file-preview{height:90px;background:#f8fafc;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.drv-file-thumb{width:100%;height:100%;background-size:cover;background-position:center}
+.drv-file-typebadge{width:54px;height:54px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;letter-spacing:.04em;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.drv-file-body{padding:10px 12px 12px}
+.drv-file-name{font-size:12px;font-weight:700;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+.drv-file-meta{font-size:11px;color:#94a3b8;display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+
+/* ─── List view ─── */
+.drv-list-table{width:100%;border-collapse:collapse}
+.drv-list-table th{padding:9px 12px;text-align:left;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;border-bottom:2px solid #f1f5f9;white-space:nowrap}
+.drv-list-table td{padding:10px 12px;font-size:13px;color:#1e293b;border-bottom:1px solid #f8fafc;vertical-align:middle}
+.drv-list-table tr:hover td{background:#f8fafc}
+.drv-list-icon{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;font-size:11px;font-weight:800;color:#fff;margin-right:8px;vertical-align:middle;flex-shrink:0}
+.drv-list-name{display:inline-flex;align-items:center;font-weight:600;color:#1e293b;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.drv-list-actions{display:flex;gap:4px;align-items:center;justify-content:flex-end;opacity:0;transition:opacity .12s}
+tr:hover .drv-list-actions{opacity:1}
+
+/* ─── Badges ─── */
+.drv-badge{display:inline-flex;align-items:center;padding:1px 7px;border-radius:99px;font-size:10px;font-weight:700;letter-spacing:.04em}
+.drv-badge-pub{background:#eff6ff;color:#2563eb}
+.drv-badge-share{background:#ecfdf5;color:#059669}
+
+/* ─── Empty state ─── */
+.drv-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 20px;color:#94a3b8;text-align:center}
+.drv-empty-icon{width:80px;height:80px;background:linear-gradient(135deg,#eff6ff,#dbeafe);border-radius:24px;display:flex;align-items:center;justify-content:center;font-size:36px;margin-bottom:20px}
+.drv-empty h3{font-size:16px;font-weight:700;color:#64748b;margin:0 0 8px}
+.drv-empty p{font-size:13px;margin:0 0 20px;max-width:280px;line-height:1.6}
+
+/* ─── Modals ─── */
+.drv-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:9999;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
+.drv-overlay.open{display:flex}
+.drv-modal{background:#fff;border-radius:20px;box-shadow:0 24px 60px rgba(0,0,0,.18);width:480px;max-width:95vw;padding:28px;animation:drv-fadein .2s ease}
+.drv-modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
+.drv-modal-head h3{margin:0;font-size:17px;font-weight:800;color:#1e293b}
+.drv-modal-close{border:none;background:none;cursor:pointer;color:#94a3b8;font-size:20px;line-height:1;padding:0 4px}
+.drv-modal-close:hover{color:#1e293b}
+.drv-field{margin-bottom:16px}
+.drv-label{display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px}
+.drv-input,.drv-select{width:100%;padding:10px 14px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;background:#f8fafc;box-sizing:border-box;transition:all .15s;outline:none;color:#1e293b;font-family:inherit}
+.drv-input:focus,.drv-select:focus{border-color:#2563eb;background:#fff;box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+.drv-modal-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:22px;padding-top:16px;border-top:1px solid #f1f5f9}
+.drv-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 20px;border-radius:10px;font-size:13px;font-weight:700;border:none;cursor:pointer;transition:all .15s;font-family:inherit}
+.drv-btn-primary{background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;box-shadow:0 4px 12px rgba(37,99,235,.3)}
+.drv-btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(37,99,235,.35)}
+.drv-btn-ghost{background:#f1f5f9;color:#475569}
+.drv-btn-ghost:hover{background:#e2e8f0}
+
+/* ─── Upload zone ─── */
+.drv-upload-zone{border:2px dashed #cbd5e1;border-radius:14px;padding:36px 20px;text-align:center;cursor:pointer;transition:all .2s;color:#94a3b8}
+.drv-upload-zone:hover,.drv-upload-zone.drag-over{border-color:#2563eb;background:#eff6ff;color:#2563eb}
+.drv-upload-zone input{display:none}
+.drv-upload-zone i{font-size:36px;margin-bottom:12px;display:block}
+.drv-progress{margin-top:12px;display:none}
+.drv-progress-bar{height:5px;background:#e2e8f0;border-radius:99px;overflow:hidden}
+.drv-progress-fill{height:100%;background:linear-gradient(90deg,#2563eb,#7c3aed);width:0;transition:width .3s}
+.drv-file-list{margin-top:10px;font-size:12px;color:#64748b;max-height:100px;overflow-y:auto}
+
+/* ─── Share user row ─── */
+.drv-share-row{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f8fafc;border-radius:8px;margin-bottom:4px}
+
+/* ─── Drag-over global ─── */
+body.drv-dragging .drv-drop-hint{display:flex!important}
+.drv-drop-hint{display:none;position:fixed;inset:0;background:rgba(37,99,235,.12);border:4px dashed #2563eb;z-index:9990;align-items:center;justify-content:center;pointer-events:none}
+.drv-drop-hint-inner{background:#fff;border-radius:20px;padding:32px 48px;text-align:center;box-shadow:0 12px 40px rgba(37,99,235,.2)}
+.drv-drop-hint-inner i{font-size:48px;color:#2563eb;display:block;margin-bottom:12px}
+.drv-drop-hint-inner p{font-size:16px;font-weight:700;color:#1e293b;margin:0}
 </style>
 
-<div class="cd-wrap">
-  <!-- トップバー -->
-  <div class="cd-topbar">
-    <div class="cd-breadcrumb">${crumbHtml}</div>
-    <div class="cd-actions">
-      <button class="cd-btn cd-btn-secondary" onclick="openFolderModal()">📁 フォルダ作成</button>
-      <button class="cd-btn cd-btn-primary" onclick="openUploadModal()">⬆ ファイルアップロード</button>
+<!-- ドラッグ&ドロップ ヒントオーバーレイ -->
+<div class="drv-drop-hint" id="drop-hint">
+  <div class="drv-drop-hint-inner">
+    <i class="fa-solid fa-cloud-arrow-up"></i>
+    <p>ファイルをドロップしてアップロード</p>
+  </div>
+</div>
+
+<div class="drv-root">
+  <!-- ─── ツールバー ─── -->
+  <div class="drv-toolbar">
+    <!-- パンくず -->
+    <div class="drv-breadcrumb">
+      ${crumbParts.join('<span class="drv-crumb-sep">/</span>')}
+    </div>
+    <div class="drv-toolbar-right">
+      <!-- 検索 -->
+      <div class="drv-search">
+        <i class="fa-solid fa-magnifying-glass" style="font-size:12px"></i>
+        <input type="text" id="drv-search-input" placeholder="このフォルダを検索..." oninput="filterItems(this.value)">
+      </div>
+      <!-- ビュー切替 -->
+      <div class="drv-view-btns">
+        <button class="drv-view-btn active" id="btn-grid" onclick="setView('grid')" title="グリッド表示"><i class="fa-solid fa-grip"></i></button>
+        <button class="drv-view-btn" id="btn-list" onclick="setView('list')" title="リスト表示"><i class="fa-solid fa-list"></i></button>
+      </div>
+      <!-- ソート -->
+      <select class="drv-sort-select" onchange="sortItems(this.value)" id="sort-select">
+        <option value="name">名前順</option>
+        <option value="size">サイズ順</option>
+        <option value="modified">更新日順</option>
+      </select>
+      <!-- New ボタン -->
+      <div class="drv-new-wrap">
+        <button class="drv-new-btn" onclick="toggleNewMenu(event)">
+          <i class="fa-solid fa-plus"></i> 新規
+        </button>
+        <div class="drv-new-menu" id="new-menu">
+          <div class="drv-new-item" onclick="closeNewMenu();openFolderModal()">
+            <div class="drv-new-item-icon" style="background:#fffbeb"><i class="fa-solid fa-folder" style="color:#f59e0b"></i></div>
+            <div><div style="font-size:13px;font-weight:700">新規フォルダ</div><div style="font-size:11px;color:#94a3b8">空のフォルダを作成</div></div>
+          </div>
+          <div class="drv-new-item" onclick="closeNewMenu();openUploadModal()">
+            <div class="drv-new-item-icon" style="background:#eff6ff"><i class="fa-solid fa-file-arrow-up" style="color:#2563eb"></i></div>
+            <div><div style="font-size:13px;font-weight:700">ファイルアップロード</div><div style="font-size:11px;color:#94a3b8">複数ファイル対応・最大100MB</div></div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- ファイル・フォルダ一覧 -->
-  <div class="cd-grid">
-    ${folders.length ? `<div class="cd-section-title">フォルダ</div>${folderRows}` : ''}
-    ${files.length   ? `<div class="cd-section-title">ファイル</div>${fileRows}` : ''}
-    ${!folders.length && !files.length ? `<div class="cd-empty">📂 このフォルダは空です<br><small>ファイルをアップロードするか、フォルダを作成してください</small></div>` : ''}
+  <!-- ─── 統計バー ─── -->
+  <div class="drv-stats">
+    <div class="drv-stat"><i class="fa-solid fa-folder" style="color:#f59e0b"></i><strong>${folders.length}</strong> フォルダ</div>
+    <div class="drv-stat-divider"></div>
+    <div class="drv-stat"><i class="fa-solid fa-file" style="color:#2563eb"></i><strong>${files.length}</strong> ファイル</div>
+    <div class="drv-stat-divider"></div>
+    <div class="drv-stat"><i class="fa-solid fa-database" style="color:#7c3aed"></i><strong>${fmtSizeStr}</strong> 使用中</div>
+    ${folderId ? '' : '<div style="margin-left:auto"><span style="font-size:11px;color:#94a3b8"><i class="fa-solid fa-info-circle"></i> ダブルクリックでフォルダを開く・右上アイコンで操作</span></div>'}
+  </div>
+
+  <!-- ─── コンテンツエリア ─── -->
+  <div id="drv-content">
+    ${folders.length === 0 && files.length === 0 ? `
+    <div class="drv-empty">
+      <div class="drv-empty-icon">☁</div>
+      <h3>このフォルダは空です</h3>
+      <p>ファイルをアップロードするか、新規フォルダを作成してください。<br>ドラッグ＆ドロップにも対応しています。</p>
+      <button class="drv-btn drv-btn-primary" onclick="openUploadModal()"><i class="fa-solid fa-cloud-arrow-up"></i> ファイルをアップロード</button>
+    </div>` : `
+
+    ${folders.length ? `
+    <div class="drv-section-head"><i class="fa-solid fa-folder" style="color:#f59e0b"></i> フォルダ</div>
+    <div class="drv-folders-grid" id="folders-grid">${folderCards}</div>
+    ` : ''}
+
+    ${files.length ? `
+    <div class="drv-section-head"><i class="fa-solid fa-file" style="color:#2563eb"></i> ファイル</div>
+    <div id="files-grid-wrap">
+      <!-- グリッドビュー -->
+      <div class="drv-files-grid" id="files-grid">${fileCards}</div>
+      <!-- リストビュー（初期非表示） -->
+      <div id="files-list" style="display:none">
+        <table class="drv-list-table">
+          <thead><tr>
+            <th>名前</th>
+            <th>種類</th>
+            <th>サイズ</th>
+            <th>更新者</th>
+            <th></th>
+          </tr></thead>
+          <tbody id="files-list-body">
+            ${files.map(f => {
+              const fi2 = ftInfo(f.originalName||f.name);
+              const ext2 = path.extname(f.originalName||f.name||'').toLowerCase();
+              const etype2 = getEditorType(f.originalName||f.name);
+              const owned2 = f.ownerId && f.ownerId.toString() === userId;
+              const editable2 = etype2 && (owned2 || canEdit(f, userId));
+              const isImg2 = ['.jpg','.jpeg','.png','.gif','.webp','.svg'].includes(ext2);
+              const modBy2 = f.lastEditedBy ? userMap[f.lastEditedBy.toString()]||'?' : '-';
+              return `<tr data-name="${escH(f.name)}" data-size="${f.size||0}" data-modified="${f.updatedAt||''}">
+                <td><span class="drv-list-icon" style="background:${fi2.bg}">${fi2.label}</span><span class="drv-list-name" title="${escH(f.name)}">${escH(f.name)}</span></td>
+                <td style="color:#64748b;font-size:12px">${fi2.label}</td>
+                <td style="color:#64748b;font-size:12px;white-space:nowrap">${fmtSize(f.size)}</td>
+                <td style="color:#64748b;font-size:12px">${escH(modBy2)}</td>
+                <td><div class="drv-list-actions">
+                  ${editable2 ? `<a href="/cloud/file/${f._id}/edit" class="drv-act-btn drv-act-edit" title="編集"><i class="fa-solid fa-pen"></i></a>` : ''}
+                  ${isImg2 ? `<a href="/uploads/cloud/${path.basename(f.filePath||'')}" target="_blank" class="drv-act-btn" title="プレビュー"><i class="fa-solid fa-eye"></i></a>` : ''}
+                  <a href="/cloud/file/${f._id}/download" class="drv-act-btn" title="ダウンロード"><i class="fa-solid fa-download"></i></a>
+                  ${owned2 ? `<button class="drv-act-btn" onclick="openShareModal('file','${f._id}','${escH(f.name)}',${f.isPublic})" title="共有"><i class="fa-solid fa-user-plus"></i></button>` : ''}
+                  ${owned2 ? `<button class="drv-act-btn drv-act-del" onclick="deleteItem('file','${f._id}','${escH(f.name)}')" title="削除"><i class="fa-solid fa-trash"></i></button>` : ''}
+                </div></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    ` : ''}
+    `}
   </div>
 </div>
 
-<!-- フォルダ作成モーダル -->
-<div class="cd-modal-overlay" id="folder-modal">
-  <div class="cd-modal">
-    <h3>📁 新規フォルダ作成</h3>
+<!-- ─── フォルダ作成モーダル ─── -->
+<div class="drv-overlay" id="folder-modal">
+  <div class="drv-modal">
+    <div class="drv-modal-head">
+      <h3><i class="fa-solid fa-folder-plus" style="color:#f59e0b;margin-right:8px"></i>新規フォルダ</h3>
+      <button class="drv-modal-close" onclick="closeModal('folder-modal')">×</button>
+    </div>
     <form method="post" action="/cloud/folder">
       <input type="hidden" name="parentId" value="${folderId||''}">
-      <div class="cd-field">
-        <label class="cd-label">フォルダ名</label>
-        <input type="text" name="name" class="cd-input" required placeholder="フォルダ名を入力" autofocus>
+      <div class="drv-field">
+        <label class="drv-label">フォルダ名</label>
+        <input type="text" name="name" class="drv-input" required placeholder="例: プロジェクト資料" autofocus>
       </div>
-      <div class="cd-field">
-        <label class="cd-label">公開設定</label>
-        <select name="isPublic" class="cd-select">
+      <div class="drv-field">
+        <label class="drv-label">公開設定</label>
+        <select name="isPublic" class="drv-select">
           <option value="false">🔒 自分のみ</option>
           <option value="true">🌐 全社員に公開</option>
         </select>
       </div>
-      <div class="cd-modal-foot">
-        <button type="button" class="cd-btn cd-btn-secondary" onclick="closeModal('folder-modal')">キャンセル</button>
-        <button type="submit" class="cd-btn cd-btn-primary">作成</button>
+      <div class="drv-modal-foot">
+        <button type="button" class="drv-btn drv-btn-ghost" onclick="closeModal('folder-modal')">キャンセル</button>
+        <button type="submit" class="drv-btn drv-btn-primary"><i class="fa-solid fa-folder-plus"></i> 作成</button>
       </div>
     </form>
   </div>
 </div>
 
-<!-- ファイルアップロードモーダル -->
-<div class="cd-modal-overlay" id="upload-modal">
-  <div class="cd-modal">
-    <h3>⬆ ファイルアップロード</h3>
-    <form method="post" action="/cloud/upload" enctype="multipart/form-data" id="upload-form">
+<!-- ─── ファイルアップロードモーダル ─── -->
+<div class="drv-overlay" id="upload-modal">
+  <div class="drv-modal">
+    <div class="drv-modal-head">
+      <h3><i class="fa-solid fa-cloud-arrow-up" style="color:#2563eb;margin-right:8px"></i>ファイルアップロード</h3>
+      <button class="drv-modal-close" onclick="closeModal('upload-modal')">×</button>
+    </div>
+    <form id="upload-form">
       <input type="hidden" name="folderId" value="${folderId||''}">
-      <div class="cd-upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-        <i class="fa-solid fa-cloud-arrow-up" style="font-size:32px;margin-bottom:10px;display:block"></i>
-        クリックまたはドラッグ＆ドロップでファイルを選択<br>
-        <small>最大 100MB / 複数ファイル対応</small>
+      <div class="drv-upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <i class="fa-solid fa-cloud-arrow-up"></i>
+        <div style="font-size:14px;font-weight:700;margin-bottom:4px">クリックまたはドラッグ&ドロップ</div>
+        <div style="font-size:12px">複数ファイル対応 · 最大100MB/ファイル</div>
         <input type="file" id="file-input" name="files" multiple onchange="handleFileSelect(this)">
       </div>
-      <div id="file-list" style="margin-top:12px;font-size:13px;color:#6b7280"></div>
-      <div class="cd-field" style="margin-top:16px">
-        <label class="cd-label">公開設定</label>
-        <select name="isPublic" class="cd-select">
+      <div class="drv-file-list" id="file-list"></div>
+      <div class="drv-field" style="margin-top:14px">
+        <label class="drv-label">公開設定</label>
+        <select name="isPublic" class="drv-select">
           <option value="false">🔒 自分のみ</option>
           <option value="true">🌐 全社員に公開</option>
         </select>
       </div>
-      <div class="cd-progress" id="upload-progress">
-        <div class="cd-progress-bar"><div class="cd-progress-fill" id="progress-fill"></div></div>
-        <div style="text-align:center;font-size:12px;color:#6b7280;margin-top:6px" id="progress-text">アップロード中...</div>
+      <div class="drv-progress" id="upload-progress">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;margin-bottom:4px"><span>アップロード中...</span><span id="progress-text">0%</span></div>
+        <div class="drv-progress-bar"><div class="drv-progress-fill" id="progress-fill"></div></div>
       </div>
-      <div class="cd-modal-foot">
-        <button type="button" class="cd-btn cd-btn-secondary" onclick="closeModal('upload-modal')">キャンセル</button>
-        <button type="submit" class="cd-btn cd-btn-primary" id="upload-btn">アップロード</button>
+      <div class="drv-modal-foot">
+        <button type="button" class="drv-btn drv-btn-ghost" onclick="closeModal('upload-modal')">キャンセル</button>
+        <button type="submit" class="drv-btn drv-btn-primary" id="upload-btn"><i class="fa-solid fa-arrow-up-from-bracket"></i> アップロード</button>
       </div>
     </form>
   </div>
 </div>
 
-<!-- 共有設定モーダル -->
-<div class="cd-modal-overlay" id="share-modal">
-  <div class="cd-modal">
-    <h3>🔗 共有設定</h3>
-    <div id="share-modal-name" style="font-size:13px;color:#6b7280;margin-bottom:16px"></div>
+<!-- ─── 共有設定モーダル ─── -->
+<div class="drv-overlay" id="share-modal">
+  <div class="drv-modal">
+    <div class="drv-modal-head">
+      <h3><i class="fa-solid fa-share-nodes" style="color:#2563eb;margin-right:8px"></i>共有設定</h3>
+      <button class="drv-modal-close" onclick="closeModal('share-modal')">×</button>
+    </div>
+    <div id="share-modal-name" style="font-size:12px;color:#64748b;margin:-10px 0 16px;padding:8px 12px;background:#f8fafc;border-radius:8px"></div>
     <form id="share-form">
       <input type="hidden" id="share-type">
       <input type="hidden" id="share-id">
-      <div class="cd-field">
-        <label class="cd-label">全社員に公開</label>
-        <select id="share-public" class="cd-select">
+      <div class="drv-field">
+        <label class="drv-label">全体公開</label>
+        <select id="share-public" class="drv-select">
           <option value="false">🔒 非公開（指定ユーザーのみ）</option>
-          <option value="true">🌐 全社員に公開</option>
+          <option value="true">🌐 全社員に公開（閲覧）</option>
         </select>
       </div>
-      <div class="cd-field" id="share-users-field">
-        <label class="cd-label">特定のユーザーを追加</label>
-        <select id="share-user-select" class="cd-select">
-          <option value="">ユーザーを選択...</option>
-          ${usersOptions}
-        </select>
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <select id="share-permission" class="cd-select" style="flex:1">
+      <div class="drv-field">
+        <label class="drv-label">ユーザーを追加</label>
+        <div style="display:flex;gap:8px">
+          <select id="share-user-select" class="drv-select" style="flex:2">
+            <option value="">ユーザーを選択...</option>
+            ${usersOptions}
+          </select>
+          <select id="share-permission" class="drv-select" style="flex:1">
             <option value="view">閲覧のみ</option>
             <option value="edit">編集可</option>
           </select>
-          <button type="button" class="cd-btn cd-btn-primary" onclick="addShareUser()">追加</button>
+          <button type="button" class="drv-btn drv-btn-primary" onclick="addShareUser()" style="white-space:nowrap;padding:9px 14px">追加</button>
         </div>
-        <div id="share-user-list" style="margin-top:10px;display:flex;flex-direction:column;gap:6px"></div>
+        <div id="share-user-list" style="margin-top:10px;display:flex;flex-direction:column;gap:5px"></div>
       </div>
-      <div class="cd-modal-foot">
-        <button type="button" class="cd-btn cd-btn-secondary" onclick="closeModal('share-modal')">キャンセル</button>
-        <button type="button" class="cd-btn cd-btn-primary" onclick="saveShare()">保存</button>
+      <div class="drv-modal-foot">
+        <button type="button" class="drv-btn drv-btn-ghost" onclick="closeModal('share-modal')">キャンセル</button>
+        <button type="button" class="drv-btn drv-btn-primary" onclick="saveShare()"><i class="fa-solid fa-floppy-disk"></i> 保存</button>
       </div>
     </form>
   </div>
 </div>
 
 <script>
-function escH(s){return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):''}
-function openFolderModal(){ document.getElementById('folder-modal').classList.add('active'); }
-function openUploadModal(){ document.getElementById('upload-modal').classList.add('active'); }
-function closeModal(id){ document.getElementById(id).classList.remove('active'); }
+function escH(s){return s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):''}
 
-// モーダル外クリックで閉じる
-document.querySelectorAll('.cd-modal-overlay').forEach(el => {
-  el.addEventListener('click', e => { if(e.target === el) el.classList.remove('active'); });
+/* ─── New メニュー ─── */
+function toggleNewMenu(e){ e.stopPropagation(); document.getElementById('new-menu').classList.toggle('open'); }
+function closeNewMenu(){ document.getElementById('new-menu').classList.remove('open'); }
+document.addEventListener('click', closeNewMenu);
+
+/* ─── モーダル ─── */
+function openFolderModal(){ openModal('folder-modal'); }
+function openUploadModal(){ openModal('upload-modal'); }
+function openModal(id){ document.getElementById(id).classList.add('open'); }
+function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.drv-overlay').forEach(el => {
+  el.addEventListener('click', e => { if(e.target === el) el.classList.remove('open'); });
 });
 
-// ファイル選択表示
-function handleFileSelect(input) {
+/* ─── ビュー切替 ─── */
+let currentView = localStorage.getItem('drv-view') || 'grid';
+setView(currentView, false);
+function setView(v, save=true){
+  currentView = v;
+  if(save) localStorage.setItem('drv-view', v);
+  const grid = document.getElementById('files-grid');
+  const list = document.getElementById('files-list');
+  document.getElementById('btn-grid').classList.toggle('active', v==='grid');
+  document.getElementById('btn-list').classList.toggle('active', v==='list');
+  if(grid) grid.style.display = v==='grid' ? '' : 'none';
+  if(list) list.style.display = v==='list' ? '' : 'none';
+}
+
+/* ─── ソート ─── */
+function sortItems(by){
+  sortGrid(by);
+  sortList(by);
+}
+function sortGrid(by){
+  const grid = document.getElementById('files-grid');
+  if(!grid) return;
+  const cards = Array.from(grid.children);
+  cards.sort((a,b) => {
+    if(by==='name') return (a.dataset.name||'').localeCompare(b.dataset.name||'','ja');
+    if(by==='size') return +(b.dataset.size||0) - +(a.dataset.size||0);
+    if(by==='modified') return (b.dataset.modified||'') > (a.dataset.modified||'') ? 1 : -1;
+    return 0;
+  });
+  cards.forEach(c => grid.appendChild(c));
+}
+function sortList(by){
+  const tbody = document.getElementById('files-list-body');
+  if(!tbody) return;
+  const rows = Array.from(tbody.children);
+  rows.sort((a,b) => {
+    if(by==='name') return (a.dataset.name||'').localeCompare(b.dataset.name||'','ja');
+    if(by==='size') return +(b.dataset.size||0) - +(a.dataset.size||0);
+    if(by==='modified') return (b.dataset.modified||'') > (a.dataset.modified||'') ? 1 : -1;
+    return 0;
+  });
+  rows.forEach(r => tbody.appendChild(r));
+}
+
+/* ─── 検索フィルタ ─── */
+function filterItems(q){
+  const lq = q.toLowerCase();
+  document.querySelectorAll('.drv-file-card').forEach(el => {
+    el.style.display = (el.dataset.name||'').toLowerCase().includes(lq) ? '' : 'none';
+  });
+  document.querySelectorAll('.drv-folder-card').forEach(el => {
+    el.style.display = (el.dataset.name||'').toLowerCase().includes(lq) ? '' : 'none';
+  });
+  document.querySelectorAll('#files-list-body tr').forEach(el => {
+    el.style.display = (el.dataset.name||'').toLowerCase().includes(lq) ? '' : 'none';
+  });
+}
+
+/* ─── ファイル選択表示 ─── */
+function handleFileSelect(input){
   const list = document.getElementById('file-list');
   list.innerHTML = Array.from(input.files).map(f =>
-    '<div>📎 ' + escH(f.name) + ' <span style="color:#9ca3af">(' + (f.size/1024).toFixed(1) + ' KB)</span></div>'
+    '<div style="padding:3px 0">📎 ' + escH(f.name) + ' <span style="color:#94a3b8">(' + (f.size/1024).toFixed(1) + ' KB)</span></div>'
   ).join('');
 }
 
-// ドラッグ&ドロップ
+/* ─── ドラッグ&ドロップ（アップロードゾーン内） ─── */
 const dz = document.getElementById('drop-zone');
-dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
-dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
-dz.addEventListener('drop', e => {
+dz.addEventListener('dragover', e=>{ e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', ()=>dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e=>{
   e.preventDefault(); dz.classList.remove('drag-over');
   const fi = document.getElementById('file-input');
-  fi.files = e.dataTransfer.files;
-  handleFileSelect(fi);
+  const dt = e.dataTransfer;
+  if(dt.files.length){ fi.files = dt.files; handleFileSelect(fi); }
 });
 
-// アップロードフォームのXHR送信（プログレス表示）
-document.getElementById('upload-form').addEventListener('submit', function(e) {
+/* ─── グローバル ドラッグ&ドロップ ─── */
+let dragCnt = 0;
+document.addEventListener('dragenter', e=>{ if(e.dataTransfer.types.includes('Files')){ dragCnt++; document.body.classList.add('drv-dragging'); }});
+document.addEventListener('dragleave', ()=>{ dragCnt--; if(dragCnt<=0){ dragCnt=0; document.body.classList.remove('drv-dragging'); }});
+document.addEventListener('dragover', e=>e.preventDefault());
+document.addEventListener('drop', e=>{
+  e.preventDefault(); dragCnt=0; document.body.classList.remove('drv-dragging');
+  if(e.target.closest('#drop-zone')) return; // already handled
+  const files = e.dataTransfer.files;
+  if(!files.length) return;
+  document.getElementById('file-input').files = files;
+  handleFileSelect(document.getElementById('file-input'));
+  openUploadModal();
+});
+
+/* ─── アップロード送信 ─── */
+document.getElementById('upload-form').addEventListener('submit', function(e){
   e.preventDefault();
   const fi = document.getElementById('file-input');
-  if (!fi.files.length) { alert('ファイルを選択してください'); return; }
+  if(!fi.files.length){ alert('ファイルを選択してください'); return; }
   const fd = new FormData(this);
   const xhr = new XMLHttpRequest();
-  document.getElementById('upload-progress').style.display = 'block';
-  document.getElementById('upload-btn').disabled = true;
-  xhr.upload.onprogress = ev => {
+  document.getElementById('upload-progress').style.display='block';
+  document.getElementById('upload-btn').disabled=true;
+  xhr.upload.onprogress = ev=>{
     if(ev.lengthComputable){
-      const pct = Math.round(ev.loaded/ev.total*100);
-      document.getElementById('progress-fill').style.width = pct + '%';
-      document.getElementById('progress-text').textContent = pct + '% アップロード中...';
+      const p = Math.round(ev.loaded/ev.total*100);
+      document.getElementById('progress-fill').style.width = p+'%';
+      document.getElementById('progress-text').textContent = p+'%';
     }
   };
-  xhr.onload = () => {
-    if(xhr.status >= 200 && xhr.status < 300){ location.reload(); }
-    else { alert('アップロードに失敗しました'); document.getElementById('upload-btn').disabled = false; }
-  };
-  xhr.onerror = () => { alert('通信エラーが発生しました'); document.getElementById('upload-btn').disabled = false; };
-  xhr.open('POST', '/cloud/upload');
+  xhr.onload=()=>{ if(xhr.status<300) location.reload(); else{ alert('アップロードに失敗しました'); document.getElementById('upload-btn').disabled=false; }};
+  xhr.onerror=()=>{ alert('通信エラーが発生しました'); document.getElementById('upload-btn').disabled=false; };
+  xhr.open('POST','/cloud/upload');
   xhr.send(fd);
 });
 
-// 削除
-function deleteItem(type, id, name) {
-  if (!confirm(name + ' を削除しますか？')) return;
-  fetch('/cloud/' + type + '/' + id, { method: 'DELETE' })
-    .then(r => r.json()).then(d => { if(d.ok) location.reload(); else alert('削除に失敗しました'); });
+/* ─── 削除 ─── */
+function deleteItem(type,id,name){
+  if(!confirm('"' + name + '" を削除しますか？\\nフォルダの場合は中のファイルもすべて削除されます。')) return;
+  fetch('/cloud/'+type+'/'+id,{method:'DELETE'}).then(r=>r.json()).then(d=>{
+    if(d.ok) location.reload(); else alert('削除に失敗しました');
+  });
 }
 
-// 共有モーダル
-let shareUsers = [];
-function openShareModal(type, id, name, isPublic) {
-  shareUsers = [];
-  document.getElementById('share-type').value = type;
-  document.getElementById('share-id').value = id;
-  document.getElementById('share-modal-name').textContent = '対象: ' + name;
-  document.getElementById('share-public').value = isPublic ? 'true' : 'false';
-  document.getElementById('share-user-list').innerHTML = '';
-  // 既存の共有ユーザーを取得
-  fetch('/cloud/share-info/' + type + '/' + id).then(r=>r.json()).then(d=>{
-    if(d.sharedWith){ shareUsers = d.sharedWith; renderShareList(); }
+/* ─── 共有モーダル ─── */
+let shareUsers=[];
+function openShareModal(type,id,name,isPublic){
+  shareUsers=[];
+  document.getElementById('share-type').value=type;
+  document.getElementById('share-id').value=id;
+  document.getElementById('share-modal-name').innerHTML='<i class="fa-solid fa-file" style="margin-right:6px"></i>' + escH(name);
+  document.getElementById('share-public').value=isPublic?'true':'false';
+  document.getElementById('share-user-list').innerHTML='';
+  fetch('/cloud/share-info/'+type+'/'+id).then(r=>r.json()).then(d=>{
+    if(d.sharedWith){ shareUsers=d.sharedWith; renderShareList(); }
   });
-  document.getElementById('share-modal').classList.add('active');
+  openModal('share-modal');
 }
-function renderShareList() {
-  const el = document.getElementById('share-user-list');
-  el.innerHTML = shareUsers.map(function(s,i) {
-    return '<div style="display:flex;align-items:center;gap:8px;background:#f9fafb;padding:8px 12px;border-radius:8px">'
-      + '<span style="flex:1;font-size:13px">👤 ' + escH(s.username||s.userId) + '</span>'
-      + '<span style="font-size:12px;color:#6b7280">' + (s.canEdit?'編集可':'閲覧のみ') + '</span>'
-      + '<button onclick="removeShareUser(' + i + ')" style="border:none;background:none;cursor:pointer;color:#dc2626;font-size:14px">✕</button>'
-      + '</div>';
+function renderShareList(){
+  const el=document.getElementById('share-user-list');
+  el.innerHTML=shareUsers.map(function(s,i){
+    return '<div class="drv-share-row">'
+      +'<div style="width:28px;height:28px;border-radius:50%;background:#eff6ff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#2563eb;flex-shrink:0">'+escH((s.username||'?').charAt(0).toUpperCase())+'</div>'
+      +'<span style="flex:1;font-size:13px;font-weight:600">'+escH(s.username||s.userId)+'</span>'
+      +'<span style="font-size:11px;padding:2px 8px;border-radius:99px;background:'+(s.canEdit?'#ecfdf5':'#f8fafc')+';color:'+(s.canEdit?'#059669':'#64748b')+'">'+(s.canEdit?'編集可':'閲覧のみ')+'</span>'
+      +'<button onclick="removeShareUser('+i+')" style="border:none;background:none;cursor:pointer;color:#94a3b8;font-size:16px;padding:0 4px;line-height:1">×</button>'
+      +'</div>';
   }).join('');
 }
-function addShareUser() {
-  const uid = document.getElementById('share-user-select').value;
-  const uname = document.getElementById('share-user-select').selectedOptions[0]?.text;
-  const canEdit = document.getElementById('share-permission').value === 'edit';
-  if (!uid) return;
-  if (shareUsers.find(s => s.userId === uid)) { alert('既に追加済みです'); return; }
-  shareUsers.push({ userId: uid, username: uname, canEdit });
+function addShareUser(){
+  const uid=document.getElementById('share-user-select').value;
+  const uname=document.getElementById('share-user-select').selectedOptions[0]&&document.getElementById('share-user-select').selectedOptions[0].text;
+  const canEdit=document.getElementById('share-permission').value==='edit';
+  if(!uid) return;
+  if(shareUsers.find(s=>s.userId===uid)){alert('既に追加済みです');return;}
+  shareUsers.push({userId:uid,username:uname,canEdit});
   renderShareList();
 }
-function removeShareUser(i) { shareUsers.splice(i,1); renderShareList(); }
-function saveShare() {
-  const type = document.getElementById('share-type').value;
-  const id   = document.getElementById('share-id').value;
-  const isPublic = document.getElementById('share-public').value === 'true';
-  fetch('/cloud/share/' + type + '/' + id, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ isPublic, sharedWith: shareUsers.map(s=>({ userId:s.userId, canEdit:s.canEdit })) }),
-  }).then(r=>r.json()).then(d=>{ if(d.ok){ closeModal('share-modal'); location.reload(); } else alert('保存に失敗しました'); });
+function removeShareUser(i){shareUsers.splice(i,1);renderShareList();}
+function saveShare(){
+  const type=document.getElementById('share-type').value;
+  const id=document.getElementById('share-id').value;
+  const isPublic=document.getElementById('share-public').value==='true';
+  fetch('/cloud/share/'+type+'/'+id,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({isPublic,sharedWith:shareUsers.map(s=>({userId:s.userId,canEdit:s.canEdit}))}),
+  }).then(r=>r.json()).then(d=>{if(d.ok){closeModal('share-modal');location.reload();}else alert('保存に失敗しました');});
 }
 </script>
     `);
