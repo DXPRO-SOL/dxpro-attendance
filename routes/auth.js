@@ -9,6 +9,7 @@ const {
   getErrorMessageJP,
   getPasswordErrorMessage,
 } = require("../lib/helpers");
+const { buildPageShell } = require("../lib/renderPage");
 
 router.get("/", requireLogin, (req, res) => {
   res.redirect("/attendance-main");
@@ -414,131 +415,101 @@ router.post("/login", async (req, res) => {
 });
 
 router.get("/change-password", requireLogin, (req, res) => {
-  res.send(`
-        <!DOCTYPE html>
-        <html lang="ja">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-            <title>DXPRO SOLUTIONS - パスワード変更</title>
-            <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
-            <style>
-                .password-container {
-                    max-width: 500px;
-                    margin: 2rem auto;
-                    padding: 2rem;
-                    background: white;
-                    border-radius: 8px;
-                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                }
-                .password-title {
-                    color: #0056b3;
-                    margin-bottom: 1.5rem;
-                    text-align: center;
-                }
-                .password-form .form-group {
-                    margin-bottom: 1.5rem;
-                }
-                .password-form label {
-                    display: block;
-                    margin-bottom: 0.5rem;
-                    font-weight: 500;
-                    color: #333;
-                }
-                .password-form input {
-                    width: 100%;
-                    padding: 0.8rem;
-                    border: 1px solid #ddd;
-                    border-radius: 6px;
-                    font-size: 1rem;
-                }
-                .password-btn {
-                    width: 100%;
-                    padding: 1rem;
-                    background-color: #0056b3;
-                    color: white;
-                    border: none;
-                    border-radius: 6px;
-                    font-size: 1rem;
-                    cursor: pointer;
-                    margin-top: 1rem;
-                }
-                .password-btn:hover {
-                    background-color: #003d82;
-                }
-                .password-message {
-                    margin-top: 1rem;
-                    padding: 0.8rem;
-                    border-radius: 6px;
-                    text-align: center;
-                }
-                .error-message {
-                    background-color: #f8d7da;
-                    color: #721c24;
-                    border-left: 4px solid #dc3545;
-                }
-                .success-message {
-                    background-color: #d4edda;
-                    color: #155724;
-                    border-left: 4px solid #28a745;
-                }
-                .back-link {
-                    display: block;
-                    text-align: center;
-                    margin-top: 1rem;
-                    color: #0056b3;
-                    text-decoration: none;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="password-container">
-                <h2 class="password-title">パスワード変更</h2>
-                
-                ${
-                  req.query.error
-                    ? `
-                    <div class="password-message error-message">
-                        ${getPasswordErrorMessage(req.query.error)}
-                    </div>
-                `
-                    : ""
-                }
-                
-                ${
-                  req.query.success
-                    ? `
-                    <div class="password-message success-message">
-                        パスワードが正常に変更されました
-                    </div>
-                `
-                    : ""
-                }
-                
-                <form class="password-form" action="/change-password" method="POST">
-                    <div class="form-group">
-                        <label for="currentPassword">現在のパスワード</label>
-                        <input type="password" id="currentPassword" name="currentPassword" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="newPassword">新しいパスワード</label>
-                        <input type="password" id="newPassword" name="newPassword" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="confirmPassword">新しいパスワード (確認)</label>
-                        <input type="password" id="confirmPassword" name="confirmPassword" required>
-                    </div>
-                    
-                    <button type="submit" class="password-btn">パスワードを変更</button>
-                </form>
-                
-                <a href="/attendance-main" class="back-link">ダッシュボードに戻る</a>
-            </div>
-        </body>
-        </html>
-    `);
+  const employee = req.session.employee;
+  const isAdmin  = !!req.session.isAdmin;
+  const role     = req.session.orgRole || (isAdmin ? "admin" : "employee");
+  const shell    = buildPageShell({
+    title:       "パスワード変更",
+    currentPath: "/change-password",
+    employee,
+    isAdmin,
+    role,
+  });
+
+  res.send(shell + `
+<style>
+  .chpw-wrap {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: calc(100vh - 52px);
+    padding: 40px 16px;
+  }
+  .chpw-card {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 24px rgba(0,0,0,.10), 0 1px 4px rgba(0,0,0,.06);
+    border: 1px solid #e2e8f0;
+    padding: 40px 44px;
+    width: 100%;
+    max-width: 540px;
+  }
+  .chpw-icon {
+    display: flex; align-items: center; justify-content: center;
+    width: 56px; height: 56px; border-radius: 14px;
+    background: #eff6ff; margin: 0 auto 20px;
+    font-size: 24px; color: #3b82f6;
+  }
+  .chpw-title {
+    text-align: center; font-size: 22px; font-weight: 700;
+    color: #1e293b; margin: 0 0 6px;
+  }
+  .chpw-sub {
+    text-align: center; font-size: 13.5px; color: #64748b; margin: 0 0 28px;
+  }
+  .chpw-card .form-group { margin-bottom: 18px; }
+  .chpw-card .form-group label { font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px; display: block; }
+  .chpw-card .form-control { padding: 10px 12px; font-size: 14px; }
+  .chpw-submit {
+    width: 100%; padding: 12px; font-size: 15px; font-weight: 700;
+    margin-top: 8px; border-radius: 7px;
+  }
+  .chpw-back {
+    display: block; text-align: center; margin-top: 18px;
+    font-size: 13px; color: #3b82f6; text-decoration: none;
+  }
+  .chpw-back:hover { text-decoration: underline; }
+  @media(max-width: 768px) {
+    .chpw-wrap { padding: 16px 0; align-items: stretch; }
+    .chpw-card {
+      border-radius: 0; border-left: none; border-right: none;
+      padding: 28px 20px; max-width: 100%; box-shadow: none;
+    }
+  }
+</style>
+
+<div class="chpw-wrap">
+  <div class="chpw-card">
+    <div class="chpw-icon"><i class="fa-solid fa-key"></i></div>
+    <h1 class="chpw-title">パスワード変更</h1>
+    <p class="chpw-sub">現在のパスワードを確認した後、新しいパスワードを設定してください。</p>
+
+    ${req.query.error ? `<div class="alert alert-danger" style="margin-bottom:18px;"><i class="fa-solid fa-circle-exclamation"></i> ${getPasswordErrorMessage(req.query.error)}</div>` : ""}
+    ${req.query.success ? `<div class="alert alert-success" style="margin-bottom:18px;"><i class="fa-solid fa-circle-check"></i> パスワードが正常に変更されました。</div>` : ""}
+
+    <form action="/change-password" method="POST">
+      <div class="form-group">
+        <label for="currentPassword">現在のパスワード</label>
+        <input class="form-control" type="password" id="currentPassword" name="currentPassword" required autocomplete="current-password" placeholder="現在のパスワードを入力">
+      </div>
+      <div class="form-group">
+        <label for="newPassword">新しいパスワード</label>
+        <input class="form-control" type="password" id="newPassword" name="newPassword" required autocomplete="new-password" minlength="8" placeholder="8文字以上">
+      </div>
+      <div class="form-group">
+        <label for="confirmPassword">新しいパスワード（確認）</label>
+        <input class="form-control" type="password" id="confirmPassword" name="confirmPassword" required autocomplete="new-password" minlength="8" placeholder="もう一度入力してください">
+      </div>
+      <button type="submit" class="btn btn-primary chpw-submit">
+        <i class="fa-solid fa-floppy-disk"></i> パスワードを変更する
+      </button>
+    </form>
+    <a href="/dashboard" class="chpw-back">
+      <i class="fa-solid fa-arrow-left"></i> ダッシュボードに戻る
+    </a>
+  </div>
+</div>
+</div></div></body></html>`);
 });
 
 router.post("/change-password", requireLogin, async (req, res) => {
