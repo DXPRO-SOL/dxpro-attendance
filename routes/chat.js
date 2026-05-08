@@ -1082,10 +1082,10 @@ function buildMainHtml(data) {
         ondragover="event.preventDefault();this.classList.add('drag-over')"
         ondragleave="this.classList.remove('drag-over')"
         ondrop="chatApp.handleDrop(event)">
-        <textarea id="sc-msg-input" placeholder="${isRoom ? escHtml(data.roomName) : escHtml(data.targetName || '')} へメッセージを送る... (Shift+Enter で送信)" rows="1" maxlength="4000" oninput="chatApp.onInput()" onkeydown="if(event.key==='Enter'){if(event.shiftKey){event.preventDefault();chatApp.send();}else if(!event.altKey){event.preventDefault();}}"></textarea>
+        <textarea id="sc-msg-input" placeholder="${isRoom ? escHtml(data.roomName) : escHtml(data.targetName || '')} へメッセージを送る... (Enter で改行 / Shift+Enter で送信)" rows="1" maxlength="4000" oninput="chatApp.onInput()" onkeydown="if(event.key==='Enter'&&event.shiftKey){event.preventDefault();chatApp.send();}"></textarea>
         <button class="sc-send-btn" id="sc-send-btn" disabled onclick="chatApp.send()"><i class="fa-solid fa-paper-plane"></i></button>
     </div>
-    <div class="sc-input-hint">Shift+Enter で送信 · Enter / Alt+Enter で改行 · ファイルをドロップで添付</div>
+    <div class="sc-input-hint">Shift+Enter で送信 · Enter で改行 · ファイルをドロップで添付</div>
 </div>`;
 }
 
