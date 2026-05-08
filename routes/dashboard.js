@@ -374,7 +374,9 @@ router.get("/dashboard", requireLogin, async (req, res) => {
         .db-wrap { width: 100%; padding: 0 0 48px; }
         .db-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 28px; flex-wrap: wrap; }
         .db-header-left .greeting { font-size: 22px; font-weight: 800; color: var(--c-text); letter-spacing: -0.4px; }
-        .db-header-left .sub { font-size: 13px; color: var(--c-muted); margin-top: 4px; }
+        .db-header-left .sub { font-size: 13px; color: var(--c-muted); margin-top: 4px; display: flex; flex-wrap: wrap; gap: 2px 10px; }
+        .db-header-left .sub-item { white-space: nowrap; }
+        @media(max-width:768px){ .db-header-left .sub { flex-direction: column; gap: 2px; } }
         .db-header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         .live-clock { font-size: 13px; color: var(--c-muted); font-variant-numeric: tabular-nums; }
         .badge-admin { display: inline-flex; align-items: center; gap: 5px; background: #fef2f2; color: #b91c1c; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #fecaca; }
@@ -668,7 +670,11 @@ router.get("/dashboard", requireLogin, async (req, res) => {
         <div class="db-header">
             <div class="db-header-left">
                 <div class="greeting">お疲れ様です、${escapeHtml(employee.name)} さん </div>
-                <div class="sub">${escapeHtml(employee.position || "スタッフ")} &nbsp;|&nbsp; ${escapeHtml(employee.department || "")} &nbsp;|&nbsp; 従業員ID: ${escapeHtml(employee.employeeId || "")}</div>
+                <div class="sub">
+                    <span class="sub-item">${escapeHtml(employee.position || "スタッフ")}</span>
+                    <span class="sub-item">${escapeHtml(employee.department || "")}</span>
+                    <span class="sub-item">従業員ID: ${escapeHtml(employee.employeeId || "")}</span>
+                </div>
             </div>
             <div class="db-header-right">
                 ${req.session.isAdmin ? '<span class="badge-admin"><i class="fa-solid fa-shield-halved"></i> 管理者</span>' : ""}
