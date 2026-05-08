@@ -745,7 +745,8 @@ function buildAdminListPage(employees, sheetSet) {
 .ss-adm-title{font-size:20px;font-weight:800;color:#0b2540;margin:0 0 4px}
 .ss-adm-sub{font-size:13px;color:#6b7280;margin:0}
 .ss-adm-wrap{background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(11,36,48,.06);overflow:hidden}
-.ss-adm-table{width:100%;border-collapse:collapse}
+.ss-adm-outer{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.ss-adm-table{width:100%;border-collapse:collapse;min-width:560px}
 .ss-adm-table thead th{padding:11px 16px;background:#1e3a5f;color:#fff;font-weight:700;font-size:12px;text-align:left;white-space:nowrap}
 .ss-adm-table thead th:last-child{text-align:center}
 .ss-adm-table tbody tr{border-bottom:1px solid #f1f5f9;transition:background .12s}
@@ -764,6 +765,9 @@ function buildAdminListPage(employees, sheetSet) {
 .ss-adm-btn:hover{opacity:.82}
 .ss-adm-btn-edit{background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe}
 .ss-adm-btn-export{background:#f0fdf4;color:#16a34a;border:1px solid #86efac}
+@media(max-width:768px){
+  .ss-adm-title{font-size:16px}
+}
 </style>
 
 <div class="ss-adm-page">
@@ -772,6 +776,7 @@ function buildAdminListPage(employees, sheetSet) {
         <div class="ss-adm-sub">全 <strong>${employees.length}</strong> 名の従業員スキルシートを管理します</div>
     </div>
     <div class="ss-adm-wrap">
+        <div class="ss-adm-outer">
         <table class="ss-adm-table">
             <thead>
                 <tr>
@@ -787,6 +792,7 @@ function buildAdminListPage(employees, sheetSet) {
                 ${rows || '<tr><td colspan="6" style="text-align:center;padding:32px;color:#94a3b8;font-size:14px">従業員が登録されていません</td></tr>'}
             </tbody>
         </table>
+        </div><!-- /ss-adm-outer -->
     </div>
 </div>`;
 }
@@ -837,16 +843,16 @@ function buildEditPage(emp, sheet, req, isAdminView = false) {
                 <label class="ss-label">開始年月</label>
                 <input type="month" name="pFrom" value="${p.periodFrom || ""}" class="ss-input">
             </div>
-            <div>
+            <div class="ss-grid-cell">
                 <label class="ss-label">終了年月</label>
-                <div style="display:flex;align-items:flex-start;gap:6px;">
-                  <input type="month" name="pTo" value="${p.periodTo && p.periodTo !== "現在" ? p.periodTo : ""}" class="ss-input" style="flex:1;">
-                  <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap;cursor:pointer;padding-top:9px;">
+                <div class="ss-to-wrap">
+                  <input type="month" name="pTo" value="${p.periodTo && p.periodTo !== "現在" ? p.periodTo : ""}" class="ss-input" style="flex:1;min-width:0;">
+                  <label class="ss-now-lbl">
                       <input type="checkbox" onchange="setCurrentProj(this)" ${p.periodTo === "現在" ? "checked" : ""} style="margin:0;cursor:pointer;"> 現在
                   </label>
                 </div>
             </div>
-            <div style="grid-column:3/5;">
+            <div class="ss-proj-full">
                 <label class="ss-label">案件名</label>
                 <input type="text" name="pName" value="${p.projectName || ""}" placeholder="案件名" class="ss-input">
             </div>
@@ -907,7 +913,8 @@ function buildEditPage(emp, sheet, req, isAdminView = false) {
 .ss-grid2  { display:grid;grid-template-columns:1fr 1fr;gap:14px 20px; }
 .ss-grid3  { display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px 20px; }
 .ss-grid4  { display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:14px 20px;align-items:start; }
-.ss-skill-table { width:100%;border-collapse:collapse; }
+.ss-skill-tbl-wrap { overflow-x:auto;-webkit-overflow-scrolling:touch; }
+.ss-skill-table { width:100%;border-collapse:collapse;min-width:320px; }
 .ss-skill-table th { background:#f8fafc;padding:7px 10px;font-size:11.5px;font-weight:700;color:#64748b;border-bottom:1px solid #e2e8f0;text-align:left; }
 .ss-skill-table td { padding:5px 6px;border-bottom:1px solid #f1f5f9;vertical-align:middle; }
 .ss-add-btn { background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:6px;padding:6px 14px;font-size:12.5px;font-weight:600;cursor:pointer;transition:background .15s; }
@@ -932,6 +939,28 @@ function buildEditPage(emp, sheet, req, isAdminView = false) {
 .ss-export-btn{display:inline-flex;align-items:center;gap:7px;background:linear-gradient(90deg,#16a34a,#22c55e);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13.5px;font-weight:600;text-decoration:none;box-shadow:0 2px 6px rgba(22,163,74,.25);transition:opacity .15s}
 .ss-export-btn:hover{opacity:.88}
 .ss-alert-ok{background:#f0fdf4;border:1px solid #86efac;border-radius:9px;padding:11px 16px;margin-bottom:16px;display:flex;align-items:center;gap:9px;color:#166534;font-size:13.5px}
+.ss-to-wrap { display:flex;align-items:flex-start;gap:6px; }
+.ss-now-lbl { display:inline-flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap;cursor:pointer;padding-top:9px;flex-shrink:0; }
+.ss-grid-cell { min-width:0; }
+.ss-proj-full { grid-column:3/5; }
+@media(max-width:768px){
+  .ss-card { padding:16px 14px; }
+  .ss-grid2 { grid-template-columns:1fr; }
+  .ss-grid3 { grid-template-columns:1fr 1fr; }
+  .ss-grid4 { grid-template-columns:1fr 1fr; }
+  .ss-grid4 > div { min-width:0; }
+  .ss-proj-full { grid-column:1/3; }
+  /* 終了年月+現在 レイアウト */
+  .ss-to-wrap { flex-wrap:nowrap; }
+  .ss-to-wrap input[type="month"] { min-width:0;flex:1 1 0; }
+  .ss-now-lbl { padding-top:9px;font-size:10px; }
+  .ss-page-header { flex-direction:column;align-items:flex-start; }
+  .ss-export-btn { width:100%;justify-content:center; }
+  .ss-save-bar { flex-direction:column; }
+  .ss-save-bar button,.ss-save-bar a { width:100%;justify-content:center;text-align:center; }
+  .ss-page-title { font-size:16px; }
+  .ss-proj-card { padding:12px 12px; }
+}
 </style>
 
 <div class="ss-page-header">
@@ -988,6 +1017,7 @@ ${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保
 <!-- 資格・免許 -->
 <div class="ss-card">
     <div class="ss-sec"><i class="fa-solid fa-certificate"></i>資格・免許</div>
+    <div class="ss-skill-tbl-wrap">
     <table class="ss-skill-table" id="certTable">
         <thead><tr><th style="width:60%">資格名</th><th>取得年月</th><th style="width:36px;"></th></tr></thead>
         <tbody>
@@ -1003,6 +1033,7 @@ ${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保
               .join("")}
         </tbody>
     </table>
+    </div><!-- /ss-skill-tbl-wrap -->
     <button type="button" class="ss-add-btn" style="margin-top:10px;" onclick="addCertRow()">
         <i class="fa-solid fa-plus"></i> 追加
     </button>
@@ -1032,12 +1063,14 @@ ${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保
       return `
     <div style="margin-bottom:18px;">
         <div style="font-size:12px;font-weight:700;color:#2563eb;margin-bottom:6px;">${cat.label}</div>
+        <div class="ss-skill-tbl-wrap">
         <table class="ss-skill-table" data-cat="${cat.key}">
             <thead><tr><th>名称</th><th style="width:160px;">レベル</th><th style="width:36px;"></th></tr></thead>
             <tbody>
                 ${renderSkillCat(cat.key, nameKey.replace("Name", ""), skills[cat.key])}
             </tbody>
         </table>
+        </div>
         <button type="button" class="ss-add-btn" style="margin-top:8px;"
             onclick="addSkillRow(this,'${nameKey}','${levelKey}')">
             <i class="fa-solid fa-plus"></i> 追加
@@ -1149,14 +1182,14 @@ function addProject() {
     </div>
     <div class="ss-grid4">
         <div><label class="ss-label">開始年月</label><input type="month" name="pFrom" class="ss-input"></div>
-        <div>
+        <div class="ss-grid-cell">
             <label class="ss-label">終了年月</label>
-            <div style="display:flex;align-items:flex-start;gap:6px;">
-              <input type="month" name="pTo" class="ss-input" style="flex:1;">
-              <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap;cursor:pointer;padding-top:9px;"><input type="checkbox" onchange="setCurrentProj(this)" style="margin:0;cursor:pointer;"> 現在</label>
+            <div class="ss-to-wrap">
+              <input type="month" name="pTo" class="ss-input" style="flex:1;min-width:0;">
+              <label class="ss-now-lbl"><input type="checkbox" onchange="setCurrentProj(this)" style="margin:0;cursor:pointer;"> 現在</label>
             </div>
         </div>
-        <div style="grid-column:3/5;"><label class="ss-label">案件名</label><input type="text" name="pName" placeholder="案件名" class="ss-input"></div>
+        <div class="ss-proj-full"><label class="ss-label">案件名</label><input type="text" name="pName" placeholder="案件名" class="ss-input"></div>
         <div><label class="ss-label">顧客名</label><input type="text" name="pClient" placeholder="顧客名" class="ss-input"></div>
         <div><label class="ss-label">業種</label><input type="text" name="pIndust" placeholder="IT / 金融 等" class="ss-input"></div>
         <div><label class="ss-label">チーム規模</label><input type="number" name="pTeam" placeholder="人数" class="ss-input" min="1"></div>
@@ -1183,114 +1216,148 @@ function addProject() {
 // GET /skillsheet/api/map?employeeId=xxx  個人レーダー用データ
 // GET /skillsheet/api/map/team            チーム全体バブルチャート用データ
 
-router.get('/skillsheet/api/map', requireLogin, async (req, res) => {
-    try {
-        const { employeeId } = req.query;
-        const targetId = employeeId || req.session.employeeId;
-        const sheet = await SkillSheet.findOne({ employeeId: targetId }).lean();
-        if (!sheet) return res.json({ labels: [], datasets: [] });
+router.get("/skillsheet/api/map", requireLogin, async (req, res) => {
+  try {
+    const { employeeId } = req.query;
+    const targetId = employeeId || req.session.employeeId;
+    const sheet = await SkillSheet.findOne({ employeeId: targetId }).lean();
+    if (!sheet) return res.json({ labels: [], datasets: [] });
 
-        // カテゴリ別の平均レベルをレーダーチャート用に整形
-        const catAverages = SKILL_CATS.map(cat => {
-            const items = (sheet.skills && sheet.skills[cat.key]) || [];
-            if (items.length === 0) return { cat: cat.label, avg: 0, items };
-            const avg = items.reduce((s, i) => s + (i.level || 0), 0) / items.length;
-            return { cat: cat.label, avg: Math.round(avg * 10) / 10, items };
-        });
+    // カテゴリ別の平均レベルをレーダーチャート用に整形
+    const catAverages = SKILL_CATS.map((cat) => {
+      const items = (sheet.skills && sheet.skills[cat.key]) || [];
+      if (items.length === 0) return { cat: cat.label, avg: 0, items };
+      const avg = items.reduce((s, i) => s + (i.level || 0), 0) / items.length;
+      return { cat: cat.label, avg: Math.round(avg * 10) / 10, items };
+    });
 
-        // 工程スキル（task実績カウント）
-        const taskCounts = TASK_LABELS.map(t => {
-            const count = (sheet.projects || []).filter(p => p.tasks && p.tasks[t.key]).length;
-            return { label: t.label, count };
-        });
+    // 工程スキル（task実績カウント）
+    const taskCounts = TASK_LABELS.map((t) => {
+      const count = (sheet.projects || []).filter(
+        (p) => p.tasks && p.tasks[t.key],
+      ).length;
+      return { label: t.label, count };
+    });
 
-        res.json({
-            name: sheet.nameKana || '',
-            experience: sheet.experience || 0,
-            radar: {
-                labels: catAverages.map(c => c.cat),
-                data:   catAverages.map(c => c.avg),
-                max: 5
-            },
-            tasks: taskCounts,
-            topSkills: SKILL_CATS.flatMap(cat =>
-                ((sheet.skills && sheet.skills[cat.key]) || []).map(s => ({ ...s, cat: cat.label }))
-            ).sort((a, b) => b.level - a.level).slice(0, 10),
-            certifications: sheet.certifications || [],
-            projectCount: (sheet.projects || []).length
-        });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    res.json({
+      name: sheet.nameKana || "",
+      experience: sheet.experience || 0,
+      radar: {
+        labels: catAverages.map((c) => c.cat),
+        data: catAverages.map((c) => c.avg),
+        max: 5,
+      },
+      tasks: taskCounts,
+      topSkills: SKILL_CATS.flatMap((cat) =>
+        ((sheet.skills && sheet.skills[cat.key]) || []).map((s) => ({
+          ...s,
+          cat: cat.label,
+        })),
+      )
+        .sort((a, b) => b.level - a.level)
+        .slice(0, 10),
+      certifications: sheet.certifications || [],
+      projectCount: (sheet.projects || []).length,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-router.get('/skillsheet/api/map/team', requireLogin, async (req, res) => {
-    try {
-        const sheets = await SkillSheet.find().lean();
-        const { Employee: Emp } = require('../models');
-        const employees = await Emp.find().lean();
-        const empMap = Object.fromEntries(employees.map(e => [e._id.toString(), e]));
+router.get("/skillsheet/api/map/team", requireLogin, async (req, res) => {
+  try {
+    const sheets = await SkillSheet.find().lean();
+    const { Employee: Emp } = require("../models");
+    const employees = await Emp.find().lean();
+    const empMap = Object.fromEntries(
+      employees.map((e) => [e._id.toString(), e]),
+    );
 
-        const bubbleData = sheets.map(sheet => {
-            const emp = empMap[sheet.employeeId.toString()] || {};
-            // 全スキルの平均レベル
-            const allItems = SKILL_CATS.flatMap(cat => (sheet.skills && sheet.skills[cat.key]) || []);
-            const avgLevel = allItems.length > 0
-                ? Math.round(allItems.reduce((s, i) => s + (i.level || 0), 0) / allItems.length * 10) / 10
-                : 0;
-            const skillCount = allItems.length;
+    const bubbleData = sheets.map((sheet) => {
+      const emp = empMap[sheet.employeeId.toString()] || {};
+      // 全スキルの平均レベル
+      const allItems = SKILL_CATS.flatMap(
+        (cat) => (sheet.skills && sheet.skills[cat.key]) || [],
+      );
+      const avgLevel =
+        allItems.length > 0
+          ? Math.round(
+              (allItems.reduce((s, i) => s + (i.level || 0), 0) /
+                allItems.length) *
+                10,
+            ) / 10
+          : 0;
+      const skillCount = allItems.length;
 
-            // 担当工程の幅（バブルサイズ）
-            const taskScore = TASK_LABELS.filter(t =>
-                (sheet.projects || []).some(p => p.tasks && p.tasks[t.key])
-            ).length;
+      // 担当工程の幅（バブルサイズ）
+      const taskScore = TASK_LABELS.filter((t) =>
+        (sheet.projects || []).some((p) => p.tasks && p.tasks[t.key]),
+      ).length;
 
-            return {
-                name: emp.name || sheet.nameKana || '不明',
-                department: emp.department || '-',
-                experience: sheet.experience || 0,
-                avgLevel,
-                skillCount,
-                taskScore,
-                projectCount: (sheet.projects || []).length
-            };
-        });
+      return {
+        name: emp.name || sheet.nameKana || "不明",
+        department: emp.department || "-",
+        experience: sheet.experience || 0,
+        avgLevel,
+        skillCount,
+        taskScore,
+        projectCount: (sheet.projects || []).length,
+      };
+    });
 
-        // カテゴリ別スキル保有者数（棒グラフ用）
-        const catStats = SKILL_CATS.map(cat => {
-            const holders = sheets.filter(s => (s.skills && s.skills[cat.key] || []).length > 0).length;
-            const avgLv = (() => {
-                const all = sheets.flatMap(s => (s.skills && s.skills[cat.key]) || []);
-                return all.length > 0 ? Math.round(all.reduce((a, i) => a + (i.level || 0), 0) / all.length * 10) / 10 : 0;
-            })();
-            return { cat: cat.label, holders, avgLv };
-        });
+    // カテゴリ別スキル保有者数（棒グラフ用）
+    const catStats = SKILL_CATS.map((cat) => {
+      const holders = sheets.filter(
+        (s) => ((s.skills && s.skills[cat.key]) || []).length > 0,
+      ).length;
+      const avgLv = (() => {
+        const all = sheets.flatMap(
+          (s) => (s.skills && s.skills[cat.key]) || [],
+        );
+        return all.length > 0
+          ? Math.round(
+              (all.reduce((a, i) => a + (i.level || 0), 0) / all.length) * 10,
+            ) / 10
+          : 0;
+      })();
+      return { cat: cat.label, holders, avgLv };
+    });
 
-        // スキル別ランキング（全員のスキルを集計）
-        const skillRank = {};
-        for (const sheet of sheets) {
-            for (const cat of SKILL_CATS) {
-                for (const item of (sheet.skills && sheet.skills[cat.key]) || []) {
-                    if (!skillRank[item.name]) skillRank[item.name] = { count: 0, totalLevel: 0, cat: cat.label };
-                    skillRank[item.name].count++;
-                    skillRank[item.name].totalLevel += (item.level || 0);
-                }
-            }
+    // スキル別ランキング（全員のスキルを集計）
+    const skillRank = {};
+    for (const sheet of sheets) {
+      for (const cat of SKILL_CATS) {
+        for (const item of (sheet.skills && sheet.skills[cat.key]) || []) {
+          if (!skillRank[item.name])
+            skillRank[item.name] = { count: 0, totalLevel: 0, cat: cat.label };
+          skillRank[item.name].count++;
+          skillRank[item.name].totalLevel += item.level || 0;
         }
-        const topSkills = Object.entries(skillRank)
-            .map(([name, d]) => ({ name, count: d.count, avgLevel: Math.round(d.totalLevel / d.count * 10) / 10, cat: d.cat }))
-            .sort((a, b) => b.count - a.count)
-            .slice(0, 20);
+      }
+    }
+    const topSkills = Object.entries(skillRank)
+      .map(([name, d]) => ({
+        name,
+        count: d.count,
+        avgLevel: Math.round((d.totalLevel / d.count) * 10) / 10,
+        cat: d.cat,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 20);
 
-        res.json({ bubbleData, catStats, topSkills, total: sheets.length });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    res.json({ bubbleData, catStats, topSkills, total: sheets.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── スキルマップ表示ページ ──────────────────────────────────────────────────
-router.get('/skillsheet/map', requireLogin, async (req, res) => {
-    try {
-        const isAdmin = !!req.session.isAdmin;
-        const employee = req.session.employee;
+router.get("/skillsheet/map", requireLogin, async (req, res) => {
+  try {
+    const isAdmin = !!req.session.isAdmin;
+    const employee = req.session.employee;
 
-        const content = `
+    const content = `
 <div style="max-width:100%;margin:0 auto">
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
     <h2 style="margin:0;font-size:22px;font-weight:800">
@@ -1298,21 +1365,25 @@ router.get('/skillsheet/map', requireLogin, async (req, res) => {
     </h2>
     <div style="display:flex;gap:8px">
         <button id="btnPersonal" class="tab-btn active" onclick="switchTab('personal')">個人レーダー</button>
-        ${isAdmin ? '<button id="btnTeam" class="tab-btn" onclick="switchTab(\'team\')">チーム全体</button>' : ''}
+        ${isAdmin ? '<button id="btnTeam" class="tab-btn" onclick="switchTab(\'team\')">チーム全体</button>' : ""}
         <a href="/skillsheet" class="tab-btn" style="text-decoration:none">スキルシート編集</a>
     </div>
 </div>
 
 <!-- 個人レーダーチャートタブ -->
 <div id="tabPersonal">
-    ${isAdmin ? `
+    ${
+      isAdmin
+        ? `
     <div style="margin-bottom:16px">
         <label style="font-weight:600;margin-right:8px">社員を選択：</label>
         <select id="empSelect" onchange="loadPersonal(this.value)"
                 style="padding:8px 12px;border:1px solid #e5e7eb;border-radius:8px">
             <option value="">-- 選択してください --</option>
         </select>
-    </div>` : ''}
+    </div>`
+        : ""
+    }
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px 60px" id="personalGrid">
         <div class="sk-card">
             <h4>カテゴリ別スキルレベル（レーダー）</h4>
@@ -1333,7 +1404,9 @@ router.get('/skillsheet/map', requireLogin, async (req, res) => {
 </div>
 
 <!-- チーム全体タブ（管理者のみ） -->
-${isAdmin ? `
+${
+  isAdmin
+    ? `
 <div id="tabTeam" style="display:none">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
         <div class="sk-card" style="grid-column:1/-1">
@@ -1349,7 +1422,9 @@ ${isAdmin ? `
             <div id="memberTable"></div>
         </div>
     </div>
-</div>` : ''}
+</div>`
+    : ""
+}
 </div>
 
 <style>
@@ -1488,7 +1563,9 @@ async function loadTeam() {
 }
 
 // ── 管理者：社員一覧を取得してセレクト生成 ──
-${isAdmin ? `
+${
+  isAdmin
+    ? `
 (async () => {
     const sel = document.getElementById('empSelect');
     if (!sel) return;
@@ -1500,16 +1577,26 @@ ${isAdmin ? `
     });
     // デフォルトで最初の社員を表示
     if (emps.length > 0) { sel.value = emps[0]._id; loadPersonal(emps[0]._id); }
-})();` : `loadPersonal();`}
+})();`
+    : `loadPersonal();`
+}
 </script>
 `;
-        const { buildPageShell, pageFooter } = require('../lib/renderPage');
-        res.send(buildPageShell({ title: 'スキルマップ', currentPath: '/skillsheet/map', employee, isAdmin }) + content + pageFooter());
-    } catch (e) {
-        console.error(e);
-        res.status(500).send('エラー: ' + e.message);
-    }
+    const { buildPageShell, pageFooter } = require("../lib/renderPage");
+    res.send(
+      buildPageShell({
+        title: "スキルマップ",
+        currentPath: "/skillsheet/map",
+        employee,
+        isAdmin,
+      }) +
+        content +
+        pageFooter(),
+    );
+  } catch (e) {
+    console.error(e);
+    res.status(500).send("エラー: " + e.message);
+  }
 });
 
 module.exports = router;
-

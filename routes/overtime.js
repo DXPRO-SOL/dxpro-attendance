@@ -1,39 +1,39 @@
 // ==============================
 // routes/overtime.js - 残業申請（事前・事後）
 // ==============================
-const router = require('express').Router();
-const moment = require('moment-timezone');
-const { User, Employee, OvertimeRequest, Notification } = require('../models');
-const { requireLogin, isAdmin } = require('../middleware/auth');
-const { escapeHtml } = require('../lib/helpers');
-const { renderPage } = require('../lib/renderPage');
+const router = require("express").Router();
+const moment = require("moment-timezone");
+const { User, Employee, OvertimeRequest, Notification } = require("../models");
+const { requireLogin, isAdmin } = require("../middleware/auth");
+const { escapeHtml } = require("../lib/helpers");
+const { renderPage } = require("../lib/renderPage");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 共通ユーティリティ
 // ─────────────────────────────────────────────────────────────────────────────
 function calcHours(startTime, endTime) {
-    const [sh, sm] = startTime.split(':').map(Number);
-    const [eh, em] = endTime.split(':').map(Number);
-    const totalMins = (eh * 60 + em) - (sh * 60 + sm);
-    if (totalMins <= 0) return null;
-    return parseFloat((totalMins / 60).toFixed(2));
+  const [sh, sm] = startTime.split(":").map(Number);
+  const [eh, em] = endTime.split(":").map(Number);
+  const totalMins = eh * 60 + em - (sh * 60 + sm);
+  if (totalMins <= 0) return null;
+  return parseFloat((totalMins / 60).toFixed(2));
 }
 
 const STATUS_BADGE = (s) => {
-    const map = {
-        pending:  ['#f59e0b', '#fffbeb', '承認待ち'],
-        approved: ['#16a34a', '#dcfce7', '承認済み'],
-        rejected: ['#ef4444', '#fee2e2', '却下'],
-        canceled: ['#9ca3af', '#f3f4f6', '取消']
-    };
-    const [c, bg, label] = map[s] || ['#6b7280', '#f3f4f6', s];
-    return `<span style="display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;color:${c};background:${bg}">${label}</span>`;
+  const map = {
+    pending: ["#f59e0b", "#fffbeb", "承認待ち"],
+    approved: ["#16a34a", "#dcfce7", "承認済み"],
+    rejected: ["#ef4444", "#fee2e2", "却下"],
+    canceled: ["#9ca3af", "#f3f4f6", "取消"],
+  };
+  const [c, bg, label] = map[s] || ["#6b7280", "#f3f4f6", s];
+  return `<span style="display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;color:${c};background:${bg}">${label}</span>`;
 };
 
 const TIMING_BADGE = (t) =>
-    t === 'pre'
-        ? `<span style="padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;color:#0b5fff;background:#eff6ff;border:1px solid #bfdbfe">事前申請</span>`
-        : `<span style="padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;color:#d97706;background:#fffbeb;border:1px solid #fde68a">事後申請</span>`;
+  t === "pre"
+    ? `<span style="padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;color:#0b5fff;background:#eff6ff;border:1px solid #bfdbfe">事前申請</span>`
+    : `<span style="padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;color:#d97706;background:#fffbeb;border:1px solid #fde68a">事後申請</span>`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 共通CSS
@@ -113,67 +113,82 @@ const COMMON_CSS = `
     .ot-timing-tab.pre-tab.active{background:#0b5fff;color:#fff}
     .ot-timing-tab.post-tab{color:#d97706;background:#fff;border-left:1.5px solid #e5e7eb}
     .ot-timing-tab.post-tab.active{background:#f59e0b;color:#fff}
+    .ot-form-header{padding:24px 32px}
+    .ot-form-tabs-wrap{padding:20px 32px 0}
     @media(max-width:640px){
-        .ot-wrap{max-width:100%}
-        .ot-hero{padding:18px 16px;border-radius:14px}
+        .ot-wrap{padding:0 2px}
+        .ot-hero{padding:16px 14px;border-radius:14px;margin-bottom:14px}
         .ot-hero-title{font-size:17px}
-        .ot-hero-btns{width:100%;flex-direction:column;gap:8px}
-        .ot-new-btn{width:100%;justify-content:center}
-        .ot-form-body{padding:18px 16px}
-        .ot-form-wrap{max-width:100%}
-        .ot-card-body{padding:14px;gap:10px}
-        .ot-card-date{min-width:58px;font-size:16px;padding:8px 8px}
-        .ot-card-info{min-width:0;flex:1}
+        .ot-hero-btns{width:100%}
+        .ot-new-btn{flex:1;justify-content:center;font-size:12px;padding:8px 10px}
+        .ot-tabs{width:100%;box-sizing:border-box}
+        .ot-tab{flex:1;text-align:center;padding:7px 6px;font-size:12px}
+        .ot-card-body{padding:12px 10px;gap:8px}
+        .ot-card-date{min-width:52px;font-size:16px;padding:8px 6px}
+        .ot-card-info{min-width:0;width:100%}
         .ot-card-actions{width:100%;margin-left:0;justify-content:flex-end}
-        .ot-tabs{width:100%;justify-content:stretch}
-        .ot-tab{flex:1;text-align:center;padding:8px 10px;font-size:12px}
+        .ot-form-wrap{padding:0}
+        .ot-form-header{padding:18px 16px}
+        .ot-form-tabs-wrap{padding:12px 14px 0}
+        .ot-form-body{padding:14px !important}
+        .ot-foot{flex-direction:column-reverse;gap:8px}
+        .ot-ghost-btn,.ot-submit-btn{width:100%;justify-content:center;text-align:center;box-sizing:border-box;display:flex}
+        .ot-pager{flex-direction:column;gap:8px;align-items:flex-start}
+        .ot-section-divider{margin:16px 0 10px}
+        .ot-info-box{padding:12px 14px}
+        .ot-timing-tab{padding:11px 8px;font-size:13px}
     }
 `;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /overtime  ─  申請一覧
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/overtime', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        if (!employee) return res.status(400).send('社員情報がありません');
+router.get("/overtime", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
+    const employee = await Employee.findOne({ userId: user._id });
+    if (!employee) return res.status(400).send("社員情報がありません");
 
-        const page         = Math.max(1, parseInt(req.query.page) || 1);
-        const perPage      = 15;
-        const timingFilter = req.query.timing || '';
-        const statusFilter = req.query.status || '';
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const perPage = 15;
+    const timingFilter = req.query.timing || "";
+    const statusFilter = req.query.status || "";
 
-        const query = { userId: user._id };
-        if (timingFilter) query.requestTiming = timingFilter;
-        if (statusFilter) query.status        = statusFilter;
+    const query = { userId: user._id };
+    if (timingFilter) query.requestTiming = timingFilter;
+    if (statusFilter) query.status = statusFilter;
 
-        const total    = await OvertimeRequest.countDocuments(query);
-        const requests = await OvertimeRequest.find(query)
-            .sort({ date: -1, createdAt: -1 })
-            .skip((page - 1) * perPage)
-            .limit(perPage);
+    const total = await OvertimeRequest.countDocuments(query);
+    const requests = await OvertimeRequest.find(query)
+      .sort({ date: -1, createdAt: -1 })
+      .skip((page - 1) * perPage)
+      .limit(perPage);
 
-        const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
-        const qs = (extra = {}) => {
-            const p = { timing: timingFilter, status: statusFilter, ...extra };
-            return Object.entries(p).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-        };
+    const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+    const qs = (extra = {}) => {
+      const p = { timing: timingFilter, status: statusFilter, ...extra };
+      return Object.entries(p)
+        .filter(([, v]) => v)
+        .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+        .join("&");
+    };
 
-        const cards = requests.length === 0
-            ? `<div class="ot-empty">
+    const cards =
+      requests.length === 0
+        ? `<div class="ot-empty">
                 <div style="font-size:48px;margin-bottom:16px">📋</div>
                 <div style="font-size:15px;font-weight:600">申請がありません</div>
                 <div style="margin-top:8px;font-size:13px">「事前申請」または「事後申請」から作成できます</div>
                </div>`
-            : requests.map(r => {
-                const dm = moment.tz(r.date, 'Asia/Tokyo');
-                const isPre = r.requestTiming !== 'post';
-                return `
-                <div class="ot-card ${isPre ? 'pre-card' : 'post-card'}">
+        : requests
+            .map((r) => {
+              const dm = moment.tz(r.date, "Asia/Tokyo");
+              const isPre = r.requestTiming !== "post";
+              return `
+                <div class="ot-card ${isPre ? "pre-card" : "post-card"}">
                     <div class="ot-card-body">
                         <div class="ot-card-date">
-                            ${dm.format('MM/DD')}
+                            ${dm.format("MM/DD")}
                             <div class="weekday">${weekdays[dm.day()]}曜</div>
                         </div>
                         <div class="ot-card-info">
@@ -183,27 +198,39 @@ router.get('/overtime', requireLogin, async (req, res) => {
                                 ${STATUS_BADGE(r.status)}
                             </div>
                             <div class="ot-card-time">🕐 ${escapeHtml(r.startTime)} ～ ${escapeHtml(r.endTime)}
-                                <span style="font-size:13px;font-weight:400;color:#6b7280">（${r.hours}時間${isPre ? ' 予定' : ''}）</span>
+                                <span style="font-size:13px;font-weight:400;color:#6b7280">（${r.hours}時間${isPre ? " 予定" : ""}）</span>
                             </div>
-                            ${!isPre && r.actualStartTime ? `
-                            <div class="ot-card-actual">✅ 実績: ${escapeHtml(r.actualStartTime)} ～ ${escapeHtml(r.actualEndTime)}（${r.actualHours || '-'}時間）</div>` : ''}
+                            ${
+                              !isPre && r.actualStartTime
+                                ? `
+                            <div class="ot-card-actual">✅ 実績: ${escapeHtml(r.actualStartTime)} ～ ${escapeHtml(r.actualEndTime)}（${r.actualHours || "-"}時間）</div>`
+                                : ""
+                            }
                             <div class="ot-card-reason">📝 ${escapeHtml(r.reason)}</div>
-                            ${r.status === 'rejected' && r.rejectReason
-                                ? `<div class="ot-reject-reason">❌ 却下理由: ${escapeHtml(r.rejectReason)}</div>` : ''}
+                            ${
+                              r.status === "rejected" && r.rejectReason
+                                ? `<div class="ot-reject-reason">❌ 却下理由: ${escapeHtml(r.rejectReason)}</div>`
+                                : ""
+                            }
                         </div>
                         <div class="ot-card-actions">
-                            ${r.status === 'pending' ? `
+                            ${
+                              r.status === "pending"
+                                ? `
                             <a href="/overtime/${r._id}/edit" class="ot-btn ot-btn-ghost">✏️ 編集</a>
                             <form action="/overtime/${r._id}/cancel" method="post" style="display:inline">
                                 <button class="ot-btn ot-btn-danger"
                                     onclick="return confirm('この申請を取り消しますか？')">✕ 取消</button>
-                            </form>` : ''}
+                            </form>`
+                                : ""
+                            }
                         </div>
                     </div>
                 </div>`;
-            }).join('');
+            })
+            .join("");
 
-        const html = `
+    const html = `
         <style>${COMMON_CSS}</style>
         <div class="ot-wrap">
             <div class="ot-hero">
@@ -217,76 +244,83 @@ router.get('/overtime', requireLogin, async (req, res) => {
                 </div>
             </div>
             <div class="ot-tabs">
-                <a href="/overtime?${qs({timing:'',page:1})}" class="ot-tab ${!timingFilter?'active':''}">すべて</a>
-                <a href="/overtime?${qs({timing:'pre',page:1})}" class="ot-tab ${timingFilter==='pre'?'active':''}">📋 事前申請</a>
-                <a href="/overtime?${qs({timing:'post',page:1})}" class="ot-tab ${timingFilter==='post'?'active':''}">📝 事後申請</a>
+                <a href="/overtime?${qs({ timing: "", page: 1 })}" class="ot-tab ${!timingFilter ? "active" : ""}">すべて</a>
+                <a href="/overtime?${qs({ timing: "pre", page: 1 })}" class="ot-tab ${timingFilter === "pre" ? "active" : ""}">📋 事前申請</a>
+                <a href="/overtime?${qs({ timing: "post", page: 1 })}" class="ot-tab ${timingFilter === "post" ? "active" : ""}">📝 事後申請</a>
             </div>
             <div class="ot-filter">
-                <a href="/overtime?${qs({status:'',page:1})}"          class="${!statusFilter?'active':''}">すべて</a>
-                <a href="/overtime?${qs({status:'pending',page:1})}"  class="${statusFilter==='pending' ?'active':''}">承認待ち</a>
-                <a href="/overtime?${qs({status:'approved',page:1})}" class="${statusFilter==='approved'?'active':''}">承認済み</a>
-                <a href="/overtime?${qs({status:'rejected',page:1})}" class="${statusFilter==='rejected'?'active':''}">却下</a>
+                <a href="/overtime?${qs({ status: "", page: 1 })}"          class="${!statusFilter ? "active" : ""}">すべて</a>
+                <a href="/overtime?${qs({ status: "pending", page: 1 })}"  class="${statusFilter === "pending" ? "active" : ""}">承認待ち</a>
+                <a href="/overtime?${qs({ status: "approved", page: 1 })}" class="${statusFilter === "approved" ? "active" : ""}">承認済み</a>
+                <a href="/overtime?${qs({ status: "rejected", page: 1 })}" class="${statusFilter === "rejected" ? "active" : ""}">却下</a>
             </div>
             ${cards}
             <div class="ot-pager">
-                <div>${(page-1)*perPage+1}〜${Math.min(page*perPage,total)} 件 / 全 ${total} 件</div>
+                <div>${(page - 1) * perPage + 1}〜${Math.min(page * perPage, total)} 件 / 全 ${total} 件</div>
                 <div class="ot-pager-btns">
-                    ${page > 1           ? `<a href="?${qs({page:page-1})}" class="ot-pager-btn">← 前へ</a>` : ''}
-                    ${page*perPage<total ? `<a href="?${qs({page:page+1})}" class="ot-pager-btn">次へ →</a>` : ''}
+                    ${page > 1 ? `<a href="?${qs({ page: page - 1 })}" class="ot-pager-btn">← 前へ</a>` : ""}
+                    ${page * perPage < total ? `<a href="?${qs({ page: page + 1 })}" class="ot-pager-btn">次へ →</a>` : ""}
                 </div>
             </div>
         </div>`;
 
-        renderPage(req, res, '残業申請', '残業申請一覧', html);
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('サーバーエラー');
-    }
+    renderPage(req, res, "残業申請", "残業申請一覧", html);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("サーバーエラー");
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /overtime/new  ─  新規申請フォーム（?timing=pre|post）
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/overtime/new', requireLogin, async (req, res) => {
-    const employee = await Employee.findOne({ userId: req.session.userId });
-    if (!employee) return res.status(400).send('社員情報がありません');
+router.get("/overtime/new", requireLogin, async (req, res) => {
+  const employee = await Employee.findOne({ userId: req.session.userId });
+  if (!employee) return res.status(400).send("社員情報がありません");
 
-    const timing = req.query.timing === 'post' ? 'post' : 'pre';
-    const isPre  = timing === 'pre';
-    const today  = moment().tz('Asia/Tokyo').format('YYYY-MM-DD');
-    const headGrad = isPre
-        ? 'linear-gradient(120deg,#0b2540,#0b5fff)'
-        : 'linear-gradient(120deg,#78350f,#f59e0b)';
+  const timing = req.query.timing === "post" ? "post" : "pre";
+  const isPre = timing === "pre";
+  const today = moment().tz("Asia/Tokyo").format("YYYY-MM-DD");
+  const headGrad = isPre
+    ? "linear-gradient(120deg,#0b2540,#0b5fff)"
+    : "linear-gradient(120deg,#78350f,#f59e0b)";
 
-    const infoMsg = isPre
-        ? `<strong>事前申請とは？</strong><br>
+  const infoMsg = isPre
+    ? `<strong>事前申請とは？</strong><br>
            残業を行う<strong>当日または前日までに</strong>申請し、上長の承認を受けてから残業を開始する申請方式です。<br>
            入力する時刻は<strong>予定時刻</strong>で構いません。`
-        : `<strong>事後申請とは？</strong><br>
+    : `<strong>事後申請とは？</strong><br>
            緊急対応などで事前申請が困難だった場合に、残業終了後に申請する方式です。<br>
            <strong>実際に働いた時刻</strong>（実績）を正確に入力してください。<br>
            <span style="color:#d97706;font-weight:700">⚠ 事後申請は原則として例外対応です。可能な限り事前申請を行ってください。</span>`;
 
-    renderPage(req, res, `残業申請（${isPre ? '事前' : '事後'}）`, '残業申請 新規', `
+  renderPage(
+    req,
+    res,
+    `残業申請（${isPre ? "事前" : "事後"}）`,
+    "残業申請 新規",
+    `
         <style>${COMMON_CSS}</style>
         <div class="ot-form-wrap">
             <div class="ot-form-card">
-                <div style="background:${headGrad};padding:24px 32px;color:#fff">
+                <div class="ot-form-header" style="background:${headGrad};color:#fff">
                     <h2 style="margin:0;font-size:20px;font-weight:800">
-                        ${isPre ? '📋 残業事前申請' : '📝 残業事後申請'}
+                        ${isPre ? "📋 残業事前申請" : "📝 残業事後申請"}
                     </h2>
                     <p style="margin:6px 0 0;opacity:.8;font-size:13px">
-                        ${isPre
-                            ? '残業を行う前に申請します。事前に上長の承認を得てから残業してください。'
-                            : '既に実施した残業について報告・申請します。理由とともに実績時間を入力してください。'}
+                        ${
+                          isPre
+                            ? "残業を行う前に申請します。事前に上長の承認を得てから残業してください。"
+                            : "既に実施した残業について報告・申請します。理由とともに実績時間を入力してください。"
+                        }
                     </p>
                 </div>
-                <div style="padding:20px 32px 0">
+                <div class="ot-form-tabs-wrap">
                     <div class="ot-timing-tabs">
                         <a href="/overtime/new?timing=pre"
-                           class="ot-timing-tab pre-tab ${isPre ? 'active' : ''}">📋 事前申請（予定）</a>
+                           class="ot-timing-tab pre-tab ${isPre ? "active" : ""}">📋 事前申請（予定）</a>
                         <a href="/overtime/new?timing=post"
-                           class="ot-timing-tab post-tab ${!isPre ? 'active' : ''}">📝 事後申請（実績）</a>
+                           class="ot-timing-tab post-tab ${!isPre ? "active" : ""}">📝 事後申請（実績）</a>
                     </div>
                     <div class="ot-info-box ${timing}">${infoMsg}</div>
                 </div>
@@ -294,23 +328,23 @@ router.get('/overtime/new', requireLogin, async (req, res) => {
                     <form action="/overtime" method="post" id="ot-form">
                         <input type="hidden" name="requestTiming" value="${timing}">
                         <div class="ot-field">
-                            <label class="ot-label">${isPre ? '残業予定日' : '残業実施日'} <span style="color:#ef4444">*</span></label>
+                            <label class="ot-label">${isPre ? "残業予定日" : "残業実施日"} <span style="color:#ef4444">*</span></label>
                             <input type="date" name="date" class="ot-input" value="${today}" required
-                                ${!isPre ? `max="${today}"` : ''}>
-                            ${!isPre ? `<div style="font-size:12px;color:#9ca3af;margin-top:4px">※ 本日以前の日付を選択してください</div>` : ''}
+                                ${!isPre ? `max="${today}"` : ""}>
+                            ${!isPre ? `<div style="font-size:12px;color:#9ca3af;margin-top:4px">※ 本日以前の日付を選択してください</div>` : ""}
                         </div>
-                        <div class="ot-section-divider">${isPre ? '⏱ 残業予定時間' : '⏱ 実際の残業時間（実績）'}</div>
+                        <div class="ot-section-divider">${isPre ? "⏱ 残業予定時間" : "⏱ 実際の残業時間（実績）"}</div>
                         <div class="ot-row2">
                             <div class="ot-field">
-                                <label class="ot-label">${isPre ? '開始予定' : '開始時刻（実績）'} <span style="color:#ef4444">*</span></label>
+                                <label class="ot-label">${isPre ? "開始予定" : "開始時刻（実績）"} <span style="color:#ef4444">*</span></label>
                                 <input type="time" name="startTime" id="ot-start" class="ot-input" value="18:00" required>
                             </div>
                             <div class="ot-field">
-                                <label class="ot-label">${isPre ? '終了予定' : '終了時刻（実績）'} <span style="color:#ef4444">*</span></label>
+                                <label class="ot-label">${isPre ? "終了予定" : "終了時刻（実績）"} <span style="color:#ef4444">*</span></label>
                                 <input type="time" name="endTime" id="ot-end" class="ot-input" value="20:00" required>
                             </div>
                         </div>
-                        <div id="ot-hours-preview" class="ot-hours-preview ${isPre ? 'ot-hours-pre' : 'ot-hours-post'}"></div>
+                        <div id="ot-hours-preview" class="ot-hours-preview ${isPre ? "ot-hours-pre" : "ot-hours-post"}"></div>
                         <div class="ot-field" style="margin-top:20px">
                             <label class="ot-label">残業種別 <span style="color:#ef4444">*</span></label>
                             <select name="type" class="ot-select" required>
@@ -321,21 +355,23 @@ router.get('/overtime/new', requireLogin, async (req, res) => {
                             </select>
                         </div>
                         <div class="ot-field">
-                            <label class="ot-label">${isPre ? '残業理由・業務内容' : '残業が必要だった理由・業務内容'} <span style="color:#ef4444">*</span></label>
+                            <label class="ot-label">${isPre ? "残業理由・業務内容" : "残業が必要だった理由・業務内容"} <span style="color:#ef4444">*</span></label>
                             <textarea name="reason" class="ot-textarea" required
-                                placeholder="${isPre
-                                    ? '例: ○○案件の納品期限が明日のため、設計書の最終確認を行います。'
-                                    : '例: 顧客からの緊急問い合わせ対応のため。事前申請が困難だったため事後申請します。'}"></textarea>
+                                placeholder="${
+                                  isPre
+                                    ? "例: ○○案件の納品期限が明日のため、設計書の最終確認を行います。"
+                                    : "例: 顧客からの緊急問い合わせ対応のため。事前申請が困難だったため事後申請します。"
+                                }"></textarea>
                         </div>
                         <div class="ot-field">
                             <label class="ot-label">備考（任意）</label>
                             <input type="text" name="notes" class="ot-input"
-                                placeholder="${isPre ? '特記事項があれば記入' : '対応内容・顧客名など'}">
+                                placeholder="${isPre ? "特記事項があれば記入" : "対応内容・顧客名など"}">
                         </div>
                         <div class="ot-foot">
                             <a href="/overtime" class="ot-ghost-btn">キャンセル</a>
-                            <button type="submit" class="ot-submit-btn ${isPre ? 'ot-submit-pre' : 'ot-submit-post'}">
-                                ${isPre ? '📋 事前申請する' : '📝 事後申請する'}
+                            <button type="submit" class="ot-submit-btn ${isPre ? "ot-submit-pre" : "ot-submit-post"}">
+                                ${isPre ? "📋 事前申請する" : "📝 事後申請する"}
                             </button>
                         </div>
                     </form>
@@ -347,7 +383,7 @@ router.get('/overtime/new', requireLogin, async (req, res) => {
             const s = document.getElementById('ot-start');
             const e = document.getElementById('ot-end');
             const p = document.getElementById('ot-hours-preview');
-            const isPre = ${isPre ? 'true' : 'false'};
+            const isPre = ${isPre ? "true" : "false"};
             function calc(){
                 if(!s.value||!e.value){p.style.display='none';return;}
                 const [sh,sm]=s.value.split(':').map(Number);
@@ -369,90 +405,102 @@ router.get('/overtime/new', requireLogin, async (req, res) => {
             });
         })();
         </script>
-    `);
+    `,
+  );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /overtime  ─  申請保存
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/overtime', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        if (!employee) return res.status(400).send('社員情報がありません');
+router.post("/overtime", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
+    const employee = await Employee.findOne({ userId: user._id });
+    if (!employee) return res.status(400).send("社員情報がありません");
 
-        const { date, startTime, endTime, type, reason, notes, requestTiming } = req.body;
-        const timing = requestTiming === 'post' ? 'post' : 'pre';
-        const hours  = calcHours(startTime, endTime);
-        if (!hours) return res.status(400).send('終了時刻は開始時刻より後にしてください');
+    const { date, startTime, endTime, type, reason, notes, requestTiming } =
+      req.body;
+    const timing = requestTiming === "post" ? "post" : "pre";
+    const hours = calcHours(startTime, endTime);
+    if (!hours)
+      return res.status(400).send("終了時刻は開始時刻より後にしてください");
 
-        if (timing === 'post') {
-            const inputDate = moment.tz(date, 'Asia/Tokyo').startOf('day');
-            const today     = moment().tz('Asia/Tokyo').startOf('day');
-            if (inputDate.isAfter(today)) {
-                return res.status(400).send('事後申請は本日以前の日付を指定してください');
-            }
-        }
-
-        const record = new OvertimeRequest({
-            userId:        user._id,
-            employeeId:    employee._id,
-            requestTiming: timing,
-            date:          moment.tz(date, 'Asia/Tokyo').startOf('day').toDate(),
-            startTime,
-            endTime,
-            hours,
-            type:   type   || '通常残業',
-            reason: reason.trim(),
-            notes:  notes  ? notes.trim() : undefined,
-            status: 'pending'
-        });
-        await record.save();
-
-        const admins = await User.find({ isAdmin: true });
-        for (const admin of admins) {
-            await new Notification({
-                userId:     admin._id,
-                type:       'overtime_request',
-                title:      `残業${timing === 'pre' ? '事前' : '事後'}申請: ${employee.name}`,
-                body:       `${date} ${startTime}〜${endTime} (${hours}h) ${reason.slice(0,40)}`,
-                link:       '/admin/overtime',
-                fromUserId: user._id,
-                fromName:   employee.name
-            }).save();
-        }
-
-        res.redirect('/overtime');
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('申請に失敗しました: ' + err.message);
+    if (timing === "post") {
+      const inputDate = moment.tz(date, "Asia/Tokyo").startOf("day");
+      const today = moment().tz("Asia/Tokyo").startOf("day");
+      if (inputDate.isAfter(today)) {
+        return res
+          .status(400)
+          .send("事後申請は本日以前の日付を指定してください");
+      }
     }
+
+    const record = new OvertimeRequest({
+      userId: user._id,
+      employeeId: employee._id,
+      requestTiming: timing,
+      date: moment.tz(date, "Asia/Tokyo").startOf("day").toDate(),
+      startTime,
+      endTime,
+      hours,
+      type: type || "通常残業",
+      reason: reason.trim(),
+      notes: notes ? notes.trim() : undefined,
+      status: "pending",
+    });
+    await record.save();
+
+    const admins = await User.find({ isAdmin: true });
+    for (const admin of admins) {
+      await new Notification({
+        userId: admin._id,
+        type: "overtime_request",
+        title: `残業${timing === "pre" ? "事前" : "事後"}申請: ${employee.name}`,
+        body: `${date} ${startTime}〜${endTime} (${hours}h) ${reason.slice(0, 40)}`,
+        link: "/admin/overtime",
+        fromUserId: user._id,
+        fromName: employee.name,
+      }).save();
+    }
+
+    res.redirect("/overtime");
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("申請に失敗しました: " + err.message);
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /overtime/:id/edit  ─  編集フォーム
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/overtime/:id/edit', requireLogin, async (req, res) => {
-    try {
-        const r = await OvertimeRequest.findById(req.params.id);
-        if (!r) return res.status(404).send('申請が見つかりません');
-        if (String(r.userId) !== String(req.session.userId)) return res.status(403).send('権限がありません');
-        if (r.status !== 'pending') return res.status(400).send('承認待ち以外の申請は編集できません');
+router.get("/overtime/:id/edit", requireLogin, async (req, res) => {
+  try {
+    const r = await OvertimeRequest.findById(req.params.id);
+    if (!r) return res.status(404).send("申請が見つかりません");
+    if (String(r.userId) !== String(req.session.userId))
+      return res.status(403).send("権限がありません");
+    if (r.status !== "pending")
+      return res.status(400).send("承認待ち以外の申請は編集できません");
 
-        const isPre    = r.requestTiming !== 'post';
-        const dateStr  = moment.tz(r.date, 'Asia/Tokyo').format('YYYY-MM-DD');
-        const today    = moment().tz('Asia/Tokyo').format('YYYY-MM-DD');
-        const headGrad = isPre
-            ? 'linear-gradient(120deg,#0b2540,#16a34a)'
-            : 'linear-gradient(120deg,#78350f,#d97706)';
+    const isPre = r.requestTiming !== "post";
+    const dateStr = moment.tz(r.date, "Asia/Tokyo").format("YYYY-MM-DD");
+    const today = moment().tz("Asia/Tokyo").format("YYYY-MM-DD");
+    const headGrad = isPre
+      ? "linear-gradient(120deg,#0b2540,#16a34a)"
+      : "linear-gradient(120deg,#78350f,#d97706)";
 
-        renderPage(req, res, '残業申請 編集', '残業申請 編集', `
+    renderPage(
+      req,
+      res,
+      "残業申請 編集",
+      "残業申請 編集",
+      `
             <style>${COMMON_CSS}</style>
             <div class="ot-form-wrap">
                 <div class="ot-form-card">
-                    <div style="background:${headGrad};padding:24px 32px;color:#fff">
+                    <div class="ot-form-header" style="background:${headGrad};color:#fff">
                         <h2 style="margin:0;font-size:20px;font-weight:800">
-                            ✏️ ${isPre ? '事前申請' : '事後申請'} 編集
+                            ✏️ ${isPre ? "事前申請" : "事後申請"} 編集
                         </h2>
                         <p style="margin:6px 0 0;opacity:.8;font-size:13px">
                             申請種別は変更できません。変更が必要な場合は取り消してから新規申請してください。
@@ -461,30 +509,38 @@ router.get('/overtime/:id/edit', requireLogin, async (req, res) => {
                     <div class="ot-form-body">
                         <form action="/overtime/${r._id}/edit" method="post" id="ot-edit-form">
                             <div class="ot-field">
-                                <label class="ot-label">${isPre ? '残業予定日' : '残業実施日'}</label>
+                                <label class="ot-label">${isPre ? "残業予定日" : "残業実施日"}</label>
                                 <input type="date" name="date" class="ot-input" value="${dateStr}" required
-                                    ${!isPre ? `max="${today}"` : ''}>
+                                    ${!isPre ? `max="${today}"` : ""}>
                             </div>
-                            <div class="ot-section-divider">⏱ ${isPre ? '予定時間' : '実績時間'}</div>
+                            <div class="ot-section-divider">⏱ ${isPre ? "予定時間" : "実績時間"}</div>
                             <div class="ot-row2">
                                 <div class="ot-field">
-                                    <label class="ot-label">${isPre ? '開始予定' : '開始時刻（実績）'}</label>
+                                    <label class="ot-label">${isPre ? "開始予定" : "開始時刻（実績）"}</label>
                                     <input type="time" name="startTime" id="ot-start" class="ot-input"
                                         value="${escapeHtml(r.startTime)}" required>
                                 </div>
                                 <div class="ot-field">
-                                    <label class="ot-label">${isPre ? '終了予定' : '終了時刻（実績）'}</label>
+                                    <label class="ot-label">${isPre ? "終了予定" : "終了時刻（実績）"}</label>
                                     <input type="time" name="endTime" id="ot-end" class="ot-input"
                                         value="${escapeHtml(r.endTime)}" required>
                                 </div>
                             </div>
-                            <div id="ot-hours-preview" class="ot-hours-preview ${isPre ? 'ot-hours-pre' : 'ot-hours-post'}"></div>
+                            <div id="ot-hours-preview" class="ot-hours-preview ${isPre ? "ot-hours-pre" : "ot-hours-post"}"></div>
                             <div class="ot-field" style="margin-top:20px">
                                 <label class="ot-label">残業種別</label>
                                 <select name="type" class="ot-select">
-                                    ${['通常残業','休日出勤','深夜残業','その他'].map(t =>
-                                        `<option value="${t}" ${r.type === t ? 'selected' : ''}>${t}</option>`
-                                    ).join('')}
+                                    ${[
+                                      "通常残業",
+                                      "休日出勤",
+                                      "深夜残業",
+                                      "その他",
+                                    ]
+                                      .map(
+                                        (t) =>
+                                          `<option value="${t}" ${r.type === t ? "selected" : ""}>${t}</option>`,
+                                      )
+                                      .join("")}
                                 </select>
                             </div>
                             <div class="ot-field">
@@ -493,12 +549,12 @@ router.get('/overtime/:id/edit', requireLogin, async (req, res) => {
                             </div>
                             <div class="ot-field">
                                 <label class="ot-label">備考</label>
-                                <input type="text" name="notes" class="ot-input" value="${escapeHtml(r.notes || '')}">
+                                <input type="text" name="notes" class="ot-input" value="${escapeHtml(r.notes || "")}">
                             </div>
                             <div class="ot-foot">
                                 <a href="/overtime" class="ot-ghost-btn">キャンセル</a>
                                 <button type="submit"
-                                    class="ot-submit-btn ${isPre ? 'ot-submit-pre' : 'ot-submit-post'}">✅ 更新する</button>
+                                    class="ot-submit-btn ${isPre ? "ot-submit-pre" : "ot-submit-post"}">✅ 更新する</button>
                             </div>
                         </form>
                     </div>
@@ -509,7 +565,7 @@ router.get('/overtime/:id/edit', requireLogin, async (req, res) => {
                 const s=document.getElementById('ot-start');
                 const e=document.getElementById('ot-end');
                 const p=document.getElementById('ot-hours-preview');
-                const isPre=${isPre ? 'true' : 'false'};
+                const isPre=${isPre ? "true" : "false"};
                 function calc(){
                     if(!s.value||!e.value){p.style.display='none';return;}
                     const [sh,sm]=s.value.split(':').map(Number);
@@ -528,91 +584,100 @@ router.get('/overtime/:id/edit', requireLogin, async (req, res) => {
                 });
             })();
             </script>
-        `);
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('エラーが発生しました');
-    }
+        `,
+    );
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("エラーが発生しました");
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /overtime/:id/edit  ─  編集保存
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/overtime/:id/edit', requireLogin, async (req, res) => {
-    try {
-        const r = await OvertimeRequest.findById(req.params.id);
-        if (!r) return res.status(404).send('申請が見つかりません');
-        if (String(r.userId) !== String(req.session.userId)) return res.status(403).send('権限がありません');
-        if (r.status !== 'pending') return res.status(400).send('承認待ち以外の申請は編集できません');
+router.post("/overtime/:id/edit", requireLogin, async (req, res) => {
+  try {
+    const r = await OvertimeRequest.findById(req.params.id);
+    if (!r) return res.status(404).send("申請が見つかりません");
+    if (String(r.userId) !== String(req.session.userId))
+      return res.status(403).send("権限がありません");
+    if (r.status !== "pending")
+      return res.status(400).send("承認待ち以外の申請は編集できません");
 
-        const { date, startTime, endTime, type, reason, notes } = req.body;
-        const hours = calcHours(startTime, endTime);
-        if (!hours) return res.status(400).send('終了時刻は開始時刻より後にしてください');
+    const { date, startTime, endTime, type, reason, notes } = req.body;
+    const hours = calcHours(startTime, endTime);
+    if (!hours)
+      return res.status(400).send("終了時刻は開始時刻より後にしてください");
 
-        r.date      = moment.tz(date, 'Asia/Tokyo').startOf('day').toDate();
-        r.startTime = startTime;
-        r.endTime   = endTime;
-        r.hours     = hours;
-        r.type      = type || '通常残業';
-        r.reason    = reason.trim();
-        r.notes     = notes ? notes.trim() : undefined;
-        await r.save();
+    r.date = moment.tz(date, "Asia/Tokyo").startOf("day").toDate();
+    r.startTime = startTime;
+    r.endTime = endTime;
+    r.hours = hours;
+    r.type = type || "通常残業";
+    r.reason = reason.trim();
+    r.notes = notes ? notes.trim() : undefined;
+    await r.save();
 
-        res.redirect('/overtime');
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('更新に失敗しました');
-    }
+    res.redirect("/overtime");
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("更新に失敗しました");
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /overtime/:id/cancel  ─  取消
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/overtime/:id/cancel', requireLogin, async (req, res) => {
-    try {
-        const r = await OvertimeRequest.findById(req.params.id);
-        if (!r) return res.status(404).send('申請が見つかりません');
-        if (String(r.userId) !== String(req.session.userId)) return res.status(403).send('権限がありません');
-        if (r.status !== 'pending') return res.status(400).send('承認待ち以外の申請は取り消せません');
+router.post("/overtime/:id/cancel", requireLogin, async (req, res) => {
+  try {
+    const r = await OvertimeRequest.findById(req.params.id);
+    if (!r) return res.status(404).send("申請が見つかりません");
+    if (String(r.userId) !== String(req.session.userId))
+      return res.status(403).send("権限がありません");
+    if (r.status !== "pending")
+      return res.status(400).send("承認待ち以外の申請は取り消せません");
 
-        r.status = 'canceled';
-        await r.save();
-        res.redirect('/overtime');
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('取消に失敗しました');
-    }
+    r.status = "canceled";
+    await r.save();
+    res.redirect("/overtime");
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("取消に失敗しました");
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 管理者: GET /admin/overtime  ─  一覧
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/admin/overtime', requireLogin, isAdmin, async (req, res) => {
-    try {
-        const timingFilter = req.query.timing || '';
-        const statusFilter = req.query.status || 'pending';
-        const page    = Math.max(1, parseInt(req.query.page) || 1);
-        const perPage = 20;
+router.get("/admin/overtime", requireLogin, isAdmin, async (req, res) => {
+  try {
+    const timingFilter = req.query.timing || "";
+    const statusFilter = req.query.status || "pending";
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const perPage = 20;
 
-        const query = {};
-        if (timingFilter) query.requestTiming = timingFilter;
-        if (statusFilter !== 'all') query.status = statusFilter;
+    const query = {};
+    if (timingFilter) query.requestTiming = timingFilter;
+    if (statusFilter !== "all") query.status = statusFilter;
 
-        const total    = await OvertimeRequest.countDocuments(query);
-        const requests = await OvertimeRequest.find(query)
-            .populate('employeeId')
-            .populate('userId', 'username')
-            .sort({ date: -1, createdAt: -1 })
-            .skip((page - 1) * perPage)
-            .limit(perPage);
+    const total = await OvertimeRequest.countDocuments(query);
+    const requests = await OvertimeRequest.find(query)
+      .populate("employeeId")
+      .populate("userId", "username")
+      .sort({ date: -1, createdAt: -1 })
+      .skip((page - 1) * perPage)
+      .limit(perPage);
 
-        const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
-        const qs = (extra = {}) => {
-            const p = { timing: timingFilter, status: statusFilter, ...extra };
-            return Object.entries(p).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-        };
+    const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+    const qs = (extra = {}) => {
+      const p = { timing: timingFilter, status: statusFilter, ...extra };
+      return Object.entries(p)
+        .filter(([, v]) => v)
+        .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+        .join("&");
+    };
 
-        const ADMIN_CSS = `
+    const ADMIN_CSS = `
             ${COMMON_CSS}
             .adm-ot-wrap{max-width:1020px;margin:0 auto}
             .adm-ot-hero{background:linear-gradient(120deg,#0b2540,#7c3aed);border-radius:20px;padding:24px 28px;color:#fff;display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px;flex-wrap:wrap}
@@ -654,21 +719,39 @@ router.get('/admin/overtime', requireLogin, isAdmin, async (req, res) => {
             .modal-btn{padding:9px 20px;border-radius:9px;font-size:14px;font-weight:700;border:none;cursor:pointer}
             .modal-btn-danger{background:#ef4444;color:#fff}
             .modal-btn-ghost{background:#f1f5f9;color:#374151}
+            @media(max-width:640px){
+                .adm-ot-wrap{padding:0 2px}
+                .adm-ot-hero{padding:16px 14px;border-radius:14px;margin-bottom:14px}
+                .adm-card-body{padding:12px 10px;flex-direction:column;gap:8px}
+                .adm-emp{display:flex;min-width:auto;text-align:left;align-items:center;gap:10px;width:100%}
+                .adm-emp .avatar{margin:0;flex-shrink:0}
+                .adm-info{min-width:0}
+                .adm-info-top{gap:6px}
+                .adm-actions{width:100%;margin-left:0;justify-content:flex-end}
+                .adm-pager{flex-direction:column;gap:8px;align-items:flex-start}
+                .modal-box{padding:20px 14px}
+            }
         `;
 
-        const admCards = requests.length === 0
-            ? `<div class="adm-empty">
+    const admCards =
+      requests.length === 0
+        ? `<div class="adm-empty">
                 <div style="font-size:48px;margin-bottom:16px">📋</div>
                 <div style="font-size:15px;font-weight:600">対象の申請はありません</div>
                </div>`
-            : requests.map(r => {
-                const emp   = r.employeeId;
-                const dm    = moment.tz(r.date, 'Asia/Tokyo');
-                const name  = emp ? emp.name : (r.userId ? r.userId.username : '不明');
-                const dept  = emp ? (emp.department || '') : '';
-                const isPre = r.requestTiming !== 'post';
-                return `
-                <div class="adm-card ${isPre ? 'pre-adm' : 'post-adm'}">
+        : requests
+            .map((r) => {
+              const emp = r.employeeId;
+              const dm = moment.tz(r.date, "Asia/Tokyo");
+              const name = emp
+                ? emp.name
+                : r.userId
+                  ? r.userId.username
+                  : "不明";
+              const dept = emp ? emp.department || "" : "";
+              const isPre = r.requestTiming !== "post";
+              return `
+                <div class="adm-card ${isPre ? "pre-adm" : "post-adm"}">
                     <div class="adm-card-body">
                         <div class="adm-emp">
                             <div class="avatar">${escapeHtml(name.charAt(0))}</div>
@@ -678,31 +761,38 @@ router.get('/admin/overtime', requireLogin, isAdmin, async (req, res) => {
                         <div class="adm-info">
                             <div class="adm-info-top">
                                 ${TIMING_BADGE(r.requestTiming)}
-                                <span class="adm-info-date">${dm.format('YYYY/MM/DD')}（${weekdays[dm.day()]}）</span>
+                                <span class="adm-info-date">${dm.format("YYYY/MM/DD")}（${weekdays[dm.day()]}）</span>
                                 <span class="adm-info-type">${escapeHtml(r.type)}</span>
                                 ${STATUS_BADGE(r.status)}
                             </div>
                             <div class="adm-info-time">
                                 🕐 ${escapeHtml(r.startTime)} ～ ${escapeHtml(r.endTime)}
-                                （${r.hours}時間${isPre ? ' 予定' : ' 実績'}）
+                                （${r.hours}時間${isPre ? " 予定" : " 実績"}）
                             </div>
                             <div class="adm-info-reason">📝 ${escapeHtml(r.reason)}</div>
-                            ${r.rejectReason
+                            ${
+                              r.rejectReason
                                 ? `<div style="margin-top:5px;font-size:12px;color:#ef4444">却下理由: ${escapeHtml(r.rejectReason)}</div>`
-                                : ''}
+                                : ""
+                            }
                         </div>
-                        ${r.status === 'pending' ? `
+                        ${
+                          r.status === "pending"
+                            ? `
                         <div class="adm-actions">
                             <form action="/admin/overtime/${r._id}/approve" method="post" style="display:inline">
                                 <button class="adm-btn adm-btn-approve">✅ 承認</button>
                             </form>
                             <button class="adm-btn adm-btn-reject" onclick="openRejectModal('${r._id}')">❌ 却下</button>
-                        </div>` : ''}
+                        </div>`
+                            : ""
+                        }
                     </div>
                 </div>`;
-            }).join('');
+            })
+            .join("");
 
-        const html = `
+    const html = `
         <style>${ADMIN_CSS}</style>
         <div class="modal-overlay" id="reject-modal">
             <div class="modal-box">
@@ -723,22 +813,22 @@ router.get('/admin/overtime', requireLogin, isAdmin, async (req, res) => {
                 </div>
             </div>
             <div class="ot-tabs">
-                <a href="/admin/overtime?${qs({timing:'',page:1})}"    class="ot-tab ${!timingFilter?'active':''}">すべて</a>
-                <a href="/admin/overtime?${qs({timing:'pre',page:1})}" class="ot-tab ${timingFilter==='pre'?'active':''}">📋 事前申請</a>
-                <a href="/admin/overtime?${qs({timing:'post',page:1})}" class="ot-tab ${timingFilter==='post'?'active':''}">📝 事後申請</a>
+                <a href="/admin/overtime?${qs({ timing: "", page: 1 })}"    class="ot-tab ${!timingFilter ? "active" : ""}">すべて</a>
+                <a href="/admin/overtime?${qs({ timing: "pre", page: 1 })}" class="ot-tab ${timingFilter === "pre" ? "active" : ""}">📋 事前申請</a>
+                <a href="/admin/overtime?${qs({ timing: "post", page: 1 })}" class="ot-tab ${timingFilter === "post" ? "active" : ""}">📝 事後申請</a>
             </div>
             <div class="adm-filter">
-                <a href="/admin/overtime?${qs({status:'all',page:1})}"      class="${statusFilter==='all'     ?'active':''}">すべて</a>
-                <a href="/admin/overtime?${qs({status:'pending',page:1})}"  class="${statusFilter==='pending' ?'active':''}">承認待ち</a>
-                <a href="/admin/overtime?${qs({status:'approved',page:1})}" class="${statusFilter==='approved'?'active':''}">承認済み</a>
-                <a href="/admin/overtime?${qs({status:'rejected',page:1})}" class="${statusFilter==='rejected'?'active':''}">却下</a>
+                <a href="/admin/overtime?${qs({ status: "all", page: 1 })}"      class="${statusFilter === "all" ? "active" : ""}">すべて</a>
+                <a href="/admin/overtime?${qs({ status: "pending", page: 1 })}"  class="${statusFilter === "pending" ? "active" : ""}">承認待ち</a>
+                <a href="/admin/overtime?${qs({ status: "approved", page: 1 })}" class="${statusFilter === "approved" ? "active" : ""}">承認済み</a>
+                <a href="/admin/overtime?${qs({ status: "rejected", page: 1 })}" class="${statusFilter === "rejected" ? "active" : ""}">却下</a>
             </div>
             ${admCards}
             <div class="adm-pager">
-                <div>${(page-1)*perPage+1}〜${Math.min(page*perPage,total)} 件 / 全 ${total} 件</div>
+                <div>${(page - 1) * perPage + 1}〜${Math.min(page * perPage, total)} 件 / 全 ${total} 件</div>
                 <div class="adm-pager-btns">
-                    ${page > 1           ? `<a href="?${qs({page:page-1})}" class="adm-pager-btn">← 前へ</a>` : ''}
-                    ${page*perPage<total ? `<a href="?${qs({page:page+1})}" class="adm-pager-btn">次へ →</a>` : ''}
+                    ${page > 1 ? `<a href="?${qs({ page: page - 1 })}" class="adm-pager-btn">← 前へ</a>` : ""}
+                    ${page * perPage < total ? `<a href="?${qs({ page: page + 1 })}" class="adm-pager-btn">次へ →</a>` : ""}
                 </div>
             </div>
         </div>
@@ -768,74 +858,84 @@ router.get('/admin/overtime', requireLogin, isAdmin, async (req, res) => {
         });
         </script>`;
 
-        renderPage(req, res, '残業申請管理', '残業申請管理', html);
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('サーバーエラー');
-    }
+    renderPage(req, res, "残業申請管理", "残業申請管理", html);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("サーバーエラー");
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 管理者: POST /admin/overtime/:id/approve  ─  承認
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/admin/overtime/:id/approve', requireLogin, isAdmin, async (req, res) => {
+router.post(
+  "/admin/overtime/:id/approve",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const r = await OvertimeRequest.findById(req.params.id);
-        if (!r) return res.status(404).send('申請が見つかりません');
+      const r = await OvertimeRequest.findById(req.params.id);
+      if (!r) return res.status(404).send("申請が見つかりません");
 
-        r.status      = 'approved';
-        r.processedAt = new Date();
-        r.processedBy = req.session.userId;
-        await r.save();
+      r.status = "approved";
+      r.processedAt = new Date();
+      r.processedBy = req.session.userId;
+      await r.save();
 
-        const isPre = r.requestTiming !== 'post';
-        await new Notification({
-            userId:     r.userId,
-            type:       'overtime_approved',
-            title:      `残業${isPre ? '事前' : '事後'}申請が承認されました`,
-            body:       `${moment.tz(r.date,'Asia/Tokyo').format('MM/DD')} ${r.startTime}〜${r.endTime} (${r.hours}h)`,
-            link:       '/overtime',
-            fromUserId: req.session.userId,
-            fromName:   '管理者'
-        }).save();
+      const isPre = r.requestTiming !== "post";
+      await new Notification({
+        userId: r.userId,
+        type: "overtime_approved",
+        title: `残業${isPre ? "事前" : "事後"}申請が承認されました`,
+        body: `${moment.tz(r.date, "Asia/Tokyo").format("MM/DD")} ${r.startTime}〜${r.endTime} (${r.hours}h)`,
+        link: "/overtime",
+        fromUserId: req.session.userId,
+        fromName: "管理者",
+      }).save();
 
-        res.redirect('/admin/overtime?status=pending');
+      res.redirect("/admin/overtime?status=pending");
     } catch (err) {
-        console.error(err);
-        res.status(500).send('承認処理に失敗しました');
+      console.error(err);
+      res.status(500).send("承認処理に失敗しました");
     }
-});
+  },
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 管理者: POST /admin/overtime/:id/reject  ─  却下
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/admin/overtime/:id/reject', requireLogin, isAdmin, async (req, res) => {
+router.post(
+  "/admin/overtime/:id/reject",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const r = await OvertimeRequest.findById(req.params.id);
-        if (!r) return res.status(404).send('申請が見つかりません');
+      const r = await OvertimeRequest.findById(req.params.id);
+      if (!r) return res.status(404).send("申請が見つかりません");
 
-        r.status       = 'rejected';
-        r.processedAt  = new Date();
-        r.processedBy  = req.session.userId;
-        r.rejectReason = req.body.rejectReason || '';
-        await r.save();
+      r.status = "rejected";
+      r.processedAt = new Date();
+      r.processedBy = req.session.userId;
+      r.rejectReason = req.body.rejectReason || "";
+      await r.save();
 
-        const isPre = r.requestTiming !== 'post';
-        await new Notification({
-            userId:     r.userId,
-            type:       'overtime_rejected',
-            title:      `残業${isPre ? '事前' : '事後'}申請が却下されました`,
-            body:       `${moment.tz(r.date,'Asia/Tokyo').format('MM/DD')} ${r.startTime}〜${r.endTime} 理由: ${r.rejectReason}`,
-            link:       '/overtime',
-            fromUserId: req.session.userId,
-            fromName:   '管理者'
-        }).save();
+      const isPre = r.requestTiming !== "post";
+      await new Notification({
+        userId: r.userId,
+        type: "overtime_rejected",
+        title: `残業${isPre ? "事前" : "事後"}申請が却下されました`,
+        body: `${moment.tz(r.date, "Asia/Tokyo").format("MM/DD")} ${r.startTime}〜${r.endTime} 理由: ${r.rejectReason}`,
+        link: "/overtime",
+        fromUserId: req.session.userId,
+        fromName: "管理者",
+      }).save();
 
-        res.redirect('/admin/overtime?status=pending');
+      res.redirect("/admin/overtime?status=pending");
     } catch (err) {
-        console.error(err);
-        res.status(500).send('却下処理に失敗しました');
+      console.error(err);
+      res.status(500).send("却下処理に失敗しました");
     }
-});
+  },
+);
 
 module.exports = router;
