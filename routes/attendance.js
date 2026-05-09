@@ -125,6 +125,47 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
 
 .empty-state{padding:32px;text-align:center;color:var(--muted)}
 
+/* ── Mobile ────────────────────────────────────────── */
+@media(max-width:600px){
+  body{font-size:13px}
+
+  /* ヘッダー */
+  .header{padding:10px 14px;flex-wrap:wrap;gap:8px}
+  .brand img{width:36px;height:36px}
+  .brand .title{font-size:15px}
+  .header-right{gap:8px}
+  .user-info .name{font-size:13px}
+  .clock{font-size:11px}
+
+  /* コンテナ */
+  .container{padding:0 10px;margin:14px auto}
+
+  /* KPIs */
+  .kpis{grid-template-columns:repeat(2,1fr);gap:10px}
+  .kpi .value{font-size:17px}
+
+  /* 打刻エリア */
+  .attendance-today{flex-direction:column;gap:10px}
+  .clock-card{min-width:unset;width:100%;padding:14px}
+  .clock-card .time{font-size:24px}
+  .actions{gap:8px}
+  .btn{padding:9px 12px;font-size:13px}
+  .info-list{gap:8px}
+  .info-item{min-width:calc(50% - 4px);padding:10px}
+
+  /* テーブル → カード表示 */
+  .table-wrap{overflow:visible}
+  table.att-table{display:none}
+  .mobile-cards{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+
+  /* クイックリンク */
+  .link-card{padding:10px}
+  .footer-actions{justify-content:stretch}
+  .footer-actions a{flex:1;justify-content:center}
+}
+@media(min-width:601px){
+  .mobile-cards{display:none}
+}
 @media(max-width:520px){
   .kpis{grid-template-columns:repeat(2,1fr)}
   .info-item{min-width:120px}
@@ -155,7 +196,7 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
   <div class="grid">
     <section>
       <div class="panel">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;flex-wrap:wrap;gap:8px">
           <div>
             <h3 style="margin:0">本日の勤怠</h3>
             <div style="color:var(--muted);font-size:13px">迅速に打刻・編集できます</div>
@@ -309,6 +350,32 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
               ` : ''}
             </tbody>
           </table>
+        </div>
+
+        <!-- モバイル用カード表示 -->
+        <div class="mobile-cards">
+          ${monthlyAttendance.length === 0 ? `<div class="empty-state">該当する勤怠記録がありません</div>` :
+            monthlyAttendance.map(record => {
+              const statusClass = record.status === '正常' ? 'tag--normal' : record.status === '遅刻' ? 'tag--late' : record.status === '早退' ? 'tag--early' : record.status === '有休' ? 'tag--paid' : ['午前休','午後休'].includes(record.status) ? 'tag--half' : record.status === '休暇' ? 'tag--vacation' : 'tag--absent';
+              return `
+              <div style="background:linear-gradient(180deg,#fff,#fbfdff);border-radius:10px;padding:12px 14px;box-shadow:0 4px 12px rgba(12,20,40,0.04);border:1px solid rgba(12,20,40,0.04)">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                  <div style="font-weight:700;font-size:15px">${moment(record.date).tz('Asia/Tokyo').format('M月D日（ddd）')}</div>
+                  <span class="tag ${statusClass}">${record.status}</span>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
+                  <div><span style="color:var(--muted)">出勤：</span>${record.checkIn ? moment(record.checkIn).tz('Asia/Tokyo').format('HH:mm') : '-'}</div>
+                  <div><span style="color:var(--muted)">退勤：</span>${record.checkOut ? moment(record.checkOut).tz('Asia/Tokyo').format('HH:mm') : '-'}</div>
+                  <div><span style="color:var(--muted)">勤務：</span>${record.workingHours ? record.workingHours + ' h' : '-'}</div>
+                  <div><span style="color:var(--muted)">昼休：</span>${record.lunchStart ? moment(record.lunchStart).tz('Asia/Tokyo').format('HH:mm') + '〜' + (record.lunchEnd ? moment(record.lunchEnd).tz('Asia/Tokyo').format('HH:mm') : '-') : '-'}</div>
+                </div>
+                ${record.notes ? `<div style="margin-top:6px;font-size:12px;color:var(--muted)">📝 ${record.notes}</div>` : ''}
+                <div style="margin-top:8px;text-align:right">
+                  <a class="btn btn--ghost" href="/edit-attendance/${record._id}" style="font-size:12px;padding:6px 10px">編集</a>
+                </div>
+              </div>`;
+            }).join('')
+          }
         </div>
 
       </div>
