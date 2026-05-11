@@ -1100,7 +1100,8 @@ function buildMainHtml(data) {
             <div class="sc-hd-left"><button class="sc-mobile-back" onclick="openChatSidebar()" title="チャンネル一覧"><i class="fa-solid fa-bars"></i></button><div class="sc-av-wrap"><div class="sc-av sc-av-target">${escHtml(data.targetName || '?').charAt(0).toUpperCase()}</div>
             <span class="sc-pip ${STATUS_CLS[data.targetStatus || 'offline']}" id="target-pip"></span></div>
             <div><div class="sc-hd-name">${escHtml(data.targetName || '')}</div>
-            <div class="sc-hd-sub" id="target-sub">${STATUS_LABEL[data.targetStatus || 'offline']}${data.targetDept ? ' · ' + escHtml(data.targetDept) : ''}</div></div></div>
+            <div class="sc-hd-sub" id="target-sub">${STATUS_LABEL[data.targetStatus || 'offline']}</div>
+            ${data.targetDept ? `<div class="sc-hd-sub">${escHtml(data.targetDept)}</div>` : ''}</div></div>
             <div class="sc-hd-actions">
                 <button class="sc-hd-btn sc-call-btn" id="call-btn" title="音声・ビデオ通話"><i class="fa-solid fa-phone"></i></button>
                 <button class="sc-hd-btn sc-call-btn" id="screen-btn" title="画面共有"><i class="fa-solid fa-desktop"></i></button>

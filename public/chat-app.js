@@ -157,9 +157,7 @@
         if (userId === TARGET_ID) {
             const lbl = document.getElementById('target-sub');
             if (lbl) {
-                const old = lbl.textContent;
-                const dept = old.includes('·') ? ' · ' + old.split('·')[1].trim() : '';
-                lbl.textContent = { online:'オンライン', break:'休憩中', offline:'オフライン' }[status] + dept;
+                lbl.textContent = { online:'オンライン', break:'休憩中', offline:'オフライン' }[status] || status;
             }
         }
     });
