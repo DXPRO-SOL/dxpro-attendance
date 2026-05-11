@@ -248,25 +248,36 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
 
             <div class="actions">
               ${todayAttendance ? `
-                ${!todayAttendance.checkOut ? `
-                <form id="checkoutForm" action="/checkout" method="POST" style="display:inline">
-                  <input type="hidden" name="gpsLat" id="coGpsLat">
-                  <input type="hidden" name="gpsLng" id="coGpsLng">
-                  <input type="hidden" name="gpsLocation" id="coGpsLocation">
-                  <button class="btn btn--danger" type="button" onclick="gpsCheckout()" id="checkoutBtn">
-                    <i class="fa-solid fa-sign-out-alt"></i> GPS退勤
-                  </button>
-                </form>
-                <div id="coGpsStatus" style="font-size:12px;color:#64748b;margin-top:6px;text-align:center"></div>
-                ` : ''}
-                ${todayAttendance.checkIn && (!todayAttendance.lunchStart || todayAttendance.lunchEnd) ? `
-                  <form action="/start-lunch" method="POST" style="display:inline"><button class="btn btn--primary" type="submit"><i class="fa-solid fa-utensils"></i> 昼休み開始</button></form>
-                ` : ''}
-                ${todayAttendance.lunchStart && !todayAttendance.lunchEnd ? `
-                  <form action="/end-lunch" method="POST" style="display:inline"><button class="btn btn--success" type="submit"><i class="fa-solid fa-handshake"></i> 昼休み終了</button></form>
-                ` : ''}
-                <a href="/edit-attendance/${todayAttendance._id}" class="btn btn--ghost">編集</a>
+                ${todayAttendance.checkOut ? `
+                  <!-- 退勤済 → 打刻ボタンなし -->
+                  <a href="/edit-attendance/${todayAttendance._id}" class="btn btn--ghost">編集</a>
+                ` : todayAttendance.lunchEnd ? `
+                  <!-- 昼休み終了済 → 退勤ボタン -->
+                  <form id="checkoutForm" action="/checkout" method="POST" style="display:inline">
+                    <input type="hidden" name="gpsLat" id="coGpsLat">
+                    <input type="hidden" name="gpsLng" id="coGpsLng">
+                    <input type="hidden" name="gpsLocation" id="coGpsLocation">
+                    <button class="btn btn--danger" type="button" onclick="gpsCheckout()" id="checkoutBtn">
+                      <i class="fa-solid fa-sign-out-alt"></i> GPS退勤
+                    </button>
+                  </form>
+                  <div id="coGpsStatus" style="font-size:12px;color:#64748b;margin-top:6px;text-align:center"></div>
+                  <a href="/edit-attendance/${todayAttendance._id}" class="btn btn--ghost">編集</a>
+                ` : todayAttendance.lunchStart ? `
+                  <!-- 昼休み開始済 → 昼休み終了ボタン -->
+                  <form action="/end-lunch" method="POST" style="display:inline">
+                    <button class="btn btn--success" type="submit"><i class="fa-solid fa-handshake"></i> 昼休み終了</button>
+                  </form>
+                  <a href="/edit-attendance/${todayAttendance._id}" class="btn btn--ghost">編集</a>
+                ` : `
+                  <!-- 出勤済・昼休みなし → 昼休み開始ボタン -->
+                  <form action="/start-lunch" method="POST" style="display:inline">
+                    <button class="btn btn--primary" type="submit"><i class="fa-solid fa-utensils"></i> 昼休み開始</button>
+                  </form>
+                  <a href="/edit-attendance/${todayAttendance._id}" class="btn btn--ghost">編集</a>
+                `}
               ` : `
+                <!-- 未打刻 → 出勤ボタン -->
                 <form id="checkinForm" action="/checkin" method="POST" style="display:inline">
                   <input type="hidden" name="gpsLat" id="gpsLat">
                   <input type="hidden" name="gpsLng" id="gpsLng">
@@ -649,10 +660,15 @@ ${pageFooter()}`);
 <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/ja.min.js"></script>
 <style>
-.page-header { display:flex; align-items:center; gap:12px; margin-bottom:24px; }
+.page-header { display:flex; align-items:center; gap:12px; margin-bottom:24px; flex-wrap:wrap; }
 .page-header h2 { margin:0; font-size:22px; font-weight:700; color:#0b2540; }
 .form-row-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-@media(max-width:600px){ .form-row-2{grid-template-columns:1fr} }
+.form-btn-row { display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
+.form-btn-row .btn { flex:1; min-width:120px; justify-content:center; }
+@media(max-width:600px){
+  .form-row-2{grid-template-columns:1fr}
+  .page-header h2{font-size:18px}
+}
 </style>`
         });
 
@@ -705,7 +721,7 @@ ${pageFooter()}`);
             <label for="notes">備考</label>
             <textarea id="notes" name="notes" rows="3" class="form-control">${attendance.notes || ''}</textarea>
         </div>
-        <div style="display:flex;gap:10px;margin-top:8px">
+        <div class="form-btn-row">
             <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> 更新</button>
             <a href="/my-monthly-attendance?year=${year}&month=${month}" class="btn btn-ghost">キャンセル</a>
         </div>
@@ -830,10 +846,15 @@ router.get('/add-attendance', requireLogin, (req, res) => {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/ja.min.js"></script>
 <style>
-.page-header { display:flex; align-items:center; gap:12px; margin-bottom:24px; }
+.page-header { display:flex; align-items:center; gap:12px; margin-bottom:24px; flex-wrap:wrap; }
 .page-header h2 { margin:0; font-size:22px; font-weight:700; color:#0b2540; }
 .form-row-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-@media(max-width:600px){ .form-row-2{grid-template-columns:1fr} }
+.form-btn-row { display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
+.form-btn-row .btn { flex:1; min-width:120px; justify-content:center; }
+@media(max-width:600px){
+  .form-row-2{grid-template-columns:1fr}
+  .page-header h2{font-size:18px}
+}
 </style>`
     });
     res.send(`${shell}
@@ -881,7 +902,7 @@ router.get('/add-attendance', requireLogin, (req, res) => {
             <label for="notes">備考</label>
             <textarea id="notes" name="notes" rows="3" class="form-control" placeholder="任意"></textarea>
         </div>
-        <div style="display:flex;gap:10px;margin-top:8px">
+        <div class="form-btn-row">
             <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> 保存</button>
             <a href="/attendance-main" class="btn btn-ghost">キャンセル</a>
         </div>
@@ -943,11 +964,12 @@ router.get('/attendance/bulk-register', requireLogin, async (req, res) => {
         const month = parseInt(req.query.month) || now.month() + 1;
 
         // 対象月の日数
-        const daysInMonth = moment.tz(`${year}-${String(month).padStart(2,'0')}-01`, 'Asia/Tokyo').daysInMonth();
+        const monthStr = `${year}-${String(month).padStart(2,'0')}-01`;
+        const daysInMonth = moment.tz(monthStr, 'YYYY-MM-DD', 'Asia/Tokyo').daysInMonth();
 
         // 既存の勤怠データを取得
-        const startDate = moment.tz(`${year}-${month}-01`, 'Asia/Tokyo').startOf('month').toDate();
-        const endDate   = moment.tz(`${year}-${month}-01`, 'Asia/Tokyo').endOf('month').toDate();
+        const startDate = moment.tz(monthStr, 'YYYY-MM-DD', 'Asia/Tokyo').startOf('month').toDate();
+        const endDate   = moment.tz(monthStr, 'YYYY-MM-DD', 'Asia/Tokyo').endOf('month').toDate();
         const existingAttendances = await Attendance.find({
             userId: user._id,
             date: { $gte: startDate, $lte: endDate }
@@ -1030,12 +1052,12 @@ router.get('/attendance/bulk-register', requireLogin, async (req, res) => {
 :root{--bg:#f4f7fb;--card:#fff;--accent:#0b5fff;--muted:#6b7280;--success:#16a34a;--danger:#ef4444}
 *{box-sizing:border-box}
 body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:#0f172a;font-size:14px}
-.header{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;background:var(--card);box-shadow:0 4px 12px rgba(12,20,40,0.06);position:sticky;top:0;z-index:20}
-.brand{font-weight:700;font-size:18px;color:var(--accent)}
-.container{max-width:1200px;margin:24px auto;padding:0 16px}
+.header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:var(--card);box-shadow:0 4px 12px rgba(12,20,40,0.06);position:sticky;top:0;z-index:20;gap:10px;flex-wrap:wrap}
+.brand{font-weight:700;font-size:17px;color:var(--accent);white-space:nowrap}
+.container{max-width:1200px;margin:20px auto;padding:0 14px}
 .panel{background:var(--card);border-radius:12px;padding:20px;box-shadow:0 8px 24px rgba(12,20,40,0.05);margin-bottom:16px}
-.month-selector{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.month-selector select{padding:8px 12px;border-radius:8px;border:1px solid #dbe7ff;font-size:14px}
+.month-selector{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.month-selector select{padding:7px 10px;border-radius:8px;border:1px solid #dbe7ff;font-size:14px}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:9px;border:none;cursor:pointer;font-weight:600;font-size:14px;text-decoration:none;transition:opacity .15s}
 .btn:hover{opacity:.85}
 .btn-primary{background:linear-gradient(90deg,#0b5fff,#184df2);color:#fff}
@@ -1043,30 +1065,47 @@ body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:
 .btn-success{background:var(--success);color:#fff}
 .btn-sm{padding:6px 10px;font-size:13px}
 .bulk-table{width:100%;border-collapse:collapse}
-.bulk-table thead th{background:#0b1220;color:#fff;padding:10px 8px;text-align:center;font-size:13px;white-space:nowrap}
-.bulk-table tbody td{padding:6px 8px;border-bottom:1px solid rgba(12,20,40,0.05);text-align:center;vertical-align:middle}
+.bulk-table thead th{background:#0b1220;color:#fff;padding:10px 6px;text-align:center;font-size:12px;white-space:nowrap}
+.bulk-table tbody td{padding:5px 4px;border-bottom:1px solid rgba(12,20,40,0.05);text-align:center;vertical-align:middle}
 .bulk-table tbody tr:hover td{background:#f6fbff}
 .bulk-table tbody tr.weekend td{background:#fafafa}
 .bulk-table tbody tr.confirmed td{opacity:.75}
-.time-input{width:78px;padding:5px 7px;border-radius:6px;border:1px solid #dbe7ff;text-align:center;font-size:13px}
+.time-input{width:68px;padding:4px 5px;border-radius:6px;border:1px solid #dbe7ff;text-align:center;font-size:12px}
 .time-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(11,95,255,.1)}
 .time-input:disabled{background:#f1f5f9;color:#94a3b8;cursor:not-allowed}
-.notes-input{width:140px;padding:5px 8px;border-radius:6px;border:1px solid #dbe7ff;font-size:12px}
+.notes-input{width:110px;padding:4px 6px;border-radius:6px;border:1px solid #dbe7ff;font-size:11px}
 .notes-input:disabled{background:#f1f5f9;color:#94a3b8;cursor:not-allowed}
-.status-select{padding:5px 6px;border-radius:6px;border:1px solid #dbe7ff;font-size:12px;min-width:68px}
+.status-select{padding:4px 4px;border-radius:6px;border:1px solid #dbe7ff;font-size:11px;min-width:60px}
 .status-select:disabled{background:#f1f5f9;color:#94a3b8;cursor:not-allowed}
 .day-label{font-weight:700}
 .sun{color:#ef4444}
 .sat{color:#3b82f6}
 .confirmed-badge{font-size:11px;padding:3px 7px;background:#dcfce7;color:#166534;border-radius:4px;white-space:nowrap}
-.table-wrap{overflow:auto;border-radius:8px;max-height:520px}
-.summary-bar{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}
-.summary-item{background:#f8fafc;padding:8px 14px;border-radius:8px;font-size:13px}
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:8px;max-height:60vh}
+.summary-bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.summary-item{background:#f8fafc;padding:7px 12px;border-radius:8px;font-size:13px;white-space:nowrap}
 .summary-item strong{color:#0b1220}
-.sticky-footer{position:sticky;bottom:0;background:var(--card);padding:12px 20px;box-shadow:0 -4px 12px rgba(12,20,40,.08);display:flex;gap:10px;justify-content:flex-end;z-index:10}
-.tmpl-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px;background:#f8fafc;border-radius:8px;margin-bottom:14px;border:1px solid #e6eefb}
-.tmpl-row label{font-size:12px;color:var(--muted)}
-.tmpl-row input{width:76px;padding:5px 7px;border-radius:6px;border:1px solid #dbe7ff;font-size:13px;text-align:center}
+.sticky-footer{position:sticky;bottom:0;background:var(--card);padding:12px 20px;box-shadow:0 -4px 12px rgba(12,20,40,.08);display:flex;gap:10px;justify-content:flex-end;z-index:10;flex-wrap:wrap}
+.sticky-footer .btn{flex:1;min-width:130px;justify-content:center}
+.tmpl-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px;background:#f8fafc;border-radius:8px;margin-bottom:14px;border:1px solid #e6eefb;overflow-x:auto}
+.tmpl-row label{font-size:12px;color:var(--muted);white-space:nowrap}
+.tmpl-row input{width:70px;padding:5px 7px;border-radius:6px;border:1px solid #dbe7ff;font-size:13px;text-align:center}
+/* モバイル */
+@media(max-width:640px){
+  .panel{padding:14px 12px}
+  .header{padding:10px 14px}
+  .brand{font-size:15px}
+  .container{padding:0 8px;margin:12px auto}
+  .time-input{width:58px;font-size:11px;padding:3px 4px}
+  .status-select{min-width:54px;font-size:10px}
+  .notes-input{width:80px;font-size:10px}
+  .bulk-table thead th{padding:8px 3px;font-size:11px}
+  .bulk-table tbody td{padding:4px 2px}
+  .summary-bar{gap:6px}
+  .summary-item{font-size:12px;padding:5px 9px}
+  .tmpl-row{gap:6px}
+  .tmpl-row input{width:60px;font-size:12px}
+}
 </style>
 </head>
 <body>
@@ -1078,8 +1117,8 @@ body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:
 <div class="container">
 <div class="panel">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:18px">
-        <div>
-            <h3 style="margin:0 0 4px">${escapeHtml(employee.name)} さん ／ ${year}年${month}月</h3>
+        <div style="min-width:0">
+            <h3 style="margin:0 0 4px;font-size:clamp(15px,3vw,18px)">${escapeHtml(employee.name)} さん ／ ${year}年${month}月</h3>
             <div style="color:var(--muted);font-size:13px">対象月の勤怠をまとめて入力・更新できます。確定済みの行は編集できません。</div>
         </div>
         <form method="get" action="/attendance/bulk-register" class="month-selector">
@@ -1707,142 +1746,395 @@ router.get('/my-monthly-attendance', requireLogin, async (req, res) => {
             employee: req.session.employee,
             isAdmin: !!req.session.isAdmin,
             extraHead: `<style>
-.page-header { display:flex; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
-.page-header h2 { margin:0; font-size:22px; font-weight:700; color:#0b2540; }
-.stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
-@media(max-width:700px){ .stats-row{grid-template-columns:repeat(2,1fr)} }
-.stat-card { background:#fff; border-radius:10px; padding:14px 16px; box-shadow:0 2px 8px rgba(0,0,0,.06); }
-.stat-card .s-label { font-size:12px; color:#6b7280; margin-bottom:4px; }
-.stat-card .s-value { font-size:22px; font-weight:800; color:#0b2540; }
-.month-nav { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-.month-nav select { padding:7px 10px; border-radius:7px; border:1px solid #d1d5db; font-size:14px; }
-.tbl-wrap { overflow-x:auto; border-radius:10px; }
-.tbl-wrap table { width:100%; border-collapse:collapse; font-size:14px; }
-.tbl-wrap thead th { background:#0b2540; color:#fff; padding:10px 12px; text-align:left; white-space:nowrap; }
-.tbl-wrap tbody td { padding:10px 12px; border-bottom:1px solid #f1f5f9; vertical-align:middle; white-space:nowrap; }
-.tbl-wrap tbody tr:hover td { background:#f8fafc; }
-.tbl-wrap tbody tr:last-child td { border-bottom:none; }
-.action-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+/* ===== Monthly Attendance Page ===== */
+.mma-wrapper { max-width: 900px; margin: 0 auto; padding: 0 0 32px; }
+
+/* Header */
+.mma-header {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 20px; flex-wrap: wrap;
+}
+.mma-header-back {
+  display: flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: 10px;
+  background: #f1f5f9; color: #475569; text-decoration: none;
+  flex-shrink: 0; transition: background .15s;
+}
+.mma-header-back:hover { background: #e2e8f0; }
+.mma-header-title {
+  flex: 1; min-width: 0;
+}
+.mma-header-title h2 {
+  margin: 0; font-size: 20px; font-weight: 800; color: #0f172a;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mma-header-title .mma-subtitle {
+  font-size: 13px; color: #64748b; margin-top: 1px;
+}
+.mma-header-badge { flex-shrink: 0; }
+
+/* Month Switcher */
+.mma-month-switcher {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  box-shadow: 0 1px 4px rgba(0,0,0,.05);
+}
+.mma-month-switcher .mms-label {
+  font-size: 12px; font-weight: 600; color: #64748b;
+  text-transform: uppercase; letter-spacing: .05em;
+  white-space: nowrap;
+}
+.mma-month-switcher form {
+  display: flex; gap: 8px; align-items: center; flex: 1; flex-wrap: wrap;
+}
+.mma-month-switcher select {
+  padding: 8px 12px; border-radius: 8px;
+  border: 1px solid #e2e8f0; font-size: 14px;
+  background: #f8fafc; color: #0f172a;
+  flex: 1; min-width: 72px; cursor: pointer;
+  outline: none; transition: border-color .15s;
+}
+.mma-month-switcher select:focus { border-color: #3b82f6; }
+.mma-month-switcher .btn-switch {
+  padding: 8px 16px; border-radius: 8px;
+  background: #0b5fff; color: #fff; border: none; cursor: pointer;
+  font-size: 13px; font-weight: 600; white-space: nowrap;
+  display: flex; align-items: center; gap: 6px;
+  transition: background .15s;
+}
+.mma-month-switcher .btn-switch:hover { background: #0044cc; }
+
+/* Stats Grid */
+.mma-stats {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px; margin-bottom: 20px;
+}
+@media(max-width: 700px) { .mma-stats { grid-template-columns: repeat(3, 1fr); } }
+@media(max-width: 400px) { .mma-stats { grid-template-columns: repeat(2, 1fr) !important; } }
+.mma-stat {
+  background: #fff; border-radius: 14px; padding: 14px 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06); border: 1px solid #f1f5f9;
+  text-align: center;
+}
+.mma-stat .st-icon {
+  font-size: 18px; margin-bottom: 6px; line-height: 1;
+}
+.mma-stat .st-val {
+  font-size: 24px; font-weight: 800; line-height: 1.1;
+}
+.mma-stat .st-lbl {
+  font-size: 11px; color: #94a3b8; margin-top: 3px; font-weight: 500;
+}
+
+/* Alert banners */
+.mma-alert {
+  border-radius: 12px; padding: 12px 16px;
+  margin-bottom: 14px; display: flex; align-items: flex-start; gap: 10px;
+  font-size: 14px; line-height: 1.5;
+}
+.mma-alert.info    { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+.mma-alert.warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+.mma-alert.danger  { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+.mma-alert.success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+.mma-alert-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+
+/* Action Buttons */
+.mma-actions {
+  display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;
+}
+.mma-actions .mma-btn {
+  display: flex; align-items: center; gap: 7px;
+  padding: 10px 18px; border-radius: 10px; font-size: 14px; font-weight: 600;
+  border: none; cursor: pointer; text-decoration: none; white-space: nowrap;
+  transition: all .15s; flex: 1; min-width: 120px; justify-content: center;
+}
+.mma-btn.primary { background: #0b5fff; color: #fff; }
+.mma-btn.primary:hover { background: #0044cc; }
+.mma-btn.ghost { background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; }
+.mma-btn.ghost:hover { background: #e2e8f0; }
+
+/* Desktop Table */
+.mma-table-wrap {
+  background: #fff; border-radius: 14px; overflow: hidden;
+  box-shadow: 0 1px 6px rgba(0,0,0,.07); border: 1px solid #f1f5f9;
+}
+.mma-table-wrap table {
+  width: 100%; border-collapse: collapse; font-size: 14px;
+}
+.mma-table-wrap thead th {
+  background: linear-gradient(135deg, #0b2540 0%, #1e3a5f 100%);
+  color: #fff; padding: 13px 14px; text-align: left;
+  font-size: 12px; font-weight: 600; letter-spacing: .04em;
+  white-space: nowrap;
+}
+.mma-table-wrap thead th:first-child { padding-left: 18px; }
+.mma-table-wrap tbody td {
+  padding: 11px 14px; border-bottom: 1px solid #f8fafc;
+  vertical-align: middle; color: #1e293b;
+}
+.mma-table-wrap tbody td:first-child { padding-left: 18px; font-weight: 600; }
+.mma-table-wrap tbody tr:last-child td { border-bottom: none; }
+.mma-table-wrap tbody tr:hover td { background: #f8fafc; }
+.mma-table-wrap .td-muted { color: #94a3b8; }
+.mma-table-wrap .td-time { font-variant-numeric: tabular-nums; font-weight: 500; }
+.mma-table-wrap .td-actions { display: flex; gap: 6px; }
+
+/* Badges */
+.mma-badge {
+  display: inline-flex; align-items: center;
+  padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 700;
+  white-space: nowrap;
+}
+.mma-badge.success  { background: #dcfce7; color: #15803d; }
+.mma-badge.warning  { background: #fef9c3; color: #a16207; }
+.mma-badge.danger   { background: #fee2e2; color: #b91c1c; }
+.mma-badge.info     { background: #dbeafe; color: #1d4ed8; }
+.mma-badge.muted    { background: #f1f5f9; color: #64748b; }
+
+/* Action icon buttons */
+.mma-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 8px; border: none;
+  cursor: pointer; text-decoration: none; font-size: 13px; transition: all .15s;
+  flex-shrink: 0;
+}
+.mma-icon-btn.edit { background: #f1f5f9; color: #475569; text-decoration: none; }
+.mma-icon-btn.edit:hover { background: #e2e8f0; text-decoration: none; }
+.mma-icon-btn.del  { background: #fee2e2; color: #dc2626; padding: 0; box-sizing: border-box; }
+.mma-icon-btn.del:hover { background: #fecaca; }
+.mma-icon-btn[disabled], .mma-icon-btn.disabled { opacity: .35; pointer-events: none; }
+
+/* Mobile Cards */
+.mma-cards { display: none; }
+@media(max-width: 640px) {
+  .mma-wrapper { padding: 0 0 24px; }
+  .mma-header-title h2 { font-size: 17px; }
+  .mma-table-wrap table { display: none; }
+  .mma-cards { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+  .mma-card {
+    background: #fff; border-radius: 14px; overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07); border: 1px solid #f1f5f9;
+  }
+  .mma-card-top {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 13px 15px 10px; border-bottom: 1px solid #f8fafc;
+  }
+  .mma-card-date { font-weight: 800; font-size: 15px; color: #0f172a; }
+  .mma-card-body { padding: 12px 15px; }
+  .mma-card-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .mma-card-item .ci-label {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    color: #94a3b8; letter-spacing: .05em; margin-bottom: 2px;
+  }
+  .mma-card-item .ci-val {
+    font-size: 15px; font-weight: 700; color: #1e293b;
+  }
+  .mma-card-item .ci-val.muted { color: #94a3b8; font-weight: 400; }
+  .mma-card-footer {
+    display: flex; gap: 8px; padding: 10px 15px 13px;
+    border-top: 1px solid #f8fafc;
+  }
+  .mma-card-footer .mma-btn {
+    flex: 1; padding: 9px 12px; font-size: 13px;
+  }
+  .mma-actions .mma-btn { min-width: 100px; font-size: 13px; padding: 9px 14px; }
+}
+@media(min-width: 641px) { .mma-cards { display: none !important; } }
+
+/* Empty state */
+.mma-empty {
+  text-align: center; padding: 48px 24px; color: #94a3b8;
+}
+.mma-empty i { font-size: 40px; margin-bottom: 12px; display: block; opacity: .4; }
+.mma-empty p { margin: 0; font-size: 15px; }
 </style>`
         });
 
+        const statusBadge = (status) => {
+            const map = { '遅刻':'warning','早退':'warning','欠勤':'danger','有休':'info','午前休':'info','午後休':'info','休暇':'info' };
+            const cls = map[status] || 'success';
+            return `<span class="mma-badge ${cls}">${status}</span>`;
+        };
+
         res.send(`${shell}
-<div class="page-header">
-    <a href="/attendance-main" class="btn btn-ghost btn-sm"><i class="fa-solid fa-arrow-left"></i></a>
-    <h2><i class="fa-solid fa-calendar-days" style="color:#0b5fff"></i>
-        ${escapeHtml(employee.name)}さんの勤怠記録
-    </h2>
-    ${approvalBadge}
-    <span style="color:#6b7280;font-size:13px;margin-left:auto">${year}年${month}月</span>
+<div class="mma-wrapper">
+
+<!-- ヘッダー -->
+<div class="mma-header">
+  <a href="/attendance-main" class="mma-header-back" title="戻る">
+    <i class="fa-solid fa-arrow-left"></i>
+  </a>
+  <div class="mma-header-title">
+    <h2><i class="fa-solid fa-calendar-days" style="color:#0b5fff;margin-right:6px"></i>${escapeHtml(employee.name)}さんの勤怠記録</h2>
+    <div class="mma-subtitle">${year}年${month}月</div>
+  </div>
+  <div class="mma-header-badge">${approvalBadge}</div>
 </div>
 
 <!-- 月切替 -->
-<div class="card" style="padding:16px 20px;margin-bottom:16px">
-    <form action="/my-monthly-attendance" method="GET" class="month-nav">
-        <select name="year">${yearOptions}</select>
-        <select name="month">${monthOptions}</select>
-        <button type="submit" class="btn btn-primary btn-sm"><i class="fa-solid fa-rotate"></i> 切替</button>
-    </form>
+<div class="mma-month-switcher">
+  <span class="mms-label"><i class="fa-solid fa-calendar-week" style="margin-right:4px"></i>月選択</span>
+  <form action="/my-monthly-attendance" method="GET">
+    <select name="year">${yearOptions}</select>
+    <select name="month">${monthOptions}</select>
+    <button type="submit" class="btn-switch"><i class="fa-solid fa-rotate"></i> 切替</button>
+  </form>
 </div>
 
-<!-- 統計 -->
-<div class="stats-row">
-    <div class="stat-card">
-        <div class="s-label">出勤日数</div>
-        <div class="s-value" style="color:#0b5fff">${countWork}</div>
-    </div>
-    <div class="stat-card">
-        <div class="s-label">総勤務時間</div>
-        <div class="s-value">${totalWork.toFixed(1)}<span style="font-size:14px;font-weight:400;color:#6b7280">h</span></div>
-    </div>
-    <div class="stat-card">
-        <div class="s-label">遅刻</div>
-        <div class="s-value" style="color:#f59e0b">${countLate}</div>
-    </div>
-    <div class="stat-card">
-        <div class="s-label">欠勤</div>
-        <div class="s-value" style="color:#ef4444">${countAbsent}</div>
-    </div>
-    <div class="stat-card">
-        <div class="s-label">有休・休暇</div>
-        <div class="s-value" style="color:#3b82f6">${countLeave}</div>
-    </div>
+<!-- 統計カード -->
+<div class="mma-stats">
+  <div class="mma-stat">
+    <div class="st-icon">🏢</div>
+    <div class="st-val" style="color:#0b5fff">${countWork}</div>
+    <div class="st-lbl">出勤日数</div>
+  </div>
+  <div class="mma-stat">
+    <div class="st-icon">⏱️</div>
+    <div class="st-val" style="color:#0f172a">${totalWork.toFixed(1)}<span style="font-size:14px;font-weight:500;color:#94a3b8">h</span></div>
+    <div class="st-lbl">総勤務時間</div>
+  </div>
+  <div class="mma-stat">
+    <div class="st-icon">⚠️</div>
+    <div class="st-val" style="color:#d97706">${countLate}</div>
+    <div class="st-lbl">遅刻</div>
+  </div>
+  <div class="mma-stat">
+    <div class="st-icon">❌</div>
+    <div class="st-val" style="color:#dc2626">${countAbsent}</div>
+    <div class="st-lbl">欠勤</div>
+  </div>
+  <div class="mma-stat">
+    <div class="st-icon">🌴</div>
+    <div class="st-val" style="color:#2563eb">${countLeave}</div>
+    <div class="st-lbl">有休・休暇</div>
+  </div>
 </div>
 
-${isJoinMonth ? `<div class="alert alert-info" style="margin-bottom:16px"><i class="fa-solid fa-circle-info"></i> 今月は入社月です。入社日: ${employee.joinDate.toLocaleDateString('ja-JP')}</div>` : ''}
+<!-- アラート -->
+${isJoinMonth ? `<div class="mma-alert info"><span class="mma-alert-icon"><i class="fa-solid fa-circle-info"></i></span><div><strong>入社月</strong> — 入社日: ${employee.joinDate.toLocaleDateString('ja-JP')}</div></div>` : ''}
 
 ${approvalRequest && approvalRequest.status === 'returned' && approvalRequest.returnReason ? `
-<div class="alert alert-danger" style="margin-bottom:16px">
-    <strong><i class="fa-solid fa-rotate-left"></i> 差し戻し理由:</strong> ${escapeHtml(approvalRequest.returnReason)}
-    ${approvalRequest.processedAt ? `<br><small style="color:#991b1b">処理日: ${approvalRequest.processedAt.toLocaleDateString('ja-JP')}</small>` : ''}
+<div class="mma-alert danger">
+  <span class="mma-alert-icon"><i class="fa-solid fa-rotate-left"></i></span>
+  <div>
+    <strong>差し戻し理由:</strong> ${escapeHtml(approvalRequest.returnReason)}
+    ${approvalRequest.processedAt ? `<div style="font-size:12px;margin-top:3px;opacity:.8">処理日: ${approvalRequest.processedAt.toLocaleDateString('ja-JP')}</div>` : ''}
+  </div>
 </div>` : ''}
 
 ${approvalRequest && approvalRequest.status === 'pending' ? `
-<div class="alert alert-warning" style="margin-bottom:16px">
-    <i class="fa-solid fa-hourglass-half"></i> <strong>承認待ち</strong> — 管理者の処理をお待ちください。この期間の記録は編集できません。
+<div class="mma-alert warning">
+  <span class="mma-alert-icon"><i class="fa-solid fa-hourglass-half"></i></span>
+  <div><strong>承認待ち</strong> — 管理者の処理をお待ちください。この期間の記録は編集できません。</div>
 </div>` : ''}
 
 ${approvalRequest && approvalRequest.status === 'approved' ? `
-<div class="alert alert-success" style="margin-bottom:16px">
-    <i class="fa-solid fa-circle-check"></i> <strong>承認済み</strong>
-    ${approvalRequest.processedAt ? ` — ${approvalRequest.processedAt.toLocaleDateString('ja-JP')}` : ''}
+<div class="mma-alert success">
+  <span class="mma-alert-icon"><i class="fa-solid fa-circle-check"></i></span>
+  <div><strong>承認済み</strong>${approvalRequest.processedAt ? ` — ${approvalRequest.processedAt.toLocaleDateString('ja-JP')}` : ''}</div>
 </div>` : ''}
 
 <!-- アクションボタン -->
-<div class="action-row">
-    ${canEdit ? `<button onclick="requestApproval(${year},${month})" class="btn btn-primary"><i class="fa-solid fa-paper-plane"></i> 承認リクエスト</button>` : ''}
-    <a href="/attendance/bulk-register?year=${year}&month=${month}" class="btn btn-ghost"><i class="fa-solid fa-table-list"></i> 一括入力</a>
-    <button onclick="window.open('/print-attendance?year=${year}&month=${month}','_blank')" class="btn btn-ghost"><i class="fa-solid fa-print"></i> 印刷</button>
+<div class="mma-actions">
+  ${canEdit ? `<button onclick="requestApproval(${year},${month})" class="mma-btn primary" style="font-size:12px;padding:9px 14px"><i class="fa-solid fa-paper-plane"></i> 承認リクエスト</button>` : ''}
+  <a href="/attendance/bulk-register?year=${year}&month=${month}" class="mma-btn ghost"><i class="fa-solid fa-table-list"></i> 一括入力</a>
+  <button onclick="window.open('/print-attendance?year=${year}&month=${month}','_blank')" class="mma-btn ghost"><i class="fa-solid fa-print"></i> 印刷</button>
 </div>
 
-<!-- 勤怠テーブル -->
-<div class="card" style="padding:0;overflow:hidden">
-    <div class="tbl-wrap">
-        <table>
-            <thead>
-                <tr>
-                    <th>日付</th>
-                    <th>出勤</th>
-                    <th>退勤</th>
-                    <th>昼休憩</th>
-                    <th>勤務時間</th>
-                    <th>状態</th>
-                    <th>操作</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${attendances.length === 0 ? `<tr><td colspan="7" style="text-align:center;color:#6b7280;padding:32px">この月の勤怠記録はありません</td></tr>` : ''}
-                ${attendances.map(att => {
-                    const locked = att.isConfirmed || (approvalRequest && approvalRequest.status === 'pending');
-                    const statusCls = att.status === '遅刻' ? 'badge-warning' : att.status === '早退' ? 'badge-warning' : att.status === '欠勤' ? 'badge-danger' : 'badge-success';
-                    return `<tr>
-                        <td>${moment(att.date).tz('Asia/Tokyo').format('YYYY/MM/DD (ddd)')}</td>
-                        <td>${att.checkIn  ? moment(att.checkIn).tz('Asia/Tokyo').format('HH:mm') : '<span style="color:#9ca3af">-</span>'}</td>
-                        <td>${att.checkOut ? moment(att.checkOut).tz('Asia/Tokyo').format('HH:mm') : '<span style="color:#9ca3af">-</span>'}</td>
-                        <td style="font-size:13px;color:#6b7280">
-                            ${att.lunchStart ? moment(att.lunchStart).tz('Asia/Tokyo').format('HH:mm') : '-'} ～
-                            ${att.lunchEnd   ? moment(att.lunchEnd).tz('Asia/Tokyo').format('HH:mm')   : '-'}
-                        </td>
-                        <td>${att.workingHours != null ? att.workingHours + 'h' : '<span style="color:#9ca3af">-</span>'}</td>
-                        <td>
-                            <span class="badge ${statusCls}">${att.status}</span>
-                            ${att.isConfirmed ? '<span class="badge badge-info" style="margin-left:4px">確定</span>' : ''}
-                        </td>
-                        <td style="display:flex;gap:6px">
-                            <a href="/edit-attendance/${att._id}" class="btn btn-ghost btn-sm"
-                               ${locked ? 'style="opacity:.4;pointer-events:none"' : ''}><i class="fa-solid fa-pen"></i></a>
-                            <form action="/delete-attendance/${att._id}" method="POST" style="display:inline"
-                                  onsubmit="return confirm('この打刻記録を削除しますか？');">
-                                <button type="submit" class="btn btn-danger btn-sm"
-                                    ${locked ? 'disabled style="opacity:.4"' : ''}><i class="fa-solid fa-trash"></i></button>
-                            </form>
-                        </td>
-                    </tr>`;
-                }).join('')}
-            </tbody>
-        </table>
-    </div>
+<!-- 勤怠テーブル（デスクトップ） -->
+<div class="mma-table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>日付</th>
+        <th>出勤</th>
+        <th>退勤</th>
+        <th>昼休憩</th>
+        <th>勤務時間</th>
+        <th>状態</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${attendances.length === 0 ? `<tr><td colspan="7"><div class="mma-empty"><i class="fa-regular fa-calendar-xmark"></i><p>この月の勤怠記録はありません</p></div></td></tr>` : ''}
+      ${attendances.map(att => {
+          const locked = att.isConfirmed || (approvalRequest && approvalRequest.status === 'pending');
+          return `<tr>
+            <td style="white-space:nowrap">${moment(att.date).tz('Asia/Tokyo').format('MM/DD (ddd)')}</td>
+            <td class="td-time">${att.checkIn  ? moment(att.checkIn).tz('Asia/Tokyo').format('HH:mm')  : '<span class="td-muted">—</span>'}</td>
+            <td class="td-time">${att.checkOut ? moment(att.checkOut).tz('Asia/Tokyo').format('HH:mm') : '<span class="td-muted">—</span>'}</td>
+            <td style="font-size:13px;color:#64748b">
+              ${att.lunchStart ? moment(att.lunchStart).tz('Asia/Tokyo').format('HH:mm') : '—'} 〜 ${att.lunchEnd ? moment(att.lunchEnd).tz('Asia/Tokyo').format('HH:mm') : '—'}
+            </td>
+            <td class="td-time">${att.workingHours != null ? `<strong>${att.workingHours}h</strong>` : '<span class="td-muted">—</span>'}</td>
+            <td>
+              ${statusBadge(att.status)}
+              ${att.isConfirmed ? '<span class="mma-badge info" style="margin-left:4px">確定</span>' : ''}
+            </td>
+            <td class="td-actions">
+              <a href="/edit-attendance/${att._id}" class="mma-icon-btn edit ${locked?'disabled':''}" title="編集"><i class="fa-solid fa-pen"></i></a>
+              <form action="/delete-attendance/${att._id}" method="POST" style="display:inline" onsubmit="return confirm('この打刻記録を削除しますか？');">
+                <button type="submit" class="mma-icon-btn del" title="削除" ${locked?'disabled':''}><i class="fa-solid fa-trash"></i></button>
+              </form>
+            </td>
+          </tr>`;
+      }).join('')}
+    </tbody>
+  </table>
+
+  <!-- モバイルカードビュー -->
+  <div class="mma-cards">
+    ${attendances.length === 0 ? `<div class="mma-empty"><i class="fa-regular fa-calendar-xmark"></i><p>この月の勤怠記録はありません</p></div>` : ''}
+    ${attendances.map(att => {
+        const locked = att.isConfirmed || (approvalRequest && approvalRequest.status === 'pending');
+        return `<div class="mma-card">
+          <div class="mma-card-top">
+            <div class="mma-card-date">${moment(att.date).tz('Asia/Tokyo').format('M月D日（ddd）')}</div>
+            <div style="display:flex;gap:5px;align-items:center">
+              ${statusBadge(att.status)}
+              ${att.isConfirmed ? '<span class="mma-badge info">確定</span>' : ''}
+            </div>
+          </div>
+          <div class="mma-card-body">
+            <div class="mma-card-grid">
+              <div class="mma-card-item">
+                <div class="ci-label">出勤</div>
+                <div class="ci-val ${att.checkIn?'':'muted'}">${att.checkIn ? moment(att.checkIn).tz('Asia/Tokyo').format('HH:mm') : '—'}</div>
+              </div>
+              <div class="mma-card-item">
+                <div class="ci-label">退勤</div>
+                <div class="ci-val ${att.checkOut?'':'muted'}">${att.checkOut ? moment(att.checkOut).tz('Asia/Tokyo').format('HH:mm') : '—'}</div>
+              </div>
+              <div class="mma-card-item">
+                <div class="ci-label">勤務時間</div>
+                <div class="ci-val ${att.workingHours!=null?'':'muted'}">${att.workingHours != null ? att.workingHours + 'h' : '—'}</div>
+              </div>
+              <div class="mma-card-item">
+                <div class="ci-label">昼休憩</div>
+                <div class="ci-val" style="font-size:13px;font-weight:500">${att.lunchStart ? moment(att.lunchStart).tz('Asia/Tokyo').format('HH:mm') + '〜' + (att.lunchEnd ? moment(att.lunchEnd).tz('Asia/Tokyo').format('HH:mm') : '—') : '—'}</div>
+              </div>
+            </div>
+          </div>
+          <div class="mma-card-footer">
+            <a href="/edit-attendance/${att._id}" class="mma-btn ghost ${locked?'disabled':''}" ${locked?'style="opacity:.35;pointer-events:none"':''}><i class="fa-solid fa-pen"></i> 編集</a>
+            <form action="/delete-attendance/${att._id}" method="POST" style="flex:1;display:flex" onsubmit="return confirm('この打刻記録を削除しますか？');">
+              <button type="submit" class="mma-btn" style="flex:1;background:#fee2e2;color:#dc2626;border:1px solid #fecaca" ${locked?'disabled style="opacity:.35"':''}><i class="fa-solid fa-trash"></i> 削除</button>
+            </form>
+          </div>
+        </div>`;
+    }).join('')}
+  </div>
 </div>
+
+</div><!-- /mma-wrapper -->
 
 <script>
 function requestApproval(year, month) {
