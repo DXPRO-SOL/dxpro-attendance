@@ -27,6 +27,7 @@
 | 15 | [15_通知システム（notifications）.md](./15_通知システム（notifications）.md) | 通知システム（リアルタイム + スケジューラー） |
 | 16 | [16_インフラ・外部連携（infrastructure）.md](./16_インフラ・外部連携（infrastructure）.md) | メール送信・ファイルアップロード・環境変数 |
 | 17 | [17_ページレンダリング（rendering）.md](./17_ページレンダリング（rendering）.md) | ページレンダリング・共通 UI |
+| 18 | [18_スケジューラ機能（scheduler）.md](./18_スケジューラ機能（scheduler）.md) | スケジュール登録・変更・削除・通知（TDC様仕様）|
 
 ---
 
