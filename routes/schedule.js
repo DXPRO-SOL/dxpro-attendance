@@ -1094,12 +1094,10 @@ router.post("/api/schedule/:id/respond", requireLogin, async (req, res) => {
       (a) => String(a) === String(myId),
     );
     if (!isInvited)
-      return res
-        .status(403)
-        .json({
-          ok: false,
-          error: "招待されていないスケジュールには返答できません",
-        });
+      return res.status(403).json({
+        ok: false,
+        error: "招待されていないスケジュールには返答できません",
+      });
 
     const entry = schedule.attendeeStatus.find(
       (s) => String(s.userId) === String(myId),
@@ -1296,5 +1294,17 @@ function buildCancelMail({ recipientName, cancellerName, schedule }) {
 <div style="padding:14px 24px;background:#f8fafc;color:#94a3b8;font-size:11px;border-top:1px solid #f1f5f9;">NOKORIシステム by DXPRO SOLUTIONS</div>
 </div></body></html>`;
 }
+
+// テスト用に純粋関数を公開（本番動作には影響しない）
+router._internals = {
+  fmtJST,
+  isAdmin,
+  canEdit,
+  STATUS_ICON,
+  STATUS_LABEL_JP,
+  buildInviteMail,
+  buildUpdateMail,
+  buildCancelMail,
+};
 
 module.exports = router;
