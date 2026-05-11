@@ -288,6 +288,10 @@ router.get("/schedule", requireLogin, async (req, res) => {
         });
         calendar.render();
         loadUpcoming();
+
+        // 通知リンク（/schedule?open=:id）からの遷移時に詳細を自動オープン
+        const openId = new URLSearchParams(location.search).get('open');
+        if (openId) setTimeout(() => openDetail(openId), 400);
     });
 
     function fetchCalendarEvents(fetchInfo, successCallback, failureCallback) {
@@ -315,7 +319,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
                     const typeCls = { meeting:'sch-type-meeting', event:'sch-type-event', other:'sch-type-other' };
                     const typeLabel = { meeting:'会議', event:'イベント', other:'その他' };
                     const t = ev.extendedProps && ev.extendedProps.type ? ev.extendedProps.type : 'other';
-                    const dtStr = ev.start ? ev.start.substring(0,16).replace('T',' ') : '';
+                    const dtStr = ev.start ? fmtDate(ev.start) : '';
                     const hasCall = ev.extendedProps && ev.extendedProps.chatRoomId;
                     return \`<div class="sch-upcoming-item">
                         <div class="sch-upcoming-title" onclick="openDetail('\${ev.id}')">\${escHtml(ev.title)}</div>
@@ -360,7 +364,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
         </div>\` : '';
 
         const callHtml = s.chatRoomId ? \`
-        <button class="sch-call-btn" onclick="joinScheduleCall('\${s.chatRoomId}', \${JSON.stringify((s.attendees||[]).map(a=>a.id))}, '\${MY_ID}')">
+        <button class="sch-call-btn" onclick="joinScheduleCall('\${s.createdById||''}', '\${s.chatRoomId}', \${JSON.stringify((s.attendees||[]).map(a=>a.id))}, '\${MY_ID}')">
             <i class="fa-solid fa-phone"></i> 通話に参加する
         </button>
         <div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:5px;">参加者2名 → DM通話 / 3名以上 → グループチャット</div>\` : '';
@@ -420,9 +424,11 @@ router.get("/schedule", requireLogin, async (req, res) => {
     };
 
     // ── 通話参加 ───────────────────────────────────────────────────
-    window.joinScheduleCall = function(chatRoomId, attendeeIds, myId) {
+    window.joinScheduleCall = function(createdById, chatRoomId, attendeeIds, myId) {
         if (!chatRoomId) { alert('この予定にはアプリ内通話が設定されていません。'); return; }
-        const others = attendeeIds.filter(id => id !== myId);
+        // 主催者IDも含めた全参加者から自分を除いた相手リストを作る
+        const allParticipants = [...new Set([createdById, ...attendeeIds].filter(Boolean))];
+        const others = allParticipants.filter(id => id !== myId);
         if (others.length === 1) {
             window.location.href = '/chat/dm/' + others[0] + '?autoCall=1';
         } else {
@@ -787,7 +793,7 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
         type: "schedule_invite",
         title: "会議招待",
         body: `${creatorName} さんから「${schedule.title}」の招待が届いています`,
-        link: `/schedule/${schedule._id}`,
+        link: `/schedule?open=${schedule._id}`,
         fromUserId: myId,
         fromName: creatorName,
       });
@@ -975,7 +981,7 @@ router.put("/api/schedule/:id", requireLogin, async (req, res) => {
         type: "schedule_update",
         title: "スケジュール変更",
         body: `「${schedule.title}」の内容が変更されました`,
-        link: `/schedule/${schedule._id}`,
+        link: `/schedule?open=${schedule._id}`,
         fromUserId: myId,
         fromName: updaterName,
       });
@@ -1124,7 +1130,7 @@ router.post("/api/schedule/:id/respond", requireLogin, async (req, res) => {
       type: "schedule_response",
       title: `スケジュール返答（${statusLabel}）`,
       body: `${responderName} さんが「${schedule.title}」への招待に${statusLabel}しました`,
-      link: `/schedule/${schedule._id}`,
+      link: `/schedule?open=${schedule._id}`,
       fromUserId: myId,
       fromName: responderName,
     });
