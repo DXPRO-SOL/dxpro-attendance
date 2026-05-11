@@ -2,64 +2,110 @@ const mongoose = require("mongoose");
 
 // ユーザースキーマ
 const UserSchema = new mongoose.Schema({
-    username: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    isAdmin: { type: Boolean, default: false },
-    // Issue #19: 中間ロール拡張
-    // 'admin' | 'manager' | 'team_leader' | 'employee'
-    role: { type: String, enum: ['admin', 'manager', 'team_leader', 'employee', 'test_user'], default: 'employee' },
-    // チャットステータス
-    chatStatus: { type: String, enum: ['online', 'offline', 'break'], default: 'offline' },
-    lastSeenAt: { type: Date, default: Date.now },
-    createdAt: { type: Date, default: Date.now }
+  username: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  isAdmin: { type: Boolean, default: false },
+  // Issue #19: 中間ロール拡張
+  // 'admin' | 'manager' | 'team_leader' | 'employee'
+  role: {
+    type: String,
+    enum: ["admin", "manager", "team_leader", "employee", "test_user"],
+    default: "employee",
+  },
+  // チャットステータス
+  chatStatus: {
+    type: String,
+    enum: ["online", "offline", "break"],
+    default: "offline",
+  },
+  lastSeenAt: { type: Date, default: Date.now },
+  createdAt: { type: Date, default: Date.now },
 });
 
 // グループチャットルームスキーマ
-const ChatRoomSchema = new mongoose.Schema({
-    name:          { type: String, required: true },
-    description:   { type: String, default: '' },
-    icon:          { type: String, default: '💬' },
-    members:       [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    admins:        [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    createdBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+const ChatRoomSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    description: { type: String, default: "" },
+    icon: { type: String, default: "💬" },
+    members: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    admins: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
     lastMessageAt: { type: Date, default: Date.now },
-}, { timestamps: true });
+  },
+  { timestamps: true },
+);
 ChatRoomSchema.index({ members: 1, lastMessageAt: -1 });
 
 // チャットメッセージスキーマ（全面拡張版）
-const ChatMessageSchema = new mongoose.Schema({
-    fromUserId:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    toUserId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },    // DM
-    roomId:      { type: mongoose.Schema.Types.ObjectId, ref: 'ChatRoom', default: null },// グループ
-    content:     { type: String, default: '' },
+const ChatMessageSchema = new mongoose.Schema(
+  {
+    fromUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    toUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    }, // DM
+    roomId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ChatRoom",
+      default: null,
+    }, // グループ
+    content: { type: String, default: "" },
     // ファイル添付
-    attachments: [{
-        name:     { type: String },
-        url:      { type: String },
+    attachments: [
+      {
+        name: { type: String },
+        url: { type: String },
         mimeType: { type: String },
-        size:     { type: Number },
-    }],
+        size: { type: Number },
+      },
+    ],
     // 既読（DM用）
-    read:     { type: Boolean, default: false },
-    readAt:   { type: Date },
+    read: { type: Boolean, default: false },
+    readAt: { type: Date },
     // 既読（グループ用）
-    readBy:   [{ userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, readAt: { type: Date } }],
+    readBy: [
+      {
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        readAt: { type: Date },
+      },
+    ],
     // リプライ
-    replyTo:      { type: mongoose.Schema.Types.ObjectId, ref: 'ChatMessage', default: null },
+    replyTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ChatMessage",
+      default: null,
+    },
     replyPreview: { type: String, default: null },
     // リアクション
-    reactions: [{ emoji: { type: String }, userIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }] }],
+    reactions: [
+      {
+        emoji: { type: String },
+        userIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+      },
+    ],
     // 削除・編集
-    deleted:  { type: Boolean, default: false },
+    deleted: { type: Boolean, default: false },
     deletedAt: { type: Date },
-    edited:   { type: Boolean, default: false },
+    edited: { type: Boolean, default: false },
     editedAt: { type: Date },
     // 不在着信
     isMissedCall: { type: Boolean, default: false },
     // 通話履歴
     isCallHistory: { type: Boolean, default: false },
-    callDuration:  { type: Number,  default: 0 },  // 秒
-}, { timestamps: true });
+    callDuration: { type: Number, default: 0 }, // 秒
+  },
+  { timestamps: true },
+);
 
 // インデックス
 ChatMessageSchema.index({ fromUserId: 1, toUserId: 1, createdAt: -1 });
@@ -381,10 +427,10 @@ const SemiAnnualFeedbackSchema = new mongoose.Schema({
   // 自己評価（各カテゴリ 1〜5 の星評価）
   selfRatings: {
     attendance: { type: Number, min: 1, max: 5 },
-    goal:       { type: Number, min: 1, max: 5 },
-    quality:    { type: Number, min: 1, max: 5 },
-    overtime:   { type: Number, min: 1, max: 5 },
-    leave:      { type: Number, min: 1, max: 5 },
+    goal: { type: Number, min: 1, max: 5 },
+    quality: { type: Number, min: 1, max: 5 },
+    overtime: { type: Number, min: 1, max: 5 },
+    leave: { type: Number, min: 1, max: 5 },
   },
   // 次期コミットメント
   commitment: { type: String, maxlength: 500 },
@@ -742,8 +788,8 @@ const IntegrationConfig = mongoose.model(
   IntegrationConfigSchema,
 );
 
-const ChatRoom    = mongoose.model('ChatRoom', ChatRoomSchema);
-const ChatMessage = mongoose.model('ChatMessage', ChatMessageSchema);
+const ChatRoom = mongoose.model("ChatRoom", ChatRoomSchema);
+const ChatMessage = mongoose.model("ChatMessage", ChatMessageSchema);
 
 // ─── ユーザー別タスク接続設定 ──────────────────────────────────────────────
 const UserTaskConfigSchema = new mongoose.Schema({
@@ -761,43 +807,119 @@ UserTaskConfigSchema.index({ userId: 1, service: 1 }, { unique: true });
 const UserTaskConfig = mongoose.model("UserTaskConfig", UserTaskConfigSchema);
 
 // ─── クラウドドライブ: フォルダ ────────────────────────────────────────────
-const CloudFolderSchema = new mongoose.Schema({
-  name:       { type: String, required: true },
-  ownerId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  parentId:   { type: mongoose.Schema.Types.ObjectId, ref: 'CloudFolder', default: null },
-  isPublic:   { type: Boolean, default: false }, // 全社員に公開
-  sharedWith: [{
-    userId:  { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    canEdit: { type: Boolean, default: false },
-  }],
-  color: { type: String, default: '#f59e0b' }, // フォルダアイコン色
-}, { timestamps: true });
+const CloudFolderSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    ownerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    parentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "CloudFolder",
+      default: null,
+    },
+    isPublic: { type: Boolean, default: false }, // 全社員に公開
+    sharedWith: [
+      {
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        canEdit: { type: Boolean, default: false },
+      },
+    ],
+    color: { type: String, default: "#f59e0b" }, // フォルダアイコン色
+  },
+  { timestamps: true },
+);
 CloudFolderSchema.index({ ownerId: 1, parentId: 1 });
-const CloudFolder = mongoose.model('CloudFolder', CloudFolderSchema);
+const CloudFolder = mongoose.model("CloudFolder", CloudFolderSchema);
 
 // ─── クラウドドライブ: ファイル ────────────────────────────────────────────
-const CloudFileSchema = new mongoose.Schema({
-  name:         { type: String, required: true },       // 表示名（変更可）
-  originalName: { type: String, required: true },       // アップロード時の元ファイル名
-  filePath:     { type: String, default: null },        // ディスク上のパス（バイナリ系）
-  mimeType:     { type: String, default: 'application/octet-stream' },
-  size:         { type: Number, default: 0 },           // bytes
-  folderId:     { type: mongoose.Schema.Types.ObjectId, ref: 'CloudFolder', default: null },
-  ownerId:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  isPublic:     { type: Boolean, default: false },
-  sharedWith:   [{
-    userId:  { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    canEdit: { type: Boolean, default: false },
-  }],
-  // テキスト系ファイルのリアルタイム同時編集用
-  textContent:  { type: String, default: null },
-  version:      { type: Number, default: 0 },           // 楽観的ロック
-  lastEditedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
-  lastEditedAt: { type: Date, default: null },
-}, { timestamps: true });
+const CloudFileSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true }, // 表示名（変更可）
+    originalName: { type: String, required: true }, // アップロード時の元ファイル名
+    filePath: { type: String, default: null }, // ディスク上のパス（バイナリ系）
+    mimeType: { type: String, default: "application/octet-stream" },
+    size: { type: Number, default: 0 }, // bytes
+    folderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "CloudFolder",
+      default: null,
+    },
+    ownerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    isPublic: { type: Boolean, default: false },
+    sharedWith: [
+      {
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        canEdit: { type: Boolean, default: false },
+      },
+    ],
+    // テキスト系ファイルのリアルタイム同時編集用
+    textContent: { type: String, default: null },
+    version: { type: Number, default: 0 }, // 楽観的ロック
+    lastEditedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    lastEditedAt: { type: Date, default: null },
+  },
+  { timestamps: true },
+);
 CloudFileSchema.index({ ownerId: 1, folderId: 1 });
 CloudFileSchema.index({ isPublic: 1 });
-const CloudFile = mongoose.model('CloudFile', CloudFileSchema);
+const CloudFile = mongoose.model("CloudFile", CloudFileSchema);
+
+// ─── スケジューラ ──────────────────────────────────────────────────────────
+const ScheduleSchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true },
+    description: { type: String, default: "" },
+    location: { type: String, default: "" },
+    startAt: { type: Date, required: true },
+    endAt: { type: Date, required: true },
+    allDay: { type: Boolean, default: false },
+    type: {
+      type: String,
+      enum: ["meeting", "event", "other"],
+      default: "meeting",
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    attendees: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    attendeeStatus: [
+      {
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        status: {
+          type: String,
+          enum: ["pending", "accepted", "declined"],
+          default: "pending",
+        },
+        updatedAt: { type: Date },
+      },
+    ],
+    chatRoomId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ChatRoom",
+      default: null,
+    },
+    color: { type: String, default: "#3b82f6" },
+    isDeleted: { type: Boolean, default: false },
+  },
+  { timestamps: true },
+);
+ScheduleSchema.index({ startAt: 1, endAt: 1 });
+ScheduleSchema.index({ createdBy: 1 });
+ScheduleSchema.index({ attendees: 1 });
+const Schedule = mongoose.model("Schedule", ScheduleSchema);
 
 // ─── ユーザー別タスク期限日ローカル上書き ───────────────────────────────────
 const TaskDueDateSchema = new mongoose.Schema({
@@ -812,34 +934,35 @@ TaskDueDateSchema.index({ userId: 1, service: 1, taskId: 1 }, { unique: true });
 const TaskDueDate = mongoose.model("TaskDueDate", TaskDueDateSchema);
 
 module.exports = {
-    ChatRoom,
-    ChatMessage,
-    User,
-    Attendance,
-    Employee,
-    BoardPost,
-    BoardComment,
-    PayrollSlip,
-    PayrollRun,
-    PayrollMaster,
-    ApprovalRequest,
-    Goal,
-    LeaveRequest,
-    SemiAnnualFeedback,
-    PretestSubmission,
-    LeaveBalance,
-    CompanyRule,
-    DailyReport,
-    SkillSheet,
-    Notification,
-    OvertimeRequest,
-    ApprovedLocation,
-    PretestConfig,
-    IntegrationConfig,
-    Department,
-    PayrollSetting,
-    UserTaskConfig,
-    TaskDueDate,
-    CloudFolder,
-    CloudFile,
+  ChatRoom,
+  ChatMessage,
+  User,
+  Attendance,
+  Employee,
+  BoardPost,
+  BoardComment,
+  PayrollSlip,
+  PayrollRun,
+  PayrollMaster,
+  ApprovalRequest,
+  Goal,
+  LeaveRequest,
+  SemiAnnualFeedback,
+  PretestSubmission,
+  LeaveBalance,
+  CompanyRule,
+  DailyReport,
+  SkillSheet,
+  Notification,
+  OvertimeRequest,
+  ApprovedLocation,
+  PretestConfig,
+  IntegrationConfig,
+  Department,
+  PayrollSetting,
+  UserTaskConfig,
+  TaskDueDate,
+  CloudFolder,
+  CloudFile,
+  Schedule,
 };

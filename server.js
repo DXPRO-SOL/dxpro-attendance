@@ -15,50 +15,59 @@ const agentRegistry = {};
 global.agentRegistry = agentRegistry;
 
 // ── Socket.io ルーム管理 ─────────────────────────────────────
-io.on('connection', (socket) => {
-    // クライアントが自分のユーザールームとグループルームに参加
-    socket.on('join_rooms', ({ userId, roomIds = [] }) => {
-        if (!userId) return;
-        socket.join('u_' + userId);
-        roomIds.forEach(rid => socket.join('r_' + rid));
-    });
-    socket.on('join_room', ({ roomId }) => {
-        if (roomId) socket.join('r_' + roomId);
-    });
-    // タイピングイベントは対象ユーザー/ルームにのみ転送
-    socket.on('typing', (data) => {
-        if (data.toUserId) socket.to('u_' + data.toUserId).emit('typing', data);
-        if (data.roomId)   socket.to('r_' + data.roomId).emit('typing', data);
-    });
-    socket.on('stop_typing', (data) => {
-        if (data.toUserId) socket.to('u_' + data.toUserId).emit('stop_typing', data);
-        if (data.roomId)   socket.to('r_' + data.roomId).emit('stop_typing', data);
-    });
+io.on("connection", (socket) => {
+  // クライアントが自分のユーザールームとグループルームに参加
+  socket.on("join_rooms", ({ userId, roomIds = [] }) => {
+    if (!userId) return;
+    socket.join("u_" + userId);
+    roomIds.forEach((rid) => socket.join("r_" + rid));
+  });
+  socket.on("join_room", ({ roomId }) => {
+    if (roomId) socket.join("r_" + roomId);
+  });
+  // タイピングイベントは対象ユーザー/ルームにのみ転送
+  socket.on("typing", (data) => {
+    if (data.toUserId) socket.to("u_" + data.toUserId).emit("typing", data);
+    if (data.roomId) socket.to("r_" + data.roomId).emit("typing", data);
+  });
+  socket.on("stop_typing", (data) => {
+    if (data.toUserId)
+      socket.to("u_" + data.toUserId).emit("stop_typing", data);
+    if (data.roomId) socket.to("r_" + data.roomId).emit("stop_typing", data);
+  });
 
   // ── 遠隔操作エージェント登録 (remote-agent.js から接続) ─────────
-  socket.on('agent_register', (data) => {
+  socket.on("agent_register", (data) => {
     if (!data || !data.userId) return;
     agentRegistry[data.userId] = {
       socketId: socket.id,
-      platform: data.platform || 'unknown',
-      screenW:  data.screenW  || 1920,
-      screenH:  data.screenH  || 1080,
+      platform: data.platform || "unknown",
+      screenW: data.screenW || 1920,
+      screenH: data.screenH || 1080,
     };
-    socket.join('agent_' + data.userId);
-    socket.emit('agent_registered', { ok: true, screenW: data.screenW, screenH: data.screenH });
-    // ブラウザ側にもエージェント接続を通知
-    io.to('u_' + data.userId).emit('agent_ready', {
-      platform: data.platform, screenW: data.screenW, screenH: data.screenH
+    socket.join("agent_" + data.userId);
+    socket.emit("agent_registered", {
+      ok: true,
+      screenW: data.screenW,
+      screenH: data.screenH,
     });
-    console.log(`[Agent] 登録: userId=${data.userId} platform=${data.platform} screen=${data.screenW}x${data.screenH}`);
+    // ブラウザ側にもエージェント接続を通知
+    io.to("u_" + data.userId).emit("agent_ready", {
+      platform: data.platform,
+      screenW: data.screenW,
+      screenH: data.screenH,
+    });
+    console.log(
+      `[Agent] 登録: userId=${data.userId} platform=${data.platform} screen=${data.screenW}x${data.screenH}`,
+    );
   });
 
   // エージェント切断時のクリーンアップ
-  socket.on('disconnect', () => {
+  socket.on("disconnect", () => {
     for (const uid of Object.keys(agentRegistry)) {
       if (agentRegistry[uid] && agentRegistry[uid].socketId === socket.id) {
         delete agentRegistry[uid];
-        io.to('u_' + uid).emit('agent_disconnected');
+        io.to("u_" + uid).emit("agent_disconnected");
         console.log(`[Agent] 切断: userId=${uid}`);
       }
     }
@@ -67,10 +76,11 @@ io.on('connection', (socket) => {
       for (const fileId of Object.keys(global.docRooms)) {
         if (global.docRooms[fileId] && global.docRooms[fileId].has(socket.id)) {
           global.docRooms[fileId].delete(socket.id);
-          if (global.docRooms[fileId].size === 0) delete global.docRooms[fileId];
+          if (global.docRooms[fileId].size === 0)
+            delete global.docRooms[fileId];
           else {
             const users = Array.from(global.docRooms[fileId].values());
-            io.to('doc_' + fileId).emit('cloud_doc_users', users);
+            io.to("doc_" + fileId).emit("cloud_doc_users", users);
           }
         }
       }
@@ -78,144 +88,176 @@ io.on('connection', (socket) => {
   });
 
   // --- WebRTC signaling / call control ---
-  socket.on('call_initiate', (data) => {
+  socket.on("call_initiate", (data) => {
     // data: { toUserId, fromUserId }
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('call_incoming', data);
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("call_incoming", data);
   });
-  socket.on('call_end', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('call_ended', data);
+  socket.on("call_end", (data) => {
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("call_ended", data);
   });
-  socket.on('webrtc-offer', (data) => {
+  socket.on("webrtc-offer", (data) => {
     // data: { toUserId, sdp }
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('webrtc-offer', data);
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("webrtc-offer", data);
   });
-  socket.on('webrtc-offer-restart', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('webrtc-offer-restart', data);
+  socket.on("webrtc-offer-restart", (data) => {
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("webrtc-offer-restart", data);
   });
-  socket.on('webrtc-answer', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('webrtc-answer', data);
+  socket.on("webrtc-answer", (data) => {
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("webrtc-answer", data);
   });
-  socket.on('webrtc-candidate', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('webrtc-candidate', data);
+  socket.on("webrtc-candidate", (data) => {
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("webrtc-candidate", data);
   });
-  socket.on('screen_share_started', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('screen_share_started', data);
+  socket.on("screen_share_started", (data) => {
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("screen_share_started", data);
   });
-  socket.on('screen_share_stopped', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('screen_share_stopped', data);
+  socket.on("screen_share_stopped", (data) => {
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("screen_share_stopped", data);
   });
   // callee accepts call (has answer SDP)
-  socket.on('call_accept', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('call_accepted', data);
+  socket.on("call_accept", (data) => {
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("call_accepted", data);
   });
   // callee rejects call
-  socket.on('call_reject', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('call_rejected', data);
+  socket.on("call_reject", (data) => {
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("call_rejected", data);
   });
   // caller cancelled (timed out / hung up before answer)
-  socket.on('call_cancel', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('call_cancelled', data);
+  socket.on("call_cancel", (data) => {
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("call_cancelled", data);
   });
   // missed call (callee was not reachable / timed out on callee side)
-  socket.on('call_missed', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('call_missed', data);
+  socket.on("call_missed", (data) => {
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("call_missed", data);
   });
-  socket.on('remote_control_request', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_control_request', data);
+  socket.on("remote_control_request", (data) => {
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("remote_control_request", data);
   });
-  socket.on('remote_control_grant', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('remote_control_grant', data);
+  socket.on("remote_control_grant", (data) => {
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("remote_control_grant", data);
   });
   // remote pointer position
-  socket.on('remote_pointer', (data) => {
+  socket.on("remote_pointer", (data) => {
     if (!data || !data.toUserId) return;
-    socket.to('u_' + data.toUserId).emit('remote_pointer', data);
+    socket.to("u_" + data.toUserId).emit("remote_pointer", data);
     // エージェントにもマウス移動を転送
     const agent = agentRegistry[data.toUserId];
     if (agent) {
-      const sw = agent.screenW, sh = agent.screenH;
-      io.to('agent_' + data.toUserId).emit('agent_mouse_move', {
-        x: Math.round(data.x * sw), y: Math.round(data.y * sh)
+      const sw = agent.screenW,
+        sh = agent.screenH;
+      io.to("agent_" + data.toUserId).emit("agent_mouse_move", {
+        x: Math.round(data.x * sw),
+        y: Math.round(data.y * sh),
       });
     }
   });
   // remote control events → エージェントがいればOS操作、なければブラウザDOM操作
-  socket.on('remote_click', (data) => {
+  socket.on("remote_click", (data) => {
     if (!data || !data.toUserId) return;
     const agent = agentRegistry[data.toUserId];
     if (agent) {
-      const sw = agent.screenW, sh = agent.screenH;
-      io.to('agent_' + data.toUserId).emit('agent_click', {
-        x: Math.round(data.x * sw), y: Math.round(data.y * sh), button: data.button || 0
+      const sw = agent.screenW,
+        sh = agent.screenH;
+      io.to("agent_" + data.toUserId).emit("agent_click", {
+        x: Math.round(data.x * sw),
+        y: Math.round(data.y * sh),
+        button: data.button || 0,
       });
     } else {
-      socket.to('u_' + data.toUserId).emit('remote_click', data);
+      socket.to("u_" + data.toUserId).emit("remote_click", data);
     }
   });
-  socket.on('remote_dblclick', (data) => {
+  socket.on("remote_dblclick", (data) => {
     if (!data || !data.toUserId) return;
     const agent = agentRegistry[data.toUserId];
     if (agent) {
-      const sw = agent.screenW, sh = agent.screenH;
-      io.to('agent_' + data.toUserId).emit('agent_dblclick', {
-        x: Math.round(data.x * sw), y: Math.round(data.y * sh)
+      const sw = agent.screenW,
+        sh = agent.screenH;
+      io.to("agent_" + data.toUserId).emit("agent_dblclick", {
+        x: Math.round(data.x * sw),
+        y: Math.round(data.y * sh),
       });
     } else {
-      socket.to('u_' + data.toUserId).emit('remote_dblclick', data);
+      socket.to("u_" + data.toUserId).emit("remote_dblclick", data);
     }
   });
-  socket.on('remote_key', (data) => {
+  socket.on("remote_key", (data) => {
     if (!data || !data.toUserId) return;
     const agent = agentRegistry[data.toUserId];
     if (agent) {
-      io.to('agent_' + data.toUserId).emit('agent_key', data);
+      io.to("agent_" + data.toUserId).emit("agent_key", data);
     } else {
-      socket.to('u_' + data.toUserId).emit('remote_key', data);
+      socket.to("u_" + data.toUserId).emit("remote_key", data);
     }
   });
-  socket.on('remote_scroll', (data) => {
+  socket.on("remote_scroll", (data) => {
     if (!data || !data.toUserId) return;
     const agent = agentRegistry[data.toUserId];
     if (agent) {
-      io.to('agent_' + data.toUserId).emit('agent_scroll', data);
+      io.to("agent_" + data.toUserId).emit("agent_scroll", data);
     } else {
-      socket.to('u_' + data.toUserId).emit('remote_scroll', data);
+      socket.to("u_" + data.toUserId).emit("remote_scroll", data);
     }
   });
   // 録画開始・停止通知（相手側の録画ボタンを排他制御）
-  socket.on('recording_started', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('recording_started', data);
+  socket.on("recording_started", (data) => {
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("recording_started", data);
   });
-  socket.on('recording_stopped', (data) => {
-    if (data && data.toUserId) socket.to('u_' + data.toUserId).emit('recording_stopped', data);
+  socket.on("recording_stopped", (data) => {
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("recording_stopped", data);
   });
 
   // ── クラウドドライブ: リアルタイム同時編集 ───────────────────
   // docRooms[fileId] = Map<userId, { username, canEdit, socketId }>
-  socket.on('cloud_join_doc', ({ fileId, username, canEdit }) => {
+  socket.on("cloud_join_doc", ({ fileId, username, canEdit }) => {
     if (!fileId) return;
-    socket.join('doc_' + fileId);
+    socket.join("doc_" + fileId);
     if (!global.docRooms) global.docRooms = {};
     if (!global.docRooms[fileId]) global.docRooms[fileId] = new Map();
-    global.docRooms[fileId].set(socket.id, { username: username || '?', canEdit: !!canEdit, socketId: socket.id });
+    global.docRooms[fileId].set(socket.id, {
+      username: username || "?",
+      canEdit: !!canEdit,
+      socketId: socket.id,
+    });
     // ルーム内の全員にオンラインユーザーリストを送る
     const users = Array.from(global.docRooms[fileId].values());
-    io.to('doc_' + fileId).emit('cloud_doc_users', users);
+    io.to("doc_" + fileId).emit("cloud_doc_users", users);
   });
-  socket.on('cloud_doc_change', ({ fileId, content, username, userId, version }) => {
+  socket.on(
+    "cloud_doc_change",
+    ({ fileId, content, username, userId, version }) => {
+      if (!fileId) return;
+      // 変更を送信者以外の全員にブロードキャスト
+      socket
+        .to("doc_" + fileId)
+        .emit("cloud_doc_update", { content, username, userId, version });
+    },
+  );
+  socket.on("cloud_leave_doc", ({ fileId }) => {
     if (!fileId) return;
-    // 変更を送信者以外の全員にブロードキャスト
-    socket.to('doc_' + fileId).emit('cloud_doc_update', { content, username, userId, version });
-  });
-  socket.on('cloud_leave_doc', ({ fileId }) => {
-    if (!fileId) return;
-    socket.leave('doc_' + fileId);
+    socket.leave("doc_" + fileId);
     if (global.docRooms && global.docRooms[fileId]) {
       global.docRooms[fileId].delete(socket.id);
       if (global.docRooms[fileId].size === 0) delete global.docRooms[fileId];
       else {
         const users = Array.from(global.docRooms[fileId].values());
-        io.to('doc_' + fileId).emit('cloud_doc_users', users);
+        io.to("doc_" + fileId).emit("cloud_doc_users", users);
       }
     }
   });
@@ -296,6 +338,7 @@ app.use("/", require("./routes/organization"));
 app.use("/", require("./routes/tasks"));
 app.use("/", require("./routes/chat"));
 app.use("/", require("./routes/cloud"));
+app.use("/", require("./routes/schedule"));
 
 // ── グローバルエラーハンドラー（500エラーでプロセスをクラッシュさせない） ─
 app.use((err, req, res, next) => {
@@ -347,41 +390,53 @@ async function createAdminUser() {
 }
 
 // ── 起動ログユーティリティ ────────────────────────────────────────
-const RESET  = '\x1b[0m';
-const BOLD   = '\x1b[1m';
-const DIM    = '\x1b[2m';
-const CYAN   = '\x1b[36m';
-const GREEN  = '\x1b[32m';
-const YELLOW = '\x1b[33m';
-const RED    = '\x1b[31m';
-const BLUE   = '\x1b[34m';
-const MAGENTA= '\x1b[35m';
-const WHITE  = '\x1b[37m';
-const BG_DARK= '\x1b[48;5;235m';
+const RESET = "\x1b[0m";
+const BOLD = "\x1b[1m";
+const DIM = "\x1b[2m";
+const CYAN = "\x1b[36m";
+const GREEN = "\x1b[32m";
+const YELLOW = "\x1b[33m";
+const RED = "\x1b[31m";
+const BLUE = "\x1b[34m";
+const MAGENTA = "\x1b[35m";
+const WHITE = "\x1b[37m";
+const BG_DARK = "\x1b[48;5;235m";
 
 function log(tag, msg, color = WHITE) {
-  const ts = new Date().toISOString().replace('T',' ').substring(0,23);
+  const ts = new Date().toISOString().replace("T", " ").substring(0, 23);
   console.log(`${DIM}${ts}${RESET}  ${color}${BOLD}${tag}${RESET}  ${msg}`);
 }
 function logOk(label) {
-  const ts = new Date().toISOString().replace('T',' ').substring(0,23);
-  console.log(`${DIM}${ts}${RESET}  ${GREEN}${BOLD}  ✔  ${RESET}${label}${DIM} ... OK${RESET}`);
+  const ts = new Date().toISOString().replace("T", " ").substring(0, 23);
+  console.log(
+    `${DIM}${ts}${RESET}  ${GREEN}${BOLD}  ✔  ${RESET}${label}${DIM} ... OK${RESET}`,
+  );
 }
 function logSkip(label) {
-  const ts = new Date().toISOString().replace('T',' ').substring(0,23);
-  console.log(`${DIM}${ts}${RESET}  ${YELLOW}${BOLD}  ─  ${RESET}${DIM}${label} ... skipped${RESET}`);
+  const ts = new Date().toISOString().replace("T", " ").substring(0, 23);
+  console.log(
+    `${DIM}${ts}${RESET}  ${YELLOW}${BOLD}  ─  ${RESET}${DIM}${label} ... skipped${RESET}`,
+  );
 }
 function logWarn(label) {
-  const ts = new Date().toISOString().replace('T',' ').substring(0,23);
-  console.log(`${DIM}${ts}${RESET}  ${YELLOW}${BOLD}  ⚠  ${RESET}${YELLOW}${label}${RESET}`);
+  const ts = new Date().toISOString().replace("T", " ").substring(0, 23);
+  console.log(
+    `${DIM}${ts}${RESET}  ${YELLOW}${BOLD}  ⚠  ${RESET}${YELLOW}${label}${RESET}`,
+  );
 }
 function logSection(title) {
-  console.log('');
-  console.log(`${CYAN}${BOLD}  ┌─────────────────────────────────────────────────┐${RESET}`);
+  console.log("");
+  console.log(
+    `${CYAN}${BOLD}  ┌─────────────────────────────────────────────────┐${RESET}`,
+  );
   console.log(`${CYAN}${BOLD}  │  ${title.padEnd(47)}│${RESET}`);
-  console.log(`${CYAN}${BOLD}  └─────────────────────────────────────────────────┘${RESET}`);
+  console.log(
+    `${CYAN}${BOLD}  └─────────────────────────────────────────────────┘${RESET}`,
+  );
 }
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 // サーバー起動
 const PORT = process.env.PORT || 10000;
@@ -389,185 +444,230 @@ const PORT = process.env.PORT || 10000;
 // Socket.io 接続処理
 io.on("connection", (socket) => {
   socket.on("typing", (data) => socket.broadcast.emit("typing", data));
-  socket.on("stop_typing", (data) => socket.broadcast.emit("stop_typing", data));
+  socket.on("stop_typing", (data) =>
+    socket.broadcast.emit("stop_typing", data),
+  );
   socket.on("disconnect", () => {});
 });
 
 httpServer.listen(PORT, "0.0.0.0", async () => {
-
   // ── バナー ──────────────────────────────────────────────────
-  console.log('');
-  console.log(`${CYAN}${BOLD}  ███╗   ██╗ ██████╗ ██╗  ██╗ ██████╗ ██████╗ ██╗${RESET}`);
-  console.log(`${CYAN}${BOLD}  ████╗  ██║██╔═══██╗██║ ██╔╝██╔═══██╗██╔══██╗██║${RESET}`);
-  console.log(`${CYAN}${BOLD}  ██╔██╗ ██║██║   ██║█████╔╝ ██║   ██║██████╔╝██║${RESET}`);
-  console.log(`${CYAN}${BOLD}  ██║╚██╗██║██║   ██║██╔═██╗ ██║   ██║██╔══██╗██║${RESET}`);
-  console.log(`${CYAN}${BOLD}  ██║ ╚████║╚██████╔╝██║  ██╗╚██████╔╝██║  ██║██║${RESET}`);
-  console.log(`${CYAN}${BOLD}  ╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝${RESET}`);
-  console.log(`${CYAN}${DIM}  ── by DXPRO SOLUTIONS ─────────────────────────────${RESET}`);
+  console.log("");
+  console.log(
+    `${CYAN}${BOLD}  ███╗   ██╗ ██████╗ ██╗  ██╗ ██████╗ ██████╗ ██╗${RESET}`,
+  );
+  console.log(
+    `${CYAN}${BOLD}  ████╗  ██║██╔═══██╗██║ ██╔╝██╔═══██╗██╔══██╗██║${RESET}`,
+  );
+  console.log(
+    `${CYAN}${BOLD}  ██╔██╗ ██║██║   ██║█████╔╝ ██║   ██║██████╔╝██║${RESET}`,
+  );
+  console.log(
+    `${CYAN}${BOLD}  ██║╚██╗██║██║   ██║██╔═██╗ ██║   ██║██╔══██╗██║${RESET}`,
+  );
+  console.log(
+    `${CYAN}${BOLD}  ██║ ╚████║╚██████╔╝██║  ██╗╚██████╔╝██║  ██║██║${RESET}`,
+  );
+  console.log(
+    `${CYAN}${BOLD}  ╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝${RESET}`,
+  );
+  console.log(
+    `${CYAN}${DIM}  ── by DXPRO SOLUTIONS ─────────────────────────────${RESET}`,
+  );
   console.log(`${CYAN}  Attendance & HR Management Platform${RESET}`);
-  console.log(`${DIM}  Version 1.0.0  |  Node ${process.version}  |  ${process.platform}${RESET}`);
-  console.log('');
+  console.log(
+    `${DIM}  Version 1.0.0  |  Node ${process.version}  |  ${process.platform}${RESET}`,
+  );
+  console.log("");
 
   // ── フェーズ 1: コアシステム初期化 ──────────────────────────
-  logSection('Phase 1 / Core System Initialization');
+  logSection("Phase 1 / Core System Initialization");
   await sleep(120);
-  logOk('Runtime environment          Node.js ' + process.version);
+  logOk("Runtime environment          Node.js " + process.version);
   await sleep(80);
-  logOk('Process signal handlers      uncaughtException / unhandledRejection');
+  logOk("Process signal handlers      uncaughtException / unhandledRejection");
   await sleep(80);
-  logOk('Trust proxy configuration    depth=1 (Render/Cloudflare)');
+  logOk("Trust proxy configuration    depth=1 (Render/Cloudflare)");
   await sleep(80);
-  logOk('HTTP server instance         http.createServer()');
+  logOk("HTTP server instance         http.createServer()");
   await sleep(80);
-  logOk('WebSocket engine             Socket.IO attached to HTTP server');
+  logOk("WebSocket engine             Socket.IO attached to HTTP server");
   await sleep(100);
-  logOk('Session middleware            express-session (httpOnly, 24h TTL)');
+  logOk("Session middleware            express-session (httpOnly, 24h TTL)");
   await sleep(80);
-  logOk('Body parser                  urlencoded + JSON');
+  logOk("Body parser                  urlencoded + JSON");
   await sleep(80);
-  logOk('Static assets                /public  /uploads');
+  logOk("Static assets                /public  /uploads");
 
   // ── フェーズ 2: データベース ──────────────────────────────────
-  logSection('Phase 2 / Database & Models');
+  logSection("Phase 2 / Database & Models");
   await sleep(150);
-  logOk('MongoDB connection           Atlas cluster (retryWrites=true)');
+  logOk("MongoDB connection           Atlas cluster (retryWrites=true)");
   await sleep(100);
-  logOk('Model: User                  authentication / role / chatStatus');
+  logOk("Model: User                  authentication / role / chatStatus");
   await sleep(60);
-  logOk('Model: Employee              profile / department / position');
+  logOk("Model: Employee              profile / department / position");
   await sleep(60);
-  logOk('Model: Attendance            clock-in / clock-out / location');
+  logOk("Model: Attendance            clock-in / clock-out / location");
   await sleep(60);
-  logOk('Model: Leave                 request / approval workflow');
+  logOk("Model: Leave                 request / approval workflow");
   await sleep(60);
-  logOk('Model: Goal                  OKR / progress tracking');
+  logOk("Model: Goal                  OKR / progress tracking");
   await sleep(60);
-  logOk('Model: DailyReport           日報 / summary / AI digest');
+  logOk("Model: DailyReport           日報 / summary / AI digest");
   await sleep(60);
-  logOk('Model: Board                 掲示板 / announcements');
+  logOk("Model: Board                 掲示板 / announcements");
   await sleep(60);
-  logOk('Model: ChatMessage           DM / group / read receipt');
+  logOk("Model: ChatMessage           DM / group / read receipt");
   await sleep(60);
-  logOk('Model: ChatRoom              group metadata / members / admins');
+  logOk("Model: ChatRoom              group metadata / members / admins");
   await sleep(60);
-  logOk('Model: Notification          push / in-app / scheduler');
+  logOk("Model: Notification          push / in-app / scheduler");
   await sleep(60);
-  logOk('Model: Payroll               salary slip / deductions');
+  logOk("Model: Payroll               salary slip / deductions");
   await sleep(60);
-  logOk('Model: SkillSheet            skills / portfolio / export');
+  logOk("Model: SkillSheet            skills / portfolio / export");
   await sleep(60);
-  logOk('Model: PretestQuestion       入社前テスト / scoring');
+  logOk("Model: PretestQuestion       入社前テスト / scoring");
   await sleep(60);
-  logOk('Model: OvertimeRequest       残業申請 / approval');
+  logOk("Model: OvertimeRequest       残業申請 / approval");
   await sleep(60);
-  logOk('Model: Task (integration)    GitHub / Jira / Linear sync');
+  logOk("Model: Task (integration)    GitHub / Jira / Linear sync");
 
   // ── フェーズ 3: 管理者アカウント ─────────────────────────────
-  logSection('Phase 3 / Admin Account Bootstrap');
+  logSection("Phase 3 / Admin Account Bootstrap");
   await sleep(100);
   await createAdminUser();
   const admin = await User.findOne({ username: "admin" });
   if (admin) {
-    logOk('Admin account                @admin (isAdmin=true)');
-    logOk('Admin password hash          bcrypt rounds=10');
+    logOk("Admin account                @admin (isAdmin=true)");
+    logOk("Admin password hash          bcrypt rounds=10");
   } else {
-    logWarn('Admin account not found — check DB connection');
+    logWarn("Admin account not found — check DB connection");
   }
 
   // ── フェーズ 4: ルートモジュール ──────────────────────────────
-  logSection('Phase 4 / Route Modules');
+  logSection("Phase 4 / Route Modules");
   await sleep(80);
-  logOk('Router: /auth                ログイン / ログアウト / セッション管理');
+  logOk("Router: /auth                ログイン / ログアウト / セッション管理");
   await sleep(50);
-  logOk('Router: /dashboard           勤怠サマリー / KPIウィジェット');
+  logOk("Router: /dashboard           勤怠サマリー / KPIウィジェット");
   await sleep(50);
-  logOk('Router: /attendance          打刻 / 履歴 / CSV出力 / 承認');
+  logOk("Router: /attendance          打刻 / 履歴 / CSV出力 / 承認");
   await sleep(50);
-  logOk('Router: /admin               管理者コンソール / ユーザー管理');
+  logOk("Router: /admin               管理者コンソール / ユーザー管理");
   await sleep(50);
-  logOk('Router: /hr                  人事 / 給与 / 日報 / レポート');
+  logOk("Router: /hr                  人事 / 給与 / 日報 / レポート");
   await sleep(50);
-  logOk('Router: /leave               休暇申請 / 承認フロー / 残日数');
+  logOk("Router: /leave               休暇申請 / 承認フロー / 残日数");
   await sleep(50);
-  logOk('Router: /goals               目標管理 / OKR / 進捗トラッキング');
+  logOk("Router: /goals               目標管理 / OKR / 進捗トラッキング");
   await sleep(50);
-  logOk('Router: /board               掲示板 / アナウンス / コメント');
+  logOk("Router: /board               掲示板 / アナウンス / コメント");
   await sleep(50);
-  logOk('Router: /chat                DM / グループチャット / ファイル添付');
+  logOk("Router: /chat                DM / グループチャット / ファイル添付");
   await sleep(50);
-  logOk('Router: /cloud               クラウドドライブ / ファイル共有 / 同時編集');
+  logOk(
+    "Router: /cloud               クラウドドライブ / ファイル共有 / 同時編集",
+  );
   await sleep(50);
-  logOk('Router: /chatbot             AIチャットボット (OpenAI)');
+  logOk("Router: /schedule            スケジューラ / 会議枠管理 / 通話連携");
   await sleep(50);
-  logOk('Router: /notifications       リアルタイム通知 / スケジューラー');
+  logOk("Router: /chatbot             AIチャットボット (OpenAI)");
   await sleep(50);
-  logOk('Router: /skillsheet          スキルシート / PDF出力');
+  logOk("Router: /notifications       リアルタイム通知 / スケジューラー");
   await sleep(50);
-  logOk('Router: /pretest             入社前テスト / 採点 / 結果管理');
+  logOk("Router: /skillsheet          スキルシート / PDF出力");
   await sleep(50);
-  logOk('Router: /rules               会社規定 / ドキュメント管理');
+  logOk("Router: /pretest             入社前テスト / 採点 / 結果管理");
   await sleep(50);
-  logOk('Router: /overtime            残業申請 / 集計');
+  logOk("Router: /rules               会社規定 / ドキュメント管理");
   await sleep(50);
-  logOk('Router: /payroll             給与明細 / 計算エンジン');
+  logOk("Router: /overtime            残業申請 / 集計");
   await sleep(50);
-  logOk('Router: /integrations        GitHub / Jira / Linear / Slack');
+  logOk("Router: /payroll             給与明細 / 計算エンジン");
   await sleep(50);
-  logOk('Router: /tasks               タスク管理 / AI分析 / 優先度');
+  logOk("Router: /integrations        GitHub / Jira / Linear / Slack");
   await sleep(50);
-  logOk('Router: /organization        組織図 / 部署 / ロール管理');
+  logOk("Router: /tasks               タスク管理 / AI分析 / 優先度");
   await sleep(50);
-  logOk('Router: /locations           GPS打刻 / 位置情報管理');
+  logOk("Router: /organization        組織図 / 部署 / ロール管理");
   await sleep(50);
-  logOk('Router: /lang                多言語対応 (ja / en / vi)');
+  logOk("Router: /locations           GPS打刻 / 位置情報管理");
+  await sleep(50);
+  logOk("Router: /lang                多言語対応 (ja / en / vi)");
 
   // ── フェーズ 5: バックグラウンドサービス ─────────────────────
-  logSection('Phase 5 / Background Services');
+  logSection("Phase 5 / Background Services");
   await sleep(100);
   require("./lib/notificationScheduler").startScheduler();
-  logOk('Notification Scheduler       cron-based push / in-app dispatcher');
+  logOk("Notification Scheduler       cron-based push / in-app dispatcher");
   await sleep(80);
-  logOk('Payroll Engine               月次自動計算 / 残業集計');
+  logOk("Payroll Engine               月次自動計算 / 残業集計");
   await sleep(80);
-  logOk('Daily Report Summarizer      AI要約 / メール配信');
+  logOk("Daily Report Summarizer      AI要約 / メール配信");
   await sleep(80);
-  logOk('Socket.IO rooms              join_rooms / typing / stop_typing');
+  logOk("Socket.IO rooms              join_rooms / typing / stop_typing");
   await sleep(80);
 
   // Renderスリープ防止
   if (process.env.RENDER_EXTERNAL_URL || process.env.RENDER) {
     const https = require("https");
-    const selfUrl = process.env.RENDER_EXTERNAL_URL || "https://dxpro-attendance.onrender.com";
-    setInterval(() => {
-      https.get(selfUrl + "/health", (r) => {}).on("error", () => {});
-    }, 14 * 60 * 1000);
-    logOk('KeepAlive timer              self-ping every 14 min → ' + selfUrl);
+    const selfUrl =
+      process.env.RENDER_EXTERNAL_URL ||
+      "https://dxpro-attendance.onrender.com";
+    setInterval(
+      () => {
+        https.get(selfUrl + "/health", (r) => {}).on("error", () => {});
+      },
+      14 * 60 * 1000,
+    );
+    logOk("KeepAlive timer              self-ping every 14 min → " + selfUrl);
   } else {
-    logSkip('KeepAlive timer              (local environment — skipped)');
+    logSkip("KeepAlive timer              (local environment — skipped)");
   }
 
   // ── フェーズ 6: セキュリティ & 最終チェック ──────────────────
-  logSection('Phase 6 / Security & Health Check');
+  logSection("Phase 6 / Security & Health Check");
   await sleep(80);
-  logOk('CORS / Proxy trust           trust proxy=1');
+  logOk("CORS / Proxy trust           trust proxy=1");
   await sleep(60);
-  logOk('Session secret               ' + (process.env.SESSION_SECRET ? 'env variable' : 'fallback key ⚠ set SESSION_SECRET in .env'));
+  logOk(
+    "Session secret               " +
+      (process.env.SESSION_SECRET
+        ? "env variable"
+        : "fallback key ⚠ set SESSION_SECRET in .env"),
+  );
   await sleep(60);
-  logOk('Error handler                500 global handler registered');
+  logOk("Error handler                500 global handler registered");
   await sleep(60);
-  logOk('Health endpoint              GET /health → 200 OK');
+  logOk("Health endpoint              GET /health → 200 OK");
   await sleep(60);
-  logOk('Debug endpoint               GET /debug-session (dev only)');
+  logOk("Debug endpoint               GET /debug-session (dev only)");
   await sleep(80);
 
   // ── 起動完了 ─────────────────────────────────────────────────
-  console.log('');
-  console.log(`${GREEN}${BOLD}  ╔═══════════════════════════════════════════════════╗${RESET}`);
-  console.log(`${GREEN}${BOLD}  ║   🚀  NOKORI by DXPRO SOLUTIONS — READY          ║${RESET}`);
-  console.log(`${GREEN}${BOLD}  ║                                                   ║${RESET}`);
-  console.log(`${GREEN}${BOLD}  ║   http://localhost:${String(PORT).padEnd(32)}║${RESET}`);
-  console.log(`${GREEN}${BOLD}  ║   Environment : ${(process.env.NODE_ENV || 'development').padEnd(34)}║${RESET}`);
-  console.log(`${GREEN}${BOLD}  ║   Port        : ${String(PORT).padEnd(34)}║${RESET}`);
-  console.log(`${GREEN}${BOLD}  ╚═══════════════════════════════════════════════════╝${RESET}`);
-  console.log('');
+  console.log("");
+  console.log(
+    `${GREEN}${BOLD}  ╔═══════════════════════════════════════════════════╗${RESET}`,
+  );
+  console.log(
+    `${GREEN}${BOLD}  ║   🚀  NOKORI by DXPRO SOLUTIONS — READY          ║${RESET}`,
+  );
+  console.log(
+    `${GREEN}${BOLD}  ║                                                   ║${RESET}`,
+  );
+  console.log(
+    `${GREEN}${BOLD}  ║   http://localhost:${String(PORT).padEnd(32)}║${RESET}`,
+  );
+  console.log(
+    `${GREEN}${BOLD}  ║   Environment : ${(process.env.NODE_ENV || "development").padEnd(34)}║${RESET}`,
+  );
+  console.log(
+    `${GREEN}${BOLD}  ║   Port        : ${String(PORT).padEnd(34)}║${RESET}`,
+  );
+  console.log(
+    `${GREEN}${BOLD}  ╚═══════════════════════════════════════════════════╝${RESET}`,
+  );
+  console.log("");
 });
