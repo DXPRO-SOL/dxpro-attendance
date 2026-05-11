@@ -563,11 +563,11 @@ httpServer.listen(PORT, "0.0.0.0", async () => {
   // ── 起動完了 ─────────────────────────────────────────────────
   console.log('');
   console.log(`${GREEN}${BOLD}  ╔═══════════════════════════════════════════════════╗${RESET}`);
-  console.log(`${GREEN}${BOLD}  ║   🚀  NOKORI by DXPRO SOLUTIONS — READY           ║${RESET}`);
+  console.log(`${GREEN}${BOLD}  ║  🚀  NOKORI by DXPRO SOLUTIONS — READY            ║${RESET}`);
   console.log(`${GREEN}${BOLD}  ║                                                   ║${RESET}`);
-  console.log(`${GREEN}${BOLD}  ║   http://localhost:${String(PORT).padEnd(30)}║${RESET}`);
-  console.log(`${GREEN}${BOLD}  ║   Environment : ${(process.env.NODE_ENV || 'development').padEnd(33)}║${RESET}`);
-  console.log(`${GREEN}${BOLD}  ║   Port        : ${String(PORT).padEnd(33)}║${RESET}`);
+  console.log(`${GREEN}${BOLD}  ║   http://localhost:${String(PORT).padEnd(31)}║${RESET}`);
+  console.log(`${GREEN}${BOLD}  ║   Environment : ${(process.env.NODE_ENV || 'development').padEnd(34)}║${RESET}`);
+  console.log(`${GREEN}${BOLD}  ║   Port        : ${String(PORT).padEnd(34)}║${RESET}`);
   console.log(`${GREEN}${BOLD}  ╚═══════════════════════════════════════════════════╝${RESET}`);
   console.log('');
 });
