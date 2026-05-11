@@ -377,6 +377,7 @@ router.get('/chat/dm/:userId', requireLogin, async (req, res) => {
             $or: [{ fromUserId: myId, toUserId: targetId }, { fromUserId: targetId, toUserId: myId }],
             roomId: null,
         }).sort({ createdAt: -1 }).limit(100).lean()).reverse();
+        const hasMore = messages.length === 100;
         const myName     = myEmp ? myEmp.name : req.session.username;
         const targetName = targetEmp ? targetEmp.name : targetUser.username;
         renderPage(req, res, `チャット - ${targetName}`, 'チャット', buildPage({
@@ -387,7 +388,7 @@ router.get('/chat/dm/:userId', requireLogin, async (req, res) => {
             targetStatus: targetUser.chatStatus || 'offline',
             targetDept: targetEmp ? (targetEmp.department || '') : '',
             targetPos:  targetEmp ? (targetEmp.position  || '') : '',
-            messages, ...sideData,
+            messages, hasMore, ...sideData,
         }));
     } catch (e) { console.error('[chat/dm]', e); res.status(500).send('エラー'); }
 });
@@ -403,8 +404,7 @@ router.get('/chat/room/:roomId', requireLogin, async (req, res) => {
             { $push: { readBy: { userId: myId, readAt: new Date() } } }
         );
         const [messages, myEmp, cu, sideData, memberUsers, memberEmps] = await Promise.all([
-            ChatMessage.find({ roomId: room._id }).sort({ createdAt: -1 }).limit(100).lean().then(r => r.reverse()),
-            Employee.findOne({ userId: myId }).select('name').lean(),
+            ChatMessage.find({ roomId: room._id }).sort({ createdAt: -1 }).limit(100).lean().then(r => r.reverse()),            Employee.findOne({ userId: myId }).select('name').lean(),
             User.findById(myId).select('chatStatus').lean(),
             buildSidebarData(myId),
             User.find({ _id: { $in: room.members } }).select('username chatStatus').lean(),
@@ -414,6 +414,7 @@ router.get('/chat/room/:roomId', requireLogin, async (req, res) => {
         memberEmps.forEach(e => { memEmpMap[String(e.userId)] = e; });
         const members = memberUsers.map(u => ({ ...u, emp: memEmpMap[String(u._id)] || null }));
         const myName  = myEmp ? myEmp.name : req.session.username;
+        const hasMore = messages.length === 100;
         renderPage(req, res, `${room.name} - チャット`, 'チャット', buildPage({
             mode: 'room', myId: String(myId), myName,
             myInitial: (myName || '?').charAt(0).toUpperCase(),
@@ -421,12 +422,52 @@ router.get('/chat/room/:roomId', requireLogin, async (req, res) => {
             roomId: String(room._id), roomName: room.name,
             roomIcon: room.icon || '💬', roomDesc: room.description || '',
             isRoomAdmin: room.admins.some(a => String(a) === String(myId)),
-            members, messages, ...sideData,
+            members, messages, hasMore, ...sideData,
         }));
     } catch (e) { console.error('[chat/room]', e); res.status(500).send('エラー'); }
 });
 
 // ── API ────────────────────────────────────────────────────────
+
+// 過去メッセージ追加読み込み API
+router.get('/api/chat/messages', requireLogin, async (req, res) => {
+    try {
+        const { toUserId, roomId, before } = req.query;
+        const myId = req.session.userId;
+        const filter = {};
+        if (before) filter.createdAt = { $lt: new Date(before) };
+        if (toUserId) {
+            filter.$or = [
+                { fromUserId: oid(myId), toUserId: oid(toUserId) },
+                { fromUserId: oid(toUserId), toUserId: oid(myId) },
+            ];
+            filter.roomId = null;
+        } else if (roomId) {
+            filter.roomId = oid(roomId);
+        } else {
+            return res.status(400).json({ error: 'toUserId か roomId が必要です' });
+        }
+        const messages = (await ChatMessage.find(filter)
+            .sort({ createdAt: -1 }).limit(50).lean()).reverse();
+        // senderName を付与
+        const userIds = [...new Set(messages.map(m => String(m.fromUserId)))];
+        const [emps, users] = await Promise.all([
+            Employee.find({ userId: { $in: userIds } }).select('userId name').lean(),
+            User.find({ _id: { $in: userIds } }).select('username').lean(),
+        ]);
+        const empMap = {}; emps.forEach(e => { empMap[String(e.userId)] = e.name; });
+        const userMap = {}; users.forEach(u => { userMap[String(u._id)] = u.username; });
+        const msgsWithName = messages.map(m => ({
+            ...m,
+            _id: String(m._id),
+            fromUserId: String(m.fromUserId),
+            toUserId: m.toUserId ? String(m.toUserId) : null,
+            roomId: m.roomId ? String(m.roomId) : null,
+            senderName: empMap[String(m.fromUserId)] || userMap[String(m.fromUserId)] || '不明',
+        }));
+        res.json({ ok: true, messages: msgsWithName, hasMore: messages.length === 50 });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // チャット未読件数（トップバーバッジ用）
 router.get('/api/chat/unread-count', requireLogin, async (req, res) => {
@@ -850,11 +891,11 @@ function buildPage(data) {
         roomIds: roomList.map(r => String(r._id)),
     };
     if (mode === 'dm') {
-        Object.assign(clientData, { targetId: data.targetId, targetName: data.targetName, targetStatus: data.targetStatus });
+        Object.assign(clientData, { targetId: data.targetId, targetName: data.targetName, targetStatus: data.targetStatus, hasMore: !!data.hasMore });
     }
     if (mode === 'room') {
         Object.assign(clientData, {
-            roomId: data.roomId, roomName: data.roomName, isRoomAdmin: data.isRoomAdmin,
+            roomId: data.roomId, roomName: data.roomName, isRoomAdmin: data.isRoomAdmin, hasMore: !!data.hasMore,
             members: (data.members || []).map(m => ({
                 _id: String(m._id), username: m.username, chatStatus: m.chatStatus || 'offline',
                 emp: m.emp ? { name: m.emp.name, department: m.emp.department || '' } : null,
@@ -873,7 +914,7 @@ ${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/call-sounds.js"></script>
-<script src="/chat-app.js?v=22"></script>
+<script src="/chat-app.js?v=23"></script>
 <script>
 function openChatSidebar(){
   document.querySelector('.sc-side').classList.add('mobile-open');
@@ -1072,6 +1113,8 @@ function buildMainHtml(data) {
 <div class="sc-body-wrap">
     <div class="sc-messages" id="sc-messages">
         ${buildThreadStart(data)}
+        ${data.hasMore ? '<div id="sc-load-more-wrap" style="text-align:center;padding:12px 0 4px"><button class="sc-load-more-btn" onclick="chatApp.loadMore()" id="sc-load-more-btn"><i class="fa-solid fa-clock-rotate-left"></i> 過去のメッセージを読み込む</button></div>' : ''}
+        <div id="sc-older-messages"></div>
         ${buildMessagesHtml(data)}
         <div id="sc-msg-bottom"></div>
     </div>
@@ -1159,7 +1202,7 @@ function buildMessagesHtml(data) {
     let prevFrom = null, prevDate = null;
     for (const m of messages) {
         if (m.deleted) {
-            html += '<div class="sc-msg sc-msg-del" data-id="' + m._id + '"><span class="sc-del-icon">🗑</span><span class="sc-del-text">このメッセージは削除されました</span></div>';
+            html += '<div class="sc-msg sc-msg-del" data-id="' + m._id + '" data-at="' + m.createdAt.toISOString() + '"><span class="sc-del-icon">🗑</span><span class="sc-del-text">このメッセージは削除されました</span></div>';
             prevFrom = null; continue;
         }
         // 不在着信システムメッセージ
@@ -1167,7 +1210,7 @@ function buildMessagesHtml(data) {
             const isMine = String(m.fromUserId) === String(myId);
             const dt2 = new Date(m.createdAt);
             const timeStr2 = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-            html += '<div class="sc-missed-call" data-id="' + m._id + '">'
+            html += '<div class="sc-missed-call" data-id="' + m._id + '" data-at="' + m.createdAt.toISOString() + '">'
                 + '<span class="sc-missed-icon">📵</span>'
                 + (isMine ? '不在着信（発信）' : '不在着信')
                 + '<span class="sc-missed-time">' + timeStr2 + '</span></div>';
@@ -1180,7 +1223,7 @@ function buildMessagesHtml(data) {
             const mins = Math.floor((m.callDuration || 0) / 60);
             const secs = (m.callDuration || 0) % 60;
             const durStr = mins > 0 ? mins + '分' + secs + '秒' : secs + '秒';
-            html += '<div class="sc-call-history" data-id="' + m._id + '">'
+            html += '<div class="sc-call-history" data-id="' + m._id + '" data-at="' + m.createdAt.toISOString() + '">'
                 + '<span>📞</span> 通話 — ' + durStr
                 + '<span class="sc-missed-time">' + timeStr2 + '</span></div>';
             prevFrom = null; continue;
@@ -1222,13 +1265,13 @@ function buildMessagesHtml(data) {
             + (isMine ? '<button class="sc-tb sc-tb-del" onclick="chatApp.deleteMsg(\'' + m._id + '\')" title="削除">🗑</button>' : '')
             + '</div>';
         if (isCont) {
-            html += '<div class="sc-msg sc-msg-cont" data-id="' + m._id + '">' + toolbar
+            html += '<div class="sc-msg sc-msg-cont" data-id="' + m._id + '" data-at="' + m.createdAt.toISOString() + '">' + toolbar
                 + '<div class="sc-ts-hover">' + timeStr + '</div>'
                 + '<div class="sc-body-wrap2">' + replyBlock
                 + '<div class="sc-msg-text" data-mid="' + m._id + '">' + escHtml(m.content || '') + '</div>'
                 + editedBadge + attachHtml + reactHtml + readBadge + '</div></div>';
         } else {
-            html += '<div class="sc-msg" data-id="' + m._id + '">' + toolbar
+            html += '<div class="sc-msg" data-id="' + m._id + '" data-at="' + m.createdAt.toISOString() + '">' + toolbar
                 + '<div class="sc-av sc-av-c' + colorIdx + '">' + initial + '</div>'
                 + '<div class="sc-msg-right"><div class="sc-msg-meta"><span class="sc-sender">' + escHtml(senderName) + '</span><span class="sc-ts">' + timeStr + '</span></div>'
                 + replyBlock + '<div class="sc-msg-text" data-mid="' + m._id + '">' + escHtml(m.content || '') + '</div>'
@@ -1604,6 +1647,9 @@ html, body { overflow: hidden !important; }
 .sc-call-btn:hover{background:#f0fdf4!important}
 .sc-clear-btn{color:var(--c-red)!important}
 .sc-clear-btn:hover{background:#fef2f2!important}
+.sc-load-more-btn{background:none;border:1.5px solid var(--c-border);border-radius:20px;color:var(--c-text-muted);font-size:.78rem;padding:6px 16px;cursor:pointer;transition:all .15s}
+.sc-load-more-btn:hover{background:var(--c-bg-hover);color:var(--c-text-primary)}
+.sc-load-more-btn:disabled{opacity:.5;cursor:not-allowed}
 
 /* ── Call overlay ── */
 .call-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}

@@ -209,6 +209,7 @@
             const el2 = document.createElement('div');
             el2.className = 'sc-call-history';
             el2.dataset.id = msg._id;
+            el2.dataset.at = msg.createdAt;
             el2.innerHTML = '<span>📞</span> 通話 — ' + durStr
                 + '<span class="sc-missed-time">' + time2 + '</span>';
             container.insertBefore(el2, bottom);
@@ -233,6 +234,7 @@
 
         const el = document.createElement('div');
         el.dataset.id = msg._id;
+        el.dataset.at = msg.createdAt;
 
         // 継続チェック（簡易：直前のメッセージと同じ送信者か）
         const lastMsg = container.querySelector('.sc-msg[data-id]:not(.sc-msg-del):last-of-type,.sc-msg-cont[data-id]:last-of-type');
@@ -829,6 +831,102 @@
         return u.emp ? u.emp.name : u.username;
     }
 
+    // ── 過去メッセージ読み込み ────────────────────────────────
+    let _loadingMore = false;
+    async function loadMore() {
+        if (_loadingMore) return;
+        _loadingMore = true;
+        const btn = document.getElementById('sc-load-more-btn');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 読み込み中...'; }
+        try {
+            // 現在表示中の一番古いメッセージのcreatedAtを取得
+            const container = document.getElementById('sc-messages');
+            const oldestEl = container ? container.querySelector('.sc-msg[data-id],.sc-msg-cont[data-id],.sc-missed-call[data-id],.sc-call-history[data-id],.sc-msg-del[data-id]') : null;
+            const before = oldestEl ? oldestEl.dataset.at : null;
+            if (!before) { hideLoadMore(); return; }
+
+            const params = new URLSearchParams({ before });
+            if (TARGET_ID) params.set('toUserId', TARGET_ID);
+            else if (ROOM_ID) params.set('roomId', ROOM_ID);
+            const r = await fetch('/api/chat/messages?' + params);
+            const j = await r.json();
+            if (!j.ok || !j.messages || !j.messages.length) { hideLoadMore(); return; }
+
+            // スクロール位置を維持するために現在の高さを記録
+            const wrap = document.getElementById('sc-messages');
+            const prevH = wrap ? wrap.scrollHeight : 0;
+            const prevTop = wrap ? wrap.scrollTop : 0;
+
+            // 古いメッセージ専用エリアの先頭に挿入
+            const olderDiv = document.getElementById('sc-older-messages');
+            if (!olderDiv) { hideLoadMore(); return; }
+            const html = buildOlderMessagesHtml(j.messages);
+            olderDiv.insertAdjacentHTML('afterbegin', html);
+
+            // data-at 属性を付与（次のload moreで使用）
+            olderDiv.querySelectorAll('[data-id]:not([data-at])').forEach(el => {
+                const id = el.dataset.id;
+                const msg = j.messages.find(m => m._id === id);
+                if (msg) el.dataset.at = msg.createdAt;
+            });
+
+            // スクロール位置を復元（ページが飛ばないように）
+            if (wrap) wrap.scrollTop = prevTop + (wrap.scrollHeight - prevH);
+
+            if (!j.hasMore) hideLoadMore();
+            else if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-clock-rotate-left"></i> 過去のメッセージを読み込む'; }
+        } catch (e) {
+            console.error('loadMore error', e);
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-clock-rotate-left"></i> 過去のメッセージを読み込む'; }
+        }
+        _loadingMore = false;
+    }
+
+    function hideLoadMore() {
+        const wrap = document.getElementById('sc-load-more-wrap');
+        if (wrap) wrap.style.display = 'none';
+    }
+
+    function buildOlderMessagesHtml(messages) {
+        let html = '';
+        for (const m of messages) {
+            const id = esc(m._id);
+            const at = m.createdAt;
+            if (m.deleted) {
+                html += `<div class="sc-msg sc-msg-del" data-id="${id}" data-at="${at}"><span class="sc-del-icon">🗑</span><span class="sc-del-text">このメッセージは削除されました</span></div>`;
+                continue;
+            }
+            if (m.isMissedCall) {
+                const t = new Date(m.createdAt).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+                html += `<div class="sc-missed-call" data-id="${id}" data-at="${at}"><span class="sc-missed-icon">📵</span>不在着信<span class="sc-missed-time">${t}</span></div>`;
+                continue;
+            }
+            if (m.isCallHistory) {
+                const t = new Date(m.createdAt).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+                const dur = m.callDuration || 0;
+                const mins = Math.floor(dur/60), secs = dur%60;
+                const ds = mins>0 ? `${mins}分${secs}秒` : `${secs}秒`;
+                html += `<div class="sc-call-history" data-id="${id}" data-at="${at}"><span>📞</span> 通話 — ${ds}<span class="sc-missed-time">${t}</span></div>`;
+                continue;
+            }
+            const isMine = m.fromUserId === MY_ID;
+            const senderName = m.senderName || (isMine ? MY_NAME : TARGET_NAME) || '?';
+            const initial = senderName.charAt(0).toUpperCase();
+            const colorIdx = isMine ? 0 : 1;
+            const dt = new Date(m.createdAt);
+            const dateStr = dt.toLocaleDateString('ja-JP',{month:'long',day:'numeric',weekday:'short'});
+            const timeStr = dt.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+            const content = esc(m.content || '');
+            const attHtml = buildAttachHtml(m.attachments || []);
+            html += `<div class="sc-date-div"><span>${dateStr}</span></div>`;
+            html += `<div class="sc-msg" data-id="${id}" data-at="${at}">`;
+            html += `<div class="sc-av sc-av-c${colorIdx}">${initial}</div>`;
+            html += `<div class="sc-msg-right"><div class="sc-msg-meta"><span class="sc-sender">${senderName}</span><span class="sc-ts">${timeStr}</span></div>`;
+            html += `<div class="sc-msg-text">${content}</div>${attHtml}</div></div>`;
+        }
+        return html;
+    }
+
     function scrollBottom(smooth) {
         const el = document.getElementById('sc-msg-bottom');
         if (el) el.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' });
@@ -1159,10 +1257,13 @@
                 }).catch(() => {});
             }
             callStartTime = null;
+            const _savedTarget = callTargetId || TARGET_ID; // onstopより先にnullになるため退避
             callTargetId  = null;
 
             // 録画停止（録画中であれば）
             if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                // targetを退避した値でonstop内で使えるようにする
+                mediaRecorder._target = _savedTarget;
                 mediaRecorder.stop();
             }
 
@@ -1470,8 +1571,8 @@
             showNoticeBar('🎥 録画を保存中...', 0);
             const blob = new Blob(recordChunks, { type: mimeType });
             recordChunks = [];
+            const target = (mediaRecorder && mediaRecorder._target) || recTarget || TARGET_ID;
             mediaRecorder = null;
-            const target = callTargetId || TARGET_ID;
             if (!target || blob.size === 0) { hideNoticeBar(); return; }
             const fd = new FormData();
             fd.append('recording', blob, `recording_${Date.now()}.webm`);
@@ -1924,6 +2025,7 @@
         filterMessages,
         filterSidebar,
         clearChat,
+        loadMore,
         setStatus,
         openCreateRoom,
         createRoom,
