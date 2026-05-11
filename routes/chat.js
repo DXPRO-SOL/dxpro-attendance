@@ -863,6 +863,7 @@ function buildPage(data) {
     }
     return `${chatStyles()}
 <div class="sc-root">
+    <div class="sc-side-overlay" id="sc-side-overlay" onclick="closeMobileSidebar()"></div>
     ${buildSidebarHtml(data)}
     <div class="sc-main" id="sc-main">${buildMainHtml(data)}</div>
 </div>
@@ -872,7 +873,11 @@ ${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/call-sounds.js"></script>
-<script src="/chat-app.js?v=21"></script>`;
+<script src="/chat-app.js?v=21"></script>
+<script>
+function openMobileSidebar(){document.querySelector('.sc-side').classList.add('mobile-open');document.getElementById('sc-side-overlay').classList.add('active');}
+function closeMobileSidebar(){document.querySelector('.sc-side').classList.remove('mobile-open');document.getElementById('sc-side-overlay').classList.remove('active');}
+</script>`;
 }
 
 function buildSidebarHtml(d) {
@@ -1023,7 +1028,7 @@ function buildMainHtml(data) {
     }
     const headerHtml = isRoom
         ? `<div class="sc-main-hd">
-            <div class="sc-hd-left"><div class="sc-room-icon-lg">${escHtml(data.roomIcon || '💬')}</div>
+            <div class="sc-hd-left"><button class="sc-mobile-back" onclick="openMobileSidebar()" title="チャンネル一覧"><i class="fa-solid fa-bars"></i></button><div class="sc-room-icon-lg">${escHtml(data.roomIcon || '💬')}</div>
             <div><div class="sc-hd-name">${escHtml(data.roomName)}</div><div class="sc-hd-sub" id="room-sub">${data.members.length}人のメンバー</div></div></div>
             <div class="sc-hd-actions">
                 <button class="sc-hd-btn" onclick="chatApp.toggleMemberPanel()" title="メンバー"><i class="fa-solid fa-users"></i></button>
@@ -1032,7 +1037,7 @@ function buildMainHtml(data) {
             </div>
         </div>`
         : `<div class="sc-main-hd">
-            <div class="sc-hd-left"><div class="sc-av-wrap"><div class="sc-av sc-av-target">${escHtml(data.targetName || '?').charAt(0).toUpperCase()}</div>
+            <div class="sc-hd-left"><button class="sc-mobile-back" onclick="openMobileSidebar()" title="チャンネル一覧"><i class="fa-solid fa-bars"></i></button><div class="sc-av-wrap"><div class="sc-av sc-av-target">${escHtml(data.targetName || '?').charAt(0).toUpperCase()}</div>
             <span class="sc-pip ${STATUS_CLS[data.targetStatus || 'offline']}" id="target-pip"></span></div>
             <div><div class="sc-hd-name">${escHtml(data.targetName || '')}</div>
             <div class="sc-hd-sub" id="target-sub">${STATUS_LABEL[data.targetStatus || 'offline']}${data.targetDept ? ' · ' + escHtml(data.targetDept) : ''}</div></div></div>
@@ -1610,6 +1615,24 @@ function chatStyles() {
 .call-accept-btn:hover{background:#16a34a;transform:translateY(-1px)}
 .call-reject-btn{padding:12px 28px;background:var(--c-red);color:#fff;border:none;border-radius:50px;font-size:.9rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;transition:.15s;box-shadow:0 4px 12px rgba(239,68,68,.3)}
 .call-reject-btn:hover{background:#b91c1c;transform:translateY(-1px)}
+
+/* ── Mobile responsive ── */
+@media(max-width:640px){
+  .sc-side{position:fixed;top:0;left:-260px;width:260px;height:100%;z-index:200;transition:left .25s;box-shadow:4px 0 20px rgba(0,0,0,.18)}
+  .sc-side.mobile-open{left:0}
+  .sc-side-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:199}
+  .sc-side-overlay.active{display:block}
+  .sc-root{position:relative}
+  .sc-mobile-back{display:flex!important;align-items:center;justify-content:center;width:34px;height:34px;border:none;background:transparent;border-radius:6px;cursor:pointer;color:var(--c-text-secondary);font-size:.95rem}
+  .sc-member-panel{display:none}
+  .sc-hd-search input{width:80px}
+  .call-box{width:98vw!important;max-width:98vw!important}
+  .call-videos{min-height:200px}
+  .call-incoming-box{padding:24px 20px;min-width:unset;width:90vw}
+}
+@media(min-width:641px){
+  .sc-mobile-back{display:none!important}
+}
 </style>`;
 }
 

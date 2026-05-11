@@ -781,6 +781,18 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
 .tks-test-result { margin:12px 28px 0; padding:12px 14px; border-radius:8px; font-size:13px; display:none; }
 .tks-test-result--ok  { background:#dcfce7; color:#166534; border:1px solid #bbf7d0; }
 .tks-test-result--err { background:#fee2e2; color:#991b1b; border:1px solid #fecaca; }
+@media(max-width:700px) {
+    .tks-fields { grid-template-columns:1fr; } .tks-field--full { grid-column:1; }
+    .tks-wrap { padding:16px 10px 32px; }
+    .tks-form-body { padding:16px 14px 0; }
+    .tks-footer { padding:16px 14px; flex-wrap:wrap; }
+    .tks-tool-header { flex-wrap:wrap; gap:10px; }
+    .tks-toggle-wrap { margin-left:0; }
+    .tks-tabs { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .tks-tab { padding:10px 14px; font-size:13px; }
+    .tks-label-text { white-space:normal; }
+    .tks-hint { word-break:break-all; }
+}
 </style>`;
 
     const html =
@@ -1265,6 +1277,9 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
 @media (max-width:700px) {
     .tkl-topbar { flex-direction:column; align-items:flex-start; }
     .tkl-filter-item { min-width:100%; }
+    .tkl-table-card { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .tkl-table { min-width:640px; table-layout:auto !important; }
+    .tkl-wrap { padding:12px 8px 32px; }
 }
 </style>`;
 

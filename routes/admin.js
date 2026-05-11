@@ -28,7 +28,7 @@ router.get('/admin', requireLogin, isAdmin, async (req, res) => {
             .admin-title{font-weight:800;font-size:16px}
             .admin-desc{color:#6b7280;font-size:13px;margin-top:8px}
             .meta{color:#6b7280;margin-top:6px}
-            @media(max-width:700px){.wrap{padding:14px}.admin-icon{width:44px;height:44px}}
+            @media(max-width:700px){.wrap{padding:14px}.admin-icon{width:44px;height:44px}.grid{grid-template-columns:1fr}.wrap>div>div[style]{flex-direction:column;align-items:flex-start!important}}
         </style>
 
         <div class="wrap">
@@ -203,6 +203,14 @@ body{font-family:Inter,'Noto Sans JP',system-ui,sans-serif;background:#f5f6fa;ma
 .filter-bar input,.filter-bar select{border:1px solid #e5e7eb;border-radius:8px;padding:7px 12px;font-size:13px;outline:none;background:#fff}
 .filter-bar input:focus{border-color:#7c3aed}
 .count-badge{font-size:12px;color:#6b7280;background:#f3f4f6;padding:3px 10px;border-radius:999px}
+@media(max-width:640px){
+  .wrap{padding:0 10px 32px}
+  .page-head{flex-direction:column;align-items:flex-start}
+  .filter-bar{flex-direction:column;align-items:stretch}
+  .filter-bar input,.filter-bar select{width:100%;box-sizing:border-box}
+  .card-body{grid-template-columns:1fr!important}
+  .star-label{width:auto}
+}
 </style>
 <div class="wrap">
     <div class="page-head">
@@ -338,7 +346,7 @@ router.get('/admin/monthly-attendance', requireLogin, isAdmin, async (req, res) 
 .page-header h2 { margin:0; font-size:22px; font-weight:700; color:#0b2540; }
 .filter-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 .filter-bar select, .filter-bar input[type=number] { padding:7px 10px; border-radius:7px; border:1px solid #d1d5db; font-size:14px; }
-.emp-block { background:#fff; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.07); margin-bottom:20px; overflow:hidden; }
+.emp-block { background:#fff; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.07); margin-bottom:20px; overflow:visible; }
 .emp-block-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; padding:14px 18px; background:#f8fafc; border-bottom:1px solid #e2e8f0; }
 .emp-block-header h3 { margin:0; font-size:15px; font-weight:700; color:#0b2540; }
 .emp-stats { display:flex; gap:10px; flex-wrap:wrap; }
@@ -352,6 +360,15 @@ router.get('/admin/monthly-attendance', requireLogin, isAdmin, async (req, res) 
 .tbl-wrap tbody tr:hover td { background:#f8fafc; }
 .tbl-wrap tbody tr:last-child td { border-bottom:none; }
 .emp-footer { padding:12px 18px; display:flex; gap:8px; justify-content:flex-end; border-top:1px solid #f1f5f9; }
+@media(max-width:640px){
+  .page-header{flex-direction:column;align-items:flex-start;gap:8px}
+  .filter-bar{flex-direction:column;align-items:stretch}
+  .filter-bar select,.filter-bar input[type=number]{width:100%}
+  .emp-block-header{flex-direction:column;align-items:flex-start}
+  .emp-stats{flex-wrap:wrap}
+  .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tbl-wrap table{min-width:560px}
+}
 </style>`
         });
 
@@ -822,7 +839,7 @@ router.get('/admin/approval-requests', requireLogin, isAdmin, async (req, res) =
             .apr-modal-cancel:hover { border-color:#94a3b8; }
             .apr-modal-submit { display:inline-flex; align-items:center; gap:6px; padding:10px 22px; background:linear-gradient(135deg,#f87171,#ef4444); color:#fff; border:none; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:0 2px 10px rgba(239,68,68,.3); transition:opacity .15s; }
             .apr-modal-submit:hover { opacity:.88; }
-            @media(max-width:700px) { .apr-td{padding:12px 12px} .apr-table thead th{padding:11px 12px} }
+            @media(max-width:700px) { .apr-td{padding:12px 12px} .apr-table thead th{padding:11px 12px} .apr-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch} .apr-table{min-width:600px} }
         </style>
 
         <div class="apr-wrap">
@@ -852,7 +869,7 @@ router.get('/admin/approval-requests', requireLogin, isAdmin, async (req, res) =
                         <div class="apr-empty-msg">承認待ちのリクエストはありません</div>
                     </div>
                 ` : `
-                <table class="apr-table">
+                <div class="apr-table-wrap"><table class="apr-table">
                     <thead>
                         <tr>
                             <th><i class="fa fa-id-badge" style="margin-right:6px;opacity:.7"></i>従業員ID</th>
@@ -866,7 +883,7 @@ router.get('/admin/approval-requests', requireLogin, isAdmin, async (req, res) =
                     <tbody>
                         ${rows}
                     </tbody>
-                </table>`}
+                </table></div>`}
             </div>
 
             <div class="apr-footer">
@@ -1289,7 +1306,7 @@ router.get('/admin/view-attendance/:userId/:year/:month', requireLogin, isAdmin,
             .vatt-td { padding:12px 18px; font-size:13px; vertical-align:middle; }
             .vatt-back-link { display:inline-flex; align-items:center; gap:7px; padding:9px 18px; background:#fff; color:#475569; border:1.5px solid #e2e8f0; border-radius:10px; font-size:13px; font-weight:600; text-decoration:none; transition:border-color .15s,color .15s; margin-top:20px; }
             .vatt-back-link:hover { border-color:#94a3b8; color:#1e293b; }
-            @media(max-width:600px) { .vatt-stat-cards{grid-template-columns:1fr 1fr} .vatt-td,.vatt-table thead th{padding:10px 12px} }
+            @media(max-width:600px) { .vatt-stat-cards{grid-template-columns:1fr 1fr} .vatt-td,.vatt-table thead th{padding:10px 12px} .vatt-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch} .vatt-table{min-width:650px} }
         </style>
 
         <div class="vatt-wrap">
@@ -1340,7 +1357,7 @@ router.get('/admin/view-attendance/:userId/:year/:month', requireLogin, isAdmin,
             </div>
 
             <div class="vatt-card">
-                <table class="vatt-table">
+                <div class="vatt-table-wrap"><table class="vatt-table">
                     <thead>
                         <tr>
                             <th>日付</th>
@@ -1366,10 +1383,8 @@ router.get('/admin/view-attendance/:userId/:year/:month', requireLogin, isAdmin,
                             </tr>
                         `).join('')}
                     </tbody>
-                </table>
+                </table></div>
             </div>
-
-            <a href="/admin/approval-requests" class="vatt-back-link">
                 <i class="fa fa-arrow-left"></i> 承認リクエスト一覧に戻る
             </a>
         </div>
@@ -1499,7 +1514,7 @@ router.get('/admin/users', requireLogin, isAdmin, async (req, res) => {
             .uadm-back-link{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;background:#fff;color:#475569;border:1.5px solid #e2e8f0;border-radius:10px;font-size:13px;font-weight:600;text-decoration:none;transition:border-color .15s,color .15s}
             .uadm-back-link:hover{border-color:#94a3b8;color:#1e293b}
             .uadm-footer-note{font-size:12px;color:#94a3b8;display:flex;align-items:center;gap:5px}
-            @media(max-width:700px){.uadm-td{padding:12px 12px}.uadm-actions{flex-direction:column;align-items:flex-start}.uadm-pw-input{width:120px}}
+            @media(max-width:700px){.uadm-td{padding:12px 12px}.uadm-actions{flex-direction:column;align-items:flex-start}.uadm-pw-input{width:120px}.uadm-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}.uadm-table{min-width:600px}}
         </style>
 
         <div class="uadm-wrap">
@@ -1524,7 +1539,7 @@ router.get('/admin/users', requireLogin, isAdmin, async (req, res) => {
             ${req.query.error                  ? '<div class="uadm-alert uadm-alert-error"><i class="fa fa-triangle-exclamation"></i> エラーが発生しました。</div>' : ''}
 
             <div class="uadm-card">
-                <table class="uadm-table">
+                <div class="uadm-table-wrap"><table class="uadm-table">
                     <thead>
                         <tr>
                             <th>ユーザー名</th>
@@ -1533,7 +1548,7 @@ router.get('/admin/users', requireLogin, isAdmin, async (req, res) => {
                         </tr>
                     </thead>
                     <tbody>${rows}</tbody>
-                </table>
+                </table></div>
             </div>
 
             <div class="uadm-footer">
@@ -1632,6 +1647,14 @@ tr:last-child td{border-bottom:none}
 .back-btn{display:inline-flex;align-items:center;gap:6px;color:#6b7280;text-decoration:none;font-size:.88rem;margin-bottom:16px}
 .back-btn:hover{color:#111}
 .warn-box{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;color:#b91c1c;font-size:.85rem;margin-bottom:18px;display:flex;align-items:center;gap:8px}
+@media(max-width:640px){
+  .wrap{padding:12px}
+  .card{padding:14px}
+  table{font-size:.8rem}
+  th,td{padding:8px 10px}
+  .card-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .card-wrap table{min-width:480px}
+}
 </style>
 <div class="wrap">
 <a href="/admin" class="back-btn"><i class="fa-solid fa-arrow-left"></i> 管理者トップ</a>
@@ -1640,7 +1663,7 @@ tr:last-child td{border-bottom:none}
 
 <div class="card">
   <div class="section-title">ユーザー別チャット削除</div>
-  <table>
+  <div class="card-wrap"><table>
     <thead><tr><th>ユーザー</th><th>送信メッセージ数</th><th>操作</th></tr></thead>
     <tbody>
     ${users.map(u => `
@@ -1654,12 +1677,12 @@ tr:last-child td{border-bottom:none}
         </td>
       </tr>`).join('')}
     </tbody>
-  </table>
+  </table></div>
 </div>
 
 <div class="card">
   <div class="section-title">グループチャット削除</div>
-  <table>
+  <div class="card-wrap"><table>
     <thead><tr><th>グループ名</th><th>メンバー数</th><th>操作</th></tr></thead>
     <tbody>
     ${rooms.map(r => `
@@ -1673,7 +1696,7 @@ tr:last-child td{border-bottom:none}
         </td>
       </tr>`).join('')}
     </tbody>
-  </table>
+  </table></div>
 </div>
 </div>
 

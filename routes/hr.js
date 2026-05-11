@@ -234,7 +234,7 @@ router.get("/hr", requireLogin, async (req, res) => {
                 .hrp-card{
                     background:#fff;border-radius:16px;
                     box-shadow:0 1px 3px rgba(0,0,0,.05),0 4px 20px rgba(11,36,80,.05);
-                    border:1px solid #f0f4ff;overflow:hidden;margin-bottom:20px
+                    border:1px solid #f0f4ff;overflow:visible;margin-bottom:20px
                 }
                 .hrp-card-head{
                     display:flex;justify-content:space-between;align-items:center;
@@ -251,8 +251,8 @@ router.get("/hr", requireLogin, async (req, res) => {
                 }
 
                 /* ── テーブル ── */
-                .hrp-table-wrap{overflow-x:auto;min-width:0}
-                .hrp-table{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:auto}
+                .hrp-table-wrap{overflow-x:auto;overflow-y:auto;min-width:0;-webkit-overflow-scrolling:touch}
+                .hrp-table{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:auto;min-width:620px}
                 .hrp-table thead tr{background:#f8fafc}
                 .hrp-table th{
                     padding:10px 12px;color:#8896a8;font-size:10px;font-weight:700;
@@ -434,6 +434,14 @@ router.get("/hr", requireLogin, async (req, res) => {
                     .hrp-hero{padding:22px 20px}
                     .hrp-hero-name{font-size:20px}
                     .hrp-hero-stat-val{font-size:20px}
+                    .hrp-layout{grid-template-columns:1fr}
+                    .hrp-admin-kpi{grid-template-columns:1fr 1fr}
+                    .hrp-tab-bar{overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap;padding-bottom:0}
+                    .hrp-tab{white-space:nowrap;flex-shrink:0;padding:9px 12px;font-size:12px}
+                    .hrp-card-head{padding:14px 16px;flex-wrap:wrap}
+                    .hrp-search{padding:10px 16px}
+                    .hrp-hero-stats{width:100%;margin-top:10px}
+                    .hrp-hero-stat{flex:1;padding:8px 12px}
                 }
             </style>
 
@@ -1889,7 +1897,7 @@ router.get("/hr/payroll", requireLogin, async (req, res) => {
             .py-btn-ghost{background:#f3f4f6;color:#374151}
             .py-btn-ghost:hover{background:#e5e7eb}
             .py-btn-warn{background:#fef3c7;color:#92400e}
-            @media(max-width:800px){.py-grid{grid-template-columns:1fr}.py-kpi-row{grid-template-columns:repeat(2,1fr)}}
+            @media(max-width:800px){.py-grid{grid-template-columns:1fr}.py-kpi-row{grid-template-columns:repeat(2,1fr)}.py-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}.py-table{min-width:540px}}
         </style>
 
         <div class="py-page">
@@ -2166,7 +2174,7 @@ router.get("/hr/payroll/:id", requireLogin, async (req, res) => {
             .meisai .company-row td{background:#00b4b4;color:#fff;font-weight:800;font-size:13px;text-align:center;padding:8px}
             .meisai .cumul-row td{background:#f0fffe;font-size:11px}
             .meisai .cumul-row th{background:#c6efef;font-size:11px}
-            @media(max-width:700px){.meisai{font-size:10px}.meisai th,.meisai td{padding:3px 4px}}
+            @media(max-width:700px){.meisai{font-size:10px}.meisai th,.meisai td{padding:3px 4px}.meisai-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}.meisai{min-width:580px}}
         </style>
 
         <div class="sp-page">
@@ -3985,6 +3993,16 @@ router.get('/hr/daily-report/summary', requireLogin, async (req, res) => {
 /* ── KPI ── */
 .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}
 @media(max-width:680px){.kpis{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){
+  .g{padding:14px 10px}
+  .hero{padding:16px 18px;flex-direction:column;align-items:flex-start}
+  .hero h1{font-size:17px}
+  .row2{flex-direction:column}
+  .seg{min-width:100%;width:100%}
+  .ph{flex-wrap:wrap;gap:6px;padding:10px 14px}
+  .pb{padding:14px}
+  .chip{font-size:11px;padding:5px 10px}
+}
 .kpi{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px 18px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
 .kpi-l{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:5px}
 .kpi-v{font-size:26px;font-weight:800;color:#0f172a;line-height:1}
@@ -3993,7 +4011,7 @@ router.get('/hr/daily-report/summary', requireLogin, async (req, res) => {
 .kpi-fill{height:100%;border-radius:2px;transition:width 1.2s ease}
 
 /* ── パネル ── */
-.panel{background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;margin-bottom:18px;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.panel{background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:visible;margin-bottom:18px;box-shadow:0 1px 4px rgba(0,0,0,.04)}
 .ph{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid #f1f5f9;background:#fafbff}
 .pt{font-size:14px;font-weight:700;color:#1e293b;display:flex;align-items:center;gap:7px}
 .pb{padding:20px}

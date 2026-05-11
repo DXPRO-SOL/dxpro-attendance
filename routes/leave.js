@@ -450,7 +450,12 @@ router.get('/leave/my-requests', requireLogin, async (req, res) => {
                 .tbl{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 14px rgba(11,36,48,.06)}
                 .tbl th{background:#f8fafc;padding:12px 14px;font-weight:600;font-size:13px;text-align:left;border-bottom:1px solid #e2e8f0}
                 .tbl td{padding:12px 14px;border-bottom:1px solid #f1f5f9;font-size:14px}
-                @media(max-width:700px){.bal-grid{grid-template-columns:repeat(2,1fr)}}
+                @media(max-width:700px){
+                    .bal-grid{grid-template-columns:repeat(2,1fr)}
+                    .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px}
+                    .tbl{min-width:600px}
+                    h3{font-size:16px}
+                }
             </style>
             <div style="max-width:1000px;margin:0 auto">
                 ${bal ? `
@@ -464,10 +469,11 @@ router.get('/leave/my-requests', requireLogin, async (req, res) => {
                 ${employee ? buildNextGrantBanner(employee.joinDate) : ''}
                 ` : ''}
 
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
                     <h3 style="margin:0">申請履歴</h3>
                     <a href="/leave/apply" style="padding:9px 20px;background:#0b5fff;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">＋ 新規申請</a>
                 </div>
+                <div class="tbl-wrap">
                 <table class="tbl">
                     <thead><tr>
                         <th>休暇種類</th><th>期間</th><th>日数</th><th>理由</th><th>状況</th><th>申請日</th><th>処理日</th><th>備考</th>
@@ -486,6 +492,7 @@ router.get('/leave/my-requests', requireLogin, async (req, res) => {
                         </tr>`).join('')}
                     </tbody>
                 </table>
+                </div>
             </div>
         `);
     } catch (error) {
@@ -504,8 +511,13 @@ router.get('/admin/leave-requests', requireLogin, isAdmin, async (req, res) => {
         renderPage(req, res, '休暇承認管理', '休暇承認管理', `
             <style>
                 .req-card{background:#fff;border-radius:12px;padding:18px;margin-bottom:14px;box-shadow:0 4px 14px rgba(11,36,48,.06)}
-                .req-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-                .req-actions{display:flex;gap:8px;margin-top:10px}
+                .req-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px}
+                .req-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+                @media(max-width:640px){
+                    .req-card{padding:14px}
+                    .req-actions input[name=notes]{width:100%;margin-bottom:6px}
+                    .req-actions{flex-direction:column}
+                }
             </style>
             <div style="max-width:900px;margin:0 auto">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
@@ -689,12 +701,14 @@ router.get('/admin/leave-balance', requireLogin, isAdmin, async (req, res) => {
                 .tbl th{background:#f8fafc;padding:12px 14px;font-weight:600;font-size:13px;text-align:left;border-bottom:1px solid #e2e8f0}
                 .tbl td{padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:14px;vertical-align:middle}
                 .num-input{width:60px;padding:5px 8px;border:1px solid #ddd;border-radius:6px;text-align:center}
+                @media(max-width:700px){.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px}.tbl{min-width:700px}}
             </style>
             <div style="max-width:1100px;margin:0 auto">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:8px">
                     <h3 style="margin:0">全社員 休暇残日数</h3>
                     <a href="/admin/leave-requests" style="padding:9px 20px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-weight:600">← 承認一覧へ</a>
                 </div>
+                <div class="tbl-wrap">
                 <table class="tbl">
                     <thead><tr>
                         <th>社員ID</th><th>氏名</th><th>部署</th>
@@ -734,6 +748,7 @@ router.get('/admin/leave-balance', requireLogin, isAdmin, async (req, res) => {
                     </tbody>
                 </table>
                 <p style="margin-top:10px;color:#6b7280;font-size:13px">※ 付与日数欄にマイナス値を入力すると減算できます</p>
+            </div>
             </div>
         `);
     } catch (error) {

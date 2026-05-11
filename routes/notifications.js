@@ -118,9 +118,15 @@ router.get('/notifications', requireLogin, async (req, res) => {
                 .notif-body  { font-size:13px;color:#475569;line-height:1.55 }
                 .notif-time  { font-size:11.5px;color:#94a3b8;margin-top:4px }
                 .empty-state { text-align:center;padding:60px 20px;color:#94a3b8 }
-                .pagination  { display:flex;gap:6px;justify-content:center;margin-top:18px }
+                .pagination  { display:flex;gap:6px;justify-content:center;margin-top:18px;flex-wrap:wrap }
                 .pagination a { padding:7px 14px;border-radius:8px;background:#fff;border:1px solid #e2e8f0;text-decoration:none;color:#374151;font-weight:600;font-size:13px }
                 .pagination a.active,.pagination a:hover { background:#2563eb;color:#fff;border-color:#2563eb }
+                @media(max-width:640px){
+                    .notif-item{padding:10px 12px;gap:10px}
+                    .notif-icon{font-size:18px;width:28px}
+                    .notif-title{font-size:13px}
+                    .notif-body{font-size:12px}
+                }
             </style>
             <div class="notif-list">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">

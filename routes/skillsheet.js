@@ -764,6 +764,11 @@ function buildAdminListPage(employees, sheetSet) {
 .ss-adm-btn:hover{opacity:.82}
 .ss-adm-btn-edit{background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe}
 .ss-adm-btn-export{background:#f0fdf4;color:#16a34a;border:1px solid #86efac}
+@media(max-width:640px){
+  .ss-adm-page{padding:0 8px}
+  .tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px}
+  .ss-adm-table{min-width:560px}
+}
 </style>
 
 <div class="ss-adm-page">
@@ -771,7 +776,7 @@ function buildAdminListPage(employees, sheetSet) {
         <div class="ss-adm-title">📋 スキルシート管理</div>
         <div class="ss-adm-sub">全 <strong>${employees.length}</strong> 名の従業員スキルシートを管理します</div>
     </div>
-    <div class="ss-adm-wrap">
+    <div class="ss-adm-wrap tbl-scroll">
         <table class="ss-adm-table">
             <thead>
                 <tr>
@@ -899,10 +904,10 @@ function buildEditPage(emp, sheet, req, isAdminView = false) {
 .ss-sec    { font-size:13px;font-weight:700;color:#1e3a5f;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e0eaff;display:flex;align-items:center;gap:8px; }
 .ss-sec i  { color:#3b82f6; }
 .ss-label  { display:block;font-size:12px;font-weight:600;color:#475569;margin-bottom:4px; }
-.ss-input  { width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;box-sizing:border-box;outline:none;transition:border .15s; }
+.ss-input  { width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;box-sizing:border-box;outline:none;transition:border .15s;max-width:100%; }
 .ss-input:focus  { border-color:#3b82f6; }
-.ss-select { width:100%;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;background:#fff;outline:none; }
-.ss-textarea { width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box;outline:none;transition:border .15s; }
+.ss-select { width:100%;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;background:#fff;outline:none;box-sizing:border-box;max-width:100%; }
+.ss-textarea { width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box;outline:none;transition:border .15s;max-width:100%; }
 .ss-textarea:focus { border-color:#3b82f6; }
 .ss-grid2  { display:grid;grid-template-columns:1fr 1fr;gap:14px 20px; }
 .ss-grid3  { display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px 20px; }
@@ -932,8 +937,20 @@ function buildEditPage(emp, sheet, req, isAdminView = false) {
 .ss-export-btn{display:inline-flex;align-items:center;gap:7px;background:linear-gradient(90deg,#16a34a,#22c55e);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13.5px;font-weight:600;text-decoration:none;box-shadow:0 2px 6px rgba(22,163,74,.25);transition:opacity .15s}
 .ss-export-btn:hover{opacity:.88}
 .ss-alert-ok{background:#f0fdf4;border:1px solid #86efac;border-radius:9px;padding:11px 16px;margin-bottom:16px;display:flex;align-items:center;gap:9px;color:#166534;font-size:13.5px}
+@media(max-width:640px){
+  .ss-card{padding:14px 12px}
+  .ss-grid2,.ss-grid3,.ss-grid4{grid-template-columns:1fr}
+  .ss-proj-card{padding:12px 10px}
+  .ss-save-bar{flex-direction:column;gap:8px}
+  .ss-save-bar button,.ss-save-bar a{width:100%;text-align:center;box-sizing:border-box}
+  .ss-page-header{flex-direction:column;align-items:flex-start}
+  .ss-skill-table{min-width:420px}
+  .ss-skill-tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .ss-form-wrap{padding:0 4px;box-sizing:border-box}
+}
 </style>
 
+<div class="ss-form-wrap">
 <div class="ss-page-header">
     <div class="ss-page-header-left">
         ${backHref ? `<a href="${backHref}" class="ss-back-btn"><i class="fa-solid fa-arrow-left"></i> 一覧に戻る</a>` : ""}
@@ -988,7 +1005,7 @@ ${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保
 <!-- 資格・免許 -->
 <div class="ss-card">
     <div class="ss-sec"><i class="fa-solid fa-certificate"></i>資格・免許</div>
-    <table class="ss-skill-table" id="certTable">
+    <div class="ss-skill-tbl-wrap"><table class="ss-skill-table" id="certTable">
         <thead><tr><th style="width:60%">資格名</th><th>取得年月</th><th style="width:36px;"></th></tr></thead>
         <tbody>
             ${certs
@@ -1002,7 +1019,7 @@ ${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保
               )
               .join("")}
         </tbody>
-    </table>
+    </table></div>
     <button type="button" class="ss-add-btn" style="margin-top:10px;" onclick="addCertRow()">
         <i class="fa-solid fa-plus"></i> 追加
     </button>
@@ -1077,6 +1094,7 @@ ${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保
     </a>
 </div>
 </form>
+</div><!-- /ss-form-wrap -->
 
 <script>
 // ── 行削除 ──
@@ -1353,7 +1371,7 @@ ${isAdmin ? `
 </div>
 
 <style>
-.sk-card{background:#fff;border-radius:14px;padding:80px;box-shadow:0 2px 8px rgba(0,0,0,.07);margin-bottom:20px}
+.sk-card{background:#fff;border-radius:14px;padding:28px 24px;box-shadow:0 2px 8px rgba(0,0,0,.07);margin-bottom:20px}
 .sk-card h4{margin:0 0 16px;font-size:15px;color:#334155}
 .tab-btn{background:#f1f5f9;color:#334155;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600}
 .tab-btn.active{background:#0f6fff;color:#fff}
@@ -1363,6 +1381,11 @@ ${isAdmin ? `
 .skill-bar-fill{height:10px;border-radius:6px;background:linear-gradient(90deg,#0f6fff,#38bdf8);transition:width .4s}
 .member-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid #f1f5f9}
 .member-row:hover{background:#f8fafc}
+@media(max-width:640px){
+  .sk-card{padding:18px 12px}
+  #personalGrid{grid-template-columns:1fr!important}
+  .member-row{flex-wrap:wrap}
+}
 @media(max-width:700px){#personalGrid{grid-template-columns:1fr!important}}
 </style>
 

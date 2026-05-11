@@ -654,6 +654,13 @@ router.get('/admin/overtime', requireLogin, isAdmin, async (req, res) => {
             .modal-btn{padding:9px 20px;border-radius:9px;font-size:14px;font-weight:700;border:none;cursor:pointer}
             .modal-btn-danger{background:#ef4444;color:#fff}
             .modal-btn-ghost{background:#f1f5f9;color:#374151}
+            @media(max-width:640px){
+                .adm-ot-hero{padding:16px;border-radius:12px}
+                .adm-card-body{padding:12px 14px;flex-direction:column}
+                .adm-emp{display:flex;align-items:center;gap:8px;text-align:left;min-width:0}
+                .adm-emp .avatar{width:32px;height:32px;font-size:13px;flex-shrink:0;margin:0}
+                .adm-actions{margin-left:0;width:100%;justify-content:flex-end}
+            }
         `;
 
         const admCards = requests.length === 0

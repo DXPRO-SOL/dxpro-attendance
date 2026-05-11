@@ -388,6 +388,20 @@ body.drv-dragging .drv-drop-hint{display:flex!important}
 .drv-drop-hint-inner{background:#fff;border-radius:20px;padding:32px 48px;text-align:center;box-shadow:0 12px 40px rgba(37,99,235,.2)}
 .drv-drop-hint-inner i{font-size:48px;color:#2563eb;display:block;margin-bottom:12px}
 .drv-drop-hint-inner p{font-size:16px;font-weight:700;color:#1e293b;margin:0}
+@media(max-width:640px){
+  .drv-toolbar{gap:6px}
+  .drv-toolbar-right{flex-wrap:wrap;gap:6px}
+  .drv-view-btns{display:none}
+  .drv-stats{gap:8px;padding:8px 10px}
+  .drv-stat-divider{display:none}
+  .drv-list-head{display:none}
+  .drv-list-row{grid-template-columns:auto 1fr auto!important;gap:6px}
+  .drv-list-col-date,.drv-list-col-size,.drv-list-col-owner{display:none}
+  .drv-grid{grid-template-columns:repeat(2,1fr)!important}
+  .drv-modal{padding:18px 14px}
+  .drv-modal-foot{flex-direction:column}
+  .drv-modal-foot .drv-btn{width:100%;justify-content:center}
+}
 </style>
 
 <!-- ドラッグ&ドロップ ヒントオーバーレイ -->
@@ -920,6 +934,13 @@ router.get('/cloud/file/:id/edit', requireLogin, async (req, res) => {
 .cd-btn{display:inline-flex;align-items:center;gap:5px;padding:8px 18px;border-radius:9px;font-size:13px;font-weight:700;border:none;cursor:pointer;text-decoration:none;transition:all .15s}
 .cd-btn-primary{background:linear-gradient(90deg,#2563eb,#1d4ed8);color:#fff;box-shadow:0 4px 12px rgba(37,99,235,.25)}
 .cd-btn-secondary{background:#f1f5f9;color:#374151}
+@media(max-width:640px){
+  .sp-header{gap:8px}
+  .sp-title{font-size:15px}
+  .sp-sheet-tabs{padding:6px 6px 0}
+  .sp-tab{padding:5px 10px;font-size:12px}
+  #hot-container{min-height:320px}
+}
 </style>
 
 <div class="sp-wrap">
@@ -1085,6 +1106,12 @@ window.addEventListener('beforeunload', () => {
 .cd-btn{display:inline-flex;align-items:center;gap:5px;padding:8px 18px;border-radius:9px;font-size:13px;font-weight:700;border:none;cursor:pointer;text-decoration:none;transition:all .15s}
 .cd-btn-primary{background:linear-gradient(90deg,#2563eb,#1d4ed8);color:#fff;box-shadow:0 4px 12px rgba(37,99,235,.25)}
 .cd-btn-secondary{background:#f1f5f9;color:#374151}
+@media(max-width:640px){
+  .wd-wrap{max-width:100%}
+  .wd-title{font-size:15px}
+  #quill-editor{min-height:50vh}
+  .wd-footer{flex-direction:column;align-items:flex-start}
+}
 </style>
 
 <div class="wd-wrap">
@@ -1220,6 +1247,12 @@ window.addEventListener('beforeunload', () => {
 .ce-status{font-size:12px;color:#9ca3af}
 .ce-status.saving{color:#f59e0b}
 .ce-status.saved{color:#22c55e}
+@media(max-width:640px){
+  .ce-wrap{max-width:100%}
+  .ce-title{font-size:15px}
+  #ce-editor{min-height:50vh;padding:12px;font-size:13px}
+  .ce-editor-toolbar{flex-direction:column;align-items:flex-start;gap:6px}
+}
 </style>
 
 <div class="ce-wrap">
