@@ -373,10 +373,10 @@ router.get('/chat/dm/:userId', requireLogin, async (req, res) => {
             { fromUserId: targetId, toUserId: myId, read: false },
             { $set: { read: true, readAt: new Date() } }
         );
-        const messages = await ChatMessage.find({
+        const messages = (await ChatMessage.find({
             $or: [{ fromUserId: myId, toUserId: targetId }, { fromUserId: targetId, toUserId: myId }],
             roomId: null,
-        }).sort({ createdAt: 1 }).limit(100).lean();
+        }).sort({ createdAt: -1 }).limit(100).lean()).reverse();
         const myName     = myEmp ? myEmp.name : req.session.username;
         const targetName = targetEmp ? targetEmp.name : targetUser.username;
         renderPage(req, res, `チャット - ${targetName}`, 'チャット', buildPage({
@@ -403,7 +403,7 @@ router.get('/chat/room/:roomId', requireLogin, async (req, res) => {
             { $push: { readBy: { userId: myId, readAt: new Date() } } }
         );
         const [messages, myEmp, cu, sideData, memberUsers, memberEmps] = await Promise.all([
-            ChatMessage.find({ roomId: room._id }).sort({ createdAt: 1 }).limit(100).lean(),
+            ChatMessage.find({ roomId: room._id }).sort({ createdAt: -1 }).limit(100).lean().then(r => r.reverse()),
             Employee.findOne({ userId: myId }).select('name').lean(),
             User.findById(myId).select('chatStatus').lean(),
             buildSidebarData(myId),
@@ -863,7 +863,7 @@ function buildPage(data) {
     }
     return `${chatStyles()}
 <div class="sc-root">
-    <div class="sc-side-overlay" id="sc-side-overlay" onclick="closeMobileSidebar()"></div>
+    <div class="sc-side-overlay" id="sc-side-overlay" onclick="closeChatSidebar()"></div>
     ${buildSidebarHtml(data)}
     <div class="sc-main" id="sc-main">${buildMainHtml(data)}</div>
 </div>
@@ -873,10 +873,23 @@ ${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/call-sounds.js"></script>
-<script src="/chat-app.js?v=21"></script>
+<script src="/chat-app.js?v=22"></script>
 <script>
-function openMobileSidebar(){document.querySelector('.sc-side').classList.add('mobile-open');document.getElementById('sc-side-overlay').classList.add('active');}
-function closeMobileSidebar(){document.querySelector('.sc-side').classList.remove('mobile-open');document.getElementById('sc-side-overlay').classList.remove('active');}
+function openChatSidebar(){
+  document.querySelector('.sc-side').classList.add('mobile-open');
+  document.getElementById('sc-side-overlay').classList.add('active');
+}
+function closeChatSidebar(){
+  document.querySelector('.sc-side').classList.remove('mobile-open');
+  document.getElementById('sc-side-overlay').classList.remove('active');
+}
+// サイドバー内リンクをタップしたら自動で閉じる
+document.addEventListener('click', function(e){
+  var side = document.querySelector('.sc-side');
+  if (!side || !side.classList.contains('mobile-open')) return;
+  var link = e.target.closest('a');
+  if (link && side.contains(link)) closeChatSidebar();
+});
 </script>`;
 }
 
@@ -907,7 +920,11 @@ function buildSidebarHtml(d) {
     }).join('') : '<div class="sc-empty-row">グループはありません</div>';
 
     return `<div class="sc-side">
-    <div class="sc-side-hd"><i class="fa-regular fa-comment-dots" style="color:#818cf8;font-size:.95rem;"></i><span class="sc-ws-name">DXPRO SOLUTIONS</span></div>
+    <div class="sc-side-hd">
+        <a href="/dashboard" class="sc-back-btn" title="ダッシュボードに戻る"><i class="fa-solid fa-arrow-left"></i></a>
+        <i class="fa-regular fa-comment-dots" style="color:#818cf8;font-size:.85rem;flex-shrink:0"></i>
+        <span class="sc-ws-name">DXPRO チャット</span>
+    </div>
     <div class="sc-me-row">
         <div class="sc-av-wrap sm"><div class="sc-av sm sc-av-me">${myInitial}</div>
         <span class="sc-pip ${STATUS_CLS[myStatus || 'offline']}" id="my-pip"></span></div>
@@ -920,12 +937,14 @@ function buildSidebarHtml(d) {
             </div>
         </div>
     </div>
-    <div class="sc-search-wrap"><input type="text" id="sc-search" class="sc-search-inp" placeholder="🔍 ユーザーを検索..." autocomplete="off" oninput="chatApp.filterSidebar(this.value)"></div>
-    <div class="sc-side-sec"><span class="sc-sec-label">ダイレクトメッセージ</span></div>
-    <div class="sc-nav-list" id="sc-dm-list">${dmRows}</div>
-    <div class="sc-nav-list" id="sc-search-list" style="display:none"></div>
-    <div class="sc-side-sec"><span class="sc-sec-label">グループ</span><button class="sc-sec-btn" onclick="chatApp.openCreateRoom()" title="グループを作成">＋</button></div>
-    <div class="sc-nav-list" id="sc-room-list">${roomRows}</div>
+    <div class="sc-search-wrap"><input type="text" id="sc-search" class="sc-search-inp" placeholder="ユーザーを検索..." autocomplete="off" oninput="chatApp.filterSidebar(this.value)"></div>
+    <div class="sc-side-scroll">
+        <div id="sc-search-list" style="display:none"></div>
+        <div class="sc-side-sec"><span class="sc-sec-label">ダイレクトメッセージ</span></div>
+        <div class="sc-nav-list" id="sc-dm-list">${dmRows}</div>
+        <div class="sc-side-sec"><span class="sc-sec-label">グループ</span><button class="sc-sec-btn" onclick="chatApp.openCreateRoom()" title="グループを作成"><i class="fa-solid fa-plus"></i></button></div>
+        <div class="sc-nav-list" id="sc-room-list">${roomRows}</div>
+    </div>
 </div>`;
 }
 
@@ -1028,7 +1047,7 @@ function buildMainHtml(data) {
     }
     const headerHtml = isRoom
         ? `<div class="sc-main-hd">
-            <div class="sc-hd-left"><button class="sc-mobile-back" onclick="openMobileSidebar()" title="チャンネル一覧"><i class="fa-solid fa-bars"></i></button><div class="sc-room-icon-lg">${escHtml(data.roomIcon || '💬')}</div>
+            <div class="sc-hd-left"><button class="sc-mobile-back" onclick="openChatSidebar()" title="チャンネル一覧"><i class="fa-solid fa-bars"></i></button><div class="sc-room-icon-lg">${escHtml(data.roomIcon || '💬')}</div>
             <div><div class="sc-hd-name">${escHtml(data.roomName)}</div><div class="sc-hd-sub" id="room-sub">${data.members.length}人のメンバー</div></div></div>
             <div class="sc-hd-actions">
                 <button class="sc-hd-btn" onclick="chatApp.toggleMemberPanel()" title="メンバー"><i class="fa-solid fa-users"></i></button>
@@ -1037,7 +1056,7 @@ function buildMainHtml(data) {
             </div>
         </div>`
         : `<div class="sc-main-hd">
-            <div class="sc-hd-left"><button class="sc-mobile-back" onclick="openMobileSidebar()" title="チャンネル一覧"><i class="fa-solid fa-bars"></i></button><div class="sc-av-wrap"><div class="sc-av sc-av-target">${escHtml(data.targetName || '?').charAt(0).toUpperCase()}</div>
+            <div class="sc-hd-left"><button class="sc-mobile-back" onclick="openChatSidebar()" title="チャンネル一覧"><i class="fa-solid fa-bars"></i></button><div class="sc-av-wrap"><div class="sc-av sc-av-target">${escHtml(data.targetName || '?').charAt(0).toUpperCase()}</div>
             <span class="sc-pip ${STATUS_CLS[data.targetStatus || 'offline']}" id="target-pip"></span></div>
             <div><div class="sc-hd-name">${escHtml(data.targetName || '')}</div>
             <div class="sc-hd-sub" id="target-sub">${STATUS_LABEL[data.targetStatus || 'offline']}${data.targetDept ? ' · ' + escHtml(data.targetDept) : ''}</div></div></div>
@@ -1306,8 +1325,8 @@ function chatStyles() {
     return `<style>
 /* ── Enterprise Chat UI ── */
 :root {
-  --c-side-bg:#1a1d27;--c-side-hd:#141720;--c-side-border:rgba(255,255,255,.06);
-  --c-side-row-hover:rgba(255,255,255,.05);--c-side-row-active:rgba(99,102,241,.2);
+  --c-side-bg:#1a1d27;--c-side-hd:#0f1117;--c-side-border:rgba(255,255,255,.07);
+  --c-side-row-hover:rgba(255,255,255,.06);--c-side-row-active:rgba(99,102,241,.22);
   --c-side-text:#9ba3b8;--c-side-text-bright:#dde2f0;--c-side-label:#4b5268;
   --c-accent:#6366f1;--c-accent-dark:#4f46e5;--c-accent-light:#818cf8;
   --c-green:#22c55e;--c-amber:#f59e0b;--c-red:#ef4444;--c-gray-muted:#6b7280;
@@ -1318,34 +1337,54 @@ function chatStyles() {
   --shadow-sm:0 1px 3px rgba(0,0,0,.08);--shadow-md:0 4px 16px rgba(0,0,0,.1);
   --shadow-lg:0 8px 32px rgba(0,0,0,.15);
 }
-.sidebar{background:var(--c-side-bg)!important}.sidebar a,.sidebar .nav-link{color:var(--c-side-text)!important}.sidebar a:hover{background:var(--c-side-row-hover)!important;color:var(--c-side-text-bright)!important}.sidebar .nav-link.active{background:var(--c-side-row-active)!important;color:var(--c-side-text-bright)!important}
-#cb-fab,#cb-panel{display:none!important}
-.main{padding:0!important;overflow:hidden!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;background:var(--c-main-surface)!important;min-height:0}
-.page-content{padding:0!important;margin:0!important;max-width:none!important;width:100%!important;flex:1 1 auto;overflow:hidden;display:flex;flex-direction:column;min-height:0}
-.sc-root{display:flex;height:100%;width:100%;overflow:hidden;font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
 
-/* ── Sidebar ── */
-.sc-side{width:256px;min-width:256px;background:var(--c-side-bg);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;border-right:1px solid var(--c-side-border)}
-.sc-side-hd{padding:0 16px;height:52px;border-bottom:1px solid var(--c-side-border);display:flex;align-items:center;gap:8px;flex-shrink:0;background:var(--c-side-hd)}
-.sc-ws-name{color:var(--c-side-text-bright);font-weight:700;font-size:.875rem;letter-spacing:-.01em}
-.sc-me-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--c-side-border);flex-shrink:0}
+/* ── チャット専用：アプリUI を非表示にしてチャットをフルスクリーン化 ── */
+#main-sidebar,
+.topbar,
+.sidebar-overlay,
+#cb-fab,
+#cb-panel { display: none !important; }
+html, body { overflow: hidden !important; }
+
+/* ── Root：position:fixed でビューポート全体を完全に占有（flex連鎖に依存しない） ── */
+.sc-root {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 9000 !important;
+  display: flex !important;
+  overflow: hidden !important;
+  font-family: 'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: var(--c-side-bg);
+}
+
+/* ── Sidebar（デスクトップ：常時表示） ── */
+.sc-side{width:268px;min-width:268px;background:var(--c-side-bg);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;border-right:1px solid var(--c-side-border)}
+.sc-side-hd{padding:0 12px 0 14px;height:56px;border-bottom:1px solid var(--c-side-border);display:flex;align-items:center;gap:8px;flex-shrink:0;background:var(--c-side-hd)}
+.sc-ws-name{color:var(--c-side-text-bright);font-weight:700;font-size:.82rem;letter-spacing:-.01em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sc-back-btn{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:var(--radius-sm);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:var(--c-side-label);text-decoration:none;transition:.15s;flex-shrink:0}
+.sc-back-btn:hover{background:rgba(255,255,255,.1);color:var(--c-side-text-bright);border-color:rgba(255,255,255,.18)}
+.sc-back-btn i{font-size:.75rem}
+.sc-me-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--c-side-border);flex-shrink:0}
 .sc-me-info{flex:1;min-width:0}
-.sc-me-name{color:var(--c-side-text-bright);font-size:.8rem;font-weight:600;display:block;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sc-me-name{color:var(--c-side-text-bright);font-size:.8rem;font-weight:600;display:block;margin-bottom:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sc-st-btns{display:flex;gap:3px;flex-wrap:wrap}
 .sc-st-btn{display:flex;align-items:center;gap:3px;padding:2px 8px;border-radius:20px;border:1px solid rgba(255,255,255,.08);background:transparent;color:var(--c-side-label);font-size:.68rem;cursor:pointer;transition:.15s;font-weight:500}
 .sc-st-btn:hover{background:rgba(255,255,255,.07);color:var(--c-side-text-bright);border-color:rgba(255,255,255,.15)}
-.sc-st-btn.active{background:rgba(99,102,241,.2);color:var(--c-accent-light);border-color:rgba(99,102,241,.4)}
+.sc-st-btn.active{background:rgba(99,102,241,.25);color:var(--c-accent-light);border-color:rgba(99,102,241,.5)}
 .sc-btn-pip{display:inline-block;width:6px;height:6px;border-radius:50%;flex-shrink:0}
-.sc-search-wrap{padding:8px 10px 4px;flex-shrink:0}
-.sc-search-inp{width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:var(--radius-md);color:var(--c-side-text-bright);padding:6px 10px 6px 30px;font-size:.78rem;outline:none;transition:.2s;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398l3.85 3.85a1 1 0 0 0 1.415-1.415l-3.868-3.833zm-5.242 1.406a5 5 0 1 1 0-10 5 5 0 0 1 0 10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:10px center}
+.sc-search-wrap{padding:10px 10px 6px;flex-shrink:0}
+.sc-search-inp{width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:var(--radius-md);color:var(--c-side-text-bright);padding:7px 10px 7px 32px;font-size:.79rem;outline:none;transition:.2s;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398l3.85 3.85a1 1 0 0 0 1.415-1.415l-3.868-3.833zm-5.242 1.406a5 5 0 1 1 0-10 5 5 0 0 1 0 10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:10px center}
 .sc-search-inp::placeholder{color:var(--c-side-label)}.sc-search-inp:focus{border-color:rgba(99,102,241,.5);background:rgba(255,255,255,.07)}
-.sc-side-sec{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 4px;flex-shrink:0}
-.sc-sec-label{color:var(--c-side-label);font-size:.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
-.sc-sec-btn{background:none;border:none;color:var(--c-side-label);cursor:pointer;font-size:.95rem;line-height:1;padding:2px 4px;border-radius:4px;transition:.15s;display:flex;align-items:center;justify-content:center}
+/* ── サイドバー スクロール領域 ── */
+.sc-side-scroll{flex:1;overflow-y:auto;display:flex;flex-direction:column;min-height:0}
+.sc-side-scroll::-webkit-scrollbar{width:3px}.sc-side-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px}
+.sc-side-sec{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 5px;flex-shrink:0}
+.sc-sec-label{color:var(--c-side-label);font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em}
+.sc-sec-btn{background:none;border:none;color:var(--c-side-label);cursor:pointer;font-size:.9rem;line-height:1;padding:3px 6px;border-radius:4px;transition:.15s;display:flex;align-items:center;justify-content:center}
 .sc-sec-btn:hover{color:var(--c-side-text-bright);background:rgba(255,255,255,.08)}
-.sc-nav-list{overflow-y:auto;padding:2px 6px 6px;flex-shrink:0}
-.sc-nav-list::-webkit-scrollbar{width:3px}.sc-nav-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px}
-.sc-nav-row{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:var(--radius-sm);text-decoration:none;color:var(--c-side-text);font-size:.83rem;transition:.12s;position:relative}
+.sc-nav-list{padding:2px 6px 8px}
+.sc-nav-row{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--radius-sm);text-decoration:none;color:var(--c-side-text);font-size:.83rem;transition:.12s;position:relative}
 .sc-nav-row:hover{background:var(--c-side-row-hover);color:var(--c-side-text-bright)}
 .sc-nav-row.active{background:var(--c-side-row-active);color:var(--c-side-text-bright)}
 .sc-nav-row.active::before{content:'';position:absolute;left:0;top:20%;bottom:20%;width:3px;background:var(--c-accent);border-radius:0 2px 2px 0}
@@ -1353,8 +1392,8 @@ function chatStyles() {
 .sc-nav-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.82rem;font-weight:500}
 .sc-nav-sub{font-size:.69rem;color:var(--c-side-label);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sc-badge{background:var(--c-accent);color:#fff;border-radius:10px;padding:1px 7px;font-size:.66rem;font-weight:700;min-width:18px;text-align:center;flex-shrink:0;letter-spacing:.02em}
-.sc-empty-row{color:var(--c-side-label);font-size:.76rem;padding:8px 10px}
-.sc-room-icon{width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:.95rem;border-radius:var(--radius-sm);background:rgba(255,255,255,.06);flex-shrink:0}
+.sc-empty-row{color:var(--c-side-label);font-size:.75rem;padding:8px 12px;font-style:italic}
+.sc-room-icon{width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:.95rem;border-radius:var(--radius-sm);background:rgba(255,255,255,.07);flex-shrink:0}
 
 /* ── Avatars ── */
 .sc-av-wrap{position:relative;flex-shrink:0;width:36px;height:36px}
@@ -1373,7 +1412,7 @@ function chatStyles() {
 .sc-btn-pip.pip-online{background:var(--c-green)}.sc-btn-pip.pip-break{background:var(--c-amber)}.sc-btn-pip.pip-offline{background:#6b7280}
 
 /* ── Main area ── */
-.sc-main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--c-main-bg);min-height:0}
+.sc-main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--c-main-bg);min-height:0;min-width:0}
 .sc-welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;color:var(--c-text-secondary);text-align:center;padding:20px}
 .sc-welcome-icon{font-size:3rem;margin-bottom:12px}.sc-welcome h2{margin:0 0 8px;color:var(--c-text-primary);font-size:1.3rem}.sc-welcome p{margin:0;font-size:.87rem;line-height:1.7}
 
@@ -1410,7 +1449,7 @@ function chatStyles() {
 .sc-main-hd{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:56px;border-bottom:1px solid var(--c-border);background:#fff;flex-shrink:0;gap:12px;box-shadow:0 1px 0 var(--c-border)}
 .sc-hd-left{display:flex;align-items:center;gap:10px}
 .sc-hd-name{font-weight:700;font-size:.9375rem;color:var(--c-text-primary);line-height:1.2;letter-spacing:-.01em}
-.sc-hd-sub{font-size:.72rem;color:var(--c-text-secondary);margin-top:1px}
+.sc-hd-sub{font-size:.55rem;color:var(--c-text-secondary);margin-top:1px}
 .sc-hd-actions{display:flex;align-items:center;gap:4px}
 .sc-hd-btn{width:34px;height:34px;border:none;background:transparent;border-radius:var(--radius-sm);cursor:pointer;color:var(--c-text-secondary);font-size:.875rem;display:flex;align-items:center;justify-content:center;transition:.15s}
 .sc-hd-btn:hover{background:var(--c-main-surface);color:var(--c-text-primary)}
@@ -1426,7 +1465,7 @@ function chatStyles() {
 .sc-typing-bar{height:20px;padding:0 20px;font-size:.72rem;color:var(--c-text-muted);font-style:italic;flex-shrink:0;display:flex;align-items:center}
 .sc-thread-start{display:flex;flex-direction:column;align-items:flex-start;padding:32px 20px 16px;border-bottom:1px solid var(--c-border);flex-shrink:0;background:linear-gradient(to bottom,var(--c-main-surface),var(--c-main-bg))}
 .sc-thread-name{font-size:1.25rem;font-weight:800;color:var(--c-text-primary);margin:10px 0 2px;letter-spacing:-.02em}
-.sc-thread-sub{font-size:.78rem;color:var(--c-text-secondary);margin-bottom:4px}
+.sc-thread-sub{font-size:.62rem;color:var(--c-text-secondary);margin-bottom:4px}
 .sc-thread-desc{font-size:.83rem;color:var(--c-text-secondary);margin:4px 0 0;line-height:1.6}
 
 /* ── Messages ── */
@@ -1618,17 +1657,51 @@ function chatStyles() {
 
 /* ── Mobile responsive ── */
 @media(max-width:640px){
-  .sc-side{position:fixed;top:0;left:-260px;width:260px;height:100%;z-index:200;transition:left .25s;box-shadow:4px 0 20px rgba(0,0,0,.18)}
-  .sc-side.mobile-open{left:0}
-  .sc-side-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:199}
+  /*
+   * モバイル：sc-root は position:fixed のままでビューポートを占有。
+   * sc-side は position:absolute（sc-root が含む block なので sc-root 基準で配置）。
+   * position:fixed の親の中に position:fixed の子を使うと iOS Safari で誤動作するため
+   * absolute + transform のドロワー方式に変更。
+   */
+  .sc-side{
+    position:absolute;
+    top:0;left:0;bottom:0;
+    width:82vw;max-width:300px;
+    z-index:50;
+    transform:translateX(-100%);
+    transition:transform .28s cubic-bezier(.4,0,.2,1);
+    box-shadow:4px 0 32px rgba(0,0,0,.45);
+    /* flex-shrink:0 は上書き — absolute なので flex 外になる */
+    min-width:0;
+  }
+  .sc-side.mobile-open{
+    transform:translateX(0);
+  }
+  /* オーバーレイも absolute で sc-root 内に収める */
+  .sc-side-overlay{
+    display:none;
+    position:absolute;
+    inset:0;
+    background:rgba(0,0,0,.52);
+    z-index:45;
+  }
   .sc-side-overlay.active{display:block}
-  .sc-root{position:relative}
-  .sc-mobile-back{display:flex!important;align-items:center;justify-content:center;width:34px;height:34px;border:none;background:transparent;border-radius:6px;cursor:pointer;color:var(--c-text-secondary);font-size:.95rem}
+  /* sc-main は flex:1 で全幅を占める（sc-side が absolute で外れるため） */
+  .sc-main{width:100%}
+  /* ハンバーガーボタンを表示 */
+  .sc-mobile-back{display:flex!important;align-items:center;justify-content:center;width:38px;height:38px;border:none;background:transparent;border-radius:6px;cursor:pointer;color:var(--c-text-secondary);font-size:1.05rem}
   .sc-member-panel{display:none}
-  .sc-hd-search input{width:80px}
+  .sc-hd-search{display:none!important}
+  .sc-hd-actions{gap:2px}
   .call-box{width:98vw!important;max-width:98vw!important}
   .call-videos{min-height:200px}
   .call-incoming-box{padding:24px 20px;min-width:unset;width:90vw}
+  .sc-input-hint{display:none}
+  .sc-main-hd{padding:0 10px;height:52px}
+  .sc-input-area{padding:8px 10px 10px}
+  /* メッセージの横幅が溢れないよう */
+  .sc-msg,.sc-msg-cont{padding-left:12px;padding-right:12px}
+  .sc-msg-text{word-break:break-all}
 }
 @media(min-width:641px){
   .sc-mobile-back{display:none!important}
