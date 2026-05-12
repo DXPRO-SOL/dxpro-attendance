@@ -42,6 +42,10 @@
     socket.emit('join_rooms', { userId: MY_ID, roomIds: ROOM_IDS });
     if (ROOM_ID) socket.emit('join_room', { roomId: ROOM_ID });
 
+    // Track which message IDs we've already appended locally to avoid duplicates
+    // (upload response + socket broadcast racing can insert the same message twice).
+    const appendedMsgIds = new Set();
+
     // ── 他ページ着信「応答」→ チャットページ遷移の自動応答処理 ──────
     // call-listener.js が sessionStorage に SDP を保存して遷移してくる
     if (MODE === 'dm' && TARGET_ID) {
@@ -70,8 +74,13 @@
         const relevantDMMy = MODE === 'dm'   && msg.fromUserId === MY_ID && msg.toUserId === TARGET_ID;
         const relevantRoom = MODE === 'room' && msg.roomId === ROOM_ID;
         if (!relevantDM && !relevantDMMy && !relevantRoom) return;
-        // 既に同じIDのメッセージが表示されている場合は重複追加しない（録画保存後のフォールバック表示との衝突防止）
-        if (msg._id && document.querySelector('[data-id="' + msg._id + '"]')) return;
+        // Prevent duplicates: prefer our appendedMsgIds set (more reliable than DOM queries)
+        if (msg._id && appendedMsgIds.has(String(msg._id))) return;
+        // Fallback DOM check
+        if (msg._id && document.querySelector('[data-id="' + msg._id + '"]')) {
+            appendedMsgIds.add(String(msg._id));
+            return;
+        }
         appendMessage(msg);
         scrollBottom(true);
         // 受信音（他ユーザーからのメッセージのみ）
@@ -188,11 +197,14 @@
         const bottom    = document.getElementById('sc-msg-bottom');
         if (!container || !bottom) return;
 
+    // Avoid inserting the same message twice
+    if (msg && msg._id && appendedMsgIds.has(String(msg._id))) return;
+
         // 不在着信メッセージの専用表示
         if (msg.isMissedCall) {
             const isMine2 = msg.fromUserId === MY_ID;
             const dt2     = new Date(msg.createdAt);
-            const time2   = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+            const time2   = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
             const el2 = document.createElement('div');
             el2.className = 'sc-missed-call';
             el2.dataset.id = msg._id;
@@ -207,7 +219,7 @@
         // 通話履歴メッセージの専用表示
         if (msg.isCallHistory) {
             const dt2  = new Date(msg.createdAt);
-            const time2 = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+            const time2 = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
             const mins = Math.floor((msg.callDuration || 0) / 60);
             const secs = (msg.callDuration || 0) % 60;
             const durStr = mins > 0 ? mins + '分' + secs + '秒' : secs + '秒';
@@ -227,7 +239,7 @@
         const initial    = (senderName || '?').charAt(0).toUpperCase();
         const colorIdx   = isMine ? 0 : (MODE === 'room' ? (([...String(msg.fromUserId)].reduce((a, c) => a + c.charCodeAt(0), 0) % 5) + 1) : 1);
         const dt         = new Date(msg.createdAt);
-        const timeStr    = dt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    const timeStr    = dt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
 
         const replyBlock = msg.replyPreview
             ? '<div class="sc-reply-quote"><div class="sc-reply-stripe"></div><span>' + esc(msg.replyPreview.slice(0, 60)) + '…</span></div>' : '';
@@ -264,7 +276,8 @@
                 + replyBlock + '<div class="sc-msg-text" data-mid="' + msg._id + '">' + esc(msg.content || '') + '</div>'
                 + attachHtml + '<div class="sc-reactions" data-mid="' + msg._id + '"></div>' + readBadge + '</div>';
         }
-        container.insertBefore(el, bottom);
+    container.insertBefore(el, bottom);
+    if (msg && msg._id) appendedMsgIds.add(String(msg._id));
     }
 
     function buildToolbar(msgId, isMine, content) {
@@ -902,12 +915,12 @@
                 continue;
             }
             if (m.isMissedCall) {
-                const t = new Date(m.createdAt).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+                const t = new Date(m.createdAt).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit', timeZone: 'Asia/Tokyo'});
                 html += `<div class="sc-missed-call" data-id="${id}" data-at="${at}"><span class="sc-missed-icon">📵</span>不在着信<span class="sc-missed-time">${t}</span></div>`;
                 continue;
             }
             if (m.isCallHistory) {
-                const t = new Date(m.createdAt).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+                const t = new Date(m.createdAt).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit', timeZone: 'Asia/Tokyo'});
                 const dur = m.callDuration || 0;
                 const mins = Math.floor(dur/60), secs = dur%60;
                 const ds = mins>0 ? `${mins}分${secs}秒` : `${secs}秒`;
@@ -919,8 +932,8 @@
             const initial = senderName.charAt(0).toUpperCase();
             const colorIdx = isMine ? 0 : 1;
             const dt = new Date(m.createdAt);
-            const dateStr = dt.toLocaleDateString('ja-JP',{month:'long',day:'numeric',weekday:'short'});
-            const timeStr = dt.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+            const dateStr = dt.toLocaleDateString('ja-JP',{month:'long',day:'numeric',weekday:'short', timeZone: 'Asia/Tokyo'});
+            const timeStr = dt.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit', timeZone: 'Asia/Tokyo'});
             const content = esc(m.content || '');
             const attHtml = buildAttachHtml(m.attachments || []);
             html += `<div class="sc-date-div"><span>${dateStr}</span></div>`;
@@ -1594,7 +1607,16 @@
             }
             try {
                 const res  = await fetch('/api/chat/recording', { method: 'POST', body: fd });
-                const data = await res.json();
+                let data = null;
+                try {
+                    data = await res.json();
+                } catch (parseErr) {
+                    // server returned non-JSON (HTML error page) — capture for debugging
+                    const txt = await res.text().catch(() => '<no body>');
+                    console.error('録画アップロード: 期待した JSON ではありませんでした。レスポンス本文:', txt);
+                    showNoticeBar('⚠️ 録画アップロードエラー: サーバーが正しいJSONを返しませんでした', 5000);
+                    return;
+                }
                 if (!res.ok || !data.ok) {
                     showNoticeBar('⚠️ 録画の保存に失敗しました: ' + (data.error || res.status), 4000);
                     return;

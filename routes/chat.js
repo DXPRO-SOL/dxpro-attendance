@@ -1222,7 +1222,7 @@ function buildMessagesHtml(data) {
         if (m.isMissedCall) {
             const isMine = String(m.fromUserId) === String(myId);
             const dt2 = new Date(m.createdAt);
-            const timeStr2 = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+            const timeStr2 = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
             html += '<div class="sc-missed-call" data-id="' + m._id + '" data-at="' + m.createdAt.toISOString() + '">'
                 + '<span class="sc-missed-icon">📵</span>'
                 + (isMine ? '不在着信（発信）' : '不在着信')
@@ -1232,7 +1232,7 @@ function buildMessagesHtml(data) {
         // 通話履歴システムメッセージ
         if (m.isCallHistory) {
             const dt2 = new Date(m.createdAt);
-            const timeStr2 = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+            const timeStr2 = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
             const mins = Math.floor((m.callDuration || 0) / 60);
             const secs = (m.callDuration || 0) % 60;
             const durStr = mins > 0 ? mins + '分' + secs + '秒' : secs + '秒';
@@ -1247,7 +1247,7 @@ function buildMessagesHtml(data) {
         const colorIdx   = isMine ? 0 : (isRoom ? (([...String(m.fromUserId)].reduce((a, c) => a + c.charCodeAt(0), 0) % 5) + 1) : 1);
         const dt      = new Date(m.createdAt);
         const dateStr = dt.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
-        const timeStr = dt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    const timeStr = dt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
         if (prevDate !== dateStr) {
             html += '<div class="sc-date-div"><span>' + dateStr + '</span></div>';
             prevDate = dateStr; prevFrom = null;
