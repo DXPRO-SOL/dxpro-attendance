@@ -34,6 +34,11 @@
 
     // ── Socket.io ────────────────────────────────────────────
     const socket = io();
+    // 接続（および再接続）のたびにルームへ参加
+    socket.on('connect', () => {
+        socket.emit('join_rooms', { userId: MY_ID, roomIds: ROOM_IDS });
+        if (ROOM_ID) socket.emit('join_room', { roomId: ROOM_ID });
+    });
     socket.emit('join_rooms', { userId: MY_ID, roomIds: ROOM_IDS });
     if (ROOM_ID) socket.emit('join_room', { roomId: ROOM_ID });
 

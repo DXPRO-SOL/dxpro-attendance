@@ -914,7 +914,7 @@ ${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/call-sounds.js"></script>
-<script src="/chat-app.js?v=23"></script>
+<script src="/chat-app.js?v=24"></script>
 <script>
 function openChatSidebar(){
   document.querySelector('.sc-side').classList.add('mobile-open');

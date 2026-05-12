@@ -16,6 +16,10 @@
         if (typeof io === 'undefined') return; // socket.io がなければ何もしない
 
         const socket = io();
+        // 接続（および再接続）のたびにルームへ参加
+        socket.on('connect', () => {
+            socket.emit('join_rooms', { userId, roomIds: [] });
+        });
         socket.emit('join_rooms', { userId, roomIds: [] });
 
         // ── 着信モーダルの DOM を生成 ──────────────────────────────
