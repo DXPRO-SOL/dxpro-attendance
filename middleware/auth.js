@@ -1,5 +1,13 @@
+function wantsJson(req) {
+    const accept = (req.headers && req.headers.accept) ? String(req.headers.accept) : '';
+    const xrw = (req.headers && req.headers['x-requested-with']) ? String(req.headers['x-requested-with']) : '';
+    // API path or XHR or explicit JSON accept
+    return req.path && req.path.startsWith('/api/') || req.xhr || xrw.toLowerCase() === 'xmlhttprequest' || accept.includes('application/json');
+}
+
 function requireLogin(req, res, next) {
     if (!req.session.userId) {
+        if (wantsJson(req)) return res.status(401).json({ error: '認証が必要です' });
         return res.redirect('/login');
     }
     next();
@@ -14,6 +22,7 @@ function isAdmin(req, res, next) {
     if (req.session.isAdmin) {
         return next();
     }
+    if (wantsJson(req)) return res.status(403).json({ error: '管理者権限が必要です' });
     res.status(403).send('管理者権限が必要です');
 }
 
@@ -23,30 +32,42 @@ const ROLE_LEVEL = { admin: 4, manager: 3, team_leader: 2, employee: 1 };
 
 function requireRole(...roles) {
     return function (req, res, next) {
-        if (!req.session.userId) return res.redirect('/login');
+        if (!req.session.userId) {
+            if (wantsJson(req)) return res.status(401).json({ error: '認証が必要です' });
+            return res.redirect('/login');
+        }
         const userRole = req.session.orgRole || (req.session.isAdmin ? 'admin' : 'employee');
         if (req.session.isAdmin || roles.includes(userRole)) return next();
         // ロールレベルで判定
         const userLevel = ROLE_LEVEL[userRole] || 1;
         const minRequired = Math.min(...roles.map(r => ROLE_LEVEL[r] || 1));
-        if (userLevel >= minRequired) return next();
-        res.status(403).send('この操作には権限が必要です（必要ロール: ' + roles.join(', ') + '）');
+    if (userLevel >= minRequired) return next();
+    if (wantsJson(req)) return res.status(403).json({ error: 'この操作には権限が必要です', required: roles });
+    res.status(403).send('この操作には権限が必要です（必要ロール: ' + roles.join(', ') + '）');
     };
 }
 
 // 部門長以上（manager or admin）
 function isManagerOrAdmin(req, res, next) {
-    if (!req.session.userId) return res.redirect('/login');
+    if (!req.session.userId) {
+        if (wantsJson(req)) return res.status(401).json({ error: '認証が必要です' });
+        return res.redirect('/login');
+    }
     const role = req.session.orgRole || (req.session.isAdmin ? 'admin' : 'employee');
     if (req.session.isAdmin || role === 'admin' || role === 'manager') return next();
+    if (wantsJson(req)) return res.status(403).json({ error: '部門長以上の権限が必要です' });
     res.status(403).send('部門長以上の権限が必要です');
 }
 
 // チームリーダー以上
 function isLeaderOrAbove(req, res, next) {
-    if (!req.session.userId) return res.redirect('/login');
+    if (!req.session.userId) {
+        if (wantsJson(req)) return res.status(401).json({ error: '認証が必要です' });
+        return res.redirect('/login');
+    }
     const role = req.session.orgRole || (req.session.isAdmin ? 'admin' : 'employee');
     if (req.session.isAdmin || ROLE_LEVEL[role] >= ROLE_LEVEL['team_leader']) return next();
+    if (wantsJson(req)) return res.status(403).json({ error: 'チームリーダー以上の権限が必要です' });
     res.status(403).send('チームリーダー以上の権限が必要です');
 }
 

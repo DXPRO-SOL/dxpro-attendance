@@ -1017,24 +1017,60 @@ function loadSheet(idx) {
 }
 function escH(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+// 末尾の空行・空列を除去する
+function trimData(data) {
+  if (!data || !data.length) return [['']];
+  // 末尾の空行を除去
+  let lastRow = data.length - 1;
+  while (lastRow > 0 && data[lastRow].every(c => c === null || c === undefined || c === '')) lastRow--;
+  const rows = data.slice(0, lastRow + 1);
+  // 末尾の空列を除去
+  let lastCol = 0;
+  rows.forEach(row => {
+    let c = row.length - 1;
+    while (c > lastCol && (row[c] === null || row[c] === undefined || row[c] === '')) c--;
+    if (c > lastCol) lastCol = c;
+  });
+  return rows.map(row => row.slice(0, lastCol + 1));
+}
+
 function buildXlsxBinary() {
   const wb = XLSX.utils.book_new();
   workbook.sheets.forEach((s, idx) => {
-    let data = idx === currentSheet ? hot.getData() : s.data;
+    let data = trimData(idx === currentSheet ? hot.getData() : s.data);
     const ws = XLSX.utils.aoa_to_sheet(data);
     XLSX.utils.book_append_sheet(wb, ws, s.name);
   });
   return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
 }
 
+function buildCsvText() {
+  const data = trimData(hot.getData());
+  return data.map(row => row.map(c => {
+    const s = String(c === null || c === undefined ? '' : c);
+    return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(',')).join('\r\n');
+}
+
 function autoSave() {
   if(!EDITABLE || !hot) return;
-  // 現在のシートデータを更新
-  workbook.sheets[currentSheet].data = hot.getData();
-  const binary = buildXlsxBinary();
-  const blob   = new Blob([binary], { type: 'application/octet-stream' });
-  const fd     = new FormData();
-  fd.append('file', blob, workbook.filename || 'data.xlsx');
+  // 現在のシートデータを更新（トリム済み）
+  workbook.sheets[currentSheet].data = trimData(hot.getData());
+  const fname = workbook.filename || 'data.xlsx';
+  const ext = fname.split('.').pop().toLowerCase();
+  let blob, sendName;
+  if (ext === 'csv') {
+    // CSV はテキストとして保存
+    const csvText = buildCsvText();
+    blob = new Blob([csvText], { type: 'text/plain' });
+    sendName = fname;
+  } else {
+    const binary = buildXlsxBinary();
+    blob = new Blob([binary], { type: 'application/octet-stream' });
+    sendName = fname;
+  }
+  const fd = new FormData();
+  fd.append('file', blob, sendName);
   fetch('/cloud/file/' + FILE_ID + '/save-xlsx', { method: 'POST', body: fd })
     .then(r=>r.json())
     .then(d=>{ if(d.ok) setStatus('✅ 保存済み', 'saved'); else setStatus('⚠ 保存失敗','saving'); })
@@ -1434,8 +1470,14 @@ router.post('/cloud/file/:id/save-xlsx', requireLogin, uploadXlsx.single('file')
     if (!req.file) return res.status(400).json({ ok: false, error: 'ファイルがありません' });
 
     // ディスクに上書き保存
-    const savePath = file.filePath || path.join(UPLOAD_DIR, Date.now() + '-' + Math.round(Math.random()*1e9) + '.xlsx');
+    const origExt = path.extname(file.originalName || file.name || '').toLowerCase();
+    const isCsvFile = origExt === '.csv';
+    const savePath = file.filePath || path.join(UPLOAD_DIR, Date.now() + '-' + Math.round(Math.random()*1e9) + (isCsvFile ? '.csv' : '.xlsx'));
     fs.writeFileSync(savePath, req.file.buffer);
+    if (isCsvFile) {
+      // CSV の場合、textContent にも保存しておく
+      file.textContent = req.file.buffer.toString('utf8');
+    }
     file.filePath     = savePath;
     file.size         = req.file.buffer.length;
     file.version      = (file.version || 0) + 1;

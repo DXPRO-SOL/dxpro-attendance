@@ -373,10 +373,11 @@ router.get('/chat/dm/:userId', requireLogin, async (req, res) => {
             { fromUserId: targetId, toUserId: myId, read: false },
             { $set: { read: true, readAt: new Date() } }
         );
-        const messages = await ChatMessage.find({
+        const messages = (await ChatMessage.find({
             $or: [{ fromUserId: myId, toUserId: targetId }, { fromUserId: targetId, toUserId: myId }],
             roomId: null,
-        }).sort({ createdAt: 1 }).limit(100).lean();
+        }).sort({ createdAt: -1 }).limit(100).lean()).reverse();
+        const hasMore = messages.length === 100;
         const myName     = myEmp ? myEmp.name : req.session.username;
         const targetName = targetEmp ? targetEmp.name : targetUser.username;
         renderPage(req, res, `チャット - ${targetName}`, 'チャット', buildPage({
@@ -387,7 +388,7 @@ router.get('/chat/dm/:userId', requireLogin, async (req, res) => {
             targetStatus: targetUser.chatStatus || 'offline',
             targetDept: targetEmp ? (targetEmp.department || '') : '',
             targetPos:  targetEmp ? (targetEmp.position  || '') : '',
-            messages, ...sideData,
+            messages, hasMore, ...sideData,
         }));
     } catch (e) { console.error('[chat/dm]', e); res.status(500).send('エラー'); }
 });
@@ -403,8 +404,7 @@ router.get('/chat/room/:roomId', requireLogin, async (req, res) => {
             { $push: { readBy: { userId: myId, readAt: new Date() } } }
         );
         const [messages, myEmp, cu, sideData, memberUsers, memberEmps] = await Promise.all([
-            ChatMessage.find({ roomId: room._id }).sort({ createdAt: 1 }).limit(100).lean(),
-            Employee.findOne({ userId: myId }).select('name').lean(),
+            ChatMessage.find({ roomId: room._id }).sort({ createdAt: -1 }).limit(100).lean().then(r => r.reverse()),            Employee.findOne({ userId: myId }).select('name').lean(),
             User.findById(myId).select('chatStatus').lean(),
             buildSidebarData(myId),
             User.find({ _id: { $in: room.members } }).select('username chatStatus').lean(),
@@ -414,6 +414,7 @@ router.get('/chat/room/:roomId', requireLogin, async (req, res) => {
         memberEmps.forEach(e => { memEmpMap[String(e.userId)] = e; });
         const members = memberUsers.map(u => ({ ...u, emp: memEmpMap[String(u._id)] || null }));
         const myName  = myEmp ? myEmp.name : req.session.username;
+        const hasMore = messages.length === 100;
         renderPage(req, res, `${room.name} - チャット`, 'チャット', buildPage({
             mode: 'room', myId: String(myId), myName,
             myInitial: (myName || '?').charAt(0).toUpperCase(),
@@ -421,12 +422,52 @@ router.get('/chat/room/:roomId', requireLogin, async (req, res) => {
             roomId: String(room._id), roomName: room.name,
             roomIcon: room.icon || '💬', roomDesc: room.description || '',
             isRoomAdmin: room.admins.some(a => String(a) === String(myId)),
-            members, messages, ...sideData,
+            members, messages, hasMore, ...sideData,
         }));
     } catch (e) { console.error('[chat/room]', e); res.status(500).send('エラー'); }
 });
 
 // ── API ────────────────────────────────────────────────────────
+
+// 過去メッセージ追加読み込み API
+router.get('/api/chat/messages', requireLogin, async (req, res) => {
+    try {
+        const { toUserId, roomId, before } = req.query;
+        const myId = req.session.userId;
+        const filter = {};
+        if (before) filter.createdAt = { $lt: new Date(before) };
+        if (toUserId) {
+            filter.$or = [
+                { fromUserId: oid(myId), toUserId: oid(toUserId) },
+                { fromUserId: oid(toUserId), toUserId: oid(myId) },
+            ];
+            filter.roomId = null;
+        } else if (roomId) {
+            filter.roomId = oid(roomId);
+        } else {
+            return res.status(400).json({ error: 'toUserId か roomId が必要です' });
+        }
+        const messages = (await ChatMessage.find(filter)
+            .sort({ createdAt: -1 }).limit(50).lean()).reverse();
+        // senderName を付与
+        const userIds = [...new Set(messages.map(m => String(m.fromUserId)))];
+        const [emps, users] = await Promise.all([
+            Employee.find({ userId: { $in: userIds } }).select('userId name').lean(),
+            User.find({ _id: { $in: userIds } }).select('username').lean(),
+        ]);
+        const empMap = {}; emps.forEach(e => { empMap[String(e.userId)] = e.name; });
+        const userMap = {}; users.forEach(u => { userMap[String(u._id)] = u.username; });
+        const msgsWithName = messages.map(m => ({
+            ...m,
+            _id: String(m._id),
+            fromUserId: String(m.fromUserId),
+            toUserId: m.toUserId ? String(m.toUserId) : null,
+            roomId: m.roomId ? String(m.roomId) : null,
+            senderName: empMap[String(m.fromUserId)] || userMap[String(m.fromUserId)] || '不明',
+        }));
+        res.json({ ok: true, messages: msgsWithName, hasMore: messages.length === 50 });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // チャット未読件数（トップバーバッジ用）
 router.get('/api/chat/unread-count', requireLogin, async (req, res) => {
@@ -776,28 +817,40 @@ router.post('/api/chat/recording', requireLogin, chatUpload.single('recording'),
             attachments: [attachment],
             content:     '🎥 通話録画',
         };
-        if (toUserId)  msgData.toUserId = toUserId;
-        if (roomId)    msgData.roomId   = roomId;
+        // roomId がある場合はグループ室宛て。toUserId は無視する（二重保存防止）
+        if (roomId)        msgData.roomId   = roomId;
+        else if (toUserId) msgData.toUserId = toUserId;
+
         const msg = await ChatMessage.create(msgData);
+
+        // senderName を通常メッセージと同様に取得
+        const [senderEmp, senderUser] = await Promise.all([
+            Employee.findOne({ userId: fromId }).select('name').lean(),
+            User.findById(fromId).select('username').lean(),
+        ]);
+        const senderName = senderEmp ? senderEmp.name : ((senderUser && senderUser.username) || '');
+
         const payload = {
             _id:         String(msg._id),
             fromUserId:  String(fromId),
-            toUserId:    toUserId  ? String(toUserId)  : null,
-            roomId:      roomId    ? String(roomId)    : null,
+            toUserId:    msgData.toUserId ? String(msgData.toUserId) : null,
+            roomId:      msgData.roomId   ? String(msgData.roomId)   : null,
             content:     msg.content,
             attachments: [attachment],
             createdAt:   msg.createdAt,
             reactions:   [],
-            senderName:  '',
+            senderName,
         };
         if (global.io) {
-            if (toUserId) {
-                global.io.to('u_' + String(toUserId)).emit('new_message', payload);
+            if (msgData.toUserId) {
+                global.io.to('u_' + String(msgData.toUserId)).emit('new_message', payload);
                 global.io.to('u_' + String(fromId)).emit('new_message', payload);
             }
-            if (roomId) global.io.to('r_' + roomId).emit('new_message', payload);
+            if (msgData.roomId) global.io.to('r_' + String(msgData.roomId)).emit('new_message', payload);
         }
-        res.json({ ok: true, url: attachment.url });
+        // message をレスポンスに含めることで、フロント側が Socket.IO に頼らず
+        // 直接チャットに表示できるようにする（Socket.IO の遅延・フィルタ外れの保険）
+        res.json({ ok: true, url: attachment.url, message: payload });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -850,11 +903,11 @@ function buildPage(data) {
         roomIds: roomList.map(r => String(r._id)),
     };
     if (mode === 'dm') {
-        Object.assign(clientData, { targetId: data.targetId, targetName: data.targetName, targetStatus: data.targetStatus });
+        Object.assign(clientData, { targetId: data.targetId, targetName: data.targetName, targetStatus: data.targetStatus, hasMore: !!data.hasMore });
     }
     if (mode === 'room') {
         Object.assign(clientData, {
-            roomId: data.roomId, roomName: data.roomName, isRoomAdmin: data.isRoomAdmin,
+            roomId: data.roomId, roomName: data.roomName, isRoomAdmin: data.isRoomAdmin, hasMore: !!data.hasMore,
             members: (data.members || []).map(m => ({
                 _id: String(m._id), username: m.username, chatStatus: m.chatStatus || 'offline',
                 emp: m.emp ? { name: m.emp.name, department: m.emp.department || '' } : null,
@@ -863,7 +916,7 @@ function buildPage(data) {
     }
     return `${chatStyles()}
 <div class="sc-root">
-    <div class="sc-side-overlay" id="sc-side-overlay" onclick="closeMobileSidebar()"></div>
+    <div class="sc-side-overlay" id="sc-side-overlay" onclick="closeChatSidebar()"></div>
     ${buildSidebarHtml(data)}
     <div class="sc-main" id="sc-main">${buildMainHtml(data)}</div>
 </div>
@@ -873,10 +926,23 @@ ${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/call-sounds.js"></script>
-<script src="/chat-app.js?v=21"></script>
+<script src="/chat-app.js?v=24"></script>
 <script>
-function openMobileSidebar(){document.querySelector('.sc-side').classList.add('mobile-open');document.getElementById('sc-side-overlay').classList.add('active');}
-function closeMobileSidebar(){document.querySelector('.sc-side').classList.remove('mobile-open');document.getElementById('sc-side-overlay').classList.remove('active');}
+function openChatSidebar(){
+  document.querySelector('.sc-side').classList.add('mobile-open');
+  document.getElementById('sc-side-overlay').classList.add('active');
+}
+function closeChatSidebar(){
+  document.querySelector('.sc-side').classList.remove('mobile-open');
+  document.getElementById('sc-side-overlay').classList.remove('active');
+}
+// サイドバー内リンクをタップしたら自動で閉じる
+document.addEventListener('click', function(e){
+  var side = document.querySelector('.sc-side');
+  if (!side || !side.classList.contains('mobile-open')) return;
+  var link = e.target.closest('a');
+  if (link && side.contains(link)) closeChatSidebar();
+});
 </script>`;
 }
 
@@ -907,7 +973,11 @@ function buildSidebarHtml(d) {
     }).join('') : '<div class="sc-empty-row">グループはありません</div>';
 
     return `<div class="sc-side">
-    <div class="sc-side-hd"><i class="fa-regular fa-comment-dots" style="color:#818cf8;font-size:.95rem;"></i><span class="sc-ws-name">DXPRO SOLUTIONS</span></div>
+    <div class="sc-side-hd">
+        <a href="/dashboard" class="sc-back-btn" title="ダッシュボードに戻る"><i class="fa-solid fa-arrow-left"></i></a>
+        <i class="fa-regular fa-comment-dots" style="color:#818cf8;font-size:.85rem;flex-shrink:0"></i>
+        <span class="sc-ws-name">DXPRO チャット</span>
+    </div>
     <div class="sc-me-row">
         <div class="sc-av-wrap sm"><div class="sc-av sm sc-av-me">${myInitial}</div>
         <span class="sc-pip ${STATUS_CLS[myStatus || 'offline']}" id="my-pip"></span></div>
@@ -920,12 +990,14 @@ function buildSidebarHtml(d) {
             </div>
         </div>
     </div>
-    <div class="sc-search-wrap"><input type="text" id="sc-search" class="sc-search-inp" placeholder="🔍 ユーザーを検索..." autocomplete="off" oninput="chatApp.filterSidebar(this.value)"></div>
-    <div class="sc-side-sec"><span class="sc-sec-label">ダイレクトメッセージ</span></div>
-    <div class="sc-nav-list" id="sc-dm-list">${dmRows}</div>
-    <div class="sc-nav-list" id="sc-search-list" style="display:none"></div>
-    <div class="sc-side-sec"><span class="sc-sec-label">グループ</span><button class="sc-sec-btn" onclick="chatApp.openCreateRoom()" title="グループを作成">＋</button></div>
-    <div class="sc-nav-list" id="sc-room-list">${roomRows}</div>
+    <div class="sc-search-wrap"><input type="text" id="sc-search" class="sc-search-inp" placeholder="ユーザーを検索..." autocomplete="off" oninput="chatApp.filterSidebar(this.value)"></div>
+    <div class="sc-side-scroll">
+        <div id="sc-search-list" style="display:none"></div>
+        <div class="sc-side-sec"><span class="sc-sec-label">ダイレクトメッセージ</span></div>
+        <div class="sc-nav-list" id="sc-dm-list">${dmRows}</div>
+        <div class="sc-side-sec"><span class="sc-sec-label">グループ</span><button class="sc-sec-btn" onclick="chatApp.openCreateRoom()" title="グループを作成"><i class="fa-solid fa-plus"></i></button></div>
+        <div class="sc-nav-list" id="sc-room-list">${roomRows}</div>
+    </div>
 </div>`;
 }
 
@@ -1028,7 +1100,7 @@ function buildMainHtml(data) {
     }
     const headerHtml = isRoom
         ? `<div class="sc-main-hd">
-            <div class="sc-hd-left"><button class="sc-mobile-back" onclick="openMobileSidebar()" title="チャンネル一覧"><i class="fa-solid fa-bars"></i></button><div class="sc-room-icon-lg">${escHtml(data.roomIcon || '💬')}</div>
+            <div class="sc-hd-left"><button class="sc-mobile-back" onclick="openChatSidebar()" title="チャンネル一覧"><i class="fa-solid fa-bars"></i></button><div class="sc-room-icon-lg">${escHtml(data.roomIcon || '💬')}</div>
             <div><div class="sc-hd-name">${escHtml(data.roomName)}</div><div class="sc-hd-sub" id="room-sub">${data.members.length}人のメンバー</div></div></div>
             <div class="sc-hd-actions">
                 <button class="sc-hd-btn" onclick="chatApp.toggleMemberPanel()" title="メンバー"><i class="fa-solid fa-users"></i></button>
@@ -1037,10 +1109,11 @@ function buildMainHtml(data) {
             </div>
         </div>`
         : `<div class="sc-main-hd">
-            <div class="sc-hd-left"><button class="sc-mobile-back" onclick="openMobileSidebar()" title="チャンネル一覧"><i class="fa-solid fa-bars"></i></button><div class="sc-av-wrap"><div class="sc-av sc-av-target">${escHtml(data.targetName || '?').charAt(0).toUpperCase()}</div>
+            <div class="sc-hd-left"><button class="sc-mobile-back" onclick="openChatSidebar()" title="チャンネル一覧"><i class="fa-solid fa-bars"></i></button><div class="sc-av-wrap"><div class="sc-av sc-av-target">${escHtml(data.targetName || '?').charAt(0).toUpperCase()}</div>
             <span class="sc-pip ${STATUS_CLS[data.targetStatus || 'offline']}" id="target-pip"></span></div>
             <div><div class="sc-hd-name">${escHtml(data.targetName || '')}</div>
-            <div class="sc-hd-sub" id="target-sub">${STATUS_LABEL[data.targetStatus || 'offline']}${data.targetDept ? ' · ' + escHtml(data.targetDept) : ''}</div></div></div>
+            <div class="sc-hd-sub" id="target-sub">${STATUS_LABEL[data.targetStatus || 'offline']}</div>
+            ${data.targetDept ? `<div class="sc-hd-sub">${escHtml(data.targetDept)}</div>` : ''}</div></div>
             <div class="sc-hd-actions">
                 <button class="sc-hd-btn sc-call-btn" id="call-btn" title="音声・ビデオ通話"><i class="fa-solid fa-phone"></i></button>
                 <button class="sc-hd-btn sc-call-btn" id="screen-btn" title="画面共有"><i class="fa-solid fa-desktop"></i></button>
@@ -1053,6 +1126,8 @@ function buildMainHtml(data) {
 <div class="sc-body-wrap">
     <div class="sc-messages" id="sc-messages">
         ${buildThreadStart(data)}
+        ${data.hasMore ? '<div id="sc-load-more-wrap" style="text-align:center;padding:12px 0 4px"><button class="sc-load-more-btn" onclick="chatApp.loadMore()" id="sc-load-more-btn"><i class="fa-solid fa-clock-rotate-left"></i> 過去のメッセージを読み込む</button></div>' : ''}
+        <div id="sc-older-messages"></div>
         ${buildMessagesHtml(data)}
         <div id="sc-msg-bottom"></div>
     </div>
@@ -1087,7 +1162,7 @@ function buildMainHtml(data) {
         ondragover="event.preventDefault();this.classList.add('drag-over')"
         ondragleave="this.classList.remove('drag-over')"
         ondrop="chatApp.handleDrop(event)">
-        <textarea id="sc-msg-input" placeholder="${isRoom ? escHtml(data.roomName) : escHtml(data.targetName || '')} へメッセージを送る... (Enter で改行 / Shift+Enter で送信)" rows="1" maxlength="4000" oninput="chatApp.onInput()" onkeydown="if(event.key==='Enter'&&event.shiftKey){event.preventDefault();chatApp.send();}"></textarea>
+        <textarea id="sc-msg-input" placeholder="${isRoom ? escHtml(data.roomName) : escHtml(data.targetName || '')} へメッセージを送る..." rows="1" maxlength="4000" oninput="chatApp.onInput()" onkeydown="if(event.key==='Enter'&&event.shiftKey){event.preventDefault();chatApp.send();}"></textarea>
         <button class="sc-send-btn" id="sc-send-btn" disabled onclick="chatApp.send()"><i class="fa-solid fa-paper-plane"></i></button>
     </div>
     <div class="sc-input-hint">Shift+Enter で送信 · Enter で改行 · ファイルをドロップで添付</div>
@@ -1140,15 +1215,15 @@ function buildMessagesHtml(data) {
     let prevFrom = null, prevDate = null;
     for (const m of messages) {
         if (m.deleted) {
-            html += '<div class="sc-msg sc-msg-del" data-id="' + m._id + '"><span class="sc-del-icon">🗑</span><span class="sc-del-text">このメッセージは削除されました</span></div>';
+            html += '<div class="sc-msg sc-msg-del" data-id="' + m._id + '" data-at="' + m.createdAt.toISOString() + '"><span class="sc-del-icon">🗑</span><span class="sc-del-text">このメッセージは削除されました</span></div>';
             prevFrom = null; continue;
         }
         // 不在着信システムメッセージ
         if (m.isMissedCall) {
             const isMine = String(m.fromUserId) === String(myId);
             const dt2 = new Date(m.createdAt);
-            const timeStr2 = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-            html += '<div class="sc-missed-call" data-id="' + m._id + '">'
+            const timeStr2 = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
+            html += '<div class="sc-missed-call" data-id="' + m._id + '" data-at="' + m.createdAt.toISOString() + '">'
                 + '<span class="sc-missed-icon">📵</span>'
                 + (isMine ? '不在着信（発信）' : '不在着信')
                 + '<span class="sc-missed-time">' + timeStr2 + '</span></div>';
@@ -1157,11 +1232,11 @@ function buildMessagesHtml(data) {
         // 通話履歴システムメッセージ
         if (m.isCallHistory) {
             const dt2 = new Date(m.createdAt);
-            const timeStr2 = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+            const timeStr2 = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
             const mins = Math.floor((m.callDuration || 0) / 60);
             const secs = (m.callDuration || 0) % 60;
             const durStr = mins > 0 ? mins + '分' + secs + '秒' : secs + '秒';
-            html += '<div class="sc-call-history" data-id="' + m._id + '">'
+            html += '<div class="sc-call-history" data-id="' + m._id + '" data-at="' + m.createdAt.toISOString() + '">'
                 + '<span>📞</span> 通話 — ' + durStr
                 + '<span class="sc-missed-time">' + timeStr2 + '</span></div>';
             prevFrom = null; continue;
@@ -1172,7 +1247,7 @@ function buildMessagesHtml(data) {
         const colorIdx   = isMine ? 0 : (isRoom ? (([...String(m.fromUserId)].reduce((a, c) => a + c.charCodeAt(0), 0) % 5) + 1) : 1);
         const dt      = new Date(m.createdAt);
         const dateStr = dt.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
-        const timeStr = dt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    const timeStr = dt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
         if (prevDate !== dateStr) {
             html += '<div class="sc-date-div"><span>' + dateStr + '</span></div>';
             prevDate = dateStr; prevFrom = null;
@@ -1203,13 +1278,13 @@ function buildMessagesHtml(data) {
             + (isMine ? '<button class="sc-tb sc-tb-del" onclick="chatApp.deleteMsg(\'' + m._id + '\')" title="削除">🗑</button>' : '')
             + '</div>';
         if (isCont) {
-            html += '<div class="sc-msg sc-msg-cont" data-id="' + m._id + '">' + toolbar
+            html += '<div class="sc-msg sc-msg-cont" data-id="' + m._id + '" data-at="' + m.createdAt.toISOString() + '">' + toolbar
                 + '<div class="sc-ts-hover">' + timeStr + '</div>'
                 + '<div class="sc-body-wrap2">' + replyBlock
                 + '<div class="sc-msg-text" data-mid="' + m._id + '">' + escHtml(m.content || '') + '</div>'
                 + editedBadge + attachHtml + reactHtml + readBadge + '</div></div>';
         } else {
-            html += '<div class="sc-msg" data-id="' + m._id + '">' + toolbar
+            html += '<div class="sc-msg" data-id="' + m._id + '" data-at="' + m.createdAt.toISOString() + '">' + toolbar
                 + '<div class="sc-av sc-av-c' + colorIdx + '">' + initial + '</div>'
                 + '<div class="sc-msg-right"><div class="sc-msg-meta"><span class="sc-sender">' + escHtml(senderName) + '</span><span class="sc-ts">' + timeStr + '</span></div>'
                 + replyBlock + '<div class="sc-msg-text" data-mid="' + m._id + '">' + escHtml(m.content || '') + '</div>'
@@ -1306,8 +1381,8 @@ function chatStyles() {
     return `<style>
 /* ── Enterprise Chat UI ── */
 :root {
-  --c-side-bg:#1a1d27;--c-side-hd:#141720;--c-side-border:rgba(255,255,255,.06);
-  --c-side-row-hover:rgba(255,255,255,.05);--c-side-row-active:rgba(99,102,241,.2);
+  --c-side-bg:#1a1d27;--c-side-hd:#0f1117;--c-side-border:rgba(255,255,255,.07);
+  --c-side-row-hover:rgba(255,255,255,.06);--c-side-row-active:rgba(99,102,241,.22);
   --c-side-text:#9ba3b8;--c-side-text-bright:#dde2f0;--c-side-label:#4b5268;
   --c-accent:#6366f1;--c-accent-dark:#4f46e5;--c-accent-light:#818cf8;
   --c-green:#22c55e;--c-amber:#f59e0b;--c-red:#ef4444;--c-gray-muted:#6b7280;
@@ -1318,34 +1393,54 @@ function chatStyles() {
   --shadow-sm:0 1px 3px rgba(0,0,0,.08);--shadow-md:0 4px 16px rgba(0,0,0,.1);
   --shadow-lg:0 8px 32px rgba(0,0,0,.15);
 }
-.sidebar{background:var(--c-side-bg)!important}.sidebar a,.sidebar .nav-link{color:var(--c-side-text)!important}.sidebar a:hover{background:var(--c-side-row-hover)!important;color:var(--c-side-text-bright)!important}.sidebar .nav-link.active{background:var(--c-side-row-active)!important;color:var(--c-side-text-bright)!important}
-#cb-fab,#cb-panel{display:none!important}
-.main{padding:0!important;overflow:hidden!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;background:var(--c-main-surface)!important;min-height:0}
-.page-content{padding:0!important;margin:0!important;max-width:none!important;width:100%!important;flex:1 1 auto;overflow:hidden;display:flex;flex-direction:column;min-height:0}
-.sc-root{display:flex;height:100%;width:100%;overflow:hidden;font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
 
-/* ── Sidebar ── */
-.sc-side{width:256px;min-width:256px;background:var(--c-side-bg);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;border-right:1px solid var(--c-side-border)}
-.sc-side-hd{padding:0 16px;height:52px;border-bottom:1px solid var(--c-side-border);display:flex;align-items:center;gap:8px;flex-shrink:0;background:var(--c-side-hd)}
-.sc-ws-name{color:var(--c-side-text-bright);font-weight:700;font-size:.875rem;letter-spacing:-.01em}
-.sc-me-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--c-side-border);flex-shrink:0}
+/* ── チャット専用：アプリUI を非表示にしてチャットをフルスクリーン化 ── */
+#main-sidebar,
+.topbar,
+.sidebar-overlay,
+#cb-fab,
+#cb-panel { display: none !important; }
+html, body { overflow: hidden !important; }
+
+/* ── Root：position:fixed でビューポート全体を完全に占有（flex連鎖に依存しない） ── */
+.sc-root {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 9000 !important;
+  display: flex !important;
+  overflow: hidden !important;
+  font-family: 'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: var(--c-side-bg);
+}
+
+/* ── Sidebar（デスクトップ：常時表示） ── */
+.sc-side{width:268px;min-width:268px;background:var(--c-side-bg);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;border-right:1px solid var(--c-side-border)}
+.sc-side-hd{padding:0 12px 0 14px;height:56px;border-bottom:1px solid var(--c-side-border);display:flex;align-items:center;gap:8px;flex-shrink:0;background:var(--c-side-hd)}
+.sc-ws-name{color:var(--c-side-text-bright);font-weight:700;font-size:.82rem;letter-spacing:-.01em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sc-back-btn{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:var(--radius-sm);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:var(--c-side-label);text-decoration:none;transition:.15s;flex-shrink:0}
+.sc-back-btn:hover{background:rgba(255,255,255,.1);color:var(--c-side-text-bright);border-color:rgba(255,255,255,.18)}
+.sc-back-btn i{font-size:.75rem}
+.sc-me-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--c-side-border);flex-shrink:0}
 .sc-me-info{flex:1;min-width:0}
-.sc-me-name{color:var(--c-side-text-bright);font-size:.8rem;font-weight:600;display:block;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sc-me-name{color:var(--c-side-text-bright);font-size:.8rem;font-weight:600;display:block;margin-bottom:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sc-st-btns{display:flex;gap:3px;flex-wrap:wrap}
 .sc-st-btn{display:flex;align-items:center;gap:3px;padding:2px 8px;border-radius:20px;border:1px solid rgba(255,255,255,.08);background:transparent;color:var(--c-side-label);font-size:.68rem;cursor:pointer;transition:.15s;font-weight:500}
 .sc-st-btn:hover{background:rgba(255,255,255,.07);color:var(--c-side-text-bright);border-color:rgba(255,255,255,.15)}
-.sc-st-btn.active{background:rgba(99,102,241,.2);color:var(--c-accent-light);border-color:rgba(99,102,241,.4)}
+.sc-st-btn.active{background:rgba(99,102,241,.25);color:var(--c-accent-light);border-color:rgba(99,102,241,.5)}
 .sc-btn-pip{display:inline-block;width:6px;height:6px;border-radius:50%;flex-shrink:0}
-.sc-search-wrap{padding:8px 10px 4px;flex-shrink:0}
-.sc-search-inp{width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:var(--radius-md);color:var(--c-side-text-bright);padding:6px 10px 6px 30px;font-size:.78rem;outline:none;transition:.2s;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398l3.85 3.85a1 1 0 0 0 1.415-1.415l-3.868-3.833zm-5.242 1.406a5 5 0 1 1 0-10 5 5 0 0 1 0 10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:10px center}
+.sc-search-wrap{padding:10px 10px 6px;flex-shrink:0}
+.sc-search-inp{width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:var(--radius-md);color:var(--c-side-text-bright);padding:7px 10px 7px 32px;font-size:.79rem;outline:none;transition:.2s;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398l3.85 3.85a1 1 0 0 0 1.415-1.415l-3.868-3.833zm-5.242 1.406a5 5 0 1 1 0-10 5 5 0 0 1 0 10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:10px center}
 .sc-search-inp::placeholder{color:var(--c-side-label)}.sc-search-inp:focus{border-color:rgba(99,102,241,.5);background:rgba(255,255,255,.07)}
-.sc-side-sec{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 4px;flex-shrink:0}
-.sc-sec-label{color:var(--c-side-label);font-size:.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
-.sc-sec-btn{background:none;border:none;color:var(--c-side-label);cursor:pointer;font-size:.95rem;line-height:1;padding:2px 4px;border-radius:4px;transition:.15s;display:flex;align-items:center;justify-content:center}
+/* ── サイドバー スクロール領域 ── */
+.sc-side-scroll{flex:1;overflow-y:auto;display:flex;flex-direction:column;min-height:0}
+.sc-side-scroll::-webkit-scrollbar{width:3px}.sc-side-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px}
+.sc-side-sec{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 5px;flex-shrink:0}
+.sc-sec-label{color:var(--c-side-label);font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em}
+.sc-sec-btn{background:none;border:none;color:var(--c-side-label);cursor:pointer;font-size:.9rem;line-height:1;padding:3px 6px;border-radius:4px;transition:.15s;display:flex;align-items:center;justify-content:center}
 .sc-sec-btn:hover{color:var(--c-side-text-bright);background:rgba(255,255,255,.08)}
-.sc-nav-list{overflow-y:auto;padding:2px 6px 6px;flex-shrink:0}
-.sc-nav-list::-webkit-scrollbar{width:3px}.sc-nav-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px}
-.sc-nav-row{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:var(--radius-sm);text-decoration:none;color:var(--c-side-text);font-size:.83rem;transition:.12s;position:relative}
+.sc-nav-list{padding:2px 6px 8px}
+.sc-nav-row{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--radius-sm);text-decoration:none;color:var(--c-side-text);font-size:.83rem;transition:.12s;position:relative}
 .sc-nav-row:hover{background:var(--c-side-row-hover);color:var(--c-side-text-bright)}
 .sc-nav-row.active{background:var(--c-side-row-active);color:var(--c-side-text-bright)}
 .sc-nav-row.active::before{content:'';position:absolute;left:0;top:20%;bottom:20%;width:3px;background:var(--c-accent);border-radius:0 2px 2px 0}
@@ -1353,8 +1448,8 @@ function chatStyles() {
 .sc-nav-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.82rem;font-weight:500}
 .sc-nav-sub{font-size:.69rem;color:var(--c-side-label);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sc-badge{background:var(--c-accent);color:#fff;border-radius:10px;padding:1px 7px;font-size:.66rem;font-weight:700;min-width:18px;text-align:center;flex-shrink:0;letter-spacing:.02em}
-.sc-empty-row{color:var(--c-side-label);font-size:.76rem;padding:8px 10px}
-.sc-room-icon{width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:.95rem;border-radius:var(--radius-sm);background:rgba(255,255,255,.06);flex-shrink:0}
+.sc-empty-row{color:var(--c-side-label);font-size:.75rem;padding:8px 12px;font-style:italic}
+.sc-room-icon{width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:.95rem;border-radius:var(--radius-sm);background:rgba(255,255,255,.07);flex-shrink:0}
 
 /* ── Avatars ── */
 .sc-av-wrap{position:relative;flex-shrink:0;width:36px;height:36px}
@@ -1373,7 +1468,7 @@ function chatStyles() {
 .sc-btn-pip.pip-online{background:var(--c-green)}.sc-btn-pip.pip-break{background:var(--c-amber)}.sc-btn-pip.pip-offline{background:#6b7280}
 
 /* ── Main area ── */
-.sc-main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--c-main-bg);min-height:0}
+.sc-main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--c-main-bg);min-height:0;min-width:0}
 .sc-welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;color:var(--c-text-secondary);text-align:center;padding:20px}
 .sc-welcome-icon{font-size:3rem;margin-bottom:12px}.sc-welcome h2{margin:0 0 8px;color:var(--c-text-primary);font-size:1.3rem}.sc-welcome p{margin:0;font-size:.87rem;line-height:1.7}
 
@@ -1410,7 +1505,7 @@ function chatStyles() {
 .sc-main-hd{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:56px;border-bottom:1px solid var(--c-border);background:#fff;flex-shrink:0;gap:12px;box-shadow:0 1px 0 var(--c-border)}
 .sc-hd-left{display:flex;align-items:center;gap:10px}
 .sc-hd-name{font-weight:700;font-size:.9375rem;color:var(--c-text-primary);line-height:1.2;letter-spacing:-.01em}
-.sc-hd-sub{font-size:.72rem;color:var(--c-text-secondary);margin-top:1px}
+.sc-hd-sub{font-size:.55rem;color:var(--c-text-secondary);margin-top:1px}
 .sc-hd-actions{display:flex;align-items:center;gap:4px}
 .sc-hd-btn{width:34px;height:34px;border:none;background:transparent;border-radius:var(--radius-sm);cursor:pointer;color:var(--c-text-secondary);font-size:.875rem;display:flex;align-items:center;justify-content:center;transition:.15s}
 .sc-hd-btn:hover{background:var(--c-main-surface);color:var(--c-text-primary)}
@@ -1426,7 +1521,7 @@ function chatStyles() {
 .sc-typing-bar{height:20px;padding:0 20px;font-size:.72rem;color:var(--c-text-muted);font-style:italic;flex-shrink:0;display:flex;align-items:center}
 .sc-thread-start{display:flex;flex-direction:column;align-items:flex-start;padding:32px 20px 16px;border-bottom:1px solid var(--c-border);flex-shrink:0;background:linear-gradient(to bottom,var(--c-main-surface),var(--c-main-bg))}
 .sc-thread-name{font-size:1.25rem;font-weight:800;color:var(--c-text-primary);margin:10px 0 2px;letter-spacing:-.02em}
-.sc-thread-sub{font-size:.78rem;color:var(--c-text-secondary);margin-bottom:4px}
+.sc-thread-sub{font-size:.62rem;color:var(--c-text-secondary);margin-bottom:4px}
 .sc-thread-desc{font-size:.83rem;color:var(--c-text-secondary);margin:4px 0 0;line-height:1.6}
 
 /* ── Messages ── */
@@ -1565,9 +1660,12 @@ function chatStyles() {
 .sc-call-btn:hover{background:#f0fdf4!important}
 .sc-clear-btn{color:var(--c-red)!important}
 .sc-clear-btn:hover{background:#fef2f2!important}
+.sc-load-more-btn{background:none;border:1.5px solid var(--c-border);border-radius:20px;color:var(--c-text-muted);font-size:.78rem;padding:6px 16px;cursor:pointer;transition:all .15s}
+.sc-load-more-btn:hover{background:var(--c-bg-hover);color:var(--c-text-primary)}
+.sc-load-more-btn:disabled{opacity:.5;cursor:not-allowed}
 
 /* ── Call overlay ── */
-.call-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.call-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:10000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
 .call-box{background:#0f172a;border-radius:var(--radius-xl);width:580px;max-width:96vw;box-shadow:0 20px 60px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column;transition:all .2s;border:1px solid rgba(255,255,255,.08)}
 .call-box.call-fullscreen{width:100vw;max-width:100vw;height:100vh;border-radius:0}
 .call-box.call-fullscreen .call-videos{min-height:0;flex:1}
@@ -1604,7 +1702,7 @@ function chatStyles() {
 .call-remote-bar button:hover{background:rgba(255,255,255,.06);color:#e2e8f0}
 
 /* ── Incoming call ── */
-.call-incoming-modal{position:fixed;inset:0;background:rgba(17,24,39,.65);z-index:600;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.call-incoming-modal{position:fixed;inset:0;background:rgba(17,24,39,.65);z-index:10100;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
 .call-incoming-box{background:#fff;border-radius:var(--radius-xl);padding:36px 44px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.25);min-width:300px}
 .call-incoming-ring{font-size:3rem;margin-bottom:12px;animation:ring .6s ease-in-out infinite alternate}
 @keyframes ring{from{transform:rotate(-14deg)}to{transform:rotate(14deg)}}
@@ -1618,17 +1716,51 @@ function chatStyles() {
 
 /* ── Mobile responsive ── */
 @media(max-width:640px){
-  .sc-side{position:fixed;top:0;left:-260px;width:260px;height:100%;z-index:200;transition:left .25s;box-shadow:4px 0 20px rgba(0,0,0,.18)}
-  .sc-side.mobile-open{left:0}
-  .sc-side-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:199}
+  /*
+   * モバイル：sc-root は position:fixed のままでビューポートを占有。
+   * sc-side は position:absolute（sc-root が含む block なので sc-root 基準で配置）。
+   * position:fixed の親の中に position:fixed の子を使うと iOS Safari で誤動作するため
+   * absolute + transform のドロワー方式に変更。
+   */
+  .sc-side{
+    position:absolute;
+    top:0;left:0;bottom:0;
+    width:82vw;max-width:300px;
+    z-index:50;
+    transform:translateX(-100%);
+    transition:transform .28s cubic-bezier(.4,0,.2,1);
+    box-shadow:4px 0 32px rgba(0,0,0,.45);
+    /* flex-shrink:0 は上書き — absolute なので flex 外になる */
+    min-width:0;
+  }
+  .sc-side.mobile-open{
+    transform:translateX(0);
+  }
+  /* オーバーレイも absolute で sc-root 内に収める */
+  .sc-side-overlay{
+    display:none;
+    position:absolute;
+    inset:0;
+    background:rgba(0,0,0,.52);
+    z-index:45;
+  }
   .sc-side-overlay.active{display:block}
-  .sc-root{position:relative}
-  .sc-mobile-back{display:flex!important;align-items:center;justify-content:center;width:34px;height:34px;border:none;background:transparent;border-radius:6px;cursor:pointer;color:var(--c-text-secondary);font-size:.95rem}
+  /* sc-main は flex:1 で全幅を占める（sc-side が absolute で外れるため） */
+  .sc-main{width:100%}
+  /* ハンバーガーボタンを表示 */
+  .sc-mobile-back{display:flex!important;align-items:center;justify-content:center;width:38px;height:38px;border:none;background:transparent;border-radius:6px;cursor:pointer;color:var(--c-text-secondary);font-size:1.05rem}
   .sc-member-panel{display:none}
-  .sc-hd-search input{width:80px}
+  .sc-hd-search{display:none!important}
+  .sc-hd-actions{gap:2px}
   .call-box{width:98vw!important;max-width:98vw!important}
   .call-videos{min-height:200px}
   .call-incoming-box{padding:24px 20px;min-width:unset;width:90vw}
+  .sc-input-hint{display:none}
+  .sc-main-hd{padding:0 10px;height:52px}
+  .sc-input-area{padding:8px 10px 10px}
+  /* メッセージの横幅が溢れないよう */
+  .sc-msg,.sc-msg-cont{padding-left:12px;padding-right:12px}
+  .sc-msg-text{word-break:break-all}
 }
 @media(min-width:641px){
   .sc-mobile-back{display:none!important}
@@ -1678,7 +1810,7 @@ function buildCallOverlay() {
 <div id="call-incoming-modal" style="display:none" class="call-incoming-modal">
 
 <!-- 遠隔操作エージェント説明モーダル -->
-<div id="agent-setup-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:700;align-items:center;justify-content:center;display:none">
+<div id="agent-setup-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10200;align-items:center;justify-content:center;display:none">
   <div style="background:#1c1917;border-radius:14px;padding:28px 32px;max-width:520px;width:92vw;color:#e8e0d5;box-shadow:0 8px 40px rgba(0,0,0,.5)">
     <div style="font-size:1.15rem;font-weight:700;margin-bottom:8px">🖥 あと1ステップで遠隔操作が使えます</div>
     <p style="font-size:.85rem;color:#a8a29e;margin-bottom:4px">
