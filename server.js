@@ -339,6 +339,7 @@ app.use("/", require("./routes/tasks"));
 app.use("/", require("./routes/chat"));
 app.use("/", require("./routes/cloud"));
 app.use("/", require("./routes/workflow"));
+app.use("/", require("./routes/schedule"));
 
 // ── グローバルエラーハンドラー（500エラーでプロセスをクラッシュさせない） ─
 app.use((err, req, res, next) => {
@@ -572,6 +573,7 @@ httpServer.listen(PORT, "0.0.0.0", async () => {
   );
   await sleep(50);
   logOk("Router: /workflow            承認ワークフロー / 申請統合管理");
+  logOk("Router: /schedule            スケジューラ / 会議枠管理 / 通話連携");
   await sleep(50);
   logOk("Router: /chatbot             AIチャットボット (OpenAI)");
   await sleep(50);
