@@ -1653,7 +1653,7 @@ html, body { overflow: hidden !important; }
 .sc-load-more-btn:disabled{opacity:.5;cursor:not-allowed}
 
 /* ── Call overlay ── */
-.call-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.call-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:10000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
 .call-box{background:#0f172a;border-radius:var(--radius-xl);width:580px;max-width:96vw;box-shadow:0 20px 60px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column;transition:all .2s;border:1px solid rgba(255,255,255,.08)}
 .call-box.call-fullscreen{width:100vw;max-width:100vw;height:100vh;border-radius:0}
 .call-box.call-fullscreen .call-videos{min-height:0;flex:1}
@@ -1690,7 +1690,7 @@ html, body { overflow: hidden !important; }
 .call-remote-bar button:hover{background:rgba(255,255,255,.06);color:#e2e8f0}
 
 /* ── Incoming call ── */
-.call-incoming-modal{position:fixed;inset:0;background:rgba(17,24,39,.65);z-index:600;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.call-incoming-modal{position:fixed;inset:0;background:rgba(17,24,39,.65);z-index:10100;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
 .call-incoming-box{background:#fff;border-radius:var(--radius-xl);padding:36px 44px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.25);min-width:300px}
 .call-incoming-ring{font-size:3rem;margin-bottom:12px;animation:ring .6s ease-in-out infinite alternate}
 @keyframes ring{from{transform:rotate(-14deg)}to{transform:rotate(14deg)}}
@@ -1798,7 +1798,7 @@ function buildCallOverlay() {
 <div id="call-incoming-modal" style="display:none" class="call-incoming-modal">
 
 <!-- 遠隔操作エージェント説明モーダル -->
-<div id="agent-setup-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:700;align-items:center;justify-content:center;display:none">
+<div id="agent-setup-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10200;align-items:center;justify-content:center;display:none">
   <div style="background:#1c1917;border-radius:14px;padding:28px 32px;max-width:520px;width:92vw;color:#e8e0d5;box-shadow:0 8px 40px rgba(0,0,0,.5)">
     <div style="font-size:1.15rem;font-weight:700;margin-bottom:8px">🖥 あと1ステップで遠隔操作が使えます</div>
     <p style="font-size:.85rem;color:#a8a29e;margin-bottom:4px">
