@@ -44,6 +44,14 @@ router.get('/admin/payroll/master', requireLogin, isAdmin, async (req, res) => {
 .pm-run-form{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .pm-run-form input[type=number]{padding:8px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;width:90px}
 .pm-run-btn{background:#0369a1;color:#fff;padding:9px 22px;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer}
+@media(max-width:640px){
+  .pm-wrap{padding:16px 10px}
+  .pm-header{flex-direction:column;align-items:flex-start;gap:8px}
+  .pm-run-form{flex-direction:column;align-items:stretch}
+  .pm-run-form input[type=number]{width:100%}
+  .tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px}
+  .pm-table{min-width:600px}
+}
 </style>
 <div class="pm-wrap">
   <div class="pm-header">
@@ -62,6 +70,7 @@ router.get('/admin/payroll/master', requireLogin, isAdmin, async (req, res) => {
     </form>
   </div>
 
+  <div class="tbl-scroll">
   <table class="pm-table">
     <thead>
       <tr>
@@ -90,6 +99,7 @@ router.get('/admin/payroll/master', requireLogin, isAdmin, async (req, res) => {
       }).join('')}
     </tbody>
   </table>
+  </div>
 </div>`;
 
     renderPage(req, res, '給与マスタ管理', '給与マスタ管理', html);
@@ -119,6 +129,12 @@ router.get('/admin/payroll/master/:empId', requireLogin, isAdmin, async (req, re
 .pms-btn{padding:10px 28px;border-radius:7px;font-size:14px;font-weight:700;cursor:pointer;border:none}
 .pms-btn-primary{background:#1e3a5f;color:#fff}
 .pms-btn-ghost{background:#f1f5f9;color:#475569;text-decoration:none;display:inline-block;line-height:1.5}
+@media(max-width:640px){
+  .pms-wrap{padding:16px 10px}
+  .pms-card{padding:18px 16px}
+  .pms-grid{grid-template-columns:1fr}
+  .pms-btns{flex-direction:column}
+}
 </style>
 <div class="pms-wrap">
   <div class="pms-card">
@@ -307,6 +323,12 @@ router.get('/admin/payroll/run/:runId', requireLogin, isAdmin, async (req, res) 
 .pr-badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600}
 .pr-badge-issued{background:#d1fae5;color:#065f46}
 .pr-badge-draft{background:#fef9c3;color:#92400e}
+@media(max-width:640px){
+  .pr-wrap{padding:16px 10px}
+  .pr-header{flex-direction:column;align-items:flex-start;gap:8px}
+  .pr-tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px}
+  .pr-table{min-width:700px}
+}
 </style>
 <div class="pr-wrap">
   <div class="pr-header">

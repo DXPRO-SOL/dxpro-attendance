@@ -559,6 +559,11 @@ router.get("/dashboard", requireLogin, async (req, res) => {
 
         /* Semi evaluation */
         .semi-card { margin-top: 20px; }
+        /* 自己評価グリッド: モバイルで星サイズを確保 */
+        @media(max-width:480px){
+            .sf-star { font-size: 19px !important; }
+            .sf-stars { gap: 2px !important; }
+        }
         .semi-grade-badge {
             display: inline-flex; align-items: center; gap: 6px;
             background: linear-gradient(135deg,#2563eb,#7c3aed);
@@ -1382,14 +1387,16 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                     </div>
 
                     <!-- ── 自己評価・コミットメント ── -->
-                    <div style="margin-top:16px;border:1.5px solid #e0e8ff;border-radius:14px;overflow:hidden">
+                    <div style="margin-top:16px;border:1.5px solid #e0e8ff;border-radius:14px;overflow:visible">
                         <!-- ヘッダー -->
-                        <div style="background:linear-gradient(135deg,#eff6ff,#f5f3ff);padding:13px 16px;border-bottom:1px solid #e0e8ff;display:flex;align-items:center;gap:8px">
-                            <i class="fa-solid fa-pen-to-square" style="color:#7c3aed;font-size:14px"></i>
-                            <span style="font-size:13px;font-weight:700;color:#1e1b4b">自己評価・コミットメントを記録する</span>
-                            <span style="margin-left:auto;font-size:10px;color:#9ca3af">管理者に共有されます</span>
+                        <div style="background:linear-gradient(135deg,#eff6ff,#f5f3ff);padding:10px 14px;border-bottom:1px solid #e0e8ff;border-radius:14px 14px 0 0">
+                            <div style="display:flex;align-items:center;gap:7px">
+                                <i class="fa-solid fa-pen-to-square" style="color:#7c3aed;font-size:13px;flex-shrink:0"></i>
+                                <span style="font-size:13px;font-weight:700;color:#1e1b4b;line-height:1.4">自己評価・コミットメントを記録する</span>
+                            </div>
+                            <div style="font-size:10px;color:#9ca3af;margin-top:3px;padding-left:20px">管理者に共有されます</div>
                         </div>
-                        <div style="padding:14px 16px">
+                        <div style="padding:14px">
 
                             <!-- カテゴリ別 自己評価（星） -->
                             <div style="font-size:11.5px;font-weight:700;color:#6b7280;margin-bottom:10px;text-transform:uppercase;letter-spacing:.4px">カテゴリ別 自己評価（1〜5）</div>
@@ -1428,13 +1435,13 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                                 ]
                                   .map(
                                     ([key, label, icon, color]) => `
-                                <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px">
-                                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
-                                        <i class="fa-solid ${icon}" style="color:${color};font-size:12px"></i>
-                                        <span style="font-size:11.5px;font-weight:700;color:#374151">${label}</span>
+                                <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:8px 8px">
+                                    <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+                                        <i class="fa-solid ${icon}" style="color:${color};font-size:11px"></i>
+                                        <span style="font-size:11px;font-weight:700;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</span>
                                     </div>
-                                    <div class="sf-stars" data-key="${key}" style="display:flex;gap:4px">
-                                        ${[1, 2, 3, 4, 5].map((n) => `<span class="sf-star" data-val="${n}" style="font-size:22px;cursor:pointer;color:#d1d5db;line-height:1;transition:color .12s">★</span>`).join("")}
+                                    <div class="sf-stars" data-key="${key}" style="display:flex;gap:2px">
+                                        ${[1, 2, 3, 4, 5].map((n) => `<span class="sf-star" data-val="${n}" style="font-size:19px;cursor:pointer;color:#d1d5db;line-height:1;transition:color .12s">★</span>`).join("")}
                                     </div>
                                 </div>`,
                                   )
@@ -1460,9 +1467,9 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                                 <textarea id="sfAppeal" placeholder="例：AIスコアに反映されていない貢献（社内勉強会の企画・後輩のサポートなど）があれば記載してください。" style="width:100%;min-height:60px;border:1px solid #e5e7eb;border-radius:8px;padding:9px 11px;font-size:12.5px;resize:vertical;font-family:inherit;color:#111827;background:#fff;outline:none" onfocus="this.style.borderColor='#2563eb';this.style.boxShadow='0 0 0 3px rgba(37,99,235,.1)'" onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'" maxlength="500"></textarea>
                             </div>
 
-                            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                            <div style="display:flex;flex-direction:column;gap:8px">
                                 <div style="font-size:11px;color:#9ca3af"><i class="fa-solid fa-shield-halved" style="margin-right:3px"></i>送信内容は管理者のみ閲覧できます</div>
-                                <button type="button" id="sfSubmit" style="background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;border:none;padding:9px 22px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'">
+                                <button type="button" id="sfSubmit" style="background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;border:none;padding:10px 0;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;width:100%;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'">
                                     <i class="fa-solid fa-paper-plane"></i> 送信する
                                 </button>
                             </div>

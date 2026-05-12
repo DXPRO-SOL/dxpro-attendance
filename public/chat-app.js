@@ -3,1905 +3,2613 @@
 // DM・グループチャット・ファイル添付・メッセージ編集・既読表示
 // ==============================
 (function () {
-    'use strict';
+  "use strict";
 
-    // ── 初期データ読み込み ──────────────────────────────────
-    const initEl = document.getElementById('sc-init');
-    if (!initEl) return;
-    const C = JSON.parse(initEl.textContent); // mode, myId, myName, ...
+  // ── 初期データ読み込み ──────────────────────────────────
+  const initEl = document.getElementById("sc-init");
+  if (!initEl) return;
+  const C = JSON.parse(initEl.textContent); // mode, myId, myName, ...
 
-    const MODE      = C.mode;
-    const MY_ID     = C.myId;
-    const MY_NAME   = C.myName;
-    const MY_INIT   = C.myInitial;
-    const ALL_USERS = C.allUsers || [];
-    const ROOM_IDS  = C.roomIds  || [];
-    // DM用
-    const TARGET_ID   = C.targetId   || null;
-    const TARGET_NAME = C.targetName || '';
-    // Room用
-    const ROOM_ID   = C.roomId   || null;
-    const ROOM_NAME = C.roomName || '';
+  const MODE = C.mode;
+  const MY_ID = C.myId;
+  const MY_NAME = C.myName;
+  const MY_INIT = C.myInitial;
+  const ALL_USERS = C.allUsers || [];
+  const ROOM_IDS = C.roomIds || [];
+  // DM用
+  const TARGET_ID = C.targetId || null;
+  const TARGET_NAME = C.targetName || "";
+  // Room用
+  const ROOM_ID = C.roomId || null;
+  const ROOM_NAME = C.roomName || "";
 
-    let replyToId        = null;
-    let editingMsgId     = null;
-    let emojiForMsgId    = null;  // null = 入力欄用
-    let pendingFiles     = [];    // { file, dataUrl?, name }
-    let typingTimer      = null;
-    let autoStatusTimer  = null;
-    let autoBreakTimer   = null;
-    let curAutoStatus    = null; // null = 未送信（ページロード時に必ず送信させる）
+  let replyToId = null;
+  let editingMsgId = null;
+  let emojiForMsgId = null; // null = 入力欄用
+  let pendingFiles = []; // { file, dataUrl?, name }
+  let typingTimer = null;
+  let autoStatusTimer = null;
+  let autoBreakTimer = null;
+  let curAutoStatus = null; // null = 未送信（ページロード時に必ず送信させる）
 
-    // ── Socket.io ────────────────────────────────────────────
-    const socket = io();
-    socket.emit('join_rooms', { userId: MY_ID, roomIds: ROOM_IDS });
-    if (ROOM_ID) socket.emit('join_room', { roomId: ROOM_ID });
+  // ── Socket.io ────────────────────────────────────────────
+  const socket = io();
+  socket.emit("join_rooms", { userId: MY_ID, roomIds: ROOM_IDS });
+  if (ROOM_ID) socket.emit("join_room", { roomId: ROOM_ID });
 
-    // ── 他ページ着信「応答」→ チャットページ遷移の自動応答処理 ──────
-    // call-listener.js が sessionStorage に SDP を保存して遷移してくる
-    if (MODE === 'dm' && TARGET_ID) {
-        try {
-            const _raw = sessionStorage.getItem('cl_auto_accept');
-            if (_raw) {
-                const _d = JSON.parse(_raw);
-                if (_d.fromUserId === TARGET_ID && _d.sdp) {
-                    sessionStorage.removeItem('cl_auto_accept');
-                    pendingOffer = { fromUserId: _d.fromUserId, sdp: _d.sdp };
-                    // ページの準備が整ってから自動応答（1秒待機）
-                    setTimeout(() => {
-                        if (pendingOffer) {
-                            console.log('[call-listener] 自動応答: pendingOffer を復元して acceptCall()');
-                            acceptCall();
-                        }
-                    }, 1000);
-                }
+  // ── 他ページ着信「応答」→ チャットページ遷移の自動応答処理 ──────
+  // call-listener.js が sessionStorage に SDP を保存して遷移してくる
+  if (MODE === "dm" && TARGET_ID) {
+    try {
+      const _raw = sessionStorage.getItem("cl_auto_accept");
+      if (_raw) {
+        const _d = JSON.parse(_raw);
+        if (_d.fromUserId === TARGET_ID && _d.sdp) {
+          sessionStorage.removeItem("cl_auto_accept");
+          pendingOffer = { fromUserId: _d.fromUserId, sdp: _d.sdp };
+          // ページの準備が整ってから自動応答（1秒待機）
+          setTimeout(() => {
+            if (pendingOffer) {
+              console.log(
+                "[call-listener] 自動応答: pendingOffer を復元して acceptCall()",
+              );
+              acceptCall();
             }
-        } catch (_) {}
+          }, 1000);
+        }
+      }
+    } catch (_) {}
+  }
+
+  // ── スケジューラからのワンクリック DM 発信（autoCall=1） ────────
+  if (MODE === "dm" && TARGET_ID) {
+    const _params = new URLSearchParams(window.location.search);
+    if (_params.get("autoCall") === "1") {
+      history.replaceState(null, "", window.location.pathname); // URLをクリーン化
+      setTimeout(() => {
+        if (typeof doStartCall === "function") doStartCall(TARGET_ID);
+      }, 1500);
+    }
+  }
+
+  // ── Socket イベント ───────────────────────────────────────
+  socket.on("new_message", (msg) => {
+    const relevantDM =
+      MODE === "dm" &&
+      msg.fromUserId !== MY_ID &&
+      (msg.toUserId === MY_ID || msg.fromUserId === TARGET_ID);
+    const relevantDMMy =
+      MODE === "dm" && msg.fromUserId === MY_ID && msg.toUserId === TARGET_ID;
+    const relevantRoom = MODE === "room" && msg.roomId === ROOM_ID;
+    if (!relevantDM && !relevantDMMy && !relevantRoom) return;
+    appendMessage(msg);
+    scrollBottom(true);
+    // 受信音（他ユーザーからのメッセージのみ）
+    if (msg.fromUserId !== MY_ID && window.CallSounds) CallSounds.playReceive();
+    // DM受信→既読マーク
+    if (MODE === "dm" && msg.fromUserId === TARGET_ID) {
+      markRead(msg._id);
+    }
+  });
+
+  socket.on("msg_edited", ({ _id, content }) => {
+    const el = document.querySelector('.sc-msg-text[data-mid="' + _id + '"]');
+    if (el) {
+      el.textContent = content;
+      // 編集済みバッジ追加
+      if (
+        !el.nextSibling ||
+        !el.nextSibling.classList ||
+        !el.nextSibling.classList.contains("sc-edited")
+      ) {
+        const badge = document.createElement("span");
+        badge.className = "sc-edited";
+        badge.textContent = "（編集済み）";
+        el.parentNode.insertBefore(badge, el.nextSibling);
+      }
+    }
+  });
+
+  socket.on("msg_deleted", ({ _id }) => {
+    const el = document.querySelector(
+      '.sc-msg[data-id="' + _id + '"],.sc-msg-cont[data-id="' + _id + '"]',
+    );
+    if (el) {
+      el.innerHTML =
+        '<span class="sc-del-icon">🗑</span><span class="sc-del-text">このメッセージは削除されました</span>';
+      el.className = "sc-msg sc-msg-del";
+    }
+  });
+
+  socket.on("chat_cleared", ({ fromUserId, toUserId, roomId, adminClear }) => {
+    const isRoom = MODE === "room" && roomId && roomId === ROOM_ID;
+    const isDM =
+      MODE === "dm" && fromUserId === MY_ID && toUserId === TARGET_ID;
+    const isAdmin =
+      adminClear && (MODE === "dm" || (MODE === "room" && roomId === ROOM_ID));
+    if (!isDM && !isRoom && !isAdmin) return;
+    const container = document.getElementById("sc-messages");
+    if (!container) return;
+    container.innerHTML =
+      '<div class="sc-no-msg" style="padding:2rem;text-align:center;color:#aaa;">チャット履歴がクリアされました</div>';
+  });
+
+  socket.on("msg_reaction", ({ _id, reactions }) => {
+    const wrap = document.querySelector(
+      '.sc-reactions[data-mid="' + _id + '"]',
+    );
+    if (!wrap) return;
+    wrap.innerHTML = reactions
+      .filter((r) => r.count > 0)
+      .map(
+        (r) =>
+          '<button class="sc-react-chip' +
+          (r.mine ? " mine" : "") +
+          '" data-emoji="' +
+          r.emoji +
+          '" onclick="chatApp.toggleReact(\'' +
+          _id +
+          "','" +
+          r.emoji +
+          "',this)\">" +
+          r.emoji +
+          ' <span class="sc-react-n">' +
+          r.count +
+          "</span></button>",
+      )
+      .join("");
+  });
+
+  socket.on("read_receipt", ({ msgId, count }) => {
+    const badge = document.querySelector('.sc-read[data-read="' + msgId + '"]');
+    if (!badge) return;
+    if (count !== undefined) {
+      // グループ
+      badge.textContent = count > 0 ? "既読 " + count : "";
+      badge.className = "sc-read" + (count > 0 ? " read" : " unread");
+    } else {
+      // DM
+      badge.textContent = "✓✓ 既読";
+      badge.className = "sc-read read";
+    }
+  });
+
+  socket.on("typing", ({ fromUserId, toUserId, roomId }) => {
+    const relevant =
+      (MODE === "dm" && fromUserId === TARGET_ID && toUserId === MY_ID) ||
+      (MODE === "room" && roomId === ROOM_ID && fromUserId !== MY_ID);
+    if (!relevant) return;
+    const name = getUserName(fromUserId);
+    const bar = document.getElementById("sc-typing");
+    if (bar) {
+      bar.textContent = (name || "相手") + " が入力中...";
+    }
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => {
+      if (bar) bar.textContent = "";
+    }, 3000);
+  });
+
+  socket.on("stop_typing", ({ fromUserId }) => {
+    if (fromUserId === TARGET_ID || (MODE === "room" && fromUserId !== MY_ID)) {
+      const bar = document.getElementById("sc-typing");
+      if (bar) bar.textContent = "";
+    }
+  });
+
+  socket.on("status_change", ({ userId, status }) => {
+    updatePips(userId, status);
+    if (userId === TARGET_ID) {
+      const lbl = document.getElementById("target-sub");
+      if (lbl) {
+        const old = lbl.textContent;
+        const dept = old.includes("·") ? " · " + old.split("·")[1].trim() : "";
+        lbl.textContent =
+          { online: "オンライン", break: "休憩中", offline: "オフライン" }[
+            status
+          ] + dept;
+      }
+    }
+  });
+
+  socket.on("room_created", ({ roomId, name }) => {
+    // サイドバーに新ルーム追加（リロードなしで反映）
+    const list = document.getElementById("sc-room-list");
+    if (!list) return;
+    const empty = list.querySelector(".sc-empty-row");
+    if (empty) empty.remove();
+    const a = document.createElement("a");
+    a.href = "/chat/room/" + roomId;
+    a.className = "sc-nav-row";
+    a.innerHTML =
+      '<div class="sc-room-icon">💬</div><div class="sc-nav-info"><span class="sc-nav-name">' +
+      esc(name) +
+      '</span><span class="sc-nav-sub">1人</span></div>';
+    list.prepend(a);
+  });
+
+  // ── メッセージ追加（リアルタイム受信用） ──────────────────
+  function appendMessage(msg) {
+    const container = document.getElementById("sc-messages");
+    const bottom = document.getElementById("sc-msg-bottom");
+    if (!container || !bottom) return;
+
+    // 不在着信メッセージの専用表示
+    if (msg.isMissedCall) {
+      const isMine2 = msg.fromUserId === MY_ID;
+      const dt2 = new Date(msg.createdAt);
+      const time2 = dt2.toLocaleTimeString("ja-JP", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const el2 = document.createElement("div");
+      el2.className = "sc-missed-call";
+      el2.dataset.id = msg._id;
+      el2.innerHTML =
+        '<span class="sc-missed-icon">📵</span>' +
+        (isMine2 ? "不在着信（発信）" : "不在着信") +
+        '<span class="sc-missed-time">' +
+        time2 +
+        "</span>";
+      container.insertBefore(el2, bottom);
+      scrollBottom(true);
+      return;
     }
 
-    // ── Socket イベント ───────────────────────────────────────
-    socket.on('new_message', (msg) => {
-        const relevantDM   = MODE === 'dm'   && msg.fromUserId !== MY_ID && (msg.toUserId === MY_ID || msg.fromUserId === TARGET_ID);
-        const relevantDMMy = MODE === 'dm'   && msg.fromUserId === MY_ID && msg.toUserId === TARGET_ID;
-        const relevantRoom = MODE === 'room' && msg.roomId === ROOM_ID;
-        if (!relevantDM && !relevantDMMy && !relevantRoom) return;
-        appendMessage(msg);
-        scrollBottom(true);
-        // DM受信→既読マーク
-        if (MODE === 'dm' && msg.fromUserId === TARGET_ID) {
-            markRead(msg._id);
-        }
-    });
-
-    socket.on('msg_edited', ({ _id, content }) => {
-        const el = document.querySelector('.sc-msg-text[data-mid="' + _id + '"]');
-        if (el) {
-            el.textContent = content;
-            // 編集済みバッジ追加
-            if (!el.nextSibling || !el.nextSibling.classList || !el.nextSibling.classList.contains('sc-edited')) {
-                const badge = document.createElement('span');
-                badge.className = 'sc-edited';
-                badge.textContent = '（編集済み）';
-                el.parentNode.insertBefore(badge, el.nextSibling);
-            }
-        }
-    });
-
-    socket.on('msg_deleted', ({ _id }) => {
-        const el = document.querySelector('.sc-msg[data-id="' + _id + '"],.sc-msg-cont[data-id="' + _id + '"]');
-        if (el) {
-            el.innerHTML = '<span class="sc-del-icon">🗑</span><span class="sc-del-text">このメッセージは削除されました</span>';
-            el.className = 'sc-msg sc-msg-del';
-        }
-    });
-
-    socket.on('chat_cleared', ({ fromUserId, toUserId, roomId, adminClear }) => {
-        const isRoom = MODE === 'room' && roomId && roomId === ROOM_ID;
-        const isDM   = MODE === 'dm'   && fromUserId === MY_ID && toUserId === TARGET_ID;
-        const isAdmin = adminClear && (
-            (MODE === 'dm') ||
-            (MODE === 'room' && roomId === ROOM_ID)
-        );
-        if (!isDM && !isRoom && !isAdmin) return;
-        const container = document.getElementById('sc-messages');
-        if (!container) return;
-        container.innerHTML = '<div class="sc-no-msg" style="padding:2rem;text-align:center;color:#aaa;">チャット履歴がクリアされました</div>';
-    });
-
-    socket.on('msg_reaction', ({ _id, reactions }) => {
-        const wrap = document.querySelector('.sc-reactions[data-mid="' + _id + '"]');
-        if (!wrap) return;
-        wrap.innerHTML = reactions.filter(r => r.count > 0).map(r =>
-            '<button class="sc-react-chip' + (r.mine ? ' mine' : '') + '" data-emoji="' + r.emoji +
-            '" onclick="chatApp.toggleReact(\'' + _id + '\',\'' + r.emoji + '\',this)">' +
-            r.emoji + ' <span class="sc-react-n">' + r.count + '</span></button>'
-        ).join('');
-    });
-
-    socket.on('read_receipt', ({ msgId, count }) => {
-        const badge = document.querySelector('.sc-read[data-read="' + msgId + '"]');
-        if (!badge) return;
-        if (count !== undefined) {
-            // グループ
-            badge.textContent = count > 0 ? '既読 ' + count : '';
-            badge.className   = 'sc-read' + (count > 0 ? ' read' : ' unread');
-        } else {
-            // DM
-            badge.textContent = '✓✓ 既読';
-            badge.className   = 'sc-read read';
-        }
-    });
-
-    socket.on('typing', ({ fromUserId, toUserId, roomId }) => {
-        const relevant = (MODE === 'dm'   && fromUserId === TARGET_ID && toUserId === MY_ID) ||
-                         (MODE === 'room' && roomId === ROOM_ID && fromUserId !== MY_ID);
-        if (!relevant) return;
-        const name = getUserName(fromUserId);
-        const bar  = document.getElementById('sc-typing');
-        if (bar) { bar.textContent = (name || '相手') + ' が入力中...'; }
-        clearTimeout(typingTimer);
-        typingTimer = setTimeout(() => { if (bar) bar.textContent = ''; }, 3000);
-    });
-
-    socket.on('stop_typing', ({ fromUserId }) => {
-        if (fromUserId === TARGET_ID || (MODE === 'room' && fromUserId !== MY_ID)) {
-            const bar = document.getElementById('sc-typing');
-            if (bar) bar.textContent = '';
-        }
-    });
-
-    socket.on('status_change', ({ userId, status }) => {
-        updatePips(userId, status);
-        if (userId === TARGET_ID) {
-            const lbl = document.getElementById('target-sub');
-            if (lbl) {
-                const old = lbl.textContent;
-                const dept = old.includes('·') ? ' · ' + old.split('·')[1].trim() : '';
-                lbl.textContent = { online:'オンライン', break:'休憩中', offline:'オフライン' }[status] + dept;
-            }
-        }
-    });
-
-    socket.on('room_created', ({ roomId, name }) => {
-        // サイドバーに新ルーム追加（リロードなしで反映）
-        const list = document.getElementById('sc-room-list');
-        if (!list) return;
-        const empty = list.querySelector('.sc-empty-row');
-        if (empty) empty.remove();
-        const a = document.createElement('a');
-        a.href = '/chat/room/' + roomId;
-        a.className = 'sc-nav-row';
-        a.innerHTML = '<div class="sc-room-icon">💬</div><div class="sc-nav-info"><span class="sc-nav-name">' + esc(name) + '</span><span class="sc-nav-sub">1人</span></div>';
-        list.prepend(a);
-    });
-
-    // ── メッセージ追加（リアルタイム受信用） ──────────────────
-    function appendMessage(msg) {
-        const container = document.getElementById('sc-messages');
-        const bottom    = document.getElementById('sc-msg-bottom');
-        if (!container || !bottom) return;
-
-        // 不在着信メッセージの専用表示
-        if (msg.isMissedCall) {
-            const isMine2 = msg.fromUserId === MY_ID;
-            const dt2     = new Date(msg.createdAt);
-            const time2   = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-            const el2 = document.createElement('div');
-            el2.className = 'sc-missed-call';
-            el2.dataset.id = msg._id;
-            el2.innerHTML = '<span class="sc-missed-icon">📵</span>'
-                + (isMine2 ? '不在着信（発信）' : '不在着信')
-                + '<span class="sc-missed-time">' + time2 + '</span>';
-            container.insertBefore(el2, bottom);
-            scrollBottom(true);
-            return;
-        }
-
-        // 通話履歴メッセージの専用表示
-        if (msg.isCallHistory) {
-            const dt2  = new Date(msg.createdAt);
-            const time2 = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-            const mins = Math.floor((msg.callDuration || 0) / 60);
-            const secs = (msg.callDuration || 0) % 60;
-            const durStr = mins > 0 ? mins + '分' + secs + '秒' : secs + '秒';
-            const el2 = document.createElement('div');
-            el2.className = 'sc-call-history';
-            el2.dataset.id = msg._id;
-            el2.innerHTML = '<span>📞</span> 通話 — ' + durStr
-                + '<span class="sc-missed-time">' + time2 + '</span>';
-            container.insertBefore(el2, bottom);
-            scrollBottom(true);
-            return;
-        }
-
-        const isMine     = msg.fromUserId === MY_ID;
-        const senderName = isMine ? MY_NAME : (msg.senderName || TARGET_NAME || 'ユーザー');
-        const initial    = (senderName || '?').charAt(0).toUpperCase();
-        const colorIdx   = isMine ? 0 : (MODE === 'room' ? (([...String(msg.fromUserId)].reduce((a, c) => a + c.charCodeAt(0), 0) % 5) + 1) : 1);
-        const dt         = new Date(msg.createdAt);
-        const timeStr    = dt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-
-        const replyBlock = msg.replyPreview
-            ? '<div class="sc-reply-quote"><div class="sc-reply-stripe"></div><span>' + esc(msg.replyPreview.slice(0, 60)) + '…</span></div>' : '';
-        const attachHtml = buildAttachHtml(msg.attachments || []);
-        const readBadge  = isMine
-            ? '<span class="sc-read unread" data-read="' + msg._id + '">' + (MODE === 'dm' ? '✓ 未読' : '') + '</span>'
-            : '';
-        const toolbar = buildToolbar(msg._id, isMine, msg.content || '');
-
-        const el = document.createElement('div');
-        el.dataset.id = msg._id;
-
-        // 継続チェック（簡易：直前のメッセージと同じ送信者か）
-        const lastMsg = container.querySelector('.sc-msg[data-id]:not(.sc-msg-del):last-of-type,.sc-msg-cont[data-id]:last-of-type');
-        let isCont = false;
-        if (lastMsg) {
-            const lastFrom = lastMsg.querySelector('.sc-sender');
-            if (!lastFrom) isCont = true; // sc-msg-cont
-            else if (lastFrom.textContent === senderName) isCont = true;
-        }
-
-        if (isCont) {
-            el.className = 'sc-msg sc-msg-cont' + (isMine ? ' sc-msg-mine' : '');
-            el.innerHTML = toolbar + '<div class="sc-ts-hover">' + timeStr + '</div>'
-                + '<div class="sc-body-wrap2">' + replyBlock
-                + '<div class="sc-msg-text" data-mid="' + msg._id + '">' + esc(msg.content || '') + '</div>'
-                + attachHtml + '<div class="sc-reactions" data-mid="' + msg._id + '"></div>' + readBadge + '</div>';
-        } else {
-            el.className = 'sc-msg' + (isMine ? ' sc-msg-mine' : '');
-            el.innerHTML = toolbar
-                + '<div class="sc-av sc-av-c' + colorIdx + '">' + initial + '</div>'
-                + '<div class="sc-msg-right"><div class="sc-msg-meta"><span class="sc-sender">' + esc(senderName) + '</span><span class="sc-ts">' + timeStr + '</span></div>'
-                + replyBlock + '<div class="sc-msg-text" data-mid="' + msg._id + '">' + esc(msg.content || '') + '</div>'
-                + attachHtml + '<div class="sc-reactions" data-mid="' + msg._id + '"></div>' + readBadge + '</div>';
-        }
-        container.insertBefore(el, bottom);
+    // 通話履歴メッセージの専用表示
+    if (msg.isCallHistory) {
+      const dt2 = new Date(msg.createdAt);
+      const time2 = dt2.toLocaleTimeString("ja-JP", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const mins = Math.floor((msg.callDuration || 0) / 60);
+      const secs = (msg.callDuration || 0) % 60;
+      const durStr = mins > 0 ? mins + "分" + secs + "秒" : secs + "秒";
+      const el2 = document.createElement("div");
+      el2.className = "sc-call-history";
+      el2.dataset.id = msg._id;
+      el2.innerHTML =
+        "<span>📞</span> 通話 — " +
+        durStr +
+        '<span class="sc-missed-time">' +
+        time2 +
+        "</span>";
+      container.insertBefore(el2, bottom);
+      scrollBottom(true);
+      return;
     }
 
-    function buildToolbar(msgId, isMine, content) {
-        const safe = esc(content).replace(/'/g, '\\x27').slice(0, 60);
-        return '<div class="sc-toolbar">'
-            + '<button class="sc-tb" onclick="chatApp.startReply(\'' + msgId + '\',\'' + safe + '\')" title="返信">↩</button>'
-            + '<button class="sc-tb sc-emoji-trig" data-mid="' + msgId + '" title="リアクション">😊</button>'
-            + (isMine ? '<button class="sc-tb" onclick="chatApp.startEdit(\'' + msgId + '\')" title="編集">✏️</button>' : '')
-            + (isMine ? '<button class="sc-tb sc-tb-del" onclick="chatApp.deleteMsg(\'' + msgId + '\')" title="削除">🗑</button>' : '')
-            + '</div>';
+    const isMine = msg.fromUserId === MY_ID;
+    const senderName = isMine
+      ? MY_NAME
+      : msg.senderName || TARGET_NAME || "ユーザー";
+    const initial = (senderName || "?").charAt(0).toUpperCase();
+    const colorIdx = isMine
+      ? 0
+      : MODE === "room"
+        ? ([...String(msg.fromUserId)].reduce(
+            (a, c) => a + c.charCodeAt(0),
+            0,
+          ) %
+            5) +
+          1
+        : 1;
+    const dt = new Date(msg.createdAt);
+    const timeStr = dt.toLocaleTimeString("ja-JP", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const replyBlock = msg.replyPreview
+      ? '<div class="sc-reply-quote"><div class="sc-reply-stripe"></div><span>' +
+        esc(msg.replyPreview.slice(0, 60)) +
+        "…</span></div>"
+      : "";
+    const attachHtml = buildAttachHtml(msg.attachments || []);
+    const readBadge = isMine
+      ? '<span class="sc-read unread" data-read="' +
+        msg._id +
+        '">' +
+        (MODE === "dm" ? "✓ 未読" : "") +
+        "</span>"
+      : "";
+    const toolbar = buildToolbar(msg._id, isMine, msg.content || "");
+
+    const el = document.createElement("div");
+    el.dataset.id = msg._id;
+
+    // 継続チェック（簡易：直前のメッセージと同じ送信者か）
+    const lastMsg = container.querySelector(
+      ".sc-msg[data-id]:not(.sc-msg-del):last-of-type,.sc-msg-cont[data-id]:last-of-type",
+    );
+    let isCont = false;
+    if (lastMsg) {
+      const lastFrom = lastMsg.querySelector(".sc-sender");
+      if (!lastFrom)
+        isCont = true; // sc-msg-cont
+      else if (lastFrom.textContent === senderName) isCont = true;
     }
 
-    function buildAttachHtml(attachments) {
-        if (!attachments.length) return '';
-        return '<div class="sc-atts">' + attachments.map(a => {
-            if (/^image\//.test(a.mimeType || '')) {
-                return '<a href="' + a.url + '" target="_blank" class="sc-att-img-wrap"><img src="' + a.url + '" class="sc-att-img" loading="lazy"></a>';
-            }
-            // 動画ファイルはインライン再生プレイヤーで表示
-            if (/^video\//.test(a.mimeType || '') || /\.webm$/i.test(a.url || '')) {
-                const sz = a.size ? (a.size > 1048576 ? (a.size / 1048576).toFixed(1) + 'MB' : Math.ceil(a.size / 1024) + 'KB') : '';
-                return '<div class="sc-att-video">'
-                    + '<video src="' + a.url + '" controls preload="metadata" class="sc-att-video-player"></video>'
-                    + '<div class="sc-att-video-info"><span class="sc-att-icon">🎬</span>'
-                    + '<div><div class="sc-att-name">' + esc(a.name) + '</div><div class="sc-att-size">' + sz + '</div></div>'
-                    + '<a href="' + a.url + '" download="' + esc(a.name) + '" class="sc-att-dl-btn" title="ダウンロード">⬇</a>'
-                    + '</div></div>';
-            }
-            const icon = a.mimeType === 'application/pdf' ? '📄' : '📎';
-            const sz   = a.size ? (a.size > 1048576 ? (a.size / 1048576).toFixed(1) + 'MB' : Math.ceil(a.size / 1024) + 'KB') : '';
-            return '<a href="' + a.url + '" target="_blank" download="' + esc(a.name) + '" class="sc-att-file"><span class="sc-att-icon">' + icon + '</span><div><div class="sc-att-name">' + esc(a.name) + '</div><div class="sc-att-size">' + sz + '</div></div></a>';
-        }).join('') + '</div>';
+    if (isCont) {
+      el.className = "sc-msg sc-msg-cont" + (isMine ? " sc-msg-mine" : "");
+      el.innerHTML =
+        toolbar +
+        '<div class="sc-ts-hover">' +
+        timeStr +
+        "</div>" +
+        '<div class="sc-body-wrap2">' +
+        replyBlock +
+        '<div class="sc-msg-text" data-mid="' +
+        msg._id +
+        '">' +
+        esc(msg.content || "") +
+        "</div>" +
+        attachHtml +
+        '<div class="sc-reactions" data-mid="' +
+        msg._id +
+        '"></div>' +
+        readBadge +
+        "</div>";
+    } else {
+      el.className = "sc-msg" + (isMine ? " sc-msg-mine" : "");
+      el.innerHTML =
+        toolbar +
+        '<div class="sc-av sc-av-c' +
+        colorIdx +
+        '">' +
+        initial +
+        "</div>" +
+        '<div class="sc-msg-right"><div class="sc-msg-meta"><span class="sc-sender">' +
+        esc(senderName) +
+        '</span><span class="sc-ts">' +
+        timeStr +
+        "</span></div>" +
+        replyBlock +
+        '<div class="sc-msg-text" data-mid="' +
+        msg._id +
+        '">' +
+        esc(msg.content || "") +
+        "</div>" +
+        attachHtml +
+        '<div class="sc-reactions" data-mid="' +
+        msg._id +
+        '"></div>' +
+        readBadge +
+        "</div>";
+    }
+    container.insertBefore(el, bottom);
+  }
+
+  function buildToolbar(msgId, isMine, content) {
+    const safe = esc(content).replace(/'/g, "\\x27").slice(0, 60);
+    return (
+      '<div class="sc-toolbar">' +
+      '<button class="sc-tb" onclick="chatApp.startReply(\'' +
+      msgId +
+      "','" +
+      safe +
+      '\')" title="返信">↩</button>' +
+      '<button class="sc-tb sc-emoji-trig" data-mid="' +
+      msgId +
+      '" title="リアクション">😊</button>' +
+      (isMine
+        ? '<button class="sc-tb" onclick="chatApp.startEdit(\'' +
+          msgId +
+          '\')" title="編集">✏️</button>'
+        : "") +
+      (isMine
+        ? '<button class="sc-tb sc-tb-del" onclick="chatApp.deleteMsg(\'' +
+          msgId +
+          '\')" title="削除">🗑</button>'
+        : "") +
+      "</div>"
+    );
+  }
+
+  function buildAttachHtml(attachments) {
+    if (!attachments.length) return "";
+    return (
+      '<div class="sc-atts">' +
+      attachments
+        .map((a) => {
+          if (/^image\//.test(a.mimeType || "")) {
+            return (
+              '<a href="' +
+              a.url +
+              '" target="_blank" class="sc-att-img-wrap"><img src="' +
+              a.url +
+              '" class="sc-att-img" loading="lazy"></a>'
+            );
+          }
+          // 動画ファイルはインライン再生プレイヤーで表示
+          if (
+            /^video\//.test(a.mimeType || "") ||
+            /\.webm$/i.test(a.url || "")
+          ) {
+            const sz = a.size
+              ? a.size > 1048576
+                ? (a.size / 1048576).toFixed(1) + "MB"
+                : Math.ceil(a.size / 1024) + "KB"
+              : "";
+            return (
+              '<div class="sc-att-video">' +
+              '<video src="' +
+              a.url +
+              '" controls preload="metadata" class="sc-att-video-player"></video>' +
+              '<div class="sc-att-video-info"><span class="sc-att-icon">🎬</span>' +
+              '<div><div class="sc-att-name">' +
+              esc(a.name) +
+              '</div><div class="sc-att-size">' +
+              sz +
+              "</div></div>" +
+              '<a href="' +
+              a.url +
+              '" download="' +
+              esc(a.name) +
+              '" class="sc-att-dl-btn" title="ダウンロード">⬇</a>' +
+              "</div></div>"
+            );
+          }
+          const icon = a.mimeType === "application/pdf" ? "📄" : "📎";
+          const sz = a.size
+            ? a.size > 1048576
+              ? (a.size / 1048576).toFixed(1) + "MB"
+              : Math.ceil(a.size / 1024) + "KB"
+            : "";
+          return (
+            '<a href="' +
+            a.url +
+            '" target="_blank" download="' +
+            esc(a.name) +
+            '" class="sc-att-file"><span class="sc-att-icon">' +
+            icon +
+            '</span><div><div class="sc-att-name">' +
+            esc(a.name) +
+            '</div><div class="sc-att-size">' +
+            sz +
+            "</div></div></a>"
+          );
+        })
+        .join("") +
+      "</div>"
+    );
+  }
+
+  // ── メッセージ送信 ────────────────────────────────────────
+  async function send() {
+    const input = document.getElementById("sc-msg-input");
+    const sendBtn = document.getElementById("sc-send-btn");
+    if (!input) return;
+    const content = input.value.trim();
+    if (!content && !pendingFiles.length) return;
+
+    input.value = "";
+    input.style.height = "auto";
+    if (sendBtn) sendBtn.disabled = true;
+
+    // ファイルアップロード
+    let attachments = [];
+    if (pendingFiles.length) {
+      const fd = new FormData();
+      pendingFiles.forEach((pf) => fd.append("files", pf.file));
+      try {
+        const r = await fetch("/api/chat/upload", { method: "POST", body: fd });
+        const j = await r.json();
+        if (j.ok) attachments = j.files;
+      } catch (e) {
+        console.error("Upload error", e);
+      }
+      pendingFiles = [];
+      const preview = document.getElementById("sc-file-preview");
+      if (preview) preview.innerHTML = "";
     }
 
-    // ── メッセージ送信 ────────────────────────────────────────
-    async function send() {
-        const input    = document.getElementById('sc-msg-input');
-        const sendBtn  = document.getElementById('sc-send-btn');
-        if (!input) return;
-        const content  = input.value.trim();
-        if (!content && !pendingFiles.length) return;
+    const body = {
+      content,
+      attachments,
+      replyToId: replyToId || undefined,
+    };
+    if (MODE === "dm") body.toUserId = TARGET_ID;
+    if (MODE === "room") body.roomId = ROOM_ID;
 
-        input.value    = '';
-        input.style.height = 'auto';
-        if (sendBtn) sendBtn.disabled = true;
+    cancelReply();
+    socket.emit("stop_typing", {
+      fromUserId: MY_ID,
+      toUserId: TARGET_ID,
+      roomId: ROOM_ID,
+    });
 
-        // ファイルアップロード
-        let attachments = [];
-        if (pendingFiles.length) {
-            const fd = new FormData();
-            pendingFiles.forEach(pf => fd.append('files', pf.file));
-            try {
-                const r = await fetch('/api/chat/upload', { method: 'POST', body: fd });
-                const j = await r.json();
-                if (j.ok) attachments = j.files;
-            } catch (e) { console.error('Upload error', e); }
-            pendingFiles = [];
-            const preview = document.getElementById('sc-file-preview');
-            if (preview) preview.innerHTML = '';
-        }
+    await fetch("/api/chat/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    // 送信音
+    if (window.CallSounds) CallSounds.playSend();
+  }
 
-        const body = {
-            content,
-            attachments,
-            replyToId: replyToId || undefined,
-        };
-        if (MODE === 'dm') body.toUserId = TARGET_ID;
-        if (MODE === 'room') body.roomId = ROOM_ID;
+  // ── 既読マーク ────────────────────────────────────────────
+  function markRead(msgId) {
+    fetch("/api/chat/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ msgId }),
+    }).catch(() => {});
+  }
 
-        cancelReply();
-        socket.emit('stop_typing', { fromUserId: MY_ID, toUserId: TARGET_ID, roomId: ROOM_ID });
+  // ページ表示時に未読メッセージを既読化（最後のメッセージ）
+  if (MODE !== "home") {
+    const msgs = document.querySelectorAll(
+      ".sc-msg[data-id],.sc-msg-cont[data-id]",
+    );
+    if (msgs.length) {
+      const lastId = msgs[msgs.length - 1].dataset.id;
+      if (lastId) markRead(lastId);
+    }
+  }
 
-        await fetch('/api/chat/send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
+  // ── 入力イベント ──────────────────────────────────────────
+  function onInput() {
+    const ta = document.getElementById("sc-msg-input");
+    const btn = document.getElementById("sc-send-btn");
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = Math.min(ta.scrollHeight, 160) + "px";
+    if (btn) btn.disabled = !(ta.value.trim() || pendingFiles.length);
+    // タイピング通知
+    if (MODE === "dm" || MODE === "room") {
+      socket.emit("typing", {
+        fromUserId: MY_ID,
+        toUserId: TARGET_ID,
+        roomId: ROOM_ID,
+      });
+    }
+  }
+
+  // ── 返信 ──────────────────────────────────────────────────
+  function startReply(msgId, preview) {
+    replyToId = msgId;
+    const bar = document.getElementById("sc-reply-bar");
+    const text = document.getElementById("sc-reply-text");
+    if (bar) bar.style.display = "";
+    if (text) text.textContent = preview + "…";
+    const ta = document.getElementById("sc-msg-input");
+    if (ta) ta.focus();
+  }
+
+  function cancelReply() {
+    replyToId = null;
+    const bar = document.getElementById("sc-reply-bar");
+    if (bar) bar.style.display = "none";
+  }
+
+  // ── メッセージ編集 ────────────────────────────────────────
+  function startEdit(msgId) {
+    // クリックイベントのバブリングで即キャンセルされないよう遅延実行
+    setTimeout(() => {
+      const el = document.querySelector(
+        '.sc-msg-text[data-mid="' + msgId + '"]',
+      );
+      if (!el) return;
+      if (editingMsgId) finishEdit(false); // 前の編集をキャンセル
+      editingMsgId = msgId;
+      const original = el.textContent;
+      el.contentEditable = "true";
+      el.dataset.original = original;
+      el.focus();
+      // カーソルを末尾に
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+
+      // Enter で確定、Escape でキャンセル
+      el.addEventListener("keydown", editKeyHandler);
+    }, 0);
+  }
+
+  function editKeyHandler(e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      finishEdit(true);
+    }
+    if (e.key === "Escape") {
+      finishEdit(false);
+    }
+  }
+
+  function finishEdit(save) {
+    if (!editingMsgId) return;
+    const el = document.querySelector(
+      '.sc-msg-text[data-mid="' + editingMsgId + '"]',
+    );
+    if (!el) {
+      editingMsgId = null;
+      return;
+    }
+    el.removeEventListener("keydown", editKeyHandler);
+    el.contentEditable = "false";
+    if (save) {
+      const newContent = el.textContent.trim();
+      if (newContent && newContent !== el.dataset.original) {
+        fetch("/api/chat/msg/" + editingMsgId, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: newContent }),
         });
+      } else {
+        el.textContent = el.dataset.original;
+      }
+    } else {
+      el.textContent = el.dataset.original;
     }
+    editingMsgId = null;
+  }
 
-    // ── 既読マーク ────────────────────────────────────────────
-    function markRead(msgId) {
-        fetch('/api/chat/read', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ msgId }),
-        }).catch(() => {});
+  // ── メッセージ削除 ────────────────────────────────────────
+  function deleteMsg(msgId) {
+    if (!confirm("このメッセージを削除しますか？")) return;
+    fetch("/api/chat/msg/" + msgId, { method: "DELETE" });
+  }
+
+  // ── リアクション ──────────────────────────────────────────
+  function toggleReact(msgId, emoji) {
+    fetch("/api/chat/react", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ msgId, emoji }),
+    });
+  }
+
+  // ── 絵文字ピッカー ────────────────────────────────────────
+  function _positionPicker(picker, trigRect) {
+    const PICKER_W = 300;
+    const PICKER_H = 360;
+    // 横位置: ボタンの左に合わせるが右端にはみ出る場合は右揃え
+    let left = trigRect.left;
+    if (left + PICKER_W > window.innerWidth - 8) {
+      left = trigRect.right - PICKER_W;
     }
+    if (left < 8) left = 8;
+    // 縦位置: ボタンの上に表示、上にはみ出る場合は下に
+    let bottom = window.innerHeight - trigRect.top + 6;
+    if (trigRect.top - PICKER_H < 8) {
+      // 上に収まらない場合はボタンの下に表示
+      picker.style.bottom = "auto";
+      picker.style.top = trigRect.bottom + 6 + "px";
+    } else {
+      picker.style.top = "auto";
+      picker.style.bottom = bottom + "px";
+    }
+    picker.style.left = left + "px";
+    picker.style.right = "auto";
+  }
 
-    // ページ表示時に未読メッセージを既読化（最後のメッセージ）
-    if (MODE !== 'home') {
-        const msgs = document.querySelectorAll('.sc-msg[data-id],.sc-msg-cont[data-id]');
-        if (msgs.length) {
-            const lastId = msgs[msgs.length - 1].dataset.id;
-            if (lastId) markRead(lastId);
+  function toggleInputEmoji() {
+    emojiForMsgId = null;
+    const picker = document.getElementById("sc-emoji-picker");
+    if (!picker) return;
+    if (picker.style.display === "none" || !picker.style.display) {
+      const btn = document.querySelector('.sc-tool-btn[title="絵文字を挿入"]');
+      if (btn) _positionPicker(picker, btn.getBoundingClientRect());
+      picker.style.display = "flex";
+    } else {
+      picker.style.display = "none";
+    }
+  }
+
+  function switchEmojiTab(catId, btn) {
+    const picker = document.getElementById("sc-emoji-picker");
+    if (!picker) return;
+    picker
+      .querySelectorAll(".sc-ep-tab")
+      .forEach((t) => t.classList.remove("active"));
+    picker
+      .querySelectorAll(".sc-ep-panel")
+      .forEach((p) => p.classList.add("sc-ep-hidden"));
+    if (btn) btn.classList.add("active");
+    const panel = picker.querySelector('[data-panel="' + catId + '"]');
+    if (panel) panel.classList.remove("sc-ep-hidden");
+  }
+
+  function pickEmoji(emoji) {
+    const picker = document.getElementById("sc-emoji-picker");
+    if (picker) picker.style.display = "none";
+    if (emojiForMsgId) {
+      toggleReact(emojiForMsgId, emoji);
+      emojiForMsgId = null;
+    } else {
+      const ta = document.getElementById("sc-msg-input");
+      if (ta) {
+        const pos = ta.selectionStart;
+        ta.value = ta.value.slice(0, pos) + emoji + ta.value.slice(pos);
+        ta.selectionStart = ta.selectionEnd = pos + emoji.length;
+        document.getElementById("sc-send-btn").disabled = false;
+        ta.focus();
+      }
+    }
+  }
+
+  // メッセージホバー絵文字ボタン
+  document.addEventListener("click", (e) => {
+    const trig = e.target.closest(".sc-emoji-trig");
+    if (trig) {
+      emojiForMsgId = trig.dataset.mid;
+      const picker = document.getElementById("sc-emoji-picker");
+      if (!picker) return;
+      _positionPicker(picker, trig.getBoundingClientRect());
+      picker.style.display = "flex";
+      return;
+    }
+    // ピッカー外クリックで閉じる
+    if (
+      !e.target.closest("#sc-emoji-picker") &&
+      !e.target.closest('.sc-tool-btn[title="絵文字を挿入"]')
+    ) {
+      const picker = document.getElementById("sc-emoji-picker");
+      if (picker) picker.style.display = "none";
+    }
+    // 編集中に外をクリックしたら確定
+    if (
+      editingMsgId &&
+      !e.target.closest('[contenteditable="true"]') &&
+      !e.target.closest(".sc-toolbar")
+    ) {
+      finishEdit(true);
+    }
+  });
+
+  // ── ファイル選択・ドロップ ────────────────────────────────
+  function handleFileSelect(input) {
+    addFiles(Array.from(input.files));
+    input.value = "";
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    const box = document.getElementById("sc-input-box");
+    if (box) box.classList.remove("drag-over");
+    addFiles(Array.from(e.dataTransfer.files));
+  }
+
+  function addFiles(files) {
+    files.slice(0, 5 - pendingFiles.length).forEach((file) => {
+      const entry = { file, name: file.name };
+      pendingFiles.push(entry);
+      renderFilePreview(entry);
+    });
+    const btn = document.getElementById("sc-send-btn");
+    if (btn) btn.disabled = false;
+  }
+
+  function renderFilePreview(entry) {
+    const area = document.getElementById("sc-file-preview");
+    if (!area) return;
+    const wrap = document.createElement("div");
+    wrap.className = "sc-fp";
+    const rm =
+      '<button class="sc-fp-rm" onclick="chatApp.removeFile(\'' +
+      entry.name +
+      "')\">×</button>";
+    if (entry.file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        wrap.innerHTML =
+          '<img src="' +
+          ev.target.result +
+          '" alt="' +
+          esc(entry.name) +
+          '">' +
+          rm;
+      };
+      reader.readAsDataURL(entry.file);
+    } else {
+      wrap.innerHTML =
+        '<div class="sc-fp-card">📎 ' + esc(entry.name) + "</div>" + rm;
+    }
+    wrap.dataset.fname = entry.name;
+    area.appendChild(wrap);
+  }
+
+  function removeFile(name) {
+    pendingFiles = pendingFiles.filter((f) => f.name !== name);
+    const area = document.getElementById("sc-file-preview");
+    if (!area) return;
+    const el = area.querySelector('[data-fname="' + CSS.escape(name) + '"]');
+    if (el) el.remove();
+    const btn = document.getElementById("sc-send-btn");
+    const ta = document.getElementById("sc-msg-input");
+    if (btn) btn.disabled = !(pendingFiles.length || (ta && ta.value.trim()));
+  }
+
+  // ── 検索 ──────────────────────────────────────────────────
+  function filterMessages(q) {
+    const lower = (q || "").toLowerCase();
+    document
+      .querySelectorAll(".sc-msg[data-id],.sc-msg-cont[data-id]")
+      .forEach((el) => {
+        if (!lower) {
+          el.style.display = "";
+          return;
         }
-    }
+        const body = el.querySelector(".sc-msg-text");
+        el.style.display =
+          body && body.textContent.toLowerCase().includes(lower) ? "" : "none";
+      });
+  }
 
-    // ── 入力イベント ──────────────────────────────────────────
-    function onInput() {
-        const ta = document.getElementById('sc-msg-input');
-        const btn = document.getElementById('sc-send-btn');
-        if (!ta) return;
-        ta.style.height = 'auto';
-        ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
-        if (btn) btn.disabled = !(ta.value.trim() || pendingFiles.length);
-        // タイピング通知
-        if (MODE === 'dm' || MODE === 'room') {
-            socket.emit('typing', { fromUserId: MY_ID, toUserId: TARGET_ID, roomId: ROOM_ID });
+  async function clearChat() {
+    if (!MODE) return;
+    const nameEl = document.getElementById("target-name");
+    const label =
+      MODE === "room"
+        ? `グループ「${nameEl ? nameEl.textContent : "このグループ"}」`
+        : `${nameEl ? nameEl.textContent : "この相手"}さんとの`;
+    if (
+      !confirm(
+        `${label}チャット履歴をすべて削除しますか？\nこの操作は元に戻せません。`,
+      )
+    )
+      return;
+    const body =
+      MODE === "room" ? { roomId: ROOM_ID } : { toUserId: TARGET_ID };
+    const res = await fetch("/api/chat/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert("削除失敗: " + (err.error || res.status));
+    }
+  }
+
+  // ── サイドバー検索 ────────────────────────────────────────
+  const SC_CLS = {
+    online: "pip-online",
+    break: "pip-break",
+    offline: "pip-offline",
+  };
+
+  function filterSidebar(q) {
+    const dmList = document.getElementById("sc-dm-list");
+    const searchList = document.getElementById("sc-search-list");
+    q = (q || "").trim().toLowerCase();
+    if (!q) {
+      if (dmList) dmList.style.display = "";
+      if (searchList) searchList.style.display = "none";
+      return;
+    }
+    const filtered = ALL_USERS.filter((u) => {
+      const name = (u.emp ? u.emp.name : u.username) || "";
+      const dept = (u.emp ? u.emp.department : "") || "";
+      return (
+        name.toLowerCase().includes(q) ||
+        dept.toLowerCase().includes(q) ||
+        u.username.toLowerCase().includes(q)
+      );
+    });
+    if (searchList) {
+      searchList.innerHTML = filtered.length
+        ? filtered
+            .map((u) => {
+              const name = u.emp ? u.emp.name : u.username;
+              const dept = u.emp ? u.emp.department || "" : "";
+              const scls = SC_CLS[u.chatStatus || "offline"];
+              return (
+                '<a href="/chat/dm/' +
+                u._id +
+                '" class="sc-nav-row">' +
+                '<div class="sc-av-wrap sm"><div class="sc-av sm">' +
+                name.charAt(0).toUpperCase() +
+                "</div>" +
+                '<span class="sc-pip ' +
+                scls +
+                '" data-uid="' +
+                u._id +
+                '"></span></div>' +
+                '<div class="sc-nav-info"><span class="sc-nav-name">' +
+                esc(name) +
+                "</span>" +
+                (dept
+                  ? '<span class="sc-nav-sub">' + esc(dept) + "</span>"
+                  : "") +
+                "</div></a>"
+              );
+            })
+            .join("")
+        : '<div class="sc-empty-row">見つかりません</div>';
+      searchList.style.display = "";
+    }
+    if (dmList) dmList.style.display = "none";
+  }
+
+  // ── ステータス ────────────────────────────────────────────
+  function setStatus(status, btn) {
+    fetch("/api/chat/status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    })
+      .then((r) => r.json())
+      .then(() => {
+        curAutoStatus = status; // 手動変更を自動タイマーに反映
+        document
+          .querySelectorAll(".sc-st-btn")
+          .forEach((b) => b.classList.remove("active"));
+        if (btn) btn.classList.add("active");
+        const pip = document.getElementById("my-pip");
+        if (pip) pip.className = "sc-pip " + SC_CLS[status];
+      });
+  }
+
+  function updatePips(userId, status) {
+    document
+      .querySelectorAll('[data-uid="' + userId + '"].sc-pip')
+      .forEach((el) => {
+        el.className = "sc-pip " + (SC_CLS[status] || "pip-offline");
+      });
+  }
+
+  // ── 自動ステータス管理 ────────────────────────────────────
+  (function setupAutoStatus() {
+    let manualOverride = false; // 手動設定中はタイマーで上書きしない
+
+    function applyAuto(s) {
+      if (curAutoStatus === s) return;
+      curAutoStatus = s;
+      fetch("/api/chat/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: s }),
+      }).catch(() => {});
+      document
+        .querySelectorAll(".sc-st-btn")
+        .forEach((b) => b.classList.remove("active"));
+      const b = document.querySelector('.sc-st-btn[data-st="' + s + '"]');
+      if (b) b.classList.add("active");
+      const pip = document.getElementById("my-pip");
+      if (pip) pip.className = "sc-pip " + SC_CLS[s];
+    }
+    function resetTimer() {
+      clearTimeout(autoStatusTimer);
+      clearTimeout(autoBreakTimer);
+      applyAuto("online");
+      autoBreakTimer = setTimeout(() => {
+        applyAuto("break");
+        autoStatusTimer = setTimeout(() => applyAuto("offline"), 2 * 60000); // 休憩から2分後(合計5分)でオフライン
+      }, 3 * 60000); // 3分無操作で休憩中
+    }
+    [
+      "mousemove",
+      "mousedown",
+      "keydown",
+      "touchstart",
+      "scroll",
+      "click",
+    ].forEach((ev) =>
+      document.addEventListener(ev, resetTimer, { passive: true }),
+    );
+    resetTimer();
+    window.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        resetTimer(); // タブに戻ったらオンラインに
+      }
+    });
+    window.addEventListener("beforeunload", () =>
+      navigator.sendBeacon(
+        "/api/chat/status",
+        new Blob([JSON.stringify({ status: "offline" })], {
+          type: "application/json",
+        }),
+      ),
+    );
+  })();
+
+  // ── グループ作成 ──────────────────────────────────────────
+  function openCreateRoom() {
+    document.getElementById("room-name") &&
+      (document.getElementById("room-name").value = "");
+    document.getElementById("room-desc") &&
+      (document.getElementById("room-desc").value = "");
+    document.getElementById("room-icon") &&
+      (document.getElementById("room-icon").value = "💬");
+    document
+      .querySelectorAll('#sc-modal-user-list input[name="member"]')
+      .forEach((cb) => (cb.checked = false));
+    openModal("sc-modal-create");
+  }
+
+  async function createRoom() {
+    const name = (document.getElementById("room-name") || {}).value || "";
+    if (!name.trim()) {
+      alert("グループ名を入力してください");
+      return;
+    }
+    const desc = (document.getElementById("room-desc") || {}).value || "";
+    const icon = (document.getElementById("room-icon") || {}).value || "💬";
+    const memberIds = [
+      ...document.querySelectorAll(
+        '#sc-modal-user-list input[name="member"]:checked',
+      ),
+    ].map((cb) => cb.value);
+    const r = await fetch("/api/chat/room", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: name.trim(),
+        description: desc.trim(),
+        icon,
+        memberIds,
+      }),
+    });
+    const j = await r.json();
+    if (j.ok) {
+      closeModal("sc-modal-create");
+      location.href = "/chat/room/" + j.roomId;
+    } else alert("作成に失敗しました: " + (j.error || ""));
+  }
+
+  function filterModalUsers(q) {
+    q = (q || "").toLowerCase();
+    document.querySelectorAll(".sc-modal-user-row").forEach((row) => {
+      const name =
+        (row.querySelector(".sc-modal-uname") || {}).textContent || "";
+      row.style.display = !q || name.toLowerCase().includes(q) ? "" : "none";
+    });
+  }
+
+  // ── グループ設定 ──────────────────────────────────────────
+  function openRoomSettings() {
+    if (!ROOM_ID) return;
+    const nameEl = document.getElementById("room-edit-name");
+    const descEl = document.getElementById("room-edit-desc");
+    const iconEl = document.getElementById("room-edit-icon");
+    if (nameEl)
+      nameEl.value = document.querySelector(".sc-hd-name")
+        ? document.querySelector(".sc-hd-name").textContent
+        : "";
+    if (descEl) descEl.value = "";
+    if (iconEl) iconEl.value = "💬";
+    openModal("sc-modal-room-settings");
+  }
+
+  async function saveRoomSettings() {
+    if (!ROOM_ID) return;
+    const name = (document.getElementById("room-edit-name") || {}).value || "";
+    const desc = (document.getElementById("room-edit-desc") || {}).value || "";
+    const icon =
+      (document.getElementById("room-edit-icon") || {}).value || "💬";
+    const r = await fetch("/api/chat/room/" + ROOM_ID, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, description: desc, icon }),
+    });
+    const j = await r.json();
+    if (j.ok) {
+      closeModal("sc-modal-room-settings");
+      location.reload();
+    } else alert("保存に失敗しました");
+  }
+
+  // ── メンバーパネル ────────────────────────────────────────
+  function toggleMemberPanel() {
+    const panel = document.getElementById("sc-member-panel");
+    if (!panel) return;
+    panel.style.display = panel.style.display === "none" ? "" : "none";
+  }
+
+  async function kickMember(userId, name) {
+    if (!ROOM_ID) return;
+    if (!confirm(name + " をグループから除外しますか？")) return;
+    await fetch("/api/chat/room/" + ROOM_ID + "/members/" + userId, {
+      method: "DELETE",
+    });
+    location.reload();
+  }
+
+  function openAddMember() {
+    // 簡易実装：全ユーザーから選択
+    const selected = prompt(
+      "追加するユーザーIDをカンマ区切りで入力してください（管理者向け）:",
+    );
+    if (!selected) return;
+    const ids = selected
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    fetch("/api/chat/room/" + ROOM_ID + "/members", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userIds: ids }),
+    }).then(() => location.reload());
+  }
+
+  // ── モーダル ──────────────────────────────────────────────
+  function openModal(id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "flex";
+  }
+
+  function closeModal(id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  }
+
+  // ── ユーティリティ ────────────────────────────────────────
+  function esc(s) {
+    return String(s || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function getUserName(userId) {
+    if (userId === MY_ID) return MY_NAME;
+    const u = ALL_USERS.find((u) => u._id === userId);
+    if (!u) return null;
+    return u.emp ? u.emp.name : u.username;
+  }
+
+  function scrollBottom(smooth) {
+    const el = document.getElementById("sc-msg-bottom");
+    if (el) el.scrollIntoView({ behavior: smooth ? "smooth" : "instant" });
+  }
+
+  // ── 初期スクロール ────────────────────────────────────────
+  if (MODE !== "home") scrollBottom(false);
+
+  // --- WebRTC / call ─────────────────────────────────────────
+  // 変数
+  let localStream = null; // カメラ・マイク
+  let screenStream = null; // 画面共有ストリーム
+  let callPC = null; // RTCPeerConnection
+  let isMicOn = true;
+  let isCamOn = true;
+  let isRemoteCtrl = false; // 遠隔操作モード（自分が操作者）
+  let pendingOffer = null; // 着信時に保存する offer { fromUserId, sdp }
+  let callTimeoutTimer = null; // 発信側 30秒タイムアウトタイマー
+  let incomingTimer = null; // 着信側 30秒タイムアウトタイマー（無視された場合）
+  let callStartTime = null; // 通話開始時刻（ms）
+  let mediaRecorder = null; // 録画用 MediaRecorder
+  let recordChunks = []; // 録画データバッファ
+  let callTargetId = null; // 現在通話中の相手 userId（doHangup で参照）
+  let pendingCandidates = []; // setRemoteDescription 前に届いた ICE キャンディデートのバッファ
+  let remoteScreenInfo = null; // 相手の画面情報 { screenW, screenH, windowX, windowY, viewportW, viewportH }
+
+  // ─ UI helpers ───────────────────────────────────────────────
+  function showCallOverlay(label) {
+    const ov = document.getElementById("call-overlay");
+    const tl = document.getElementById("call-target-name");
+    const sl = document.getElementById("call-status-label");
+    if (ov) ov.style.display = "flex";
+    if (tl) tl.textContent = TARGET_NAME || "";
+    if (sl) sl.textContent = label || "通話中";
+  }
+  function hideCallOverlay() {
+    const ov = document.getElementById("call-overlay");
+    if (ov) ov.style.display = "none";
+  }
+  function showIncomingModal(name) {
+    const m = document.getElementById("call-incoming-modal");
+    const n = document.getElementById("call-incoming-name");
+    if (m) m.style.display = "flex";
+    if (n) n.textContent = (name || "不明") + " から";
+  }
+  function hideIncomingModal() {
+    const m = document.getElementById("call-incoming-modal");
+    if (m) m.style.display = "none";
+  }
+
+  // ─ メディア取得 ──────────────────────────────────────────────
+  async function getLocalStream() {
+    if (localStream) return localStream;
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: true,
+      });
+    } catch (e) {
+      // カメラが使えない場合は音声のみにフォールバック
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: false,
+        });
+      } catch (e2) {
+        throw new Error(
+          "マイクへのアクセスが拒否されました。ブラウザの設定をご確認ください。",
+        );
+      }
+    }
+    const lv = document.getElementById("local-video");
+    if (lv) {
+      lv.srcObject = localStream;
+      lv.play().catch(() => {});
+    }
+    return localStream;
+  }
+
+  // ─ RTCPeerConnection 作成 ─────────────────────────────────────
+  let _cachedIceServers = null; // ICE設定キャッシュ（ページ内で1回だけ取得）
+
+  async function getIceServers() {
+    if (_cachedIceServers) return _cachedIceServers;
+    try {
+      const r = await fetch("/api/webrtc/ice");
+      const j = await r.json();
+      _cachedIceServers = j.iceServers;
+      console.log(
+        "[WebRTC] ICE servers loaded:",
+        _cachedIceServers.length,
+        "件",
+      );
+    } catch (e) {
+      console.warn("[WebRTC] ICE設定の取得失敗。デフォルトSTUNを使用:", e);
+      _cachedIceServers = [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+      ];
+    }
+    return _cachedIceServers;
+  }
+
+  async function createPC(targetId) {
+    if (callPC) return callPC;
+    const iceServers = await getIceServers();
+    const ICE = { iceServers };
+    // ★ ローカル変数 pc に保持 → 古い PC のハンドラが新しい callPC に干渉しない
+    const pc = new RTCPeerConnection(ICE);
+    callPC = pc;
+    let iceRestartCount = 0;
+
+    pc.onicecandidate = (ev) => {
+      if (callPC !== pc) return; // このPCがもう使われていなければ無視
+      if (ev.candidate) {
+        // 候補タイプをログ（host=ローカル, srflx=STUN公開IP, relay=TURN中継）
+        const c = ev.candidate;
+        console.log(
+          `[ICE candidate] type=${c.type || "unknown"} proto=${c.protocol} addr=${c.address || "?"} port=${c.port}`,
+        );
+        socket.emit("webrtc-candidate", {
+          toUserId: targetId,
+          fromUserId: MY_ID,
+          candidate: c.toJSON(),
+        });
+      } else {
+        console.log("[ICE gathering] 完了（null candidate）");
+      }
+    };
+    pc.ontrack = (ev) => {
+      if (callPC !== pc) return;
+      console.log(
+        "[WebRTC] ontrack fired, track:",
+        ev.track.kind,
+        "streams:",
+        ev.streams.length,
+      );
+      const rv = document.getElementById("remote-video");
+      if (!rv) return;
+      if (ev.streams && ev.streams[0]) {
+        // ストリームが同じなら srcObject を再セットしない（AbortError 防止）
+        if (rv.srcObject !== ev.streams[0]) {
+          rv.srcObject = ev.streams[0];
         }
-    }
-
-    // ── 返信 ──────────────────────────────────────────────────
-    function startReply(msgId, preview) {
-        replyToId = msgId;
-        const bar  = document.getElementById('sc-reply-bar');
-        const text = document.getElementById('sc-reply-text');
-        if (bar)  bar.style.display  = '';
-        if (text) text.textContent   = preview + '…';
-        const ta = document.getElementById('sc-msg-input');
-        if (ta) ta.focus();
-    }
-
-    function cancelReply() {
-        replyToId = null;
-        const bar = document.getElementById('sc-reply-bar');
-        if (bar) bar.style.display = 'none';
-    }
-
-    // ── メッセージ編集 ────────────────────────────────────────
-    function startEdit(msgId) {
-        // クリックイベントのバブリングで即キャンセルされないよう遅延実行
+      } else {
+        // Firefox 等で ev.streams が空の場合は手動でストリームに追加
+        if (!(rv.srcObject instanceof MediaStream)) {
+          rv.srcObject = new MediaStream();
+        }
+        rv.srcObject.addTrack(ev.track);
+      }
+      // autoplay 属性で自動再生されるが、念のため paused の場合だけ play()
+      if (rv.paused) {
+        rv.play().catch(() => {}); // 失敗しても無視（autoplay が処理する）
+      }
+    };
+    pc.onconnectionstatechange = () => {
+      if (callPC !== pc) return; // 古いPCのイベントは無視
+      const s = pc.connectionState;
+      console.log("[WebRTC] connectionState:", s);
+      if (s === "connected") {
+        iceRestartCount = 0;
+        showCallOverlay("通話中");
+      }
+      // 'failed' は oniceconnectionstatechange 側で ICE Restart してから処理
+      // ここでは doHangup しない（二重起動防止）
+      if (s === "disconnected") {
         setTimeout(() => {
-        const el = document.querySelector('.sc-msg-text[data-mid="' + msgId + '"]');
-        if (!el) return;
-        if (editingMsgId) finishEdit(false); // 前の編集をキャンセル
-        editingMsgId = msgId;
-        const original = el.textContent;
-        el.contentEditable = 'true';
-        el.dataset.original = original;
-        el.focus();
-        // カーソルを末尾に
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        range.collapse(false);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
-
-        // Enter で確定、Escape でキャンセル
-        el.addEventListener('keydown', editKeyHandler);
-        }, 0);
-    }
-
-    function editKeyHandler(e) {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finishEdit(true); }
-        if (e.key === 'Escape') { finishEdit(false); }
-    }
-
-    function finishEdit(save) {
-        if (!editingMsgId) return;
-        const el = document.querySelector('.sc-msg-text[data-mid="' + editingMsgId + '"]');
-        if (!el) { editingMsgId = null; return; }
-        el.removeEventListener('keydown', editKeyHandler);
-        el.contentEditable = 'false';
-        if (save) {
-            const newContent = el.textContent.trim();
-            if (newContent && newContent !== el.dataset.original) {
-                fetch('/api/chat/msg/' + editingMsgId, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content: newContent }),
+          if (callPC === pc && pc.connectionState === "disconnected")
+            doHangup();
+        }, 5000);
+      }
+    };
+    pc.onicegatheringstatechange = () => {
+      console.log("[WebRTC] iceGatheringState:", pc.iceGatheringState);
+    };
+    pc.oniceconnectionstatechange = () => {
+      if (callPC !== pc) return;
+      const s = pc.iceConnectionState;
+      console.log("[WebRTC] iceConnectionState:", s);
+      // オーバーレイにICE状態を表示（デバッグ用）
+      const sl = document.getElementById("call-status-label");
+      if (sl && s !== "connected" && s !== "completed") {
+        const labels = {
+          checking: "接続確認中...",
+          disconnected: "再接続中...",
+          failed: "接続失敗",
+          closed: "終了",
+        };
+        if (labels[s]) sl.textContent = labels[s];
+      }
+      if (s === "connected" || s === "completed") showCallOverlay("通話中");
+      if (s === "failed") {
+        // ICE Restart を試みる（最大2回）
+        if (iceRestartCount < 2) {
+          iceRestartCount++;
+          console.warn(
+            `[WebRTC] ICE 失敗 → ICE Restart 試行 (${iceRestartCount}/2)`,
+          );
+          showCallOverlay("再接続中...");
+          pc.restartIce();
+          // 発信側の場合は新しい offer を再作成して送信
+          if (pc.localDescription && pc.localDescription.type === "offer") {
+            pc.createOffer({ iceRestart: true })
+              .then((offer) => {
+                if (callPC !== pc) return; // すでに hangup 済みなら中止
+                return pc.setLocalDescription(offer).then(() => {
+                  socket.emit("webrtc-offer-restart", {
+                    toUserId: targetId,
+                    fromUserId: MY_ID,
+                    sdp: offer.sdp,
+                    type: offer.type,
+                  });
                 });
-            } else {
-                el.textContent = el.dataset.original;
-            }
+              })
+              .catch((e) =>
+                console.error("[WebRTC] ICE restart offer 失敗", e),
+              );
+          }
         } else {
-            el.textContent = el.dataset.original;
+          console.error(
+            "[WebRTC] ICE 接続に失敗しました（再試行上限）。通話を終了します。",
+          );
+          doHangup();
         }
-        editingMsgId = null;
-    }
+      }
+    };
+    return pc;
+  }
 
-    // ── メッセージ削除 ────────────────────────────────────────
-    function deleteMsg(msgId) {
-        if (!confirm('このメッセージを削除しますか？')) return;
-        fetch('/api/chat/msg/' + msgId, { method: 'DELETE' });
-    }
+  // ─ 発信（正しいフロー） ────────────────────────────────────────
+  // 1. ローカルメディア取得
+  // 2. offer SDP 作成
+  // 3. call_initiate に offer SDP を同梱して送信
+  // 4. 相手の call_accepted（answer SDP あり）または call_rejected を待つ
+  async function doStartCall(targetId) {
+    try {
+      showCallOverlay("発信中... 📞");
+      callTargetId = targetId;
 
-    // ── リアクション ──────────────────────────────────────────
-    function toggleReact(msgId, emoji) {
-        fetch('/api/chat/react', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ msgId, emoji }),
-        });
-    }
+      // 発信音を開始
+      if (window.CallSounds) CallSounds.startDialing();
 
-    // ── 絵文字ピッカー ────────────────────────────────────────
-    function toggleInputEmoji() {
-        emojiForMsgId = null;
-        const picker = document.getElementById('sc-emoji-picker');
-        if (!picker) return;
-        if (picker.style.display === 'none') {
-            const btn = document.querySelector('.sc-tool-btn[title="絵文字を挿入"]');
-            if (btn) {
-                const r = btn.getBoundingClientRect();
-                picker.style.bottom = (window.innerHeight - r.top + 6) + 'px';
-                picker.style.left   = r.left + 'px';
-            }
-            picker.style.display = 'flex';
-        } else {
-            picker.style.display = 'none';
-        }
-    }
+      // メディア取得（カメラなしでも音声のみで継続）
+      await getLocalStream();
 
-    function pickEmoji(emoji) {
-        const picker = document.getElementById('sc-emoji-picker');
-        if (picker) picker.style.display = 'none';
-        if (emojiForMsgId) {
-            toggleReact(emojiForMsgId, emoji);
-            emojiForMsgId = null;
-        } else {
-            const ta = document.getElementById('sc-msg-input');
-            if (ta) {
-                const pos = ta.selectionStart;
-                ta.value  = ta.value.slice(0, pos) + emoji + ta.value.slice(pos);
-                ta.selectionStart = ta.selectionEnd = pos + emoji.length;
-                document.getElementById('sc-send-btn').disabled = false;
-                ta.focus();
-            }
-        }
-    }
+      // RTCPeerConnection を作成してトラック追加
+      await createPC(targetId);
+      localStream.getTracks().forEach((t) => callPC.addTrack(t, localStream));
 
-    // メッセージホバー絵文字ボタン
-    document.addEventListener('click', (e) => {
-        const trig = e.target.closest('.sc-emoji-trig');
-        if (trig) {
-            emojiForMsgId = trig.dataset.mid;
-            const picker  = document.getElementById('sc-emoji-picker');
-            if (!picker) return;
-            const r = trig.getBoundingClientRect();
-            picker.style.bottom = (window.innerHeight - r.top + 8) + 'px';
-            picker.style.left   = r.left + 'px';
-            picker.style.display = 'flex';
-            return;
+      // Offer 作成 → 相手に送信
+      const offer = await callPC.createOffer();
+      await callPC.setLocalDescription(offer);
+      socket.emit("call_initiate", {
+        toUserId: targetId,
+        fromUserId: MY_ID,
+        fromName: MY_NAME,
+        sdp: offer.sdp,
+        type: offer.type,
+      });
+
+      // ── 30秒タイムアウト ────────────────────────────────────
+      clearTimeout(callTimeoutTimer);
+      callTimeoutTimer = setTimeout(async () => {
+        if (!callPC || callPC.connectionState === "connected") return;
+        if (window.CallSounds) CallSounds.stopDialing();
+        socket.emit("call_cancel", { toUserId: targetId, fromUserId: MY_ID });
+        await fetch("/api/chat/missed-call", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ toUserId: targetId }),
+        }).catch(() => {});
+        doHangup();
+        const bar = document.getElementById("sc-typing");
+        if (bar) {
+          bar.textContent = TARGET_NAME + " が応答しませんでした";
+          setTimeout(() => {
+            if (bar) bar.textContent = "";
+          }, 5000);
         }
-        // ピッカー外クリックで閉じる
-        if (!e.target.closest('#sc-emoji-picker') && !e.target.closest('.sc-tool-btn[title="絵文字を挿入"]')) {
-            const picker = document.getElementById('sc-emoji-picker');
-            if (picker) picker.style.display = 'none';
-        }
-        // 編集中に外をクリックしたら確定
-        if (editingMsgId && !e.target.closest('[contenteditable="true"]') && !e.target.closest('.sc-toolbar')) {
-            finishEdit(true);
-        }
+      }, 30000);
+    } catch (e) {
+      console.error("startCall error", e);
+      if (window.CallSounds) CallSounds.stopDialing();
+      hideCallOverlay();
+      alert("通話を開始できませんでした: " + (e.message || e));
+      doHangup();
+    }
+  }
+
+  // ─ 着信応答 ────────────────────────────────────────────────────
+  // acceptCall / rejectCall は着信モーダルのボタンから呼ばれる
+  async function acceptCall() {
+    clearTimeout(incomingTimer);
+    incomingTimer = null;
+    hideIncomingModal();
+    if (window.CallSounds) {
+      CallSounds.stopIncoming();
+      CallSounds.stopDialing();
+    }
+    if (!pendingOffer) {
+      console.warn("[acceptCall] pendingOffer が null です");
+      return;
+    }
+    const { fromUserId, sdp } = pendingOffer;
+    pendingOffer = null;
+    try {
+      showCallOverlay("接続中...");
+      callTargetId = fromUserId;
+      // 1. ローカルメディアを取得
+      await getLocalStream();
+      // 2. RTCPeerConnection を作成し、トラックを先に追加してから offer をセット
+      await createPC(fromUserId);
+      localStream.getTracks().forEach((t) => callPC.addTrack(t, localStream));
+      // 3. 相手の offer をリモート SDP としてセット
+      await callPC.setRemoteDescription(
+        new RTCSessionDescription({ type: "offer", sdp }),
+      );
+      // 4. バッファされていた ICE キャンディデートを追加
+      for (const c of pendingCandidates) {
+        try {
+          await callPC.addIceCandidate(new RTCIceCandidate(c));
+        } catch (_) {}
+      }
+      pendingCandidates = [];
+      // 5. Answer を作成して発信者に送信
+      const answer = await callPC.createAnswer();
+      await callPC.setLocalDescription(answer);
+      socket.emit("call_accept", {
+        toUserId: fromUserId,
+        fromUserId: MY_ID,
+        sdp: answer.sdp,
+        type: answer.type,
+      });
+      callStartTime = Date.now(); // 応答側も開始時刻を記録
+      console.log("[acceptCall] answer 送信完了 →", fromUserId);
+    } catch (e) {
+      console.error("acceptCall error", e);
+      hideCallOverlay();
+      doHangup();
+    }
+  }
+
+  function rejectCall() {
+    clearTimeout(incomingTimer);
+    incomingTimer = null;
+    hideIncomingModal();
+    if (window.CallSounds) {
+      CallSounds.stopIncoming();
+      CallSounds.playReject();
+    }
+    if (!pendingOffer) return;
+    const { fromUserId } = pendingOffer;
+    pendingOffer = null;
+    socket.emit("call_reject", { toUserId: fromUserId, fromUserId: MY_ID });
+  }
+
+  // ─ 終話 ─────────────────────────────────────────────────────
+  let _hangingUp = false;
+  // silent=true: 相手側から call_ended を受け取った場合 → 音を鳴らさず、call_end も再送しない
+  function doHangup(silent) {
+    if (_hangingUp) return;
+    _hangingUp = true;
+    setTimeout(() => {
+      _hangingUp = false;
+    }, 2000); // 2秒クールダウン（二重呼び出し防止）
+    try {
+      clearTimeout(callTimeoutTimer);
+      callTimeoutTimer = null;
+      clearTimeout(incomingTimer);
+      incomingTimer = null;
+      if (window.CallSounds) {
+        CallSounds.stopDialing();
+        CallSounds.stopIncoming();
+        if (!silent) CallSounds.playHangup(); // 自分側からの終話のみ音を鳴らす
+      }
+      if (callPC) {
+        const _pc = callPC;
+        callPC = null;
+        _pc.close();
+      }
+      if (localStream) {
+        localStream.getTracks().forEach((t) => t.stop());
+        localStream = null;
+      }
+      if (screenStream) {
+        screenStream.getTracks().forEach((t) => t.stop());
+        screenStream = null;
+      }
+      isMicOn = true;
+      isCamOn = true;
+      isRemoteCtrl = false;
+      pendingCandidates = [];
+      hideCallOverlay();
+      hideIncomingModal();
+      hideNoticeBar();
+      pendingOffer = null;
+      clearPointerCanvas();
+      const rb = document.getElementById("remote-ctrl-bar");
+      if (rb) rb.style.display = "none";
+
+      // 通話履歴を保存（自分から切った側だけが保存 → 重複防止）
+      const target = callTargetId || TARGET_ID;
+      if (!silent && callStartTime && target) {
+        const duration = Math.round((Date.now() - callStartTime) / 1000);
+        callStartTime = null;
+        fetch("/api/chat/call-history", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ toUserId: target, duration }),
+        }).catch(() => {});
+      }
+      callStartTime = null;
+      callTargetId = null;
+
+      // 録画停止（録画中であれば）
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+      }
+
+      // silent=false（自分側終話）のときのみ相手に通知 → 無限ループ防止
+      if (!silent && target)
+        socket.emit("call_end", { toUserId: target, fromUserId: MY_ID });
+    } catch (e) {
+      console.error("hangup error", e);
+    }
+  }
+
+  // ─ マイク / カメラ ON/OFF ─────────────────────────────────────
+  function toggleMic(btn) {
+    if (!localStream) return;
+    isMicOn = !isMicOn;
+    localStream.getAudioTracks().forEach((t) => {
+      t.enabled = isMicOn;
     });
+    if (btn) {
+      btn.classList.toggle("muted", !isMicOn);
+      btn.innerHTML = isMicOn
+        ? '<i class="fa-solid fa-microphone"></i>'
+        : '<i class="fa-solid fa-microphone-slash"></i>';
+      btn.title = isMicOn ? "マイク OFF" : "マイク ON";
+    }
+  }
 
-    // ── ファイル選択・ドロップ ────────────────────────────────
-    function handleFileSelect(input) {
-        addFiles(Array.from(input.files));
-        input.value = '';
+  function toggleCam(btn) {
+    if (!localStream) return;
+    isCamOn = !isCamOn;
+    localStream.getVideoTracks().forEach((t) => {
+      t.enabled = isCamOn;
+    });
+    if (btn) {
+      btn.classList.toggle("muted", !isCamOn);
+      btn.innerHTML = isCamOn
+        ? '<i class="fa-solid fa-video"></i>'
+        : '<i class="fa-solid fa-video-slash"></i>';
+      btn.title = isCamOn ? "カメラ OFF" : "カメラ ON";
+    }
+  }
+
+  // ─ 画面共有 ────────────────────────────────────────────────────
+  // 通話中でなければ先に通話を開始してから画面共有に切り替える
+  async function doShareScreen() {
+    if (!TARGET_ID) return alert("相手が選択されていません");
+    try {
+      // 画面共有ストリーム取得
+      screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { cursor: "always" },
+        audio: false,
+      });
+
+      // 通話がなければ先に発信
+      if (!callPC) {
+        await doStartCall(TARGET_ID);
+        // offer 送信後、callPC は確立されている
+      }
+
+      // 映像トラックを画面共有に切り替え
+      const sender =
+        callPC &&
+        callPC.getSenders().find((s) => s.track && s.track.kind === "video");
+      if (sender) await sender.replaceTrack(screenStream.getVideoTracks()[0]);
+
+      const btn = document.getElementById("ctrl-screen");
+      if (btn) btn.classList.add("active-feature");
+
+      socket.emit("screen_share_started", {
+        toUserId: TARGET_ID,
+        fromUserId: MY_ID,
+        screenW: window.screen.width,
+        screenH: window.screen.height,
+        windowX: window.screenX || 0,
+        windowY: window.screenY || 0,
+        viewportW: window.innerWidth,
+        viewportH: window.innerHeight,
+      });
+      showCallOverlay("画面共有中");
+
+      // 共有停止時（ブラウザの共有停止ボタンも含む）
+      screenStream.getVideoTracks()[0].addEventListener("ended", async () => {
+        await stopScreenShare();
+      });
+    } catch (e) {
+      if (e.name !== "NotAllowedError") console.error("screen share failed", e);
+      if (screenStream) {
+        screenStream.getTracks().forEach((t) => t.stop());
+        screenStream = null;
+      }
+    }
+  }
+
+  async function stopScreenShare() {
+    if (screenStream) {
+      screenStream.getTracks().forEach((t) => t.stop());
+      screenStream = null;
+    }
+    // カメラに戻す
+    if (localStream && callPC) {
+      const camTrack = localStream.getVideoTracks()[0];
+      const sender = callPC
+        .getSenders()
+        .find((s) => s.track && s.track.kind === "video");
+      if (sender && camTrack) await sender.replaceTrack(camTrack);
+    }
+    const btn = document.getElementById("ctrl-screen");
+    if (btn) btn.classList.remove("active-feature");
+    socket.emit("screen_share_stopped", {
+      toUserId: TARGET_ID,
+      fromUserId: MY_ID,
+    });
+    showCallOverlay("通話中");
+  }
+
+  // ─ 遠隔操作（ポインタ共有） ────────────────────────────────────
+  // ブラウザの制限により、相手のOSを直接操作することはできません。
+  // 代わりに「自分のマウス位置をリアルタイムで相手の画面に表示する」ポインタ共有を実装します。
+  let remotePointerHandler = null;
+  let remoteClickHandler = null;
+  let remoteDblHandler = null;
+  let remoteScrollHandler = null;
+  let remoteKeyHandler = null;
+
+  // ビデオ要素内の実際のコンテンツ領域を計算（object-fit:containのレターボックス補正）
+  function getVideoContentRect(rv) {
+    const elW = rv.offsetWidth || rv.clientWidth || 1;
+    const elH = rv.offsetHeight || rv.clientHeight || 1;
+    const vW = rv.videoWidth || elW;
+    const vH = rv.videoHeight || elH;
+    const elAR = elW / elH;
+    const vAR = vW / vH;
+    let cW, cH;
+    if (vAR > elAR) {
+      cW = elW;
+      cH = elW / vAR;
+    } else {
+      cH = elH;
+      cW = elH * vAR;
+    }
+    return { left: (elW - cW) / 2, top: (elH - cH) / 2, width: cW, height: cH };
+  }
+
+  // ビデオ要素上のクライアント座標 → 正規化(0-1)変換（レターボックス補正済み）
+  function videoNormCoords(rv, clientX, clientY) {
+    const rvRect = rv.getBoundingClientRect();
+    const content = getVideoContentRect(rv);
+    const relX = clientX - rvRect.left - content.left;
+    const relY = clientY - rvRect.top - content.top;
+    return {
+      x: +(relX / content.width).toFixed(4),
+      y: +(relY / content.height).toFixed(4),
+    };
+  }
+
+  function requestRemote() {
+    if (!TARGET_ID) return alert("相手が選択されていません");
+    if (!callPC) return alert("通話中でないと遠隔操作できません");
+
+    // エージェント説明モーダルを表示してから送信
+    const modal = document.getElementById("agent-setup-modal");
+    const cmdEl = document.getElementById("agent-cmd-text");
+    if (modal && cmdEl) {
+      const serverUrl = location.origin;
+      cmdEl.textContent = `node remote-agent.js ${TARGET_ID} ${serverUrl}`;
+      modal.style.display = "flex";
     }
 
-    function handleDrop(e) {
-        e.preventDefault();
-        const box = document.getElementById('sc-input-box');
-        if (box) box.classList.remove('drag-over');
-        addFiles(Array.from(e.dataTransfer.files));
+    socket.emit("remote_control_request", {
+      toUserId: TARGET_ID,
+      fromUserId: MY_ID,
+      fromName: MY_NAME,
+    });
+    showNoticeBar(
+      "遠隔操作リクエストを送信しました。相手の許可を待っています...",
+      5000,
+    );
+  }
+
+  function startRemoteControl() {
+    if (isRemoteCtrl) return;
+    isRemoteCtrl = true;
+    const rv = document.getElementById("remote-video");
+    const rb = document.getElementById("remote-ctrl-bar");
+    if (rb) rb.style.display = "flex";
+    const btn = document.getElementById("ctrl-remote");
+    if (btn) btn.classList.add("active-feature");
+
+    // ── 遠隔操作開始時は自動でフルスクリーン（大きく見やすく）────────
+    const box = document.getElementById("call-box");
+    if (box && !box.classList.contains("call-fullscreen")) {
+      box.classList.add("call-fullscreen");
+      const icon = document.getElementById("fullscreen-icon");
+      if (icon) {
+        icon.classList.remove("fa-expand");
+        icon.classList.add("fa-compress");
+      }
     }
 
-    function addFiles(files) {
-        files.slice(0, 5 - pendingFiles.length).forEach(file => {
-            const entry = { file, name: file.name };
-            pendingFiles.push(entry);
-            renderFilePreview(entry);
+    // カーソルをクロスヘアに変更
+    if (rv) rv.style.cursor = "crosshair";
+
+    // ─ マウスムーブ（ポインタ位置共有）───────────────────────────
+    remotePointerHandler = (ev) => {
+      if (!rv) return;
+      const { x, y } = videoNormCoords(rv, ev.clientX, ev.clientY);
+      if (x < 0 || x > 1 || y < 0 || y > 1) return;
+      socket.emit("remote_pointer", {
+        toUserId: TARGET_ID,
+        fromUserId: MY_ID,
+        x,
+        y,
+        screenInfo: remoteScreenInfo,
+      });
+    };
+
+    // ─ クリック ─────────────────────────────────────────────────
+    remoteClickHandler = (ev) => {
+      if (!rv) return;
+      ev.preventDefault();
+      const { x, y } = videoNormCoords(rv, ev.clientX, ev.clientY);
+      if (x < 0 || x > 1 || y < 0 || y > 1) return;
+      socket.emit("remote_click", {
+        toUserId: TARGET_ID,
+        fromUserId: MY_ID,
+        x,
+        y,
+        button: ev.button,
+        screenInfo: remoteScreenInfo,
+      });
+    };
+
+    // ─ ダブルクリック ────────────────────────────────────────────
+    remoteDblHandler = (ev) => {
+      if (!rv) return;
+      ev.preventDefault();
+      const { x, y } = videoNormCoords(rv, ev.clientX, ev.clientY);
+      if (x < 0 || x > 1 || y < 0 || y > 1) return;
+      socket.emit("remote_dblclick", {
+        toUserId: TARGET_ID,
+        fromUserId: MY_ID,
+        x,
+        y,
+        screenInfo: remoteScreenInfo,
+      });
+    };
+
+    // ─ スクロール ────────────────────────────────────────────────
+    remoteScrollHandler = (ev) => {
+      if (!rv) return;
+      ev.preventDefault();
+      socket.emit("remote_scroll", {
+        toUserId: TARGET_ID,
+        fromUserId: MY_ID,
+        deltaX: ev.deltaX,
+        deltaY: ev.deltaY,
+      });
+    };
+
+    // ─ キーボード（遠隔操作中はページ全体から拾う）────────────────
+    remoteKeyHandler = (ev) => {
+      const tag = (document.activeElement || {}).tagName || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      ev.preventDefault();
+      socket.emit("remote_key", {
+        toUserId: TARGET_ID,
+        fromUserId: MY_ID,
+        type: ev.type,
+        key: ev.key,
+        code: ev.code,
+        shiftKey: ev.shiftKey,
+        ctrlKey: ev.ctrlKey,
+        altKey: ev.altKey,
+        metaKey: ev.metaKey,
+      });
+    };
+
+    if (rv) {
+      rv.addEventListener("mousemove", remotePointerHandler);
+      rv.addEventListener("click", remoteClickHandler);
+      rv.addEventListener("dblclick", remoteDblHandler);
+      rv.addEventListener("wheel", remoteScrollHandler, { passive: false });
+    }
+    document.addEventListener("keydown", remoteKeyHandler);
+    document.addEventListener("keyup", (ev) => {
+      const tag = (document.activeElement || {}).tagName || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      socket.emit("remote_key", {
+        toUserId: TARGET_ID,
+        fromUserId: MY_ID,
+        type: "keyup",
+        key: ev.key,
+        code: ev.code,
+        shiftKey: ev.shiftKey,
+        ctrlKey: ev.ctrlKey,
+        altKey: ev.altKey,
+        metaKey: ev.metaKey,
+      });
+    });
+  }
+
+  function stopRemote() {
+    if (!isRemoteCtrl) return;
+    isRemoteCtrl = false;
+    const rv = document.getElementById("remote-video");
+    if (rv) {
+      rv.style.cursor = "";
+      if (remotePointerHandler)
+        rv.removeEventListener("mousemove", remotePointerHandler);
+      if (remoteClickHandler)
+        rv.removeEventListener("click", remoteClickHandler);
+      if (remoteDblHandler)
+        rv.removeEventListener("dblclick", remoteDblHandler);
+      if (remoteScrollHandler)
+        rv.removeEventListener("wheel", remoteScrollHandler);
+    }
+    if (remoteKeyHandler)
+      document.removeEventListener("keydown", remoteKeyHandler);
+    remotePointerHandler = null;
+    remoteClickHandler = null;
+    remoteDblHandler = null;
+    remoteScrollHandler = null;
+    remoteKeyHandler = null;
+    const rb = document.getElementById("remote-ctrl-bar");
+    if (rb) rb.style.display = "none";
+    const btn = document.getElementById("ctrl-remote");
+    if (btn) btn.classList.remove("active-feature");
+    clearPointerCanvas();
+  }
+
+  // ─ 録画 ──────────────────────────────────────────────────────
+  async function toggleRecord(btn) {
+    if (mediaRecorder && mediaRecorder.state === "recording") {
+      // 停止
+      mediaRecorder.stop();
+      return;
+    }
+    if (!callPC) return showNoticeBar("通話中でないと録画できません", 3000);
+
+    // 録画対象ストリームを組み立て（リモート映像 + ローカル音声）
+    const tracks = [];
+    const rv = document.getElementById("remote-video");
+    if (rv && rv.srcObject)
+      rv.srcObject.getTracks().forEach((t) => tracks.push(t));
+    if (localStream)
+      localStream.getAudioTracks().forEach((t) => tracks.push(t));
+    if (tracks.length === 0)
+      return showNoticeBar("録画できるストリームがありません", 3000);
+
+    const stream = new MediaStream(tracks);
+    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+      ? "video/webm;codecs=vp9,opus"
+      : "video/webm";
+    recordChunks = [];
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
+
+    // 相手に録画開始を通知（相手側の録画ボタンを無効化させる）
+    const recTarget = callTargetId || TARGET_ID;
+    if (recTarget)
+      socket.emit("recording_started", {
+        toUserId: recTarget,
+        fromUserId: MY_ID,
+      });
+
+    // 録画タイマー
+    let recSeconds = 0;
+    const recTimerInterval = setInterval(() => {
+      recSeconds++;
+      const h = Math.floor(recSeconds / 3600);
+      const m = Math.floor((recSeconds % 3600) / 60);
+      const s = recSeconds % 60;
+      const timeStr =
+        h > 0
+          ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+          : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+      if (btn)
+        btn.innerHTML = `<i class="fa-solid fa-stop"></i> <span class="call-record-dot">●</span> ${timeStr}`;
+      showNoticeBar(`🔴 録画中 ${timeStr}`, 0);
+    }, 1000);
+
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) recordChunks.push(e.data);
+    };
+    mediaRecorder.onstop = async () => {
+      clearInterval(recTimerInterval);
+      // 相手に録画停止を通知（相手側の録画ボタンを再有効化）
+      if (recTarget)
+        socket.emit("recording_stopped", {
+          toUserId: recTarget,
+          fromUserId: MY_ID,
         });
-        const btn = document.getElementById('sc-send-btn');
-        if (btn) btn.disabled = false;
+      if (btn) {
+        btn.classList.remove("ctrl-recording");
+        btn.innerHTML = '<i class="fa-solid fa-circle-dot"></i>';
+        btn.disabled = false;
+      }
+      showNoticeBar("🎥 録画を保存中...", 0);
+      const blob = new Blob(recordChunks, { type: mimeType });
+      recordChunks = [];
+      mediaRecorder = null;
+      const target = callTargetId || TARGET_ID;
+      if (!target || blob.size === 0) {
+        hideNoticeBar();
+        return;
+      }
+      const fd = new FormData();
+      fd.append("recording", blob, `recording_${Date.now()}.webm`);
+      fd.append("toUserId", target);
+      fd.append("duration", recSeconds);
+      if (ROOM_ID) fd.append("roomId", ROOM_ID);
+      try {
+        await fetch("/api/chat/recording", { method: "POST", body: fd });
+        showNoticeBar("✅ 録画をチャットに保存しました", 3000);
+      } catch (e) {
+        showNoticeBar("⚠️ 録画の保存に失敗しました", 3000);
+      }
+    };
+    mediaRecorder.start(1000); // 1秒ごとにデータを収集
+    if (btn) {
+      btn.classList.add("ctrl-recording");
+      btn.innerHTML =
+        '<i class="fa-solid fa-stop"></i> <span class="call-record-dot">●</span> 00:00';
     }
+    showNoticeBar("🔴 録画中 00:00", 0);
+  }
 
-    function renderFilePreview(entry) {
-        const area = document.getElementById('sc-file-preview');
-        if (!area) return;
-        const wrap = document.createElement('div');
-        wrap.className = 'sc-fp';
-        const rm = '<button class="sc-fp-rm" onclick="chatApp.removeFile(\'' + entry.name + '\')">×</button>';
-        if (entry.file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                wrap.innerHTML = '<img src="' + ev.target.result + '" alt="' + esc(entry.name) + '">' + rm;
-            };
-            reader.readAsDataURL(entry.file);
+  // 相手のポインタをキャンバスに描画
+  function drawRemotePointer(xRatio, yRatio) {
+    const canvas = document.getElementById("remote-pointer-canvas");
+    if (!canvas) return;
+    const rv = document.getElementById("remote-video");
+    if (!rv) return;
+    // レターボックス補正：実際のコンテンツ領域に描画
+    const content = getVideoContentRect(rv);
+    canvas.width = rv.offsetWidth || rv.clientWidth;
+    canvas.height = rv.offsetHeight || rv.clientHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const cx = content.left + xRatio * content.width;
+    const cy = content.top + yRatio * content.height;
+    // ポインタ描画
+    ctx.strokeStyle = "#ef4444";
+    ctx.fillStyle = "rgba(239,68,68,0.2)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // 十字線
+    ctx.strokeStyle = "#ef4444";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - 20, cy);
+    ctx.lineTo(cx + 20, cy);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 20);
+    ctx.lineTo(cx, cy + 20);
+    ctx.stroke();
+  }
+
+  function clearPointerCanvas() {
+    const canvas = document.getElementById("remote-pointer-canvas");
+    if (!canvas) return;
+    canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // ─ 通知バナー（通話オーバーレイ内 or 画面下部） ────────────────
+  let _noticeBannerEl = null;
+  let _noticeBannerTimer = null;
+  function showNoticeBar(html, duration) {
+    // 通話オーバーレイが表示中なら内部バナーを使う
+    const inner = document.getElementById("call-inner-notice");
+    if (inner) {
+      inner.innerHTML = html;
+      inner.style.display = "flex";
+      clearTimeout(_noticeBannerTimer);
+      if (duration)
+        _noticeBannerTimer = setTimeout(() => hideNoticeBar(), duration);
+      return;
+    }
+    // 通話外のとき：画面下部フローティングバナー
+    if (!_noticeBannerEl) {
+      _noticeBannerEl = document.createElement("div");
+      _noticeBannerEl.id = "call-notice-bar";
+      _noticeBannerEl.style.cssText =
+        "position:fixed;bottom:80px;left:50%;transform:translateX(-50%);" +
+        "background:#1e293b;color:#f1f5f9;padding:10px 18px;border-radius:10px;" +
+        "font-size:13px;z-index:700;box-shadow:0 4px 16px rgba(0,0,0,.4);" +
+        "display:flex;align-items:center;gap:10px;max-width:480px;";
+      document.body.appendChild(_noticeBannerEl);
+    }
+    _noticeBannerEl.innerHTML = html;
+    _noticeBannerEl.style.display = "flex";
+    clearTimeout(_noticeBannerTimer);
+    if (duration)
+      _noticeBannerTimer = setTimeout(() => hideNoticeBar(), duration);
+  }
+  function hideNoticeBar() {
+    const inner = document.getElementById("call-inner-notice");
+    if (inner) {
+      inner.style.display = "none";
+      inner.innerHTML = "";
+    }
+    if (_noticeBannerEl) _noticeBannerEl.style.display = "none";
+  }
+
+  // ─ Socket イベント（通話シグナリング） ──────────────────────────
+  socket.on("call_incoming", (data) => {
+    // call_initiate → server → call_incoming
+    // offer SDP が同梱されているので pendingOffer に保存
+    if (!data) return;
+    pendingOffer = { fromUserId: data.fromUserId, sdp: data.sdp };
+    showIncomingModal(data.fromName || TARGET_NAME || "不明");
+    if (window.CallSounds) CallSounds.startIncoming();
+
+    // 着信側も 30秒無視したら自動的に「不在着信」として処理
+    clearTimeout(incomingTimer);
+    incomingTimer = setTimeout(() => {
+      if (!pendingOffer) return; // すでに応答・拒否済み
+      const { fromUserId } = pendingOffer;
+      pendingOffer = null;
+      hideIncomingModal();
+      // 発信側に「不在」を通知
+      socket.emit("call_missed", { toUserId: fromUserId, fromUserId: MY_ID });
+    }, 30000);
+  });
+
+  // 発信側がキャンセル（タイムアウト or 手動キャンセル）→ 着信モーダルを閉じる
+  socket.on("call_cancelled", () => {
+    clearTimeout(incomingTimer);
+    incomingTimer = null;
+    pendingOffer = null;
+    if (window.CallSounds) CallSounds.stopIncoming();
+    hideIncomingModal();
+    // 不在着信をチャットに表示（着信側）
+    const bar = document.getElementById("sc-typing");
+    if (bar) {
+      bar.textContent = TARGET_NAME + " からの着信がありました（不在着信）";
+      setTimeout(() => {
+        if (bar) bar.textContent = "";
+      }, 6000);
+    }
+  });
+
+  // 発信側：相手が無視してタイムアウト → 「応答なし」
+  socket.on("call_missed", () => {
+    clearTimeout(callTimeoutTimer);
+    callTimeoutTimer = null;
+    doHangup();
+    const bar = document.getElementById("sc-typing");
+    if (bar) {
+      bar.textContent = TARGET_NAME + " は応答しませんでした";
+      setTimeout(() => {
+        if (bar) bar.textContent = "";
+      }, 5000);
+    }
+  });
+
+  socket.on("call_accepted", async (data) => {
+    // 相手が着信を応答した。answer SDP が届く
+    clearTimeout(callTimeoutTimer);
+    callTimeoutTimer = null; // タイムアウト解除
+    if (window.CallSounds) CallSounds.stopDialing(); // 発信音を止める
+    callStartTime = Date.now(); // 通話開始時刻を記録
+    try {
+      if (!callPC) {
+        console.warn("[call_accepted] callPC が null");
+        return;
+      }
+      if (!data || !data.sdp) {
+        console.warn("[call_accepted] sdp がない", data);
+        return;
+      }
+      console.log("[call_accepted] answer SDP をセット中...");
+      await callPC.setRemoteDescription(
+        new RTCSessionDescription({
+          type: data.type || "answer",
+          sdp: data.sdp,
+        }),
+      );
+      // バッファされていた ICE キャンディデートを追加
+      for (const c of pendingCandidates) {
+        try {
+          await callPC.addIceCandidate(new RTCIceCandidate(c));
+        } catch (_) {}
+      }
+      pendingCandidates = [];
+      console.log(
+        "[call_accepted] setRemoteDescription 完了。ICE ネゴシエーション開始...",
+      );
+      // connectionstatechange で '通話中' に変わる
+    } catch (e) {
+      console.error("call_accepted error", e);
+    }
+  });
+
+  socket.on("call_rejected", () => {
+    clearTimeout(callTimeoutTimer);
+    callTimeoutTimer = null;
+    if (window.CallSounds) {
+      CallSounds.stopDialing();
+      CallSounds.playReject();
+    }
+    doHangup();
+    const n = TARGET_NAME || "相手";
+    const bar = document.getElementById("sc-typing");
+    if (bar) {
+      bar.textContent = n + " が通話を拒否しました";
+      setTimeout(() => {
+        if (bar) bar.textContent = "";
+      }, 4000);
+    }
+  });
+
+  socket.on("webrtc-candidate", async (data) => {
+    try {
+      if (!data || !data.candidate) return;
+      // callPC がない、または remoteDescription がまだ設定されていない場合はバッファに積む
+      if (!callPC || !callPC.remoteDescription) {
+        pendingCandidates.push(data.candidate);
+        return;
+      }
+      await callPC.addIceCandidate(new RTCIceCandidate(data.candidate));
+    } catch (e) {
+      /* ignore benign candidate errors */
+    }
+  });
+
+  socket.on("call_ended", () => {
+    doHangup(true);
+  }); // silent=true: 音なし・再送なし
+
+  // ICE Restart: 相手から再発信 offer が届いた場合に answer を返す
+  socket.on("webrtc-offer-restart", async (data) => {
+    if (!data || !data.sdp || !callPC) return;
+    try {
+      showCallOverlay("再接続中...");
+      await callPC.setRemoteDescription(
+        new RTCSessionDescription({
+          type: data.type || "offer",
+          sdp: data.sdp,
+        }),
+      );
+      const answer = await callPC.createAnswer();
+      await callPC.setLocalDescription(answer);
+      socket.emit("call_accept", {
+        toUserId: data.fromUserId,
+        fromUserId: MY_ID,
+        sdp: answer.sdp,
+        type: answer.type,
+      });
+      console.log("[WebRTC] ICE Restart: answer 送信完了");
+    } catch (e) {
+      console.error("[WebRTC] ICE restart answer 失敗", e);
+    }
+  });
+
+  socket.on("screen_share_started", (data) => {
+    if (data) remoteScreenInfo = data; // 相手の画面情報を保存
+    const sl = document.getElementById("call-status-label");
+    if (sl) sl.textContent = "相手が画面共有中";
+  });
+  socket.on("screen_share_stopped", (data) => {
+    const sl = document.getElementById("call-status-label");
+    if (sl) sl.textContent = "通話中";
+  });
+
+  // ─ エージェント接続/切断通知 ────────────────────────────────
+  socket.on("agent_ready", (data) => {
+    const ind = document.getElementById("agent-indicator");
+    if (ind) {
+      ind.style.display = "";
+      ind.title = `遠隔操作エージェント接続中 (${data.platform || ""} ${data.screenW || ""}x${data.screenH || ""})`;
+    }
+    const btn = document.getElementById("ctrl-remote");
+    if (btn)
+      btn.title = "遠隔操作リクエスト（エージェント接続済み・OS操作可能）";
+    showNoticeBar(
+      "🖥 遠隔操作エージェントが接続されました。OS全体の操作が可能です。",
+      4000,
+    );
+  });
+  socket.on("agent_disconnected", () => {
+    const ind = document.getElementById("agent-indicator");
+    if (ind) ind.style.display = "none";
+    const btn = document.getElementById("ctrl-remote");
+    if (btn) btn.title = "遠隔操作リクエスト";
+  });
+
+  socket.on("remote_control_request", (data) => {
+    if (!data) return;
+    const fromUserId = data.fromUserId || "";
+    const fromName = data.fromName || "相手";
+    // 入力欄を破壊しないよう専用バナーに表示
+    showNoticeBar(
+      "<span>" +
+        fromName +
+        " が遠隔操作（ポインタ共有）を求めています</span>" +
+        "<button onclick=\"window._chat_webrtc._grantRemote('" +
+        fromUserId +
+        "',true)\"" +
+        ' style="padding:3px 10px;background:#22c55e;color:#fff;border:none;border-radius:5px;cursor:pointer;white-space:nowrap">許可</button>' +
+        "<button onclick=\"window._chat_webrtc._grantRemote('" +
+        fromUserId +
+        "',false)\"" +
+        ' style="padding:3px 10px;background:#ef4444;color:#fff;border:none;border-radius:5px;cursor:pointer;white-space:nowrap">拒否</button>',
+    );
+  });
+
+  socket.on("remote_control_grant", (data) => {
+    if (!data) return;
+    hideNoticeBar();
+    if (data.granted) {
+      showNoticeBar(
+        "✅ 遠隔操作が許可されました。映像上でマウスを動かしてください。",
+        4000,
+      );
+      startRemoteControl();
+    } else {
+      showNoticeBar("❌ 遠隔操作リクエストが拒否されました", 3000);
+    }
+  });
+
+  socket.on("remote_pointer", (data) => {
+    if (!data) return;
+    drawRemotePointer(data.x, data.y);
+  });
+
+  // ─ リモート操作受信（操作される側） ─────────────────────────────
+
+  // 正規化座標(0-1) → ビューポート座標に変換
+  // screenInfoがある場合（フルデスクトップ共有）はウィンドウオフセットを考慮
+  function normToViewport(x, y, si) {
+    if (si && si.screenW && si.viewportW) {
+      // フルスクリーン共有: スクリーン座標→ビューポート座標
+      const absX = x * si.screenW;
+      const absY = y * si.screenH;
+      return {
+        vx: absX - (si.windowX || 0),
+        vy: absY - (si.windowY || 0),
+      };
+    }
+    // タブ共有 or 情報なし: そのままビューポート倍率
+    return { vx: x * window.innerWidth, vy: y * window.innerHeight };
+  }
+
+  // クリック：座標からDOM要素を特定してクリック実行
+  socket.on("remote_click", (data) => {
+    if (!data) return;
+    const { vx, vy } = normToViewport(data.x, data.y, data.screenInfo);
+    const el = document.elementFromPoint(vx, vy);
+    if (!el) return;
+    el.focus();
+    ["mousedown", "mouseup", "click"].forEach((type) => {
+      el.dispatchEvent(
+        new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: vx,
+          clientY: vy,
+          button: data.button || 0,
+        }),
+      );
+    });
+    if (el.tagName === "A" && el.href) {
+      try {
+        el.click();
+      } catch (e) {}
+    }
+    if (
+      el.tagName === "INPUT" ||
+      el.tagName === "TEXTAREA" ||
+      el.tagName === "SELECT"
+    )
+      el.focus();
+  });
+
+  // ダブルクリック
+  socket.on("remote_dblclick", (data) => {
+    if (!data) return;
+    const { vx, vy } = normToViewport(data.x, data.y, data.screenInfo);
+    const el = document.elementFromPoint(vx, vy);
+    if (!el) return;
+    el.dispatchEvent(
+      new MouseEvent("dblclick", {
+        bubbles: true,
+        cancelable: true,
+        clientX: vx,
+        clientY: vy,
+      }),
+    );
+  });
+
+  // キーボード：アクティブ要素に送信 + テキスト入力も反映
+  socket.on("remote_key", (data) => {
+    if (!data) return;
+    const el = document.activeElement || document.body;
+    const opts = {
+      key: data.key,
+      code: data.code,
+      shiftKey: !!data.shiftKey,
+      ctrlKey: !!data.ctrlKey,
+      altKey: !!data.altKey,
+      metaKey: !!data.metaKey,
+      bubbles: true,
+      cancelable: true,
+    };
+    el.dispatchEvent(new KeyboardEvent(data.type, opts));
+
+    if (
+      data.type === "keydown" &&
+      (el.tagName === "INPUT" || el.tagName === "TEXTAREA")
+    ) {
+      if (data.key === "Backspace") {
+        const s = el.selectionStart || 0,
+          e2 = el.selectionEnd || s;
+        if (s === e2 && s > 0) {
+          el.value = el.value.slice(0, s - 1) + el.value.slice(s);
+          el.setSelectionRange(s - 1, s - 1);
+        } else if (s !== e2) {
+          el.value = el.value.slice(0, s) + el.value.slice(e2);
+          el.setSelectionRange(s, s);
+        }
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      } else if (data.key === "Delete") {
+        const s = el.selectionStart || 0,
+          e2 = el.selectionEnd || s;
+        if (s === e2 && s < el.value.length) {
+          el.value = el.value.slice(0, s) + el.value.slice(s + 1);
+          el.setSelectionRange(s, s);
+        }
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      } else if (data.key === "Enter") {
+        if (el.tagName === "TEXTAREA") {
+          const s = el.selectionStart || 0;
+          el.value =
+            el.value.slice(0, s) + "\n" + el.value.slice(el.selectionEnd || s);
+          el.setSelectionRange(s + 1, s + 1);
+          el.dispatchEvent(new Event("input", { bubbles: true }));
         } else {
-            wrap.innerHTML = '<div class="sc-fp-card">📎 ' + esc(entry.name) + '</div>' + rm;
+          el.form && el.form.requestSubmit && el.form.requestSubmit();
         }
-        wrap.dataset.fname = entry.name;
-        area.appendChild(wrap);
+      } else if (
+        data.key.length === 1 &&
+        !data.ctrlKey &&
+        !data.altKey &&
+        !data.metaKey
+      ) {
+        const s = el.selectionStart || 0,
+          e2 = el.selectionEnd || s;
+        const ch = data.shiftKey ? data.key.toUpperCase() : data.key;
+        el.value = el.value.slice(0, s) + ch + el.value.slice(e2);
+        el.setSelectionRange(s + 1, s + 1);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      }
     }
+  });
 
-    function removeFile(name) {
-        pendingFiles = pendingFiles.filter(f => f.name !== name);
-        const area = document.getElementById('sc-file-preview');
-        if (!area) return;
-        const el = area.querySelector('[data-fname="' + CSS.escape(name) + '"]');
-        if (el) el.remove();
-        const btn = document.getElementById('sc-send-btn');
-        const ta  = document.getElementById('sc-msg-input');
-        if (btn) btn.disabled = !(pendingFiles.length || (ta && ta.value.trim()));
+  // スクロール
+  socket.on("remote_scroll", (data) => {
+    if (!data) return;
+    window.scrollBy({
+      left: data.deltaX || 0,
+      top: data.deltaY || 0,
+      behavior: "auto",
+    });
+  });
+
+  // 相手が録画開始 → こちらの録画ボタンを無効化
+  socket.on("recording_started", (data) => {
+    const recBtn = document.getElementById("ctrl-record");
+    if (recBtn) {
+      recBtn.disabled = true;
+      recBtn.title = "相手が録画中です";
+      recBtn.style.opacity = "0.4";
     }
+    showNoticeBar("🔴 相手が録画中です", 0);
+  });
 
-    // ── 検索 ──────────────────────────────────────────────────
-    function filterMessages(q) {
-        const lower = (q || '').toLowerCase();
-        document.querySelectorAll('.sc-msg[data-id],.sc-msg-cont[data-id]').forEach(el => {
-            if (!lower) { el.style.display = ''; return; }
-            const body = el.querySelector('.sc-msg-text');
-            el.style.display = (body && body.textContent.toLowerCase().includes(lower)) ? '' : 'none';
-        });
+  // 相手が録画停止 → こちらの録画ボタンを再有効化
+  socket.on("recording_stopped", (data) => {
+    const recBtn = document.getElementById("ctrl-record");
+    if (recBtn) {
+      recBtn.disabled = false;
+      recBtn.title = "録画";
+      recBtn.style.opacity = "";
     }
+    hideNoticeBar();
+  });
 
-    async function clearChat() {
-        if (!MODE) return;
-        const nameEl = document.getElementById('target-name');
-        const label  = MODE === 'room'
-            ? `グループ「${nameEl ? nameEl.textContent : 'このグループ'}」`
-            : `${nameEl ? nameEl.textContent : 'この相手'}さんとの`;
-        if (!confirm(`${label}チャット履歴をすべて削除しますか？\nこの操作は元に戻せません。`)) return;
-        const body = MODE === 'room'
-            ? { roomId: ROOM_ID }
-            : { toUserId: TARGET_ID };
-        const res = await fetch('/api/chat/clear', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            alert('削除失敗: ' + (err.error || res.status));
-        }
+  // ─ 公開API（HTMLのonclick / _chat_webrtc 経由） ──────────────
+  // ─ フルスクリーン切り替え ──────────────────────────────────────
+  function toggleFullscreen() {
+    const box = document.getElementById("call-box");
+    const icon = document.getElementById("fullscreen-icon");
+    if (!box) return;
+
+    // ネイティブ Fullscreen API を優先（より完全な全画面）
+    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+    if (!fsEl) {
+      // 全画面に入る
+      const req = box.requestFullscreen || box.webkitRequestFullscreen;
+      if (req) {
+        req.call(box).catch(() => _toggleCSSFullscreen(box, icon));
+      } else {
+        _toggleCSSFullscreen(box, icon);
+      }
+    } else {
+      // 全画面を抜ける
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exit) exit.call(document);
     }
+  }
 
-    // ── サイドバー検索 ────────────────────────────────────────
-    const SC_CLS = { online: 'pip-online', break: 'pip-break', offline: 'pip-offline' };
+  function _toggleCSSFullscreen(box, icon) {
+    // Fullscreen API が使えないブラウザ向け CSS フォールバック
+    const isFull = box.classList.toggle("call-fullscreen");
+    if (icon)
+      icon.className = isFull ? "fa-solid fa-compress" : "fa-solid fa-expand";
+  }
 
-    function filterSidebar(q) {
-        const dmList     = document.getElementById('sc-dm-list');
-        const searchList = document.getElementById('sc-search-list');
-        q = (q || '').trim().toLowerCase();
-        if (!q) {
-            if (dmList)     dmList.style.display     = '';
-            if (searchList) searchList.style.display = 'none';
-            return;
-        }
-        const filtered = ALL_USERS.filter(u => {
-            const name = (u.emp ? u.emp.name : u.username) || '';
-            const dept = (u.emp ? u.emp.department : '') || '';
-            return name.toLowerCase().includes(q) || dept.toLowerCase().includes(q) || u.username.toLowerCase().includes(q);
-        });
-        if (searchList) {
-            searchList.innerHTML = filtered.length ? filtered.map(u => {
-                const name = u.emp ? u.emp.name : u.username;
-                const dept = u.emp ? (u.emp.department || '') : '';
-                const scls = SC_CLS[u.chatStatus || 'offline'];
-                return '<a href="/chat/dm/' + u._id + '" class="sc-nav-row">'
-                    + '<div class="sc-av-wrap sm"><div class="sc-av sm">' + name.charAt(0).toUpperCase() + '</div>'
-                    + '<span class="sc-pip ' + scls + '" data-uid="' + u._id + '"></span></div>'
-                    + '<div class="sc-nav-info"><span class="sc-nav-name">' + esc(name) + '</span>'
-                    + (dept ? '<span class="sc-nav-sub">' + esc(dept) + '</span>' : '') + '</div></a>';
-            }).join('') : '<div class="sc-empty-row">見つかりません</div>';
-            searchList.style.display = '';
-        }
-        if (dmList) dmList.style.display = 'none';
-    }
+  // ネイティブ Fullscreen 変化を CSS アイコンに反映
+  document.addEventListener("fullscreenchange", _onFsChange);
+  document.addEventListener("webkitfullscreenchange", _onFsChange);
+  function _onFsChange() {
+    const icon = document.getElementById("fullscreen-icon");
+    const inFs = !!(
+      document.fullscreenElement || document.webkitFullscreenElement
+    );
+    if (icon)
+      icon.className = inFs ? "fa-solid fa-compress" : "fa-solid fa-expand";
+  }
 
-    // ── ステータス ────────────────────────────────────────────
-    function setStatus(status, btn) {
-        fetch('/api/chat/status', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status }),
-        }).then(r => r.json()).then(() => {
-            curAutoStatus = status; // 手動変更を自動タイマーに反映
-            document.querySelectorAll('.sc-st-btn').forEach(b => b.classList.remove('active'));
-            if (btn) btn.classList.add('active');
-            const pip = document.getElementById('my-pip');
-            if (pip) pip.className = 'sc-pip ' + SC_CLS[status];
-        });
-    }
+  // 映像エリアをダブルクリックしても全画面切り替え
+  document.addEventListener("dblclick", (e) => {
+    if (e.target.closest("#call-videos")) toggleFullscreen();
+  });
 
-    function updatePips(userId, status) {
-        document.querySelectorAll('[data-uid="' + userId + '"].sc-pip').forEach(el => {
-            el.className = 'sc-pip ' + (SC_CLS[status] || 'pip-offline');
-        });
-    }
-
-    // ── 自動ステータス管理 ────────────────────────────────────
-    (function setupAutoStatus() {
-        let manualOverride = false; // 手動設定中はタイマーで上書きしない
-
-        function applyAuto(s) {
-            if (curAutoStatus === s) return;
-            curAutoStatus = s;
-            fetch('/api/chat/status', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: s }),
-            }).catch(() => {});
-            document.querySelectorAll('.sc-st-btn').forEach(b => b.classList.remove('active'));
-            const b = document.querySelector('.sc-st-btn[data-st="' + s + '"]');
-            if (b) b.classList.add('active');
-            const pip = document.getElementById('my-pip');
-            if (pip) pip.className = 'sc-pip ' + SC_CLS[s];
-        }
-        function resetTimer() {
-            clearTimeout(autoStatusTimer); clearTimeout(autoBreakTimer);
-            applyAuto('online');
-            autoBreakTimer = setTimeout(() => {
-                applyAuto('break');
-                autoStatusTimer = setTimeout(() => applyAuto('offline'), 2 * 60000); // 休憩から2分後(合計5分)でオフライン
-            }, 3 * 60000); // 3分無操作で休憩中
-        }
-        ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'].forEach(ev =>
-            document.addEventListener(ev, resetTimer, { passive: true })
-        );
-        resetTimer();
-        window.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                resetTimer(); // タブに戻ったらオンラインに
-            }
-        });
-        window.addEventListener('beforeunload', () =>
-            navigator.sendBeacon('/api/chat/status', new Blob([JSON.stringify({ status: 'offline' })], { type: 'application/json' }))
-        );
-    })();
-
-    // ── グループ作成 ──────────────────────────────────────────
-    function openCreateRoom() {
-        document.getElementById('room-name') && (document.getElementById('room-name').value = '');
-        document.getElementById('room-desc') && (document.getElementById('room-desc').value = '');
-        document.getElementById('room-icon') && (document.getElementById('room-icon').value = '💬');
-        document.querySelectorAll('#sc-modal-user-list input[name="member"]').forEach(cb => cb.checked = false);
-        openModal('sc-modal-create');
-    }
-
-    async function createRoom() {
-        const name = (document.getElementById('room-name') || {}).value || '';
-        if (!name.trim()) { alert('グループ名を入力してください'); return; }
-        const desc = (document.getElementById('room-desc') || {}).value || '';
-        const icon = (document.getElementById('room-icon') || {}).value || '💬';
-        const memberIds = [...document.querySelectorAll('#sc-modal-user-list input[name="member"]:checked')].map(cb => cb.value);
-        const r = await fetch('/api/chat/room', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: name.trim(), description: desc.trim(), icon, memberIds }),
-        });
-        const j = await r.json();
-        if (j.ok) { closeModal('sc-modal-create'); location.href = '/chat/room/' + j.roomId; }
-        else alert('作成に失敗しました: ' + (j.error || ''));
-    }
-
-    function filterModalUsers(q) {
-        q = (q || '').toLowerCase();
-        document.querySelectorAll('.sc-modal-user-row').forEach(row => {
-            const name = (row.querySelector('.sc-modal-uname') || {}).textContent || '';
-            row.style.display = (!q || name.toLowerCase().includes(q)) ? '' : 'none';
-        });
-    }
-
-    // ── グループ設定 ──────────────────────────────────────────
-    function openRoomSettings() {
-        if (!ROOM_ID) return;
-        const nameEl = document.getElementById('room-edit-name');
-        const descEl = document.getElementById('room-edit-desc');
-        const iconEl = document.getElementById('room-edit-icon');
-        if (nameEl) nameEl.value = document.querySelector('.sc-hd-name') ? document.querySelector('.sc-hd-name').textContent : '';
-        if (descEl) descEl.value = '';
-        if (iconEl) iconEl.value = '💬';
-        openModal('sc-modal-room-settings');
-    }
-
-    async function saveRoomSettings() {
-        if (!ROOM_ID) return;
-        const name = (document.getElementById('room-edit-name') || {}).value || '';
-        const desc = (document.getElementById('room-edit-desc') || {}).value || '';
-        const icon = (document.getElementById('room-edit-icon') || {}).value || '💬';
-        const r = await fetch('/api/chat/room/' + ROOM_ID, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, description: desc, icon }),
-        });
-        const j = await r.json();
-        if (j.ok) { closeModal('sc-modal-room-settings'); location.reload(); }
-        else alert('保存に失敗しました');
-    }
-
-    // ── メンバーパネル ────────────────────────────────────────
-    function toggleMemberPanel() {
-        const panel = document.getElementById('sc-member-panel');
-        if (!panel) return;
-        panel.style.display = panel.style.display === 'none' ? '' : 'none';
-    }
-
-    async function kickMember(userId, name) {
-        if (!ROOM_ID) return;
-        if (!confirm(name + ' をグループから除外しますか？')) return;
-        await fetch('/api/chat/room/' + ROOM_ID + '/members/' + userId, { method: 'DELETE' });
-        location.reload();
-    }
-
-    function openAddMember() {
-        // 簡易実装：全ユーザーから選択
-        const selected = prompt('追加するユーザーIDをカンマ区切りで入力してください（管理者向け）:');
-        if (!selected) return;
-        const ids = selected.split(',').map(s => s.trim()).filter(Boolean);
-        fetch('/api/chat/room/' + ROOM_ID + '/members', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userIds: ids }),
-        }).then(() => location.reload());
-    }
-
-    // ── モーダル ──────────────────────────────────────────────
-    function openModal(id) {
-        const el = document.getElementById(id);
-        if (el) el.style.display = 'flex';
-    }
-
-    function closeModal(id) {
-        const el = document.getElementById(id);
-        if (el) el.style.display = 'none';
-    }
-
-    // ── ユーティリティ ────────────────────────────────────────
-    function esc(s) {
-        return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
-
-    function getUserName(userId) {
-        if (userId === MY_ID) return MY_NAME;
-        const u = ALL_USERS.find(u => u._id === userId);
-        if (!u) return null;
-        return u.emp ? u.emp.name : u.username;
-    }
-
-    function scrollBottom(smooth) {
-        const el = document.getElementById('sc-msg-bottom');
-        if (el) el.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' });
-    }
-
-    // ── 初期スクロール ────────────────────────────────────────
-    if (MODE !== 'home') scrollBottom(false);
-
-    // --- WebRTC / call ─────────────────────────────────────────
-    // 変数
-    let localStream      = null;   // カメラ・マイク
-    let screenStream     = null;   // 画面共有ストリーム
-    let callPC           = null;   // RTCPeerConnection
-    let isMicOn          = true;
-    let isCamOn          = true;
-    let isRemoteCtrl     = false;  // 遠隔操作モード（自分が操作者）
-    let pendingOffer     = null;   // 着信時に保存する offer { fromUserId, sdp }
-    let callTimeoutTimer = null;   // 発信側 30秒タイムアウトタイマー
-    let incomingTimer    = null;   // 着信側 30秒タイムアウトタイマー（無視された場合）
-    let callStartTime    = null;   // 通話開始時刻（ms）
-    let mediaRecorder    = null;   // 録画用 MediaRecorder
-    let recordChunks     = [];     // 録画データバッファ
-    let callTargetId     = null;   // 現在通話中の相手 userId（doHangup で参照）
-    let pendingCandidates = [];    // setRemoteDescription 前に届いた ICE キャンディデートのバッファ
-    let remoteScreenInfo  = null;  // 相手の画面情報 { screenW, screenH, windowX, windowY, viewportW, viewportH }
-
-    // ─ UI helpers ───────────────────────────────────────────────
-    function showCallOverlay(label) {
-        const ov = document.getElementById('call-overlay');
-        const tl = document.getElementById('call-target-name');
-        const sl = document.getElementById('call-status-label');
-        if (ov) ov.style.display = 'flex';
-        if (tl) tl.textContent = TARGET_NAME || '';
-        if (sl) sl.textContent = label || '通話中';
-    }
-    function hideCallOverlay() {
-        const ov = document.getElementById('call-overlay');
-        if (ov) ov.style.display = 'none';
-    }
-    function showIncomingModal(name) {
-        const m = document.getElementById('call-incoming-modal');
-        const n = document.getElementById('call-incoming-name');
-        if (m) m.style.display = 'flex';
-        if (n) n.textContent = (name || '不明') + ' から';
-    }
-    function hideIncomingModal() {
-        const m = document.getElementById('call-incoming-modal');
-        if (m) m.style.display = 'none';
-    }
-
-    // ─ メディア取得 ──────────────────────────────────────────────
-    async function getLocalStream() {
-        if (localStream) return localStream;
-        try {
-            localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-        } catch (e) {
-            // カメラが使えない場合は音声のみにフォールバック
-            try {
-                localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-            } catch (e2) {
-                throw new Error('マイクへのアクセスが拒否されました。ブラウザの設定をご確認ください。');
-            }
-        }
-        const lv = document.getElementById('local-video');
-        if (lv) { lv.srcObject = localStream; lv.play().catch(() => {}); }
-        return localStream;
-    }
-
-    // ─ RTCPeerConnection 作成 ─────────────────────────────────────
-    let _cachedIceServers = null; // ICE設定キャッシュ（ページ内で1回だけ取得）
-
-    async function getIceServers() {
-        if (_cachedIceServers) return _cachedIceServers;
-        try {
-            const r = await fetch('/api/webrtc/ice');
-            const j = await r.json();
-            _cachedIceServers = j.iceServers;
-            console.log('[WebRTC] ICE servers loaded:', _cachedIceServers.length, '件');
-        } catch (e) {
-            console.warn('[WebRTC] ICE設定の取得失敗。デフォルトSTUNを使用:', e);
-            _cachedIceServers = [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-            ];
-        }
-        return _cachedIceServers;
-    }
-
-    async function createPC(targetId) {
-        if (callPC) return callPC;
-        const iceServers = await getIceServers();
-        const ICE = { iceServers };
-        // ★ ローカル変数 pc に保持 → 古い PC のハンドラが新しい callPC に干渉しない
-        const pc = new RTCPeerConnection(ICE);
-        callPC = pc;
-        let iceRestartCount = 0;
-
-        pc.onicecandidate = (ev) => {
-            if (callPC !== pc) return; // このPCがもう使われていなければ無視
-            if (ev.candidate) {
-                // 候補タイプをログ（host=ローカル, srflx=STUN公開IP, relay=TURN中継）
-                const c = ev.candidate;
-                console.log(`[ICE candidate] type=${c.type || 'unknown'} proto=${c.protocol} addr=${c.address || '?'} port=${c.port}`);
-                socket.emit('webrtc-candidate', { toUserId: targetId, fromUserId: MY_ID, candidate: c.toJSON() });
-            } else {
-                console.log('[ICE gathering] 完了（null candidate）');
-            }
-        };
-        pc.ontrack = (ev) => {
-            if (callPC !== pc) return;
-            console.log('[WebRTC] ontrack fired, track:', ev.track.kind, 'streams:', ev.streams.length);
-            const rv = document.getElementById('remote-video');
-            if (!rv) return;
-            if (ev.streams && ev.streams[0]) {
-                // ストリームが同じなら srcObject を再セットしない（AbortError 防止）
-                if (rv.srcObject !== ev.streams[0]) {
-                    rv.srcObject = ev.streams[0];
-                }
-            } else {
-                // Firefox 等で ev.streams が空の場合は手動でストリームに追加
-                if (!(rv.srcObject instanceof MediaStream)) {
-                    rv.srcObject = new MediaStream();
-                }
-                rv.srcObject.addTrack(ev.track);
-            }
-            // autoplay 属性で自動再生されるが、念のため paused の場合だけ play()
-            if (rv.paused) {
-                rv.play().catch(() => {}); // 失敗しても無視（autoplay が処理する）
-            }
-        };
-        pc.onconnectionstatechange = () => {
-            if (callPC !== pc) return; // 古いPCのイベントは無視
-            const s = pc.connectionState;
-            console.log('[WebRTC] connectionState:', s);
-            if (s === 'connected') {
-                iceRestartCount = 0;
-                showCallOverlay('通話中');
-            }
-            // 'failed' は oniceconnectionstatechange 側で ICE Restart してから処理
-            // ここでは doHangup しない（二重起動防止）
-            if (s === 'disconnected') {
-                setTimeout(() => {
-                    if (callPC === pc && pc.connectionState === 'disconnected') doHangup();
-                }, 5000);
-            }
-        };
-        pc.onicegatheringstatechange = () => {
-            console.log('[WebRTC] iceGatheringState:', pc.iceGatheringState);
-        };
-        pc.oniceconnectionstatechange = () => {
-            if (callPC !== pc) return;
-            const s = pc.iceConnectionState;
-            console.log('[WebRTC] iceConnectionState:', s);
-            // オーバーレイにICE状態を表示（デバッグ用）
-            const sl = document.getElementById('call-status-label');
-            if (sl && s !== 'connected' && s !== 'completed') {
-                const labels = { checking: '接続確認中...', disconnected: '再接続中...', failed: '接続失敗', closed: '終了' };
-                if (labels[s]) sl.textContent = labels[s];
-            }
-            if (s === 'connected' || s === 'completed') showCallOverlay('通話中');
-            if (s === 'failed') {
-                // ICE Restart を試みる（最大2回）
-                if (iceRestartCount < 2) {
-                    iceRestartCount++;
-                    console.warn(`[WebRTC] ICE 失敗 → ICE Restart 試行 (${iceRestartCount}/2)`);
-                    showCallOverlay('再接続中...');
-                    pc.restartIce();
-                    // 発信側の場合は新しい offer を再作成して送信
-                    if (pc.localDescription && pc.localDescription.type === 'offer') {
-                        pc.createOffer({ iceRestart: true }).then(offer => {
-                            if (callPC !== pc) return; // すでに hangup 済みなら中止
-                            return pc.setLocalDescription(offer).then(() => {
-                                socket.emit('webrtc-offer-restart', {
-                                    toUserId: targetId, fromUserId: MY_ID,
-                                    sdp: offer.sdp, type: offer.type,
-                                });
-                            });
-                        }).catch(e => console.error('[WebRTC] ICE restart offer 失敗', e));
-                    }
-                } else {
-                    console.error('[WebRTC] ICE 接続に失敗しました（再試行上限）。通話を終了します。');
-                    doHangup();
-                }
-            }
-        };
-        return pc;
-    }
-
-    // ─ 発信（正しいフロー） ────────────────────────────────────────
-    // 1. ローカルメディア取得
-    // 2. offer SDP 作成
-    // 3. call_initiate に offer SDP を同梱して送信
-    // 4. 相手の call_accepted（answer SDP あり）または call_rejected を待つ
-    async function doStartCall(targetId) {
-        try {
-            showCallOverlay('発信中... 📞');
-            callTargetId = targetId;
-
-            // 発信音を開始
-            if (window.CallSounds) CallSounds.startDialing();
-
-            // メディア取得（カメラなしでも音声のみで継続）
-            await getLocalStream();
-
-            // RTCPeerConnection を作成してトラック追加
-            await createPC(targetId);
-            localStream.getTracks().forEach(t => callPC.addTrack(t, localStream));
-
-            // Offer 作成 → 相手に送信
-            const offer = await callPC.createOffer();
-            await callPC.setLocalDescription(offer);
-            socket.emit('call_initiate', {
-                toUserId: targetId,
-                fromUserId: MY_ID,
-                fromName: MY_NAME,
-                sdp: offer.sdp,
-                type: offer.type,
-            });
-
-            // ── 30秒タイムアウト ────────────────────────────────────
-            clearTimeout(callTimeoutTimer);
-            callTimeoutTimer = setTimeout(async () => {
-                if (!callPC || callPC.connectionState === 'connected') return;
-                if (window.CallSounds) CallSounds.stopDialing();
-                socket.emit('call_cancel', { toUserId: targetId, fromUserId: MY_ID });
-                await fetch('/api/chat/missed-call', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ toUserId: targetId }),
-                }).catch(() => {});
-                doHangup();
-                const bar = document.getElementById('sc-typing');
-                if (bar) { bar.textContent = TARGET_NAME + ' が応答しませんでした'; setTimeout(() => { if (bar) bar.textContent = ''; }, 5000); }
-            }, 30000);
-        } catch (e) {
-            console.error('startCall error', e);
-            if (window.CallSounds) CallSounds.stopDialing();
-            hideCallOverlay();
-            alert('通話を開始できませんでした: ' + (e.message || e));
-            doHangup();
-        }
-    }
-
-    // ─ 着信応答 ────────────────────────────────────────────────────
-    // acceptCall / rejectCall は着信モーダルのボタンから呼ばれる
-    async function acceptCall() {
-        clearTimeout(incomingTimer); incomingTimer = null;
-        hideIncomingModal();
-        if (window.CallSounds) { CallSounds.stopIncoming(); CallSounds.stopDialing(); }
-        if (!pendingOffer) { console.warn('[acceptCall] pendingOffer が null です'); return; }
-        const { fromUserId, sdp } = pendingOffer;
-        pendingOffer = null;
-        try {
-            showCallOverlay('接続中...');
-            callTargetId = fromUserId;
-            // 1. ローカルメディアを取得
-            await getLocalStream();
-            // 2. RTCPeerConnection を作成し、トラックを先に追加してから offer をセット
-            await createPC(fromUserId);
-            localStream.getTracks().forEach(t => callPC.addTrack(t, localStream));
-            // 3. 相手の offer をリモート SDP としてセット
-            await callPC.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
-            // 4. バッファされていた ICE キャンディデートを追加
-            for (const c of pendingCandidates) {
-                try { await callPC.addIceCandidate(new RTCIceCandidate(c)); } catch (_) {}
-            }
-            pendingCandidates = [];
-            // 5. Answer を作成して発信者に送信
-            const answer = await callPC.createAnswer();
-            await callPC.setLocalDescription(answer);
-            socket.emit('call_accept', { toUserId: fromUserId, fromUserId: MY_ID, sdp: answer.sdp, type: answer.type });
-            callStartTime = Date.now(); // 応答側も開始時刻を記録
-            console.log('[acceptCall] answer 送信完了 →', fromUserId);
-        } catch (e) {
-            console.error('acceptCall error', e);
-            hideCallOverlay();
-            doHangup();
-        }
-    }
-
-    function rejectCall() {
-        clearTimeout(incomingTimer); incomingTimer = null;
-        hideIncomingModal();
-        if (window.CallSounds) { CallSounds.stopIncoming(); CallSounds.playReject(); }
-        if (!pendingOffer) return;
-        const { fromUserId } = pendingOffer;
-        pendingOffer = null;
-        socket.emit('call_reject', { toUserId: fromUserId, fromUserId: MY_ID });
-    }
-
-    // ─ 終話 ─────────────────────────────────────────────────────
-    let _hangingUp = false;
-    // silent=true: 相手側から call_ended を受け取った場合 → 音を鳴らさず、call_end も再送しない
-    function doHangup(silent) {
-        if (_hangingUp) return;
-        _hangingUp = true;
-        setTimeout(() => { _hangingUp = false; }, 2000); // 2秒クールダウン（二重呼び出し防止）
-        try {
-            clearTimeout(callTimeoutTimer); callTimeoutTimer = null;
-            clearTimeout(incomingTimer);    incomingTimer    = null;
-            if (window.CallSounds) {
-                CallSounds.stopDialing();
-                CallSounds.stopIncoming();
-                if (!silent) CallSounds.playHangup(); // 自分側からの終話のみ音を鳴らす
-            }
-            if (callPC) { const _pc = callPC; callPC = null; _pc.close(); }
-            if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
-            if (screenStream) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; }
-            isMicOn = true; isCamOn = true; isRemoteCtrl = false;
-            pendingCandidates = [];
-            hideCallOverlay();
-            hideIncomingModal();
-            hideNoticeBar();
-            pendingOffer = null;
-            clearPointerCanvas();
-            const rb = document.getElementById('remote-ctrl-bar');
-            if (rb) rb.style.display = 'none';
-
-            // 通話履歴を保存（自分から切った側だけが保存 → 重複防止）
-            const target = callTargetId || TARGET_ID;
-            if (!silent && callStartTime && target) {
-                const duration = Math.round((Date.now() - callStartTime) / 1000);
-                callStartTime = null;
-                fetch('/api/chat/call-history', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ toUserId: target, duration }),
-                }).catch(() => {});
-            }
-            callStartTime = null;
-            callTargetId  = null;
-
-            // 録画停止（録画中であれば）
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                mediaRecorder.stop();
-            }
-
-            // silent=false（自分側終話）のときのみ相手に通知 → 無限ループ防止
-            if (!silent && target) socket.emit('call_end', { toUserId: target, fromUserId: MY_ID });
-        } catch (e) { console.error('hangup error', e); }
-    }
-
-    // ─ マイク / カメラ ON/OFF ─────────────────────────────────────
-    function toggleMic(btn) {
-        if (!localStream) return;
-        isMicOn = !isMicOn;
-        localStream.getAudioTracks().forEach(t => { t.enabled = isMicOn; });
-        if (btn) {
-            btn.classList.toggle('muted', !isMicOn);
-            btn.innerHTML = isMicOn
-                ? '<i class="fa-solid fa-microphone"></i>'
-                : '<i class="fa-solid fa-microphone-slash"></i>';
-            btn.title = isMicOn ? 'マイク OFF' : 'マイク ON';
-        }
-    }
-
-    function toggleCam(btn) {
-        if (!localStream) return;
-        isCamOn = !isCamOn;
-        localStream.getVideoTracks().forEach(t => { t.enabled = isCamOn; });
-        if (btn) {
-            btn.classList.toggle('muted', !isCamOn);
-            btn.innerHTML = isCamOn
-                ? '<i class="fa-solid fa-video"></i>'
-                : '<i class="fa-solid fa-video-slash"></i>';
-            btn.title = isCamOn ? 'カメラ OFF' : 'カメラ ON';
-        }
-    }
-
-    // ─ 画面共有 ────────────────────────────────────────────────────
-    // 通話中でなければ先に通話を開始してから画面共有に切り替える
-    async function doShareScreen() {
-        if (!TARGET_ID) return alert('相手が選択されていません');
-        try {
-            // 画面共有ストリーム取得
-            screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: 'always' }, audio: false });
-
-            // 通話がなければ先に発信
-            if (!callPC) {
-                await doStartCall(TARGET_ID);
-                // offer 送信後、callPC は確立されている
-            }
-
-            // 映像トラックを画面共有に切り替え
-            const sender = callPC && callPC.getSenders().find(s => s.track && s.track.kind === 'video');
-            if (sender) await sender.replaceTrack(screenStream.getVideoTracks()[0]);
-
-            const btn = document.getElementById('ctrl-screen');
-            if (btn) btn.classList.add('active-feature');
-
-            socket.emit('screen_share_started', {
-                toUserId:  TARGET_ID,
-                fromUserId: MY_ID,
-                screenW:   window.screen.width,
-                screenH:   window.screen.height,
-                windowX:   window.screenX || 0,
-                windowY:   window.screenY || 0,
-                viewportW: window.innerWidth,
-                viewportH: window.innerHeight
-            });
-            showCallOverlay('画面共有中');
-
-            // 共有停止時（ブラウザの共有停止ボタンも含む）
-            screenStream.getVideoTracks()[0].addEventListener('ended', async () => {
-                await stopScreenShare();
-            });
-        } catch (e) {
-            if (e.name !== 'NotAllowedError') console.error('screen share failed', e);
-            if (screenStream) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; }
-        }
-    }
-
-    async function stopScreenShare() {
-        if (screenStream) { screenStream.getTracks().forEach(t => t.stop()); screenStream = null; }
-        // カメラに戻す
-        if (localStream && callPC) {
-            const camTrack = localStream.getVideoTracks()[0];
-            const sender = callPC.getSenders().find(s => s.track && s.track.kind === 'video');
-            if (sender && camTrack) await sender.replaceTrack(camTrack);
-        }
-        const btn = document.getElementById('ctrl-screen');
-        if (btn) btn.classList.remove('active-feature');
-        socket.emit('screen_share_stopped', { toUserId: TARGET_ID, fromUserId: MY_ID });
-        showCallOverlay('通話中');
-    }
-
-    // ─ 遠隔操作（ポインタ共有） ────────────────────────────────────
-    // ブラウザの制限により、相手のOSを直接操作することはできません。
-    // 代わりに「自分のマウス位置をリアルタイムで相手の画面に表示する」ポインタ共有を実装します。
-    let remotePointerHandler = null;
-    let remoteClickHandler   = null;
-    let remoteDblHandler     = null;
-    let remoteScrollHandler  = null;
-    let remoteKeyHandler     = null;
-
-    // ビデオ要素内の実際のコンテンツ領域を計算（object-fit:containのレターボックス補正）
-    function getVideoContentRect(rv) {
-        const elW = rv.offsetWidth  || rv.clientWidth  || 1;
-        const elH = rv.offsetHeight || rv.clientHeight || 1;
-        const vW  = rv.videoWidth   || elW;
-        const vH  = rv.videoHeight  || elH;
-        const elAR = elW / elH;
-        const vAR  = vW  / vH;
-        let cW, cH;
-        if (vAR > elAR) { cW = elW; cH = elW / vAR; }
-        else             { cH = elH; cW = elH * vAR; }
-        return { left: (elW - cW) / 2, top: (elH - cH) / 2, width: cW, height: cH };
-    }
-
-    // ビデオ要素上のクライアント座標 → 正規化(0-1)変換（レターボックス補正済み）
-    function videoNormCoords(rv, clientX, clientY) {
-        const rvRect = rv.getBoundingClientRect();
-        const content = getVideoContentRect(rv);
-        const relX = (clientX - rvRect.left) - content.left;
-        const relY = (clientY - rvRect.top)  - content.top;
-        return {
-            x: +(relX / content.width).toFixed(4),
-            y: +(relY / content.height).toFixed(4)
-        };
-    }
-
-    function requestRemote() {
-        if (!TARGET_ID) return alert('相手が選択されていません');
-        if (!callPC) return alert('通話中でないと遠隔操作できません');
-
-        // エージェント説明モーダルを表示してから送信
-        const modal = document.getElementById('agent-setup-modal');
-        const cmdEl = document.getElementById('agent-cmd-text');
+  window._chat_webrtc = {
+    hangupCall: doHangup,
+    toggleMic,
+    toggleCam,
+    shareScreen: () => {
+      if (screenStream) {
+        stopScreenShare();
+      } else {
+        doShareScreen();
+      }
+    },
+    requestRemote,
+    stopRemote,
+    acceptCall,
+    rejectCall,
+    toggleRecord,
+    toggleFullscreen,
+    _grantRemote: (fromUserId, granted) => {
+      hideNoticeBar();
+      socket.emit("remote_control_grant", {
+        toUserId: fromUserId,
+        fromUserId: MY_ID,
+        granted,
+      });
+      if (granted) {
+        // 許可した側に「エージェント起動が必要」を大きく表示
+        const serverUrl = location.origin;
+        const uid = MY_ID;
+        const modal = document.getElementById("agent-setup-modal");
+        const cmdEl = document.getElementById("agent-cmd-text");
         if (modal && cmdEl) {
-            const serverUrl = location.origin;
-            cmdEl.textContent = `node remote-agent.js ${TARGET_ID} ${serverUrl}`;
-            modal.style.display = 'flex';
+          cmdEl.textContent = `node remote-agent.js ${uid} ${serverUrl}`;
+          modal.style.display = "flex";
         }
+      }
+    },
+  };
 
-        socket.emit('remote_control_request', { toUserId: TARGET_ID, fromUserId: MY_ID, fromName: MY_NAME });
-        showNoticeBar('遠隔操作リクエストを送信しました。相手の許可を待っています...', 5000);
-    }
-
-    function startRemoteControl() {
-        if (isRemoteCtrl) return;
-        isRemoteCtrl = true;
-        const rv = document.getElementById('remote-video');
-        const rb = document.getElementById('remote-ctrl-bar');
-        if (rb) rb.style.display = 'flex';
-        const btn = document.getElementById('ctrl-remote');
-        if (btn) btn.classList.add('active-feature');
-
-        // ── 遠隔操作開始時は自動でフルスクリーン（大きく見やすく）────────
-        const box = document.getElementById('call-box');
-        if (box && !box.classList.contains('call-fullscreen')) {
-            box.classList.add('call-fullscreen');
-            const icon = document.getElementById('fullscreen-icon');
-            if (icon) { icon.classList.remove('fa-expand'); icon.classList.add('fa-compress'); }
-        }
-
-        // カーソルをクロスヘアに変更
-        if (rv) rv.style.cursor = 'crosshair';
-
-        // ─ マウスムーブ（ポインタ位置共有）───────────────────────────
-        remotePointerHandler = (ev) => {
-            if (!rv) return;
-            const { x, y } = videoNormCoords(rv, ev.clientX, ev.clientY);
-            if (x < 0 || x > 1 || y < 0 || y > 1) return;
-            socket.emit('remote_pointer', { toUserId: TARGET_ID, fromUserId: MY_ID, x, y,
-                screenInfo: remoteScreenInfo });
-        };
-
-        // ─ クリック ─────────────────────────────────────────────────
-        remoteClickHandler = (ev) => {
-            if (!rv) return;
-            ev.preventDefault();
-            const { x, y } = videoNormCoords(rv, ev.clientX, ev.clientY);
-            if (x < 0 || x > 1 || y < 0 || y > 1) return;
-            socket.emit('remote_click', { toUserId: TARGET_ID, fromUserId: MY_ID,
-                x, y, button: ev.button, screenInfo: remoteScreenInfo });
-        };
-
-        // ─ ダブルクリック ────────────────────────────────────────────
-        remoteDblHandler = (ev) => {
-            if (!rv) return;
-            ev.preventDefault();
-            const { x, y } = videoNormCoords(rv, ev.clientX, ev.clientY);
-            if (x < 0 || x > 1 || y < 0 || y > 1) return;
-            socket.emit('remote_dblclick', { toUserId: TARGET_ID, fromUserId: MY_ID,
-                x, y, screenInfo: remoteScreenInfo });
-        };
-
-        // ─ スクロール ────────────────────────────────────────────────
-        remoteScrollHandler = (ev) => {
-            if (!rv) return;
-            ev.preventDefault();
-            socket.emit('remote_scroll', { toUserId: TARGET_ID, fromUserId: MY_ID,
-                deltaX: ev.deltaX, deltaY: ev.deltaY });
-        };
-
-        // ─ キーボード（遠隔操作中はページ全体から拾う）────────────────
-        remoteKeyHandler = (ev) => {
-            const tag = (document.activeElement || {}).tagName || '';
-            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-            ev.preventDefault();
-            socket.emit('remote_key', {
-                toUserId: TARGET_ID, fromUserId: MY_ID,
-                type: ev.type, key: ev.key, code: ev.code,
-                shiftKey: ev.shiftKey, ctrlKey: ev.ctrlKey,
-                altKey: ev.altKey, metaKey: ev.metaKey
-            });
-        };
-
-        if (rv) {
-            rv.addEventListener('mousemove',  remotePointerHandler);
-            rv.addEventListener('click',      remoteClickHandler);
-            rv.addEventListener('dblclick',   remoteDblHandler);
-            rv.addEventListener('wheel',      remoteScrollHandler, { passive: false });
-        }
-        document.addEventListener('keydown', remoteKeyHandler);
-        document.addEventListener('keyup', (ev) => {
-            const tag = (document.activeElement || {}).tagName || '';
-            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-            socket.emit('remote_key', {
-                toUserId: TARGET_ID, fromUserId: MY_ID,
-                type: 'keyup', key: ev.key, code: ev.code,
-                shiftKey: ev.shiftKey, ctrlKey: ev.ctrlKey,
-                altKey: ev.altKey, metaKey: ev.metaKey
-            });
-        });
-    }
-
-    function stopRemote() {
-        if (!isRemoteCtrl) return;
-        isRemoteCtrl = false;
-        const rv = document.getElementById('remote-video');
-        if (rv) {
-            rv.style.cursor = '';
-            if (remotePointerHandler) rv.removeEventListener('mousemove', remotePointerHandler);
-            if (remoteClickHandler)   rv.removeEventListener('click',     remoteClickHandler);
-            if (remoteDblHandler)     rv.removeEventListener('dblclick',  remoteDblHandler);
-            if (remoteScrollHandler)  rv.removeEventListener('wheel',     remoteScrollHandler);
-        }
-        if (remoteKeyHandler) document.removeEventListener('keydown', remoteKeyHandler);
-        remotePointerHandler = null;
-        remoteClickHandler   = null;
-        remoteDblHandler     = null;
-        remoteScrollHandler  = null;
-        remoteKeyHandler     = null;
-        const rb = document.getElementById('remote-ctrl-bar');
-        if (rb) rb.style.display = 'none';
-        const btn = document.getElementById('ctrl-remote');
-        if (btn) btn.classList.remove('active-feature');
-        clearPointerCanvas();
-    }
-
-    // ─ 録画 ──────────────────────────────────────────────────────
-    async function toggleRecord(btn) {
-        if (mediaRecorder && mediaRecorder.state === 'recording') {
-            // 停止
-            mediaRecorder.stop();
-            return;
-        }
-        if (!callPC) return showNoticeBar('通話中でないと録画できません', 3000);
-
-        // 録画対象ストリームを組み立て（リモート映像 + ローカル音声）
-        const tracks = [];
-        const rv = document.getElementById('remote-video');
-        if (rv && rv.srcObject) rv.srcObject.getTracks().forEach(t => tracks.push(t));
-        if (localStream) localStream.getAudioTracks().forEach(t => tracks.push(t));
-        if (tracks.length === 0) return showNoticeBar('録画できるストリームがありません', 3000);
-
-        const stream = new MediaStream(tracks);
-        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-            ? 'video/webm;codecs=vp9,opus'
-            : 'video/webm';
-        recordChunks  = [];
-        mediaRecorder = new MediaRecorder(stream, { mimeType });
-
-        // 相手に録画開始を通知（相手側の録画ボタンを無効化させる）
-        const recTarget = callTargetId || TARGET_ID;
-        if (recTarget) socket.emit('recording_started', { toUserId: recTarget, fromUserId: MY_ID });
-
-        // 録画タイマー
-        let recSeconds = 0;
-        const recTimerInterval = setInterval(() => {
-            recSeconds++;
-            const h = Math.floor(recSeconds / 3600);
-            const m = Math.floor((recSeconds % 3600) / 60);
-            const s = recSeconds % 60;
-            const timeStr = h > 0
-                ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
-                : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-            if (btn) btn.innerHTML = `<i class="fa-solid fa-stop"></i> <span class="call-record-dot">●</span> ${timeStr}`;
-            showNoticeBar(`🔴 録画中 ${timeStr}`, 0);
-        }, 1000);
-
-        mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordChunks.push(e.data); };
-        mediaRecorder.onstop = async () => {
-            clearInterval(recTimerInterval);
-            // 相手に録画停止を通知（相手側の録画ボタンを再有効化）
-            if (recTarget) socket.emit('recording_stopped', { toUserId: recTarget, fromUserId: MY_ID });
-            if (btn) { btn.classList.remove('ctrl-recording'); btn.innerHTML = '<i class="fa-solid fa-circle-dot"></i>'; btn.disabled = false; }
-            showNoticeBar('🎥 録画を保存中...', 0);
-            const blob = new Blob(recordChunks, { type: mimeType });
-            recordChunks = [];
-            mediaRecorder = null;
-            const target = callTargetId || TARGET_ID;
-            if (!target || blob.size === 0) { hideNoticeBar(); return; }
-            const fd = new FormData();
-            fd.append('recording', blob, `recording_${Date.now()}.webm`);
-            fd.append('toUserId', target);
-            fd.append('duration', recSeconds);
-            if (ROOM_ID) fd.append('roomId', ROOM_ID);
-            try {
-                await fetch('/api/chat/recording', { method: 'POST', body: fd });
-                showNoticeBar('✅ 録画をチャットに保存しました', 3000);
-            } catch (e) {
-                showNoticeBar('⚠️ 録画の保存に失敗しました', 3000);
-            }
-        };
-        mediaRecorder.start(1000); // 1秒ごとにデータを収集
-        if (btn) { btn.classList.add('ctrl-recording'); btn.innerHTML = '<i class="fa-solid fa-stop"></i> <span class="call-record-dot">●</span> 00:00'; }
-        showNoticeBar('🔴 録画中 00:00', 0);
-    }
-
-    // 相手のポインタをキャンバスに描画
-    function drawRemotePointer(xRatio, yRatio) {
-        const canvas = document.getElementById('remote-pointer-canvas');
-        if (!canvas) return;
-        const rv = document.getElementById('remote-video');
-        if (!rv) return;
-        // レターボックス補正：実際のコンテンツ領域に描画
-        const content = getVideoContentRect(rv);
-        canvas.width  = rv.offsetWidth  || rv.clientWidth;
-        canvas.height = rv.offsetHeight || rv.clientHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        const cx = content.left + xRatio * content.width;
-        const cy = content.top  + yRatio * content.height;
-        // ポインタ描画
-        ctx.strokeStyle = '#ef4444';
-        ctx.fillStyle   = 'rgba(239,68,68,0.2)';
-        ctx.lineWidth   = 2;
-        ctx.beginPath(); ctx.arc(cx, cy, 14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-        // 十字線
-        ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.moveTo(cx - 20, cy); ctx.lineTo(cx + 20, cy); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(cx, cy - 20); ctx.lineTo(cx, cy + 20); ctx.stroke();
-    }
-
-    function clearPointerCanvas() {
-        const canvas = document.getElementById('remote-pointer-canvas');
-        if (!canvas) return;
-        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-    }
-
-    // ─ 通知バナー（通話オーバーレイ内 or 画面下部） ────────────────
-    let _noticeBannerEl = null;
-    let _noticeBannerTimer = null;
-    function showNoticeBar(html, duration) {
-        // 通話オーバーレイが表示中なら内部バナーを使う
-        const inner = document.getElementById('call-inner-notice');
-        if (inner) {
-            inner.innerHTML = html;
-            inner.style.display = 'flex';
-            clearTimeout(_noticeBannerTimer);
-            if (duration) _noticeBannerTimer = setTimeout(() => hideNoticeBar(), duration);
-            return;
-        }
-        // 通話外のとき：画面下部フローティングバナー
-        if (!_noticeBannerEl) {
-            _noticeBannerEl = document.createElement('div');
-            _noticeBannerEl.id = 'call-notice-bar';
-            _noticeBannerEl.style.cssText =
-                'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
-                'background:#1e293b;color:#f1f5f9;padding:10px 18px;border-radius:10px;' +
-                'font-size:13px;z-index:700;box-shadow:0 4px 16px rgba(0,0,0,.4);' +
-                'display:flex;align-items:center;gap:10px;max-width:480px;';
-            document.body.appendChild(_noticeBannerEl);
-        }
-        _noticeBannerEl.innerHTML = html;
-        _noticeBannerEl.style.display = 'flex';
-        clearTimeout(_noticeBannerTimer);
-        if (duration) _noticeBannerTimer = setTimeout(() => hideNoticeBar(), duration);
-    }
-    function hideNoticeBar() {
-        const inner = document.getElementById('call-inner-notice');
-        if (inner) { inner.style.display = 'none'; inner.innerHTML = ''; }
-        if (_noticeBannerEl) _noticeBannerEl.style.display = 'none';
-    }
-
-    // ─ Socket イベント（通話シグナリング） ──────────────────────────
-    socket.on('call_incoming', (data) => {
-        // call_initiate → server → call_incoming
-        // offer SDP が同梱されているので pendingOffer に保存
-        if (!data) return;
-        pendingOffer = { fromUserId: data.fromUserId, sdp: data.sdp };
-        showIncomingModal(data.fromName || TARGET_NAME || '不明');
-        if (window.CallSounds) CallSounds.startIncoming();
-
-        // 着信側も 30秒無視したら自動的に「不在着信」として処理
-        clearTimeout(incomingTimer);
-        incomingTimer = setTimeout(() => {
-            if (!pendingOffer) return; // すでに応答・拒否済み
-            const { fromUserId } = pendingOffer;
-            pendingOffer = null;
-            hideIncomingModal();
-            // 発信側に「不在」を通知
-            socket.emit('call_missed', { toUserId: fromUserId, fromUserId: MY_ID });
-        }, 30000);
-    });
-
-    // 発信側がキャンセル（タイムアウト or 手動キャンセル）→ 着信モーダルを閉じる
-    socket.on('call_cancelled', () => {
-        clearTimeout(incomingTimer); incomingTimer = null;
-        pendingOffer = null;
-        if (window.CallSounds) CallSounds.stopIncoming();
-        hideIncomingModal();
-        // 不在着信をチャットに表示（着信側）
-        const bar = document.getElementById('sc-typing');
-        if (bar) { bar.textContent = TARGET_NAME + ' からの着信がありました（不在着信）'; setTimeout(() => { if (bar) bar.textContent = ''; }, 6000); }
-    });
-
-    // 発信側：相手が無視してタイムアウト → 「応答なし」
-    socket.on('call_missed', () => {
-        clearTimeout(callTimeoutTimer); callTimeoutTimer = null;
-        doHangup();
-        const bar = document.getElementById('sc-typing');
-        if (bar) { bar.textContent = TARGET_NAME + ' は応答しませんでした'; setTimeout(() => { if (bar) bar.textContent = ''; }, 5000); }
-    });
-
-    socket.on('call_accepted', async (data) => {
-        // 相手が着信を応答した。answer SDP が届く
-        clearTimeout(callTimeoutTimer); callTimeoutTimer = null; // タイムアウト解除
-        if (window.CallSounds) CallSounds.stopDialing(); // 発信音を止める
-        callStartTime = Date.now(); // 通話開始時刻を記録
-        try {
-            if (!callPC) { console.warn('[call_accepted] callPC が null'); return; }
-            if (!data || !data.sdp) { console.warn('[call_accepted] sdp がない', data); return; }
-            console.log('[call_accepted] answer SDP をセット中...');
-            await callPC.setRemoteDescription(new RTCSessionDescription({ type: data.type || 'answer', sdp: data.sdp }));
-            // バッファされていた ICE キャンディデートを追加
-            for (const c of pendingCandidates) {
-                try { await callPC.addIceCandidate(new RTCIceCandidate(c)); } catch (_) {}
-            }
-            pendingCandidates = [];
-            console.log('[call_accepted] setRemoteDescription 完了。ICE ネゴシエーション開始...');
-            // connectionstatechange で '通話中' に変わる
-        } catch (e) { console.error('call_accepted error', e); }
-    });
-
-    socket.on('call_rejected', () => {
-        clearTimeout(callTimeoutTimer); callTimeoutTimer = null;
-        if (window.CallSounds) { CallSounds.stopDialing(); CallSounds.playReject(); }
-        doHangup();
-        const n = TARGET_NAME || '相手';
-        const bar = document.getElementById('sc-typing');
-        if (bar) { bar.textContent = n + ' が通話を拒否しました'; setTimeout(() => { if (bar) bar.textContent = ''; }, 4000); }
-    });
-
-    socket.on('webrtc-candidate', async (data) => {
-        try {
-            if (!data || !data.candidate) return;
-            // callPC がない、または remoteDescription がまだ設定されていない場合はバッファに積む
-            if (!callPC || !callPC.remoteDescription) {
-                pendingCandidates.push(data.candidate);
-                return;
-            }
-            await callPC.addIceCandidate(new RTCIceCandidate(data.candidate));
-        } catch (e) { /* ignore benign candidate errors */ }
-    });
-
-    socket.on('call_ended', () => { doHangup(true); }); // silent=true: 音なし・再送なし
-
-    // ICE Restart: 相手から再発信 offer が届いた場合に answer を返す
-    socket.on('webrtc-offer-restart', async (data) => {
-        if (!data || !data.sdp || !callPC) return;
-        try {
-            showCallOverlay('再接続中...');
-            await callPC.setRemoteDescription(new RTCSessionDescription({ type: data.type || 'offer', sdp: data.sdp }));
-            const answer = await callPC.createAnswer();
-            await callPC.setLocalDescription(answer);
-            socket.emit('call_accept', { toUserId: data.fromUserId, fromUserId: MY_ID, sdp: answer.sdp, type: answer.type });
-            console.log('[WebRTC] ICE Restart: answer 送信完了');
-        } catch (e) { console.error('[WebRTC] ICE restart answer 失敗', e); }
-    });
-
-    socket.on('screen_share_started', (data) => {
-        if (data) remoteScreenInfo = data;  // 相手の画面情報を保存
-        const sl = document.getElementById('call-status-label');
-        if (sl) sl.textContent = '相手が画面共有中';
-    });
-    socket.on('screen_share_stopped', (data) => {
-        const sl = document.getElementById('call-status-label');
-        if (sl) sl.textContent = '通話中';
-    });
-
-    // ─ エージェント接続/切断通知 ────────────────────────────────
-    socket.on('agent_ready', (data) => {
-        const ind = document.getElementById('agent-indicator');
-        if (ind) {
-            ind.style.display = '';
-            ind.title = `遠隔操作エージェント接続中 (${data.platform || ''} ${data.screenW || ''}x${data.screenH || ''})`;
-        }
-        const btn = document.getElementById('ctrl-remote');
-        if (btn) btn.title = '遠隔操作リクエスト（エージェント接続済み・OS操作可能）';
-        showNoticeBar('🖥 遠隔操作エージェントが接続されました。OS全体の操作が可能です。', 4000);
-    });
-    socket.on('agent_disconnected', () => {
-        const ind = document.getElementById('agent-indicator');
-        if (ind) ind.style.display = 'none';
-        const btn = document.getElementById('ctrl-remote');
-        if (btn) btn.title = '遠隔操作リクエスト';
-    });
-
-    socket.on('remote_control_request', (data) => {
-        if (!data) return;
-        const fromUserId = data.fromUserId || '';
-        const fromName   = data.fromName   || '相手';
-        // 入力欄を破壊しないよう専用バナーに表示
-        showNoticeBar(
-            '<span>' + fromName + ' が遠隔操作（ポインタ共有）を求めています</span>' +
-            '<button onclick="window._chat_webrtc._grantRemote(\'' + fromUserId + '\',true)"'  +
-            ' style="padding:3px 10px;background:#22c55e;color:#fff;border:none;border-radius:5px;cursor:pointer;white-space:nowrap">許可</button>' +
-            '<button onclick="window._chat_webrtc._grantRemote(\'' + fromUserId + '\',false)"' +
-            ' style="padding:3px 10px;background:#ef4444;color:#fff;border:none;border-radius:5px;cursor:pointer;white-space:nowrap">拒否</button>'
-        );
-    });
-
-    socket.on('remote_control_grant', (data) => {
-        if (!data) return;
-        hideNoticeBar();
-        if (data.granted) {
-            showNoticeBar('✅ 遠隔操作が許可されました。映像上でマウスを動かしてください。', 4000);
-            startRemoteControl();
+  // ─ ヘッダーボタン の紐付け ────────────────────────────────────
+  function wireCallButtons() {
+    const callBtn = document.getElementById("call-btn");
+    const screenBtn = document.getElementById("screen-btn");
+    const remoteBtn = document.getElementById("remote-btn");
+    if (callBtn && !callBtn._wired) {
+      callBtn._wired = true;
+      callBtn.addEventListener("click", () => {
+        if (!TARGET_ID) return;
+        if (callPC) {
+          doHangup();
         } else {
-            showNoticeBar('❌ 遠隔操作リクエストが拒否されました', 3000);
+          doStartCall(TARGET_ID);
         }
-    });
-
-    socket.on('remote_pointer', (data) => {
-        if (!data) return;
-        drawRemotePointer(data.x, data.y);
-    });
-
-    // ─ リモート操作受信（操作される側） ─────────────────────────────
-
-    // 正規化座標(0-1) → ビューポート座標に変換
-    // screenInfoがある場合（フルデスクトップ共有）はウィンドウオフセットを考慮
-    function normToViewport(x, y, si) {
-        if (si && si.screenW && si.viewportW) {
-            // フルスクリーン共有: スクリーン座標→ビューポート座標
-            const absX = x * si.screenW;
-            const absY = y * si.screenH;
-            return {
-                vx: absX - (si.windowX || 0),
-                vy: absY - (si.windowY || 0)
-            };
-        }
-        // タブ共有 or 情報なし: そのままビューポート倍率
-        return { vx: x * window.innerWidth, vy: y * window.innerHeight };
+      });
     }
-
-    // クリック：座標からDOM要素を特定してクリック実行
-    socket.on('remote_click', (data) => {
-        if (!data) return;
-        const { vx, vy } = normToViewport(data.x, data.y, data.screenInfo);
-        const el = document.elementFromPoint(vx, vy);
-        if (!el) return;
-        el.focus();
-        ['mousedown','mouseup','click'].forEach(type => {
-            el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: vx, clientY: vy, button: data.button || 0 }));
-        });
-        if (el.tagName === 'A' && el.href) { try { el.click(); } catch(e) {} }
-        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') el.focus();
-    });
-
-    // ダブルクリック
-    socket.on('remote_dblclick', (data) => {
-        if (!data) return;
-        const { vx, vy } = normToViewport(data.x, data.y, data.screenInfo);
-        const el = document.elementFromPoint(vx, vy);
-        if (!el) return;
-        el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: vx, clientY: vy }));
-    });
-
-    // キーボード：アクティブ要素に送信 + テキスト入力も反映
-    socket.on('remote_key', (data) => {
-        if (!data) return;
-        const el = document.activeElement || document.body;
-        const opts = { key: data.key, code: data.code, shiftKey: !!data.shiftKey, ctrlKey: !!data.ctrlKey, altKey: !!data.altKey, metaKey: !!data.metaKey, bubbles: true, cancelable: true };
-        el.dispatchEvent(new KeyboardEvent(data.type, opts));
-
-        if (data.type === 'keydown' && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
-            if (data.key === 'Backspace') {
-                const s = el.selectionStart || 0, e2 = el.selectionEnd || s;
-                if (s === e2 && s > 0) { el.value = el.value.slice(0, s - 1) + el.value.slice(s); el.setSelectionRange(s - 1, s - 1); }
-                else if (s !== e2) { el.value = el.value.slice(0, s) + el.value.slice(e2); el.setSelectionRange(s, s); }
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-            } else if (data.key === 'Delete') {
-                const s = el.selectionStart || 0, e2 = el.selectionEnd || s;
-                if (s === e2 && s < el.value.length) { el.value = el.value.slice(0, s) + el.value.slice(s + 1); el.setSelectionRange(s, s); }
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-            } else if (data.key === 'Enter') {
-                if (el.tagName === 'TEXTAREA') { const s = el.selectionStart || 0; el.value = el.value.slice(0, s) + '\n' + el.value.slice(el.selectionEnd || s); el.setSelectionRange(s + 1, s + 1); el.dispatchEvent(new Event('input', { bubbles: true })); }
-                else { el.form && el.form.requestSubmit && el.form.requestSubmit(); }
-            } else if (data.key.length === 1 && !data.ctrlKey && !data.altKey && !data.metaKey) {
-                const s = el.selectionStart || 0, e2 = el.selectionEnd || s;
-                const ch = data.shiftKey ? data.key.toUpperCase() : data.key;
-                el.value = el.value.slice(0, s) + ch + el.value.slice(e2);
-                el.setSelectionRange(s + 1, s + 1);
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-        }
-    });
-
-    // スクロール
-    socket.on('remote_scroll', (data) => {
-        if (!data) return;
-        window.scrollBy({ left: data.deltaX || 0, top: data.deltaY || 0, behavior: 'auto' });
-    });
-
-    // 相手が録画開始 → こちらの録画ボタンを無効化
-    socket.on('recording_started', (data) => {
-        const recBtn = document.getElementById('ctrl-record');
-        if (recBtn) {
-            recBtn.disabled = true;
-            recBtn.title = '相手が録画中です';
-            recBtn.style.opacity = '0.4';
-        }
-        showNoticeBar('🔴 相手が録画中です', 0);
-    });
-
-    // 相手が録画停止 → こちらの録画ボタンを再有効化
-    socket.on('recording_stopped', (data) => {
-        const recBtn = document.getElementById('ctrl-record');
-        if (recBtn) {
-            recBtn.disabled = false;
-            recBtn.title = '録画';
-            recBtn.style.opacity = '';
-        }
-        hideNoticeBar();
-    });
-
-    // ─ 公開API（HTMLのonclick / _chat_webrtc 経由） ──────────────
-    // ─ フルスクリーン切り替え ──────────────────────────────────────
-    function toggleFullscreen() {
-        const box  = document.getElementById('call-box');
-        const icon = document.getElementById('fullscreen-icon');
-        if (!box) return;
-
-        // ネイティブ Fullscreen API を優先（より完全な全画面）
-        const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
-        if (!fsEl) {
-            // 全画面に入る
-            const req = box.requestFullscreen || box.webkitRequestFullscreen;
-            if (req) {
-                req.call(box).catch(() => _toggleCSSFullscreen(box, icon));
-            } else {
-                _toggleCSSFullscreen(box, icon);
-            }
+    if (screenBtn && !screenBtn._wired) {
+      screenBtn._wired = true;
+      screenBtn.addEventListener("click", () => {
+        if (screenStream) {
+          stopScreenShare();
         } else {
-            // 全画面を抜ける
-            const exit = document.exitFullscreen || document.webkitExitFullscreen;
-            if (exit) exit.call(document);
+          doShareScreen();
         }
+      });
     }
-
-    function _toggleCSSFullscreen(box, icon) {
-        // Fullscreen API が使えないブラウザ向け CSS フォールバック
-        const isFull = box.classList.toggle('call-fullscreen');
-        if (icon) icon.className = isFull ? 'fa-solid fa-compress' : 'fa-solid fa-expand';
+    if (remoteBtn && !remoteBtn._wired) {
+      remoteBtn._wired = true;
+      remoteBtn.addEventListener("click", requestRemote);
     }
+  }
+  wireCallButtons();
 
-    // ネイティブ Fullscreen 変化を CSS アイコンに反映
-    document.addEventListener('fullscreenchange',        _onFsChange);
-    document.addEventListener('webkitfullscreenchange',  _onFsChange);
-    function _onFsChange() {
-        const icon = document.getElementById('fullscreen-icon');
-        const inFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
-        if (icon) icon.className = inFs ? 'fa-solid fa-compress' : 'fa-solid fa-expand';
-    }
-
-    // 映像エリアをダブルクリックしても全画面切り替え
-    document.addEventListener('dblclick', (e) => {
-        if (e.target.closest('#call-videos')) toggleFullscreen();
-    });
-
-    window._chat_webrtc = {
-        hangupCall:   doHangup,
-        toggleMic,
-        toggleCam,
-        shareScreen:  () => { if (screenStream) { stopScreenShare(); } else { doShareScreen(); } },
-        requestRemote,
-        stopRemote,
-        acceptCall,
-        rejectCall,
-        toggleRecord,
-        toggleFullscreen,
-        _grantRemote: (fromUserId, granted) => {
-            hideNoticeBar();
-            socket.emit('remote_control_grant', { toUserId: fromUserId, fromUserId: MY_ID, granted });
-            if (granted) {
-                // 許可した側に「エージェント起動が必要」を大きく表示
-                const serverUrl = location.origin;
-                const uid = MY_ID;
-                const modal = document.getElementById('agent-setup-modal');
-                const cmdEl = document.getElementById('agent-cmd-text');
-                if (modal && cmdEl) {
-                    cmdEl.textContent = `node remote-agent.js ${uid} ${serverUrl}`;
-                    modal.style.display = 'flex';
-                }
-            }
-        },
-    };
-
-    // ─ ヘッダーボタン の紐付け ────────────────────────────────────
-    function wireCallButtons() {
-        const callBtn   = document.getElementById('call-btn');
-        const screenBtn = document.getElementById('screen-btn');
-        const remoteBtn = document.getElementById('remote-btn');
-        if (callBtn && !callBtn._wired) {
-            callBtn._wired = true;
-            callBtn.addEventListener('click', () => {
-                if (!TARGET_ID) return;
-                if (callPC) { doHangup(); } else { doStartCall(TARGET_ID); }
-            });
-        }
-        if (screenBtn && !screenBtn._wired) {
-            screenBtn._wired = true;
-            screenBtn.addEventListener('click', () => {
-                if (screenStream) { stopScreenShare(); } else { doShareScreen(); }
-            });
-        }
-        if (remoteBtn && !remoteBtn._wired) {
-            remoteBtn._wired = true;
-            remoteBtn.addEventListener('click', requestRemote);
-        }
-    }
-    wireCallButtons();
-
-    // ── 公開 API ──────────────────────────────────────────────
-    window.chatApp = {
-        send,
-        onInput,
-        startReply,
-        cancelReply,
-        startEdit,
-        deleteMsg,
-        toggleReact,
-        pickEmoji,
-        toggleInputEmoji,
-        handleFileSelect,
-        handleDrop,
-        removeFile,
-        filterMessages,
-        filterSidebar,
-        clearChat,
-        setStatus,
-        openCreateRoom,
-        createRoom,
-        filterModalUsers,
-        openRoomSettings,
-        saveRoomSettings,
-        toggleMemberPanel,
-        kickMember,
-        openAddMember,
-        openModal,
-        closeModal,
-    };
+  // ── 公開 API ──────────────────────────────────────────────
+  window.chatApp = {
+    send,
+    onInput,
+    startReply,
+    cancelReply,
+    startEdit,
+    deleteMsg,
+    toggleReact,
+    pickEmoji,
+    switchEmojiTab,
+    toggleInputEmoji,
+    handleFileSelect,
+    handleDrop,
+    removeFile,
+    filterMessages,
+    filterSidebar,
+    clearChat,
+    setStatus,
+    openCreateRoom,
+    createRoom,
+    filterModalUsers,
+    openRoomSettings,
+    saveRoomSettings,
+    toggleMemberPanel,
+    kickMember,
+    openAddMember,
+    openModal,
+    closeModal,
+  };
 })();

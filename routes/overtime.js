@@ -89,7 +89,11 @@ const COMMON_CSS = `
     .ot-textarea{resize:vertical;min-height:100px;line-height:1.7}
     .ot-row2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
     @media(max-width:560px){.ot-row2{grid-template-columns:1fr}}
-    .ot-foot{display:flex;justify-content:flex-end;gap:10px;padding-top:12px;border-top:1px solid #f1f5f9}
+    .ot-foot{display:flex;justify-content:flex-end;gap:10px;padding-top:12px;border-top:1px solid #f1f5f9;flex-wrap:wrap}
+    @media(max-width:560px){
+        .ot-foot{flex-direction:column-reverse;gap:8px}
+        .ot-submit-btn,.ot-ghost-btn{width:100%;justify-content:center;text-align:center;display:flex;align-items:center}
+    }
     .ot-submit-btn{display:inline-flex;align-items:center;gap:7px;padding:10px 22px;border-radius:10px;font-size:14px;font-weight:700;border:none;cursor:pointer;text-decoration:none;transition:opacity .15s}
     .ot-submit-btn:hover{opacity:.9}
     .ot-submit-pre{background:linear-gradient(90deg,#0b5fff,#184df2);color:#fff;box-shadow:0 6px 18px rgba(11,95,255,.25)}
@@ -109,6 +113,21 @@ const COMMON_CSS = `
     .ot-timing-tab.pre-tab.active{background:#0b5fff;color:#fff}
     .ot-timing-tab.post-tab{color:#d97706;background:#fff;border-left:1.5px solid #e5e7eb}
     .ot-timing-tab.post-tab.active{background:#f59e0b;color:#fff}
+    @media(max-width:640px){
+        .ot-wrap{max-width:100%}
+        .ot-hero{padding:18px 16px;border-radius:14px}
+        .ot-hero-title{font-size:17px}
+        .ot-hero-btns{width:100%;flex-direction:column;gap:8px}
+        .ot-new-btn{width:100%;justify-content:center}
+        .ot-form-body{padding:18px 16px}
+        .ot-form-wrap{max-width:100%}
+        .ot-card-body{padding:14px;gap:10px}
+        .ot-card-date{min-width:58px;font-size:16px;padding:8px 8px}
+        .ot-card-info{min-width:0;flex:1}
+        .ot-card-actions{width:100%;margin-left:0;justify-content:flex-end}
+        .ot-tabs{width:100%;justify-content:stretch}
+        .ot-tab{flex:1;text-align:center;padding:8px 10px;font-size:12px}
+    }
 `;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -635,6 +654,13 @@ router.get('/admin/overtime', requireLogin, isAdmin, async (req, res) => {
             .modal-btn{padding:9px 20px;border-radius:9px;font-size:14px;font-weight:700;border:none;cursor:pointer}
             .modal-btn-danger{background:#ef4444;color:#fff}
             .modal-btn-ghost{background:#f1f5f9;color:#374151}
+            @media(max-width:640px){
+                .adm-ot-hero{padding:16px;border-radius:12px}
+                .adm-card-body{padding:12px 14px;flex-direction:column}
+                .adm-emp{display:flex;align-items:center;gap:8px;text-align:left;min-width:0}
+                .adm-emp .avatar{width:32px;height:32px;font-size:13px;flex-shrink:0;margin:0}
+                .adm-actions{margin-left:0;width:100%;justify-content:flex-end}
+            }
         `;
 
         const admCards = requests.length === 0

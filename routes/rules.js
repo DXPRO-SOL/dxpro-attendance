@@ -77,10 +77,18 @@ router.get('/rules', requireLogin, async (req, res) => {
                 .attach-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
                 .attach-badge{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;background:#f0f4ff;color:#0b5fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;border:1px solid #c7d7fd;transition:.15s}
                 .attach-badge:hover{background:#0b5fff;color:#fff}
-                .admin-bar{display:flex;gap:8px;margin-top:10px}
+                .admin-bar{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+                @media(max-width:640px){
+                    .rule-section-head{padding:10px 14px;font-size:14px;flex-wrap:wrap;gap:4px}
+                    .rule-item{padding:14px}
+                    .rule-title{font-size:14px}
+                    .rule-body{font-size:13px}
+                    .attach-badge{font-size:12px;padding:4px 10px}
+                    .admin-bar{flex-direction:row;flex-wrap:wrap}
+                }
             </style>
             <div style="max-width:960px;margin:0 auto">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px">
                     <p style="color:#6b7280;margin:0">会社の規定・ポリシーを確認できます</p>
                     ${isAdminUser?`<a href="/rules/new" style="padding:9px 20px;background:#0b5fff;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">＋ 新規追加</a>`:''}
                 </div>
@@ -138,6 +146,7 @@ router.get('/rules/new', requireLogin, isAdmin, (req, res) => {
             .file-list{margin-top:12px;display:flex;flex-direction:column;gap:6px}
             .file-entry{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#f0f4ff;border-radius:7px;font-size:13px}
             .remove-btn{margin-left:auto;cursor:pointer;color:#ef4444;font-size:15px;font-weight:700;border:none;background:none;line-height:1}
+            @media(max-width:640px){.form-card{padding:16px;margin:0 -4px}.drop-zone{padding:20px}}
         </style>
         <div class="form-card">
             <form action="/rules/new" method="POST" enctype="multipart/form-data">
@@ -236,6 +245,7 @@ router.get('/rules/edit/:id', requireLogin, isAdmin, async (req, res) => {
                 .file-list{margin-top:10px;display:flex;flex-direction:column;gap:6px}
                 .file-entry{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#f0f4ff;border-radius:7px;font-size:13px}
                 .remove-btn{margin-left:auto;cursor:pointer;color:#ef4444;font-size:15px;font-weight:700;border:none;background:none;line-height:1}
+                @media(max-width:640px){.form-card{padding:16px;margin:0 -4px}.drop-zone{padding:18px}}
             </style>
             <div class="form-card">
                 <form action="/rules/edit/${rule._id}" method="POST" enctype="multipart/form-data">

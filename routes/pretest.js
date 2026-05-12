@@ -637,6 +637,11 @@ router.get('/pretest/:lang', (req, res) => {
 .pt-submit-btn:disabled{opacity:.45;cursor:not-allowed}
 .pt-result-box{background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:18px 20px;margin-top:14px;display:none}
 .pt-result-box.show{display:block}
+@media(max-width:600px){
+  .pt-submit-bar{flex-direction:column;align-items:stretch}
+  .pt-submit-btn{width:100%}
+  .pt-qcard{padding:12px}
+}
 </style>
 
 <div class="pt-hero">
@@ -940,6 +945,11 @@ router.get('/admin/pretests', isAdmin, async (req, res) => {
                 .pt-view-btn{display:inline-block;padding:4px 12px;background:#eff6ff;color:#0b5fff;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none;transition:background .15s}
                 .pt-view-btn:hover{background:#dbeafe}
                 .pt-empty{text-align:center;color:#9ca3af;font-size:13px;padding:32px}
+                @media(max-width:640px){
+                  .pt-admin-page{padding:0 6px}
+                  .pt-admin-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+                  .pt-admin-table{min-width:600px}
+                }
             </style>
             <div class="pt-admin-page">
                 <div class="pt-admin-header">

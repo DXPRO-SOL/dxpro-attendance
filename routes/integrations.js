@@ -130,7 +130,7 @@ router.get('/admin/integrations', requireAdmin, async (req, res) => {
         .int-hero { background:linear-gradient(135deg,#1e293b,#334155);border-radius:14px;padding:24px 28px;color:#fff;margin-bottom:28px }
         .int-hero h1 { margin:0;font-size:22px }
         .int-hero p { margin:8px 0 0;opacity:.8;font-size:13px }
-        .int-card { background:#fff;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:16px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06);transition:box-shadow .2s }
+        .int-card { background:#fff;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:16px;overflow:visible;box-shadow:0 1px 4px rgba(0,0,0,.06);transition:box-shadow .2s }
         .int-card--on { border-color:#c7d7fe }
         .int-card-header { display:flex;justify-content:space-between;align-items:center;padding:20px 24px;flex-wrap:wrap;gap:12px }
         .int-card-title { font-weight:700;font-size:16px;margin-bottom:2px }
@@ -155,6 +155,14 @@ router.get('/admin/integrations', requireAdmin, async (req, res) => {
         .int-test-btn { padding:9px 18px;background:#f59e0b;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:14px }
         .int-cancel-btn { padding:9px 18px;background:#f1f5f9;color:#374151;border:none;border-radius:8px;cursor:pointer;font-size:14px }
         #int-toast { position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;z-index:99999;display:none }
+        @media(max-width:640px){
+            .int-wrap{padding:16px 10px}
+            .int-hero{padding:16px;border-radius:10px}
+            .int-hero h1{font-size:18px}
+            .int-card-header{padding:14px 16px}
+            .int-events{padding:10px 16px}
+            .int-modal-body{padding:16px}
+        }
     </style>
     <div class="int-wrap">
         <div class="int-hero">

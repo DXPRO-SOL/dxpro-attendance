@@ -104,6 +104,13 @@ router.get('/organization', requireLogin, async (req, res) => {
         .org-member-role { font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px }
         .org-role-badge { color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700 }
         .org-concurrent { font-size:10px;color:#f59e0b;margin-top:2px }
+        @media(max-width:640px){
+            .org-hero{flex-direction:column;gap:10px;align-items:flex-start;padding:16px}
+            .org-dept-header{padding:10px 12px;font-size:13px}
+            .org-members{padding:8px 10px 10px;gap:8px}
+            .org-member{min-width:calc(50% - 8px);padding:6px 10px}
+            .org-dept-node{margin-left:0 !important}
+        }
     </style>
     <div class="org-wrap">
         <div class="org-hero">
@@ -167,6 +174,12 @@ router.get('/admin/departments', requireAdmin, async (req, res) => {
         .dept-modal-footer { display:flex;gap:10px;justify-content:flex-end;padding:0 24px 20px }
         .dept-save-btn { padding:9px 22px;background:#0f6fff;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700 }
         .dept-cancel-btn { padding:9px 18px;background:#f1f5f9;border:none;border-radius:8px;cursor:pointer }
+        @media(max-width:640px){
+            .dept-hero{flex-direction:column;gap:10px;align-items:flex-start;padding:16px}
+            .dept-wrap{padding:16px 10px}
+            .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+            table{min-width:560px}
+        }
     </style>
     <div class="dept-wrap">
         <div class="dept-hero">
@@ -176,10 +189,12 @@ router.get('/admin/departments', requireAdmin, async (req, res) => {
                 <button class="dept-add-btn" onclick="openModal(null)">＋ 部署追加</button>
             </div>
         </div>
+        <div class="tbl-wrap">
         <table>
             <thead><tr><th>部署名</th><th>コード</th><th>親部署</th><th>部門長</th><th>状態</th><th>操作</th></tr></thead>
             <tbody>${rows || '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:24px">部署がありません</td></tr>'}</tbody>
         </table>
+        </div>
 
         <div class="dept-modal" id="deptModal" style="display:none">
             <div class="dept-modal-box">
@@ -367,8 +382,8 @@ router.get('/admin/organization/roles', requireAdmin, async (req, res) => {
         .rm-filter-btn.on { background:#7c3aed;color:#fff;border-color:#7c3aed }
 
         /* ── テーブル ── */
-        .rm-table-wrap { background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.05) }
-        .rm-table { width:100%;border-collapse:collapse }
+        .rm-table-wrap { background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow-x:auto;-webkit-overflow-scrolling:touch;box-shadow:0 1px 4px rgba(0,0,0,.05) }
+        .rm-table { width:100%;border-collapse:collapse;min-width:600px }
         .rm-table thead th {
             background:#fafbff;padding:12px 16px;text-align:left;
             font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;
@@ -424,6 +439,16 @@ router.get('/admin/organization/roles', requireAdmin, async (req, res) => {
         .rm-btn-cancel { padding:10px 20px;background:#f1f5f9;border:none;border-radius:9px;cursor:pointer;font-size:14px;color:#475569 }
         .rm-toast { position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#1e1b4b;color:#fff;padding:11px 22px;border-radius:10px;font-size:13px;font-weight:600;z-index:20000;animation:toastIn .3s ease;pointer-events:none }
         @keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(10px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+        @media(max-width:640px){
+          .rm-wrap{padding:12px 8px}
+          .rm-hero{padding:16px 18px}
+          .rm-hero h1{font-size:17px}
+          .rm-stat{gap:10px;flex-wrap:wrap}
+          .rm-toolbar{flex-direction:column;align-items:stretch;gap:8px}
+          .rm-search{width:100%;box-sizing:border-box}
+          .rm-filter-row{flex-wrap:wrap;gap:6px}
+          .rm-field-row{grid-template-columns:1fr}
+        }
     </style>
 
     <div class="rm-wrap">

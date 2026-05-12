@@ -42,6 +42,14 @@ router.get('/board/new', requireLogin, (req, res) => {
             .bn-btn-ghost{background:#f1f5f9;color:#374151}
             .bn-btn-ghost:hover{background:#e5e7eb}
             .bn-file-hint{font-size:12px;color:#9ca3af;margin-top:5px}
+            @media(max-width:640px){
+                .bn-wrap{margin:0}
+                .bn-card-head{padding:18px 16px}
+                .bn-card-body{padding:18px 16px}
+                .bn-row{grid-template-columns:1fr}
+                .bn-foot{flex-direction:column-reverse}
+                .bn-btn{width:100%;justify-content:center}
+            }
         </style>
         <div class="bn-wrap">
             <div class="bn-card">
@@ -118,7 +126,7 @@ router.get('/links', requireLogin, (req, res) => {
             .btn-open{background:var(--accent);color:#fff;padding:8px 14px;border-radius:10px;text-decoration:none;font-weight:700;border:0}
             .btn-open:focus{outline:3px solid rgba(11,105,255,0.12)}
 
-            @media(max-width:700px){ .wrap{padding:12px} .title{font-size:20px} }
+            @media(max-width:700px){ .wrap{padding:12px} .title{font-size:20px} .page-head{flex-direction:column;align-items:flex-start} .search-wrap{width:100%} .search-input{width:100%;box-sizing:border-box} .grid{grid-template-columns:1fr} }
         </style>
 
         <div class="wrap">
@@ -275,6 +283,13 @@ router.get('/board/:id', requireLogin, async (req, res) => {
             .bd-mention-item{padding:9px 14px;cursor:pointer;font-size:14px;font-weight:600;color:#0b2540;display:flex;align-items:center;gap:8px}
             .bd-mention-item:hover,.bd-mention-item.active{background:#eff6ff;color:#0b5fff}
             .bd-mention-item .m-avatar{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#0b5fff,#7c3aed);color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+            @media(max-width:640px){
+                .bd-comment{padding:12px 14px}
+                .bd-comment-form{padding:14px}
+                .bd-comment-avatar{width:30px;height:30px;font-size:12px}
+                .bd-post-head{padding:16px}
+                .bd-post-title{font-size:18px}
+            }
         </style>
 
         <div class="bd-detail">
