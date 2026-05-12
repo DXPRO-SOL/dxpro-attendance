@@ -14,7 +14,7 @@ const {
   Employee,
   User,
 } = require("../models");
-const { requireLogin } = require("../middleware/auth");
+const { requireLogin, ROLE_LEVEL } = require("../middleware/auth");
 const { sendMail } = require("../config/mailer");
 const { renderPage } = require("../lib/renderPage");
 const { createNotification } = require("./notifications");
@@ -265,11 +265,22 @@ router.get("/api/workflow", requireLogin, async (req, res) => {
       tab = "mine",
       status,
       applicationType,
+      keyword,
       page = 1,
       limit = 20,
     } = req.query;
 
     let query = { isDeleted: false };
+    // キーワード検索: 件名・内容・受付番号を対象
+    if (keyword && keyword.trim()) {
+      const kw = new RegExp(
+        keyword.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        "i",
+      );
+      query.$and = [
+        { $or: [{ title: kw }, { description: kw }, { serialNo: kw }] },
+      ];
+    }
     let items = [];
     let total = 0;
     const skip = (Number(page) - 1) * Number(limit);
@@ -296,26 +307,58 @@ router.get("/api/workflow", requireLogin, async (req, res) => {
         .limit(Number(limit))
         .lean();
     } else if (tab === "approving") {
-      // 承認待ち: ① 自分が申請者で status=submitted、または ② 自分が承認者として登録されている submitted 申請
-      const orgRole = req.session.orgRole || "";
-      const isUpperRole = ["manager", "team_leader"].includes(orgRole);
+      // 承認待ち:
+      // ① 自分が申請者で status=submitted
+      // ② 自分が現在ステップの承認者
+      // ③ 現在ステップの承認者と同等以下の権限者（閲覧のみ）
+      // isAdmin の場合は role フィールドの値に関わらず必ず最高権限 "admin" (level 4) とする
+      const orgRole = req.session.isAdmin
+        ? "admin"
+        : req.session.orgRole || "employee";
+      const myLevel = ROLE_LEVEL[orgRole] || 1;
+      // 自分以下の権限ロール → それらのユーザーIDを取得
+      // ※ User モデルの役職フィールドは "role"（"orgRole" は Employee モデル）
+      const lowerOrEqualRoles = Object.entries(ROLE_LEVEL)
+        .filter(([, lv]) => lv <= myLevel)
+        .map(([r]) => r);
+      // role フィールドが自分以下のユーザー、および自分が admin なら isAdmin ユーザーも含める
+      const subordinateUsers = await User.find(
+        {
+          $or: [
+            { role: { $in: lowerOrEqualRoles } },
+            ...(myLevel >= ROLE_LEVEL["admin"] ? [{ isAdmin: true }] : []),
+          ],
+        },
+        { _id: 1 },
+      ).lean();
+      const subordinateIds = new Set(
+        subordinateUsers.map((u) => String(u._id)),
+      );
+      // DB クエリ: submitted かつ ①申請者 ②自分が承認者 ③同等以下権限の承認者が存在
       const approveQuery = {
         isDeleted: false,
         status: "submitted",
-        $or: [{ applicantId: uid }, { "approvers.approverId": uid }],
+        $or: [
+          { applicantId: uid },
+          { "approvers.approverId": uid },
+          {
+            "approvers.approverId": { $in: subordinateUsers.map((u) => u._id) },
+          },
+        ],
       };
       if (applicationType) approveQuery.applicationType = applicationType;
       const allMatching = await Workflow.find(approveQuery)
         .sort({ createdAt: -1 })
         .lean();
-      // 申請者 OR (承認者として pending かつ 上位権限なら全ステップ・一般は現在ステップのみ)
+      // JS フィルタ: 申請者 OR 自分が現在ステップの pending 承認者 OR 現在ステップに同等以下権限の pending 承認者が存在
       const filtered = allMatching.filter((wf) => {
         if (String(wf.applicantId) === String(uid)) return true;
         return wf.approvers.some(
           (a) =>
-            String(a.approverId) === String(uid) &&
+            a.step === wf.currentStep &&
             a.status === "pending" &&
-            (isUpperRole || a.step === wf.currentStep),
+            (String(a.approverId) === String(uid) ||
+              subordinateIds.has(String(a.approverId))),
         );
       });
       total = filtered.length;
@@ -1063,8 +1106,10 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
 .wf-tabs { display:flex; gap:4px; margin-bottom:16px; border-bottom:2px solid #e5e7eb; }
 .wf-tab { padding:8px 18px; border:none; background:none; cursor:pointer; font-size:14px; color:#6b7280; border-bottom:2px solid transparent; margin-bottom:-2px; transition:all .15s; }
 .wf-tab.active { color:#2563eb; border-bottom-color:#2563eb; font-weight:600; }
-.wf-filters { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
-.wf-filters select, .wf-filters input { padding:6px 10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; }
+.wf-filters { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
+.wf-filters select, .wf-filters input { padding:6px 10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; width:180px; }
+.wf-filter-keyword { margin-left:auto; display:flex; align-items:center; gap:6px; }
+.wf-filter-keyword input { width:200px; }
 .wf-table { width:100%; border-collapse:collapse; background:#fff; border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.07); }
 .wf-table th { background:#f8fafc; font-size:12px; color:#6b7280; font-weight:600; padding:10px 12px; text-align:left; border-bottom:1px solid #e5e7eb; }
 .wf-table td { padding:10px 12px; font-size:13px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
@@ -1117,13 +1162,13 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
         ${isAdmin ? `<button class="wf-tab" id="tab-all" onclick="wfSwitchTab('all')">全件（管理者）</button>` : ""}
     </div>
 
-    <!-- フィルタ（自分の申請タブのみ表示） -->
+    <!-- フィルタ -->
     <div class="wf-filters" id="wf-filters">
         <select id="wf-filter-type" onchange="wfLoadList()">
             <option value="">申請種別（全て）</option>
             ${applicationTypes.map((t) => `<option value="${t}">${t}</option>`).join("")}
         </select>
-        <select id="wf-filter-status" onchange="wfLoadList()">
+        <select id="wf-filter-status" onchange="wfLoadList()" style="display:none;">
             <option value="">ステータス（全て）</option>
             <option value="draft">下書き</option>
             <option value="submitted">申請中</option>
@@ -1131,6 +1176,10 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
             <option value="returned">差し戻し</option>
             <option value="rejected">却下</option>
         </select>
+        <div class="wf-filter-keyword">
+            <i class="fa-solid fa-magnifying-glass" style="color:#9ca3af;"></i>
+            <input type="text" id="wf-filter-keyword" placeholder="キーワード検索" oninput="wfKeywordInput()">
+        </div>
     </div>
 
     <!-- 一覧テーブル -->
@@ -1167,18 +1216,20 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
             <div id="wf-attachment-list" style="margin-top:6px;"></div>
         </div>
         <div class="wf-form-group">
-            <label>承認者（ステップ順）</label>
+            <label>承認者（ステップ順）<span style="font-size:11px;color:#6b7280;font-weight:400;margin-left:8px;">同じ番号にすると並列承認</span></label>
             <div id="approver-rows">
                 <div class="wf-approver-row">
+                    <input type="number" data-field="stepNo" value="1" min="1" max="99" style="width:52px;padding:8px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;text-align:center;">
                     <div class="wf-ac-wrap" style="flex:1;position:relative;">
                         <input type="text" class="ac-name" placeholder="名前で検索…" oninput="wfAcSearch(this)" onblur="wfAcBlur(this)" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
                         <input type="hidden" class="ac-userid">
                         <div class="wf-ac-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #d1d5db;border-radius:6px;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,.1);max-height:180px;overflow-y:auto;"></div>
                     </div>
                     <input type="text" data-field="roleName" placeholder="役割名（任意）" style="flex:0.7;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
-                    <button type="button" onclick="wfAddApproverRow()" title="行を追加" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#f8fafc;">＋</button>
+                    <button type="button" onclick="this.closest('.wf-approver-row').remove()" style="padding:6px 10px;border:1px solid #fca5a5;border-radius:5px;cursor:pointer;background:#fff1f2;color:#ef4444;">✕</button>
                 </div>
             </div>
+            <button type="button" onclick="wfAddApproverRow()" style="margin-top:6px;padding:5px 12px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#f8fafc;font-size:13px;">＋ 承認者を追加</button>
         </div>
         <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;">
             <button class="wf-btn" style="background:#f3f4f6;color:#374151;" onclick="wfCloseNewModal()">キャンセル</button>
@@ -1261,23 +1312,35 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
         document.querySelectorAll('.wf-tab').forEach(el => el.classList.remove('active'));
         const btn = document.getElementById('tab-' + tab);
         if (btn) btn.classList.add('active');
-        // フィルタは「自分の申請」「全件（管理者）」タブで表示
-        document.getElementById('wf-filters').style.display = (tab === 'mine' || tab === 'all') ? 'flex' : 'none';
+        // フィルタは全タブで表示。ステータス絞り込みは mine/all タブのみ
+        document.getElementById('wf-filters').style.display = 'flex';
+        const showStatus = (tab === 'mine' || tab === 'all');
+        document.getElementById('wf-filter-status').style.display = showStatus ? '' : 'none';
         document.getElementById('wf-filter-status').value = '';
         document.getElementById('wf-filter-type').value   = '';
+        document.getElementById('wf-filter-keyword').value = '';
         wfLoadList();
+    };
+
+    // ─── キーワード入力（debounce） ────────────────────────────────────────
+    let _kwTimer = null;
+    window.wfKeywordInput = function() {
+        clearTimeout(_kwTimer);
+        _kwTimer = setTimeout(wfLoadList, 350);
     };
 
     // ─── 一覧読み込み ──────────────────────────────────────────────────────
     window.wfLoadList = async function() {
         const container = document.getElementById('wf-list-container');
         container.innerHTML = '<div class="wf-empty"><i class="fa-solid fa-spinner fa-spin"></i> 読み込み中...</div>';
-        const type   = document.getElementById('wf-filter-type').value;
-        const status = document.getElementById('wf-filter-status').value;
+        const type    = document.getElementById('wf-filter-type').value;
+        const status  = document.getElementById('wf-filter-status').value;
+        const keyword = document.getElementById('wf-filter-keyword').value.trim();
         try {
             const qs = new URLSearchParams({ tab: currentTab });
-            if (type)   qs.set('applicationType', type);
-            if (status) qs.set('status', status);
+            if (type)    qs.set('applicationType', type);
+            if (status)  qs.set('status', status);
+            if (keyword) qs.set('keyword', keyword);
             const r = await fetch('/api/workflow?' + qs);
             const d = await r.json();
             if (!d.ok) { container.innerHTML = '<div class="wf-empty">取得失敗</div>'; return; }
@@ -1286,7 +1349,17 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
                 '<th>受付番号</th><th>件名</th><th>申請種別</th><th>申請者</th><th>申請日</th><th>現在の承認者</th><th>ステータス</th><th>操作</th>' +
                 '</tr></thead><tbody>';
             for (const item of d.items) {
-                const apprNames = (item.currentApproverNames || []).join(', ') || '\u2014';
+                const names = item.currentApproverNames || [];
+                const totalApprovers = (item.approvers || []).length;
+                let apprCell;
+                if (names.length === 0) {
+                    apprCell = '\u2014';
+                } else {
+                    apprCell = '<span style="display:inline-block;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:4px;padding:1px 7px;font-size:11px;white-space:nowrap;">' + escHtml(names[0]) + '</span>';
+                    if (totalApprovers > 1) {
+                        apprCell += ' <span style="display:inline-block;background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:4px;padding:1px 6px;font-size:11px;white-space:nowrap;">+' + (totalApprovers - 1) + '</span>';
+                    }
+                }
                 const date      = item.submittedAt ? new Date(item.submittedAt).toLocaleDateString('ja-JP') : '\u2014';
                 const applicant = escHtml(item.applicantDisplayName || '\u2014');
                 const id        = escHtml(item._id);
@@ -1296,7 +1369,7 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
                     <td>\${escHtml(item.applicationType)}</td>
                     <td>\${applicant}</td>
                     <td>\${escHtml(date)}</td>
-                    <td>\${escHtml(apprNames)}</td>
+                    <td style="max-width:160px;">\${apprCell}</td>
                     <td>\${statusBadgeJs(item.status)}</td>
                     <td><button class="wf-btn wf-btn-sm" style="background:#f3f4f6;color:#374151;" onclick="event.stopPropagation();wfDuplicate('\${id}')">\u6d41\u7528</button></td>
                 </tr>\`;
@@ -1440,11 +1513,13 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
     };
 
     // ─── 承認者行生成 ──────────────────────────────────────────────────────
-    function wfMakeApproverRow(name, userId, roleName) {
+    function wfMakeApproverRow(name, userId, roleName, stepNo) {
         const div = document.createElement('div');
         div.className = 'wf-approver-row';
         const nv = escHtml(name || ''), uv = escHtml(userId || ''), rv = escHtml(roleName || '');
+        const sn = (Number(stepNo) >= 1) ? Number(stepNo) : (document.querySelectorAll('#approver-rows .wf-approver-row').length + 1);
         div.innerHTML = \`
+            <input type="number" data-field="stepNo" value="\${sn}" min="1" max="99" style="width:52px;padding:8px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;text-align:center;">
             <div class="wf-ac-wrap" style="flex:1;position:relative;">
                 <input type="text" class="ac-name" placeholder="\u540d\u524d\u3067\u691c\u7d22\u2026" oninput="wfAcSearch(this)" onblur="wfAcBlur(this)" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" value="\${nv}">
                 <input type="hidden" class="ac-userid" value="\${uv}">
@@ -1528,10 +1603,11 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
     function collectApprovers() {
         const rows      = document.querySelectorAll('#approver-rows .wf-approver-row');
         const approvers = [];
-        rows.forEach((row, idx) => {
+        rows.forEach((row) => {
             const uid  = (row.querySelector('.ac-userid') || {}).value || '';
             const role = (row.querySelector('[data-field="roleName"]') || {}).value || '';
-            if (uid.trim()) approvers.push({ step: idx + 1, approverId: uid.trim(), roleName: role.trim(), approvalType: 'all' });
+            const stepNo = parseInt((row.querySelector('[data-field="stepNo"]') || {}).value, 10) || 1;
+            if (uid.trim()) approvers.push({ step: stepNo, approverId: uid.trim(), roleName: role.trim(), approvalType: 'all' });
         });
         return approvers;
     }
@@ -1588,7 +1664,7 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
         document.getElementById('new-desc').value  = wf.description || '';
         const c = document.getElementById('approver-rows');
         c.innerHTML = '';
-        (wf.approvers || []).forEach(a => c.appendChild(wfMakeApproverRow(a.approverName || '', String(a.approverId || ''), a.roleName || '')));
+        (wf.approvers || []).forEach(a => c.appendChild(wfMakeApproverRow(a.approverName || '', String(a.approverId || ''), a.roleName || '', a.step || 1)));
         if (!wf.approvers || !wf.approvers.length) c.appendChild(wfMakeApproverRow());
         renderAttachmentList();
         document.getElementById('wf-new-modal-title').innerHTML =
@@ -1620,7 +1696,7 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
         document.getElementById('new-desc').value  = wf.description || '';
         const c = document.getElementById('approver-rows');
         c.innerHTML = '';
-        (wf.approvers || []).forEach(a => c.appendChild(wfMakeApproverRow(a.approverName || '', String(a.approverId || ''), a.roleName || '')));
+        (wf.approvers || []).forEach(a => c.appendChild(wfMakeApproverRow(a.approverName || '', String(a.approverId || ''), a.roleName || '', a.step || 1)));
         if (!wf.approvers || !wf.approvers.length) c.appendChild(wfMakeApproverRow());
         renderAttachmentList();
         document.getElementById('wf-new-modal-title').innerHTML =
@@ -1683,7 +1759,7 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
                         html += '<div style="font-size:11px;color:#6b7280;text-align:center;">' + _rl + '</div>';
                         html += '<div style="width:68px;height:68px;border-radius:50%;border:3px solid ' + (_ap ? '#dc2626' : '#d1d5db') + ';display:flex;align-items:center;justify-content:center;background:' + (_ap ? '#fff5f5' : '#f9fafb') + ';overflow:hidden;">';
                         html += _ap
-                            ? '<div style="writing-mode:vertical-rl;text-orientation:mixed;font-size:13px;color:#dc2626;font-weight:700;letter-spacing:2px;line-height:1.1;">' + _nm + '</div>'
+                            ? '<div style="font-size:' + Math.max(8, Math.floor(58 / (_nm.length || 1))) + 'px;color:#dc2626;font-weight:700;white-space:nowrap;letter-spacing:1px;line-height:1;">' + _nm + '</div>'
                             : '<div style="font-size:20px;color:#d1d5db;">\u672a</div>';
                         html += '</div>';
                         html += '<div style="font-size:10px;color:#9ca3af;text-align:center;">' + (_ap ? _dt : '\u672a\u627f\u8a8d') + '</div>';
@@ -1746,8 +1822,10 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
                 for (const step of steps) {
                     const stepAps   = wf.approvers.filter(a => a.step === step);
                     const isCurrent = (step === wf.currentStep && wf.status === 'submitted');
+                    const stepNums = ['\u2460','\u2461','\u2462','\u2463','\u2464','\u2465','\u2466','\u2467','\u2468','\u2469'];
+                    const stepLabel = stepNums[step - 1] || ('(' + step + ')');
                     html += \`<div class="wf-step-row">
-                        <span style="background:\${isCurrent ? '#bfdbfe' : '#e0f2fe'};color:\${isCurrent ? '#1e40af' : '#0369a1'};border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600;">Step \${step}\${isCurrent ? ' \u25b6' : ''}</span>\`;
+                        <span style="background:\${isCurrent ? '#bfdbfe' : '#e0f2fe'};color:\${isCurrent ? '#1e40af' : '#0369a1'};border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600;">\${stepLabel}\${isCurrent ? ' \u25b6' : ''}</span>\`;
                     const ASTATUS = { pending:'\u23f3', approved:'\u2705', returned:'\u21a9\ufe0f', rejected:'\u274c', skipped:'\u23ed\ufe0f' };
                     for (const a of stepAps) {
                         html += \`<span style="font-size:13px;">\${ASTATUS[a.status]||''} \${escHtml(a.approverName||String(a.approverId))}\${a.roleName ? ' ('+escHtml(a.roleName)+')' : ''}\${a.comment ? ' \u2014 <em style="color:#6b7280;">'+escHtml(a.comment)+'</em>' : ''}</span>\`;
