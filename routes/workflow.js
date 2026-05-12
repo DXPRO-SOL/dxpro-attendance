@@ -1,4 +1,4 @@
-﻿// ==============================
+// ==============================
 // routes/workflow.js - 承認ワークフロー機能
 // ==============================
 "use strict";
@@ -80,23 +80,12 @@ function isCurrentApprover(req, wf) {
   const uid = String(req.session.userId);
   const isAdmin = req.session.isAdmin || req.session.orgRole === "admin";
   if (isAdmin) return true;
-  // 現在ステップの pending 承認者
-  const isCurrentStep = wf.approvers.some(
+  return wf.approvers.some(
     (a) =>
       a.step === wf.currentStep &&
       String(a.approverId) === uid &&
       a.status === "pending",
   );
-  if (isCurrentStep) return true;
-  // 上位権限（manager/team_leader）かつ承認者として指定されている場合は全ステップ承認可
-  const orgRole = req.session.orgRole || "";
-  const isUpperRole = ["manager", "team_leader"].includes(orgRole);
-  if (isUpperRole) {
-    return wf.approvers.some(
-      (a) => String(a.approverId) === uid && a.status === "pending",
-    );
-  }
-  return false;
 }
 
 // ── ヘルパー: 承認通知送信 ───────────────────────────────────────────────────
@@ -291,8 +280,12 @@ router.get("/api/workflow", requireLogin, async (req, res) => {
         query.status = "submitted";
       } else if (tab === "done") {
         query.status = "approved";
+      } else if (tab === "mine") {
+        // 自分の申請のみ（一般ユーザーと同じ）
+        query.applicantId = uid;
+        if (status) query.status = status;
       } else {
-        // mine / all
+        // all: 全件（管理者専用）
         if (status) query.status = status;
       }
       if (applicationType) query.applicationType = applicationType;
@@ -303,24 +296,28 @@ router.get("/api/workflow", requireLogin, async (req, res) => {
         .limit(Number(limit))
         .lean();
     } else if (tab === "approving") {
-      // 承認待ち: 自分が pending 承認者として登録されている submitted 申請
+      // 承認待ち: ① 自分が申請者で status=submitted、または ② 自分が承認者として登録されている submitted 申請
       const orgRole = req.session.orgRole || "";
       const isUpperRole = ["manager", "team_leader"].includes(orgRole);
-      query.status = "submitted";
-      query["approvers.approverId"] = uid;
-      if (applicationType) query.applicationType = applicationType;
-      const allMatching = await Workflow.find(query)
+      const approveQuery = {
+        isDeleted: false,
+        status: "submitted",
+        $or: [{ applicantId: uid }, { "approvers.approverId": uid }],
+      };
+      if (applicationType) approveQuery.applicationType = applicationType;
+      const allMatching = await Workflow.find(approveQuery)
         .sort({ createdAt: -1 })
         .lean();
-      // 上位権限ユーザーはpending承認者であれば全ステップ表示、一般は現在ステップのみ
-      const filtered = allMatching.filter((wf) =>
-        wf.approvers.some(
+      // 申請者 OR (承認者として pending かつ 上位権限なら全ステップ・一般は現在ステップのみ)
+      const filtered = allMatching.filter((wf) => {
+        if (String(wf.applicantId) === String(uid)) return true;
+        return wf.approvers.some(
           (a) =>
             String(a.approverId) === String(uid) &&
             a.status === "pending" &&
             (isUpperRole || a.step === wf.currentStep),
-        ),
-      );
+        );
+      });
       total = filtered.length;
       items = filtered.slice(skip, skip + Number(limit));
     } else if (tab === "done") {
@@ -649,6 +646,7 @@ router.post("/api/workflow/:id/approve", requireLogin, async (req, res) => {
     const now = new Date();
 
     // 自分の承認ステータスを更新
+    let updatedOwn = false;
     for (const a of wf.approvers) {
       if (
         a.step === wf.currentStep &&
@@ -658,6 +656,17 @@ router.post("/api/workflow/:id/approve", requireLogin, async (req, res) => {
         a.status = "approved";
         a.actedAt = now;
         a.comment = comment;
+        updatedOwn = true;
+      }
+    }
+    // 管理者が承認者リストにいない場合: 現在ステップの全 pending 承認者を強制承認
+    if (!updatedOwn) {
+      for (const a of wf.approvers) {
+        if (a.step === wf.currentStep && a.status === "pending") {
+          a.status = "approved";
+          a.actedAt = now;
+          a.comment = comment || "";
+        }
       }
     }
 
@@ -1154,7 +1163,7 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
         <!-- 添付ファイル（経費のみ） -->
         <div class="wf-file-section" id="wf-file-section" style="display:none;">
             <label style="font-size:12px;font-weight:600;color:#15803d;display:block;margin-bottom:6px;"><i class="fa-solid fa-paperclip" style="margin-right:4px;"></i>領収書・添付ファイル</label>
-            <input type="file" id="wf-file-input" onchange="wfUploadFile(this)" accept=".jpg,.jpeg,.png,.gif,.pdf,.xlsx,.xls,.docx,.doc,.csv,.zip" style="font-size:12px;">
+            <input type="file" id="wf-file-input" onchange="wfUploadFile(this)" accept=".jpg,.jpeg,.png,.gif,.pdf,.xlsx,.xls,.docx,.doc,.csv,.zip" multiple style="font-size:12px;">
             <div id="wf-attachment-list" style="margin-top:6px;"></div>
         </div>
         <div class="wf-form-group">
@@ -1224,6 +1233,7 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
             { key: 'period_end',       label: '\u5951\u7d04\u7d42\u4e86\u65e5',                     type: 'date',     placeholder: '',                                    required: false },
             { key: 'amount',           label: '\u91d1\u984d',                           type: 'number',   placeholder: '\u4f8b\uff1a100000',                          required: false, suffix: '\u5186' },
             { key: 'contract_content', label: '\u5951\u7d04\u5185\u5bb9',                       type: 'textarea', placeholder: '\u696d\u52d9\u5185\u5bb9\u3084\u6210\u679c\u7269\u306a\u3069\u3092\u8a18\u8f09\u3057\u3066\u304f\u3060\u3055\u3044', required: false },
+            { key: 'esign', label: '\u96fb\u5b50\u7f72\u540d\u6709\u7121', type: 'select', options: ['\u306a\u3057', '\u3042\u308a'], required: false },
         ],
         '\u5916\u90e8\u5951\u7d04': [
             { key: 'vendor',           label: '\u53d6\u5f15\u5148\u30fb\u696d\u8005\u540d', type: 'text',     placeholder: '\u4f8b\uff1a\u682a\u5f0f\u4f1a\u793e\u3007\u3007',                      required: true  },
@@ -1231,6 +1241,7 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
             { key: 'period_end',       label: '\u5951\u7d04\u7d42\u4e86\u65e5',     type: 'date',     placeholder: '',                                      required: false },
             { key: 'amount',           label: '\u91d1\u984d',           type: 'number',   placeholder: '\u4f8b\uff1a500000',                            required: false, suffix: '\u5186' },
             { key: 'contract_content', label: '\u5951\u7d04\u5185\u5bb9',       type: 'textarea', placeholder: '\u696d\u52d9\u5185\u5bb9\u3084\u6210\u679c\u7269\u306a\u3069\u3092\u8a18\u8f09\u3057\u3066\u304f\u3060\u3055\u3044', required: false },
+            { key: 'esign', label: '\u96fb\u5b50\u7f72\u540d\u6709\u7121', type: 'select', options: ['\u306a\u3057', '\u3042\u308a'], required: false },
         ],
         '\u305d\u306e\u4ed6': [],
     };
@@ -1250,8 +1261,8 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
         document.querySelectorAll('.wf-tab').forEach(el => el.classList.remove('active'));
         const btn = document.getElementById('tab-' + tab);
         if (btn) btn.classList.add('active');
-        // フィルタは「自分の申請」タブのみ表示
-        document.getElementById('wf-filters').style.display = (tab === 'mine') ? 'flex' : 'none';
+        // フィルタは「自分の申請」「全件（管理者）」タブで表示
+        document.getElementById('wf-filters').style.display = (tab === 'mine' || tab === 'all') ? 'flex' : 'none';
         document.getElementById('wf-filter-status').value = '';
         document.getElementById('wf-filter-type').value   = '';
         wfLoadList();
@@ -1334,6 +1345,10 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
                         <input type="number" id="new-field-\${f.key}" placeholder="\${escHtml(f.placeholder || '')}" style="flex:1;">
                         \${f.suffix ? \`<span style="font-size:13px;color:#6b7280;white-space:nowrap;">\${escHtml(f.suffix)}</span>\` : ''}
                     </div>\`;
+                } else if (f.type === 'select' && f.options) {
+                    html += \`<select id="new-field-\${f.key}" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">\`;
+                    for (const opt of f.options) { html += \`<option value="\${escHtml(opt)}">\${escHtml(opt)}</option>\`; }
+                    html += '</select>';
                 } else {
                     html += \`<input type="\${f.type || 'text'}" id="new-field-\${f.key}" placeholder="\${escHtml(f.placeholder || '')}">\`;
                 }
@@ -1343,7 +1358,8 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
             container.innerHTML = html;
         }
         // 経費のみ添付ファイル欄を表示
-        if (fileSection) fileSection.style.display = (type === '\u7d4c\u8cbb') ? 'block' : 'none';
+        const _FILE_TYPES = ['\u7d4c\u8cbb', '\u5185\u90e8\u5951\u7d04', '\u5916\u90e8\u5951\u7d04'];
+        if (fileSection) fileSection.style.display = _FILE_TYPES.includes(type) ? 'block' : 'none';
     };
 
     function collectFormData() {
@@ -1387,21 +1403,22 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
 
     // ─── ファイルアップロード（経費用） ────────────────────────────────────
     window.wfUploadFile = async function(input) {
-        const file = input.files[0];
-        if (!file) return;
-        const fd = new FormData();
-        fd.append('file', file);
-        try {
-            const r = await fetch('/api/workflow/upload', { method: 'POST', body: fd });
-            const d = await r.json();
-            if (!d.ok) { alert('\u30a2\u30c3\u30d7\u30ed\u30fc\u30c9\u5931\u6557: ' + (d.error || '')); input.value = ''; return; }
-            uploadedAttachments.push({ originalName: d.originalName, filename: d.filename, url: d.url });
-            renderAttachmentList();
-            input.value = '';
-        } catch(e) {
-            alert('\u30a2\u30c3\u30d7\u30ed\u30fc\u30c9\u30a8\u30e9\u30fc\u304c\u767a\u751f\u3057\u307e\u3057\u305f');
-            input.value = '';
+        const files = Array.from(input.files);
+        if (!files.length) return;
+        for (const file of files) {
+            const fd = new FormData();
+            fd.append('file', file);
+            try {
+                const r = await fetch('/api/workflow/upload', { method: 'POST', body: fd });
+                const d = await r.json();
+                if (!d.ok) { alert('\u30a2\u30c3\u30d7\u30ed\u30fc\u30c9\u5931\u6557: ' + (d.error || '')); continue; }
+                uploadedAttachments.push({ originalName: d.originalName, filename: d.filename, url: d.url });
+            } catch(e) {
+                alert('\u30a2\u30c3\u30d7\u30ed\u30fc\u30c9\u30a8\u30e9\u30fc\u304c\u767a\u751f\u3057\u307e\u3057\u305f');
+            }
         }
+        renderAttachmentList();
+        input.value = '';
     };
 
     function renderAttachmentList() {
@@ -1542,12 +1559,13 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
                     body: JSON.stringify({ title, applicationType: type, description: desc, formData, approvers, submit }),
                 });
             }
+            const wasResubmitting = isResubmitting;
             d = await r.json();
             if (!d.ok) { alert('\u30a8\u30e9\u30fc: ' + d.error); return; }
             wfCloseNewModal();
             wfLoadList();
             if (submit) {
-                if (isResubmitting) alert('\u518d\u7533\u8acb\u3057\u307e\u3057\u305f');
+                if (wasResubmitting) alert('\u518d\u7533\u8acb\u3057\u307e\u3057\u305f');
                 else alert('\u7533\u8acb\u3057\u307e\u3057\u305f\uff08\u53d7\u4ed8\u756a\u53f7: ' + (d.serialNo || '') + '\uff09');
             } else { alert('\u4e0b\u66f8\u304d\u4fdd\u5b58\u3057\u307e\u3057\u305f'); }
         } catch(e) { alert('\u901a\u4fe1\u30a8\u30e9\u30fc\u304c\u767a\u751f\u3057\u307e\u3057\u305f'); }
@@ -1648,7 +1666,38 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
             if (!d.ok) { content.innerHTML = '<div class="wf-empty">\u53d6\u5f97\u5931\u6557</div>'; return; }
             const wf = d.workflow;
 
-            let html = \`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+            // ── 稟議欄（電子署名あり）────────────────────────────────
+            let html = '';
+            if (wf.formData && wf.formData.esign === '\u3042\u308a') {
+                html += '<div style="border:3px solid #dc2626;border-radius:10px;padding:16px;margin-bottom:20px;background:#fff;">';
+                html += '<div style="text-align:center;font-size:16px;font-weight:700;color:#1e293b;letter-spacing:8px;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid #fca5a5;">\u7a1f\u8b70\u66f8</div>';
+                html += '<div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-bottom:14px;">';
+                const _rSteps = [...new Set(wf.approvers.map(a => a.step))].sort((a,b)=>a-b);
+                for (const _s of _rSteps) {
+                    for (const _a of wf.approvers.filter(a => a.step === _s)) {
+                        const _nm = escHtml(_a.approverName || String(_a.approverId));
+                        const _rl = escHtml(_a.roleName || ('Step' + _s));
+                        const _ap = (_a.status === 'approved');
+                        const _dt = _a.actedAt ? new Date(_a.actedAt).toLocaleDateString('ja-JP') : '';
+                        html += '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:76px;">';
+                        html += '<div style="font-size:11px;color:#6b7280;text-align:center;">' + _rl + '</div>';
+                        html += '<div style="width:68px;height:68px;border-radius:50%;border:3px solid ' + (_ap ? '#dc2626' : '#d1d5db') + ';display:flex;align-items:center;justify-content:center;background:' + (_ap ? '#fff5f5' : '#f9fafb') + ';overflow:hidden;">';
+                        html += _ap
+                            ? '<div style="writing-mode:vertical-rl;text-orientation:mixed;font-size:13px;color:#dc2626;font-weight:700;letter-spacing:2px;line-height:1.1;">' + _nm + '</div>'
+                            : '<div style="font-size:20px;color:#d1d5db;">\u672a</div>';
+                        html += '</div>';
+                        html += '<div style="font-size:10px;color:#9ca3af;text-align:center;">' + (_ap ? _dt : '\u672a\u627f\u8a8d') + '</div>';
+                        html += '</div>';
+                    }
+                }
+                html += '</div>';
+                html += '<div style="font-size:12px;color:#374151;border-top:1px solid #fca5a5;padding-top:8px;display:flex;gap:16px;flex-wrap:wrap;">';
+                html += '<span>\u4ef6\u540d: ' + escHtml(wf.title) + '</span>';
+                html += '<span>\u7533\u8acb\u8005: ' + escHtml(wf.applicantName || '\u2014') + '</span>';
+                html += '<span>\u7533\u8acb\u65e5: ' + (wf.submittedAt ? new Date(wf.submittedAt).toLocaleDateString('ja-JP') : '\u2014') + '</span>';
+                html += '</div></div>';
+            }
+            html += \`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
                 <h2 style="margin:0;font-size:17px;">\${escHtml(wf.title)}</h2>
                 \${statusBadgeJs(wf.status)}
             </div>
