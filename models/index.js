@@ -933,6 +933,214 @@ const TaskDueDateSchema = new mongoose.Schema({
 TaskDueDateSchema.index({ userId: 1, service: 1, taskId: 1 }, { unique: true });
 const TaskDueDate = mongoose.model("TaskDueDate", TaskDueDateSchema);
 
+// ─── ワークフロー（承認ワークフロー機能） ───────────────────────────────────
+const WorkflowSchema = new mongoose.Schema(
+  {
+    // 基本情報
+    title: { type: String, required: true },
+    applicationType: { type: String, required: true },
+    description: { type: String, default: "" },
+    formId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "WorkflowForm",
+      default: null,
+    },
+    formVersion: { type: Number, default: 1 },
+    formData: { type: mongoose.Schema.Types.Mixed, default: {} },
+    serialNo: { type: String, default: "" },
+
+    // 申請者情報
+    applicantId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    applicantDept: { type: String, default: "" },
+    applicantRole: { type: String, default: "" },
+    submittedAt: { type: Date, default: null },
+
+    // ステータス
+    status: {
+      type: String,
+      enum: ["draft", "submitted", "approved", "returned", "rejected"],
+      default: "draft",
+    },
+
+    // 現在の承認ステップ
+    currentStep: { type: Number, default: 0 },
+
+    // 承認経路
+    approvers: [
+      {
+        step: { type: Number, required: true },
+        approverId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        roleName: { type: String, default: "" },
+        approvalType: { type: String, enum: ["all", "any"], default: "all" },
+        groupKey: { type: String, default: "" },
+        delegatedFrom: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          default: null,
+        },
+        status: {
+          type: String,
+          enum: ["pending", "approved", "returned", "rejected", "skipped"],
+          default: "pending",
+        },
+        actedAt: { type: Date, default: null },
+        comment: { type: String, default: "" },
+      },
+    ],
+
+    // ディスカッション
+    comments: [
+      {
+        userId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        userName: { type: String, default: "" },
+        body: { type: String, required: true },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
+
+    // 履歴
+    histories: [
+      {
+        action: {
+          type: String,
+          enum: [
+            "created",
+            "submitted",
+            "approved",
+            "returned",
+            "rejected",
+            "resubmitted",
+            "delegated",
+            "commented",
+          ],
+        },
+        actedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        actedByName: { type: String, default: "" },
+        step: { type: Number, default: 0 },
+        comment: { type: String, default: "" },
+        actedAt: { type: Date, default: Date.now },
+      },
+    ],
+
+    isDeleted: { type: Boolean, default: false },
+  },
+  { timestamps: true },
+);
+
+WorkflowSchema.index({ applicantId: 1, createdAt: -1 });
+WorkflowSchema.index({ "approvers.approverId": 1, status: 1 });
+WorkflowSchema.index({ status: 1, currentStep: 1 });
+WorkflowSchema.index({ serialNo: 1 });
+const Workflow = mongoose.model("Workflow", WorkflowSchema);
+
+// ─── ワークフロー: 申請フォーム定義 ────────────────────────────────────────
+const WorkflowFormSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    description: { type: String, default: "" },
+    category: { type: String, default: "" },
+    version: { type: Number, default: 1 },
+    fields: [
+      {
+        key: { type: String, required: true },
+        label: { type: String, required: true },
+        type: {
+          type: String,
+          enum: [
+            "text",
+            "textarea",
+            "number",
+            "date",
+            "select",
+            "radio",
+            "checkbox",
+            "employee",
+            "department",
+            "currency",
+            "formula",
+            "stamp",
+          ],
+          required: true,
+        },
+        required: { type: Boolean, default: false },
+        options: [{ label: String, value: String }],
+        placeholder: { type: String, default: "" },
+        defaultValue: { type: mongoose.Schema.Types.Mixed, default: null },
+        formula: { type: String, default: "" },
+        autoFill: { type: String, default: "" },
+        visibleWhen: { type: mongoose.Schema.Types.Mixed, default: null },
+      },
+    ],
+    layout: { type: mongoose.Schema.Types.Mixed, default: {} },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    isActive: { type: Boolean, default: true },
+  },
+  { timestamps: true },
+);
+const WorkflowForm = mongoose.model("WorkflowForm", WorkflowFormSchema);
+
+// ─── ワークフロー: 承認フローテンプレート ──────────────────────────────────
+const WorkflowFlowTemplateSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    applicationType: { type: String, required: true },
+    departmentScope: [{ type: String }],
+    conditions: [
+      {
+        field: String,
+        operator: String,
+        value: mongoose.Schema.Types.Mixed,
+      },
+    ],
+    steps: [
+      {
+        step: { type: Number, required: true },
+        name: { type: String, default: "" },
+        approverType: {
+          type: String,
+          enum: ["user", "role", "manager", "department_manager", "group"],
+          required: true,
+        },
+        approverValue: { type: String, default: "" },
+        approvalType: { type: String, enum: ["all", "any"], default: "all" },
+        allowDelegate: { type: Boolean, default: false },
+        returnToStep: { type: Number, default: 0 },
+      },
+    ],
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    isActive: { type: Boolean, default: true },
+  },
+  { timestamps: true },
+);
+const WorkflowFlowTemplate = mongoose.model(
+  "WorkflowFlowTemplate",
+  WorkflowFlowTemplateSchema,
+);
+
 module.exports = {
   ChatRoom,
   ChatMessage,
@@ -964,5 +1172,8 @@ module.exports = {
   TaskDueDate,
   CloudFolder,
   CloudFile,
+  Workflow,
+  WorkflowForm,
+  WorkflowFlowTemplate,
   Schedule,
 };

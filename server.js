@@ -338,6 +338,7 @@ app.use("/", require("./routes/organization"));
 app.use("/", require("./routes/tasks"));
 app.use("/", require("./routes/chat"));
 app.use("/", require("./routes/cloud"));
+app.use("/", require("./routes/workflow"));
 app.use("/", require("./routes/schedule"));
 
 // ── グローバルエラーハンドラー（500エラーでプロセスをクラッシュさせない） ─
@@ -571,6 +572,7 @@ httpServer.listen(PORT, "0.0.0.0", async () => {
     "Router: /cloud               クラウドドライブ / ファイル共有 / 同時編集",
   );
   await sleep(50);
+  logOk("Router: /workflow            承認ワークフロー / 申請統合管理");
   logOk("Router: /schedule            スケジューラ / 会議枠管理 / 通話連携");
   await sleep(50);
   logOk("Router: /chatbot             AIチャットボット (OpenAI)");
@@ -647,13 +649,27 @@ httpServer.listen(PORT, "0.0.0.0", async () => {
   await sleep(80);
 
   // ── 起動完了 ─────────────────────────────────────────────────
-  console.log('');
-  console.log(`${GREEN}${BOLD}  ╔═══════════════════════════════════════════════════╗${RESET}`);
-  console.log(`${GREEN}${BOLD}  ║  🚀  NOKORI by DXPRO SOLUTIONS — READY            ║${RESET}`);
-  console.log(`${GREEN}${BOLD}  ║                                                   ║${RESET}`);
-  console.log(`${GREEN}${BOLD}  ║   http://localhost:${String(PORT).padEnd(31)}║${RESET}`);
-  console.log(`${GREEN}${BOLD}  ║   Environment : ${(process.env.NODE_ENV || 'development').padEnd(34)}║${RESET}`);
-  console.log(`${GREEN}${BOLD}  ║   Port        : ${String(PORT).padEnd(34)}║${RESET}`);
-  console.log(`${GREEN}${BOLD}  ╚═══════════════════════════════════════════════════╝${RESET}`);
-  console.log('');
+  console.log("");
+  console.log(
+    `${GREEN}${BOLD}  ╔═══════════════════════════════════════════════════╗${RESET}`,
+  );
+  console.log(
+    `${GREEN}${BOLD}  ║  🚀  NOKORI by DXPRO SOLUTIONS — READY            ║${RESET}`,
+  );
+  console.log(
+    `${GREEN}${BOLD}  ║                                                   ║${RESET}`,
+  );
+  console.log(
+    `${GREEN}${BOLD}  ║   http://localhost:${String(PORT).padEnd(31)}║${RESET}`,
+  );
+  console.log(
+    `${GREEN}${BOLD}  ║   Environment : ${(process.env.NODE_ENV || "development").padEnd(34)}║${RESET}`,
+  );
+  console.log(
+    `${GREEN}${BOLD}  ║   Port        : ${String(PORT).padEnd(34)}║${RESET}`,
+  );
+  console.log(
+    `${GREEN}${BOLD}  ╚═══════════════════════════════════════════════════╝${RESET}`,
+  );
+  console.log("");
 });
