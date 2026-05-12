@@ -875,6 +875,52 @@ CloudFileSchema.index({ ownerId: 1, folderId: 1 });
 CloudFileSchema.index({ isPublic: 1 });
 const CloudFile = mongoose.model("CloudFile", CloudFileSchema);
 
+// ─── スケジューラ ──────────────────────────────────────────────────────────
+const ScheduleSchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true },
+    description: { type: String, default: "" },
+    location: { type: String, default: "" },
+    startAt: { type: Date, required: true },
+    endAt: { type: Date, required: true },
+    allDay: { type: Boolean, default: false },
+    type: {
+      type: String,
+      enum: ["meeting", "event", "other"],
+      default: "meeting",
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    attendees: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    attendeeStatus: [
+      {
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        status: {
+          type: String,
+          enum: ["pending", "accepted", "declined"],
+          default: "pending",
+        },
+        updatedAt: { type: Date },
+      },
+    ],
+    chatRoomId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ChatRoom",
+      default: null,
+    },
+    color: { type: String, default: "#3b82f6" },
+    isDeleted: { type: Boolean, default: false },
+  },
+  { timestamps: true },
+);
+ScheduleSchema.index({ startAt: 1, endAt: 1 });
+ScheduleSchema.index({ createdBy: 1 });
+ScheduleSchema.index({ attendees: 1 });
+const Schedule = mongoose.model("Schedule", ScheduleSchema);
+
 // ─── ユーザー別タスク期限日ローカル上書き ───────────────────────────────────
 const TaskDueDateSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -1129,4 +1175,5 @@ module.exports = {
   Workflow,
   WorkflowForm,
   WorkflowFlowTemplate,
+  Schedule,
 };
