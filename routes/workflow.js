@@ -442,6 +442,13 @@ router.get("/api/workflow/:id", requireLogin, async (req, res) => {
     }
 
     wf._isApplicant = isApplicant;
+    const isCurrentApproverFlag = wf.approvers.some(
+      (a) =>
+        a.step === wf.currentStep &&
+        String(a.approverId) === String(uid) &&
+        a.status === "pending",
+    );
+    wf._isCurrentApprover = isAdmin || isCurrentApproverFlag;
     res.json({ ok: true, workflow: wf });
   } catch (e) {
     console.error("[workflow GET /api/workflow/:id]", e);
@@ -1348,11 +1355,14 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
             if (wf._isApplicant && wf.status === 'returned') {
                 btns += \`<button class="wf-btn wf-btn-primary" onclick="wfOpenActionModal('resubmit')">再申請</button>\`;
             }
-            // 承認者で申請中
+            // 承認者で申請中（自分が現在の承認者のみ活性）
             if (wf.status === 'submitted') {
-                btns += \`<button class="wf-btn wf-btn-success" onclick="wfOpenActionModal('approve')">承認</button>\`;
-                btns += \`<button class="wf-btn wf-btn-warn" onclick="wfOpenActionModal('return')">差し戻し</button>\`;
-                btns += \`<button class="wf-btn wf-btn-danger" onclick="wfOpenActionModal('reject')">却下</button>\`;
+                const canAct = wf._isCurrentApprover;
+                const dis = canAct ? '' : ' disabled title="あなたはこの申請の承認者ではありません"';
+                const opac = canAct ? '' : ' style="opacity:.45;cursor:not-allowed;"';
+                btns += \`<button class="wf-btn wf-btn-success"\${dis}\${opac} onclick="if(this.disabled)return;wfOpenActionModal('approve')">承認</button>\`;
+                btns += \`<button class="wf-btn wf-btn-warn"\${dis}\${opac} onclick="if(this.disabled)return;wfOpenActionModal('return')">差し戻し</button>\`;
+                btns += \`<button class="wf-btn wf-btn-danger"\${dis}\${opac} onclick="if(this.disabled)return;wfOpenActionModal('reject')">却下</button>\`;
             }
             actionBtns.innerHTML = btns;
         } catch(e) {
