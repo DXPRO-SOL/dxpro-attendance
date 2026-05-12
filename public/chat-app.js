@@ -1607,18 +1607,26 @@
             }
             try {
                 const res  = await fetch('/api/chat/recording', { method: 'POST', body: fd });
+                const ct   = (res.headers.get('content-type') || '').toLowerCase();
                 let data = null;
-                try {
-                    data = await res.json();
-                } catch (parseErr) {
-                    // server returned non-JSON (HTML error page) — capture for debugging
+                if (ct.includes('application/json')) {
+                    try {
+                        data = await res.json();
+                    } catch (parseErr) {
+                        const txt = await res.text().catch(() => '<no body>');
+                        console.error('録画アップロード: JSON パースエラー', parseErr, txt.slice(0,200));
+                        showNoticeBar('⚠️ 録画アップロードエラー: サーバーが不正なJSONを返しました', 5000);
+                        return;
+                    }
+                } else {
+                    // 非JSONレスポンス（HTML やログインページなど）
                     const txt = await res.text().catch(() => '<no body>');
-                    console.error('録画アップロード: 期待した JSON ではありませんでした。レスポンス本文:', txt);
-                    showNoticeBar('⚠️ 録画アップロードエラー: サーバーが正しいJSONを返しませんでした', 5000);
+                    console.error('録画アップロード: application/json 以外を返却:', res.status, ct, txt.slice(0,200));
+                    showNoticeBar('⚠️ 録画アップロードエラー: サーバーがJSONを返しませんでした（HTML等）', 5000);
                     return;
                 }
-                if (!res.ok || !data.ok) {
-                    showNoticeBar('⚠️ 録画の保存に失敗しました: ' + (data.error || res.status), 4000);
+                if (!res.ok || !data || !data.ok) {
+                    showNoticeBar('⚠️ 録画の保存に失敗しました: ' + (data && data.error ? data.error : res.status), 4000);
                     return;
                 }
                 showNoticeBar('✅ 録画をチャットに保存しました', 3000);
