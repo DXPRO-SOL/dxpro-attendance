@@ -1,9 +1,12 @@
-// ==============================
+﻿// ==============================
 // routes/workflow.js - 承認ワークフロー機能
 // ==============================
 "use strict";
 
 const router = require("express").Router();
+const path = require("path");
+const fs = require("fs");
+const multer = require("multer");
 const {
   Workflow,
   WorkflowForm,
@@ -21,6 +24,30 @@ const {
   isStepComplete,
   getNextStep,
 } = require("../services/workflow-engine");
+
+// ─── ファイルアップロード設定（経費添付用） ───────────────────────────────────
+const wfUploadDir = path.join("uploads", "workflow");
+fs.mkdirSync(wfUploadDir, { recursive: true });
+
+const wfStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, wfUploadDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || "";
+    cb(null, Date.now() + "-" + Math.floor(Math.random() * 1e9) + ext);
+  },
+});
+
+const wfUpload = multer({
+  storage: wfStorage,
+  defParamCharset: "utf8",
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed =
+      /\.(jpe?g|png|gif|webp|pdf|docx?|xlsx?|pptx?|txt|csv|zip)$/i;
+    if (allowed.test(file.originalname)) return cb(null, true);
+    cb(new Error("許可されていないファイル形式です"));
+  },
+});
 
 // ── ヘルパー: エラーレスポンス ───────────────────────────────────────────────
 function errRes(res, message, status = 400) {
@@ -53,12 +80,23 @@ function isCurrentApprover(req, wf) {
   const uid = String(req.session.userId);
   const isAdmin = req.session.isAdmin || req.session.orgRole === "admin";
   if (isAdmin) return true;
-  return wf.approvers.some(
+  // 現在ステップの pending 承認者
+  const isCurrentStep = wf.approvers.some(
     (a) =>
       a.step === wf.currentStep &&
       String(a.approverId) === uid &&
       a.status === "pending",
   );
+  if (isCurrentStep) return true;
+  // 上位権限（manager/team_leader）かつ承認者として指定されている場合は全ステップ承認可
+  const orgRole = req.session.orgRole || "";
+  const isUpperRole = ["manager", "team_leader"].includes(orgRole);
+  if (isUpperRole) {
+    return wf.approvers.some(
+      (a) => String(a.approverId) === uid && a.status === "pending",
+    );
+  }
+  return false;
 }
 
 // ── ヘルパー: 承認通知送信 ───────────────────────────────────────────────────
@@ -187,21 +225,32 @@ NOKORIシステム`;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// ファイルアップロード POST /api/workflow/upload
+// ════════════════════════════════════════════════════════════════════════════
+router.post(
+  "/api/workflow/upload",
+  requireLogin,
+  wfUpload.single("file"),
+  (req, res) => {
+    if (!req.file) return errRes(res, "ファイルが見つかりません");
+    res.json({
+      ok: true,
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      url: `/uploads/workflow/${req.file.filename}`,
+    });
+  },
+);
+
+// 申請種別（稟議・休暇・残業を除外、内部契約・外部契約を追加）
+const applicationTypes = ["経費", "備品購入", "内部契約", "外部契約", "その他"];
+
+// ════════════════════════════════════════════════════════════════════════════
 // 1. 画面 GET /workflow
 // ════════════════════════════════════════════════════════════════════════════
 router.get("/workflow", requireLogin, async (req, res) => {
   try {
     const isAdmin = req.session.isAdmin || req.session.orgRole === "admin";
-
-    // 申請種別選択肢（初版固定値）
-    const applicationTypes = [
-      "稟議",
-      "経費",
-      "休暇",
-      "残業",
-      "備品購入",
-      "その他",
-    ];
 
     renderPage(
       req,
@@ -232,32 +281,73 @@ router.get("/api/workflow", requireLogin, async (req, res) => {
     } = req.query;
 
     let query = { isDeleted: false };
+    let items = [];
+    let total = 0;
+    const skip = (Number(page) - 1) * Number(limit);
 
     if (isAdmin) {
-      // admin は全件
-      if (tab === "pending") query.status = "submitted";
+      // admin: タブ別に絞り込み
+      if (tab === "approving") {
+        query.status = "submitted";
+      } else if (tab === "done") {
+        query.status = "approved";
+      } else {
+        // mine / all
+        if (status) query.status = status;
+      }
+      if (applicationType) query.applicationType = applicationType;
+      total = await Workflow.countDocuments(query);
+      items = await Workflow.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .lean();
     } else if (tab === "approving") {
-      // 自分が現在の承認者
-      query["approvers.approverId"] = uid;
+      // 承認待ち: 自分が pending 承認者として登録されている submitted 申請
+      const orgRole = req.session.orgRole || "";
+      const isUpperRole = ["manager", "team_leader"].includes(orgRole);
       query.status = "submitted";
+      query["approvers.approverId"] = uid;
+      if (applicationType) query.applicationType = applicationType;
+      const allMatching = await Workflow.find(query)
+        .sort({ createdAt: -1 })
+        .lean();
+      // 上位権限ユーザーはpending承認者であれば全ステップ表示、一般は現在ステップのみ
+      const filtered = allMatching.filter((wf) =>
+        wf.approvers.some(
+          (a) =>
+            String(a.approverId) === String(uid) &&
+            a.status === "pending" &&
+            (isUpperRole || a.step === wf.currentStep),
+        ),
+      );
+      total = filtered.length;
+      items = filtered.slice(skip, skip + Number(limit));
+    } else if (tab === "done") {
+      // 承認済み: 自分が申請者または承認者として関わった approved 申請
+      query.status = "approved";
+      query.$or = [{ applicantId: uid }, { "approvers.approverId": uid }];
+      if (applicationType) query.applicationType = applicationType;
+      total = await Workflow.countDocuments(query);
+      items = await Workflow.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .lean();
     } else {
-      // 自分の申請
+      // mine: 自分の申請（下書き・申請中・承認済すべて）
       query.applicantId = uid;
+      if (status) query.status = status;
+      if (applicationType) query.applicationType = applicationType;
+      total = await Workflow.countDocuments(query);
+      items = await Workflow.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .lean();
     }
 
-    if (status) query.status = status;
-    if (applicationType) query.applicationType = applicationType;
-
-    const skip = (Number(page) - 1) * Number(limit);
-    const total = await Workflow.countDocuments(query);
-    const items = await Workflow.find(query)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit))
-      .populate("applicantId", "username")
-      .lean();
-
-    // 承認者名を付加
+    // 承認者名・申請者表示名を付加
     for (const item of items) {
       const currentApprovers = item.approvers.filter(
         (a) => a.step === item.currentStep && a.status === "pending",
@@ -265,6 +355,7 @@ router.get("/api/workflow", requireLogin, async (req, res) => {
       item.currentApproverNames = await Promise.all(
         currentApprovers.map((a) => getDisplayName(a.approverId)),
       );
+      item.applicantDisplayName = await getDisplayName(item.applicantId);
     }
 
     res.json({ ok: true, total, page: Number(page), items });
@@ -477,8 +568,8 @@ router.put("/api/workflow/:id", requireLogin, async (req, res) => {
     if (title) wf.title = title.trim().slice(0, 100);
     if (description) wf.description = description.trim();
     if (formData) wf.formData = formData;
-    // 下書き時のみ承認者更新可
-    if (Array.isArray(req.body.approvers) && wf.status === "draft") {
+    // 下書き・差し戻し状態のどちらでも承認者更新を許可
+    if (Array.isArray(req.body.approvers)) {
       wf.approvers = req.body.approvers.map((a, i) => ({
         step: Number(a.step) || i + 1,
         approverId: a.approverId,
@@ -500,9 +591,11 @@ router.put("/api/workflow/:id", requireLogin, async (req, res) => {
         wf.approvers.length > 0
           ? wf.approvers.reduce((min, a) => Math.min(min, a.step), Infinity)
           : 0;
-      // pending にリセット
+      // 全承認者を pending にリセット（差し戻し後の再申請）
       for (const a of wf.approvers) {
-        if (a.status !== "approved") a.status = "pending";
+        a.status = "pending";
+        a.actedAt = null;
+        a.comment = "";
       }
       wf.histories.push({
         action: "resubmitted",
@@ -953,18 +1046,6 @@ router.put("/api/workflow/flows/:id", requireLogin, async (req, res) => {
 // ════════════════════════════════════════════════════════════════════════════
 // フロントエンド HTML ビルダー
 // ════════════════════════════════════════════════════════════════════════════
-function statusBadge(status) {
-  const MAP = {
-    draft: { label: "下書き", color: "#6b7280", bg: "#f3f4f6" },
-    submitted: { label: "申請中", color: "#1d4ed8", bg: "#dbeafe" },
-    approved: { label: "承認済み", color: "#15803d", bg: "#dcfce7" },
-    returned: { label: "差し戻し", color: "#b45309", bg: "#fef3c7" },
-    rejected: { label: "却下", color: "#b91c1c", bg: "#fee2e2" },
-  };
-  const s = MAP[status] || { label: status, color: "#374151", bg: "#f3f4f6" };
-  return `<span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600;color:${s.color};background:${s.bg};">${s.label}</span>`;
-}
-
 function buildWorkflowPage(isAdmin, applicationTypes) {
   return `
 <style>
@@ -983,17 +1064,17 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
 .wf-btn { display:inline-block; padding:8px 18px; border-radius:7px; font-size:13px; font-weight:600; cursor:pointer; border:none; transition:all .15s; }
 .wf-btn-primary { background:#2563eb; color:#fff; }
 .wf-btn-primary:hover { background:#1d4ed8; }
-.wf-btn-sm { padding:5px 12px; font-size:12px; }
+.wf-btn-sm { padding:5px 12px; font-size:12px; border-radius:6px; cursor:pointer; border:none; font-weight:600; }
 .wf-btn-danger { background:#ef4444; color:#fff; }
 .wf-btn-warn { background:#f59e0b; color:#fff; }
 .wf-btn-success { background:#22c55e; color:#fff; }
 .wf-modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1000; align-items:center; justify-content:center; }
 .wf-modal-bg.open { display:flex; }
-.wf-modal { background:#fff; border-radius:12px; padding:28px; width:100%; max-width:600px; max-height:90vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,.18); }
+.wf-modal { background:#fff; border-radius:12px; padding:28px; width:100%; max-width:620px; max-height:90vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,.18); }
 .wf-modal h2 { font-size:17px; font-weight:700; margin:0 0 18px; }
 .wf-form-group { margin-bottom:14px; }
 .wf-form-group label { display:block; font-size:12px; font-weight:600; color:#374151; margin-bottom:4px; }
-.wf-form-group input, .wf-form-group select, .wf-form-group textarea { width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; }
+.wf-form-group input, .wf-form-group select, .wf-form-group textarea { width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; box-sizing:border-box; }
 .wf-form-group textarea { min-height:80px; resize:vertical; }
 .wf-approver-row { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
 .wf-detail-section { margin-bottom:18px; }
@@ -1001,11 +1082,14 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
 .wf-timeline { list-style:none; padding:0; margin:0; }
 .wf-timeline li { position:relative; padding:8px 0 8px 28px; font-size:13px; border-left:2px solid #e5e7eb; margin-left:8px; }
 .wf-timeline li::before { content:''; position:absolute; left:-6px; top:14px; width:10px; height:10px; background:#2563eb; border-radius:50%; }
-.wf-step-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:13px; }
+.wf-step-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:13px; flex-wrap:wrap; }
 .wf-empty { text-align:center; color:#9ca3af; padding:40px 0; font-size:14px; }
 .wf-ac-item { padding:8px 12px; cursor:pointer; font-size:13px; border-bottom:1px solid #f1f5f9; }
 .wf-ac-item:hover { background:#f0f9ff; }
 .wf-ac-item:last-child { border-bottom:none; }
+.wf-type-fields-wrap { background:#f8fafc; border:1px solid #e5e7eb; border-radius:8px; padding:14px; margin-bottom:14px; }
+.wf-type-fields-wrap .wf-form-group:last-child { margin-bottom:0; }
+.wf-file-section { background:#f0fdf4; border:1px dashed #86efac; border-radius:8px; padding:12px; margin-bottom:14px; }
 </style>
 
 <div style="padding:20px;">
@@ -1020,12 +1104,12 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
     <div class="wf-tabs">
         <button class="wf-tab active" id="tab-mine"      onclick="wfSwitchTab('mine')">自分の申請</button>
         <button class="wf-tab"        id="tab-approving" onclick="wfSwitchTab('approving')">承認待ち</button>
-        <button class="wf-tab"        id="tab-done"      onclick="wfSwitchTab('done')">完了済み</button>
+        <button class="wf-tab"        id="tab-done"      onclick="wfSwitchTab('done')">承認済み</button>
         ${isAdmin ? `<button class="wf-tab" id="tab-all" onclick="wfSwitchTab('all')">全件（管理者）</button>` : ""}
     </div>
 
-    <!-- フィルタ -->
-    <div class="wf-filters">
+    <!-- フィルタ（自分の申請タブのみ表示） -->
+    <div class="wf-filters" id="wf-filters">
         <select id="wf-filter-type" onchange="wfLoadList()">
             <option value="">申請種別（全て）</option>
             ${applicationTypes.map((t) => `<option value="${t}">${t}</option>`).join("")}
@@ -1046,29 +1130,37 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
     </div>
 </div>
 
-<!-- 新規申請モーダル -->
+<!-- 新規申請・編集・再申請モーダル -->
 <div class="wf-modal-bg" id="wf-new-modal">
     <div class="wf-modal">
-        <h2><i class="fa-solid fa-file-signature" style="margin-right:8px;color:#2563eb;"></i>新規ワークフロー申請</h2>
+        <h2 id="wf-new-modal-title"><i class="fa-solid fa-file-signature" style="margin-right:8px;color:#2563eb;"></i>新規ワークフロー申請</h2>
         <div class="wf-form-group">
             <label>申請種別 <span style="color:#ef4444;">*</span></label>
-            <select id="new-type">
+            <select id="new-type" onchange="wfOnTypeChange()">
                 <option value="">選択してください</option>
                 ${applicationTypes.map((t) => `<option value="${t}">${t}</option>`).join("")}
             </select>
         </div>
         <div class="wf-form-group">
             <label>件名 <span style="color:#ef4444;">*</span></label>
-            <input type="text" id="new-title" placeholder="例：〇〇についての稟議" maxlength="100">
+            <input type="text" id="new-title" placeholder="例：〇〇についての申請" maxlength="100">
         </div>
         <div class="wf-form-group">
             <label>内容 <span style="color:#ef4444;">*</span></label>
             <textarea id="new-desc" placeholder="申請の詳細内容を記載してください"></textarea>
         </div>
+        <!-- 申請種別固有フィールド -->
+        <div id="wf-type-fields-container"></div>
+        <!-- 添付ファイル（経費のみ） -->
+        <div class="wf-file-section" id="wf-file-section" style="display:none;">
+            <label style="font-size:12px;font-weight:600;color:#15803d;display:block;margin-bottom:6px;"><i class="fa-solid fa-paperclip" style="margin-right:4px;"></i>領収書・添付ファイル</label>
+            <input type="file" id="wf-file-input" onchange="wfUploadFile(this)" accept=".jpg,.jpeg,.png,.gif,.pdf,.xlsx,.xls,.docx,.doc,.csv,.zip" style="font-size:12px;">
+            <div id="wf-attachment-list" style="margin-top:6px;"></div>
+        </div>
         <div class="wf-form-group">
             <label>承認者（ステップ順）</label>
             <div id="approver-rows">
-                <div class="wf-approver-row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+                <div class="wf-approver-row">
                     <div class="wf-ac-wrap" style="flex:1;position:relative;">
                         <input type="text" class="ac-name" placeholder="名前で検索…" oninput="wfAcSearch(this)" onblur="wfAcBlur(this)" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
                         <input type="hidden" class="ac-userid">
@@ -1081,8 +1173,8 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
         </div>
         <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;">
             <button class="wf-btn" style="background:#f3f4f6;color:#374151;" onclick="wfCloseNewModal()">キャンセル</button>
-            <button class="wf-btn wf-btn-primary" style="background:#6b7280;" onclick="wfSaveDraft()">下書き保存</button>
-            <button class="wf-btn wf-btn-primary" onclick="wfSubmitNew()">申請する</button>
+            <button class="wf-btn" id="wf-draft-btn" style="background:#6b7280;color:#fff;" onclick="wfSaveDraft()">下書き保存</button>
+            <button class="wf-btn wf-btn-primary" id="wf-submit-btn" onclick="wfSubmitNew()">申請する</button>
         </div>
     </div>
 </div>
@@ -1091,7 +1183,7 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
 <div class="wf-modal-bg" id="wf-detail-modal">
     <div class="wf-modal" style="max-width:700px;">
         <div id="wf-detail-content"><div class="wf-empty"><i class="fa-solid fa-spinner fa-spin"></i></div></div>
-        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px;" id="wf-action-buttons"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap;" id="wf-action-buttons"></div>
     </div>
 </div>
 
@@ -1112,23 +1204,60 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
 
 <script>
 (function() {
-    let currentTab = 'mine';
-    let currentWfId = null;
-    let currentAction = null;
-    let editingWfId = null;
-    let currentWfData = null;
-    let _acTimer = null;
-    const STATUS_JP = { draft:'下書き', submitted:'申請中', approved:'承認済み', returned:'差し戻し', rejected:'却下' };
+    // ─── 申請種別ごとの入力フィールド定義 ──────────────────────────────────
+    const FORM_FIELDS = {
+        '\u7d4c\u8cbb': [
+            { key: 'amount',        label: '\u91d1\u984d',         type: 'number',   placeholder: '\u4f8b\uff1a5000',              required: true,  suffix: '\u5186' },
+            { key: 'purpose',       label: '\u4f7f\u9014\u30fb\u7528\u9014',   type: 'text',     placeholder: '\u4f8b\uff1a\u53d6\u5f15\u5148\u3068\u306e\u4f1a\u98df\u8cbb',  required: true  },
+            { key: 'occurred_date', label: '\u767a\u751f\u65e5',       type: 'date',     placeholder: '',                      required: true  },
+            { key: 'vendor',        label: '\u652f\u6255\u5148',       type: 'text',     placeholder: '\u4f8b\uff1a\u3007\u3007\u30ec\u30b9\u30c8\u30e9\u30f3',    required: false },
+        ],
+        '\u5099\u54c1\u8cfc\u5165': [
+            { key: 'item_name', label: '\u54c1\u540d',         type: 'text',     placeholder: '\u4f8b\uff1a\u30dc\u30fc\u30eb\u30da\u30f3',                      required: true  },
+            { key: 'quantity',  label: '\u6570\u91cf',         type: 'number',   placeholder: '\u4f8b\uff1a10',                              required: true  },
+            { key: 'amount',    label: '\u91d1\u984d\uff08\u6982\u7b97\uff09', type: 'number',   placeholder: '\u4f8b\uff1a1000',                            required: false, suffix: '\u5186' },
+            { key: 'reason',    label: '\u8cfc\u5165\u7406\u7531',     type: 'textarea', placeholder: '\u8cfc\u5165\u304c\u5fc5\u8981\u306a\u7406\u7531\u3092\u8a18\u8f09\u3057\u3066\u304f\u3060\u3055\u3044', required: false },
+        ],
+        '\u5185\u90e8\u5951\u7d04': [
+            { key: 'contract_target',  label: '\u5951\u7d04\u76f8\u624b\uff08\u90e8\u7f72\u30fb\u30d7\u30ed\u30b8\u30a7\u30af\u30c8\uff09', type: 'text',     placeholder: '\u4f8b\uff1a\u958b\u767a\u90e8',                          required: true  },
+            { key: 'period_start',     label: '\u5951\u7d04\u958b\u59cb\u65e5',                     type: 'date',     placeholder: '',                                    required: false },
+            { key: 'period_end',       label: '\u5951\u7d04\u7d42\u4e86\u65e5',                     type: 'date',     placeholder: '',                                    required: false },
+            { key: 'amount',           label: '\u91d1\u984d',                           type: 'number',   placeholder: '\u4f8b\uff1a100000',                          required: false, suffix: '\u5186' },
+            { key: 'contract_content', label: '\u5951\u7d04\u5185\u5bb9',                       type: 'textarea', placeholder: '\u696d\u52d9\u5185\u5bb9\u3084\u6210\u679c\u7269\u306a\u3069\u3092\u8a18\u8f09\u3057\u3066\u304f\u3060\u3055\u3044', required: false },
+        ],
+        '\u5916\u90e8\u5951\u7d04': [
+            { key: 'vendor',           label: '\u53d6\u5f15\u5148\u30fb\u696d\u8005\u540d', type: 'text',     placeholder: '\u4f8b\uff1a\u682a\u5f0f\u4f1a\u793e\u3007\u3007',                      required: true  },
+            { key: 'period_start',     label: '\u5951\u7d04\u958b\u59cb\u65e5',     type: 'date',     placeholder: '',                                      required: false },
+            { key: 'period_end',       label: '\u5951\u7d04\u7d42\u4e86\u65e5',     type: 'date',     placeholder: '',                                      required: false },
+            { key: 'amount',           label: '\u91d1\u984d',           type: 'number',   placeholder: '\u4f8b\uff1a500000',                            required: false, suffix: '\u5186' },
+            { key: 'contract_content', label: '\u5951\u7d04\u5185\u5bb9',       type: 'textarea', placeholder: '\u696d\u52d9\u5185\u5bb9\u3084\u6210\u679c\u7269\u306a\u3069\u3092\u8a18\u8f09\u3057\u3066\u304f\u3060\u3055\u3044', required: false },
+        ],
+        '\u305d\u306e\u4ed6': [],
+    };
 
+    let currentTab       = 'mine';
+    let currentWfId      = null;
+    let currentAction    = null;
+    let editingWfId      = null;
+    let currentWfData    = null;
+    let isResubmitting   = false;
+    let uploadedAttachments = [];
+    let _acTimer         = null;
+
+    // ─── タブ切り替え ──────────────────────────────────────────────────────
     window.wfSwitchTab = function(tab) {
         currentTab = tab;
         document.querySelectorAll('.wf-tab').forEach(el => el.classList.remove('active'));
         const btn = document.getElementById('tab-' + tab);
         if (btn) btn.classList.add('active');
-        document.getElementById('wf-filter-status').value = tab === 'done' ? 'approved' : '';
+        // フィルタは「自分の申請」タブのみ表示
+        document.getElementById('wf-filters').style.display = (tab === 'mine') ? 'flex' : 'none';
+        document.getElementById('wf-filter-status').value = '';
+        document.getElementById('wf-filter-type').value   = '';
         wfLoadList();
     };
 
+    // ─── 一覧読み込み ──────────────────────────────────────────────────────
     window.wfLoadList = async function() {
         const container = document.getElementById('wf-list-container');
         container.innerHTML = '<div class="wf-empty"><i class="fa-solid fa-spinner fa-spin"></i> 読み込み中...</div>';
@@ -1143,18 +1272,22 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
             if (!d.ok) { container.innerHTML = '<div class="wf-empty">取得失敗</div>'; return; }
             if (!d.items.length) { container.innerHTML = '<div class="wf-empty">該当する申請はありません</div>'; return; }
             let html = '<table class="wf-table"><thead><tr>' +
-                '<th>受付番号</th><th>件名</th><th>申請種別</th><th>申請日</th><th>現在の承認者</th><th>ステータス</th>' +
+                '<th>受付番号</th><th>件名</th><th>申請種別</th><th>申請者</th><th>申請日</th><th>現在の承認者</th><th>ステータス</th><th>操作</th>' +
                 '</tr></thead><tbody>';
             for (const item of d.items) {
-                const apprNames = (item.currentApproverNames || []).join(', ') || '—';
-                const date = item.submittedAt ? new Date(item.submittedAt).toLocaleDateString('ja-JP') : '—';
-                html += \`<tr onclick="wfOpenDetail('\${item._id}')">
-                    <td>\${item.serialNo || '（下書き）'}</td>
+                const apprNames = (item.currentApproverNames || []).join(', ') || '\u2014';
+                const date      = item.submittedAt ? new Date(item.submittedAt).toLocaleDateString('ja-JP') : '\u2014';
+                const applicant = escHtml(item.applicantDisplayName || '\u2014');
+                const id        = escHtml(item._id);
+                html += \`<tr onclick="wfOpenDetail('\${id}')">
+                    <td>\${escHtml(item.serialNo || '\uff08\u4e0b\u66f8\u304d\uff09')}</td>
                     <td>\${escHtml(item.title)}</td>
                     <td>\${escHtml(item.applicationType)}</td>
-                    <td>\${date}</td>
+                    <td>\${applicant}</td>
+                    <td>\${escHtml(date)}</td>
                     <td>\${escHtml(apprNames)}</td>
                     <td>\${statusBadgeJs(item.status)}</td>
+                    <td><button class="wf-btn wf-btn-sm" style="background:#f3f4f6;color:#374151;" onclick="event.stopPropagation();wfDuplicate('\${id}')">\u6d41\u7528</button></td>
                 </tr>\`;
             }
             html += '</tbody></table>';
@@ -1165,27 +1298,142 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
     };
 
     function statusBadgeJs(status) {
-        const MAP = { draft:['下書き','#6b7280','#f3f4f6'], submitted:['申請中','#1d4ed8','#dbeafe'], approved:['承認済み','#15803d','#dcfce7'], returned:['差し戻し','#b45309','#fef3c7'], rejected:['却下','#b91c1c','#fee2e2'] };
+        const MAP = {
+            draft:     ['\u4e0b\u66f8\u304d',   '#6b7280', '#f3f4f6'],
+            submitted: ['\u7533\u8acb\u4e2d',   '#1d4ed8', '#dbeafe'],
+            approved:  ['\u627f\u8a8d\u6e08\u307f', '#15803d', '#dcfce7'],
+            returned:  ['\u5dee\u3057\u623b\u3057', '#b45309', '#fef3c7'],
+            rejected:  ['\u5374\u4e0b',     '#b91c1c', '#fee2e2'],
+        };
         const s = MAP[status] || [status, '#374151', '#f3f4f6'];
         return \`<span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600;color:\${s[1]};background:\${s[2]};">\${s[0]}</span>\`;
     }
 
     function escHtml(s) {
-        return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
+    // ─── 申請種別変更時のフィールド描画 ────────────────────────────────────
+    window.wfOnTypeChange = function() {
+        const type        = document.getElementById('new-type').value;
+        const container   = document.getElementById('wf-type-fields-container');
+        const fileSection = document.getElementById('wf-file-section');
+        const fields      = FORM_FIELDS[type] || [];
+
+        if (!fields.length) {
+            container.innerHTML = '';
+        } else {
+            let html = '<div class="wf-type-fields-wrap">';
+            for (const f of fields) {
+                const req = f.required ? '<span style="color:#ef4444;">*</span>' : '';
+                html += \`<div class="wf-form-group"><label>\${escHtml(f.label)} \${req}</label>\`;
+                if (f.type === 'textarea') {
+                    html += \`<textarea id="new-field-\${f.key}" placeholder="\${escHtml(f.placeholder || '')}"></textarea>\`;
+                } else if (f.type === 'number') {
+                    html += \`<div style="display:flex;align-items:center;gap:6px;">
+                        <input type="number" id="new-field-\${f.key}" placeholder="\${escHtml(f.placeholder || '')}" style="flex:1;">
+                        \${f.suffix ? \`<span style="font-size:13px;color:#6b7280;white-space:nowrap;">\${escHtml(f.suffix)}</span>\` : ''}
+                    </div>\`;
+                } else {
+                    html += \`<input type="\${f.type || 'text'}" id="new-field-\${f.key}" placeholder="\${escHtml(f.placeholder || '')}">\`;
+                }
+                html += '</div>';
+            }
+            html += '</div>';
+            container.innerHTML = html;
+        }
+        // 経費のみ添付ファイル欄を表示
+        if (fileSection) fileSection.style.display = (type === '\u7d4c\u8cbb') ? 'block' : 'none';
+    };
+
+    function collectFormData() {
+        const type   = document.getElementById('new-type').value;
+        const fields = FORM_FIELDS[type] || [];
+        const data   = { attachments: uploadedAttachments.slice() };
+        for (const f of fields) {
+            const el = document.getElementById('new-field-' + f.key);
+            if (el) data[f.key] = el.value;
+        }
+        return data;
+    }
+
+    function validateTypeFields() {
+        const type   = document.getElementById('new-type').value;
+        const fields = FORM_FIELDS[type] || [];
+        for (const f of fields) {
+            if (f.required) {
+                const el = document.getElementById('new-field-' + f.key);
+                if (el && !el.value.trim()) {
+                    alert(\`「\${f.label}」は必須です\`);
+                    el.focus();
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    function fillTypeFields(type, formData) {
+        const typeEl = document.getElementById('new-type');
+        if (typeEl && !typeEl.disabled) typeEl.value = type || '';
+        wfOnTypeChange();
+        if (!formData) return;
+        const fields = FORM_FIELDS[type] || [];
+        for (const f of fields) {
+            const el = document.getElementById('new-field-' + f.key);
+            if (el && formData[f.key] != null) el.value = formData[f.key];
+        }
+    }
+
+    // ─── ファイルアップロード（経費用） ────────────────────────────────────
+    window.wfUploadFile = async function(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append('file', file);
+        try {
+            const r = await fetch('/api/workflow/upload', { method: 'POST', body: fd });
+            const d = await r.json();
+            if (!d.ok) { alert('\u30a2\u30c3\u30d7\u30ed\u30fc\u30c9\u5931\u6557: ' + (d.error || '')); input.value = ''; return; }
+            uploadedAttachments.push({ originalName: d.originalName, filename: d.filename, url: d.url });
+            renderAttachmentList();
+            input.value = '';
+        } catch(e) {
+            alert('\u30a2\u30c3\u30d7\u30ed\u30fc\u30c9\u30a8\u30e9\u30fc\u304c\u767a\u751f\u3057\u307e\u3057\u305f');
+            input.value = '';
+        }
+    };
+
+    function renderAttachmentList() {
+        const list = document.getElementById('wf-attachment-list');
+        if (!list) return;
+        if (!uploadedAttachments.length) { list.innerHTML = ''; return; }
+        list.innerHTML = uploadedAttachments.map((a, i) =>
+            \`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:12px;">
+                <i class="fa-solid fa-paperclip" style="color:#15803d;"></i>
+                <a href="\${escHtml(a.url)}" target="_blank" style="color:#2563eb;">\${escHtml(a.originalName)}</a>
+                <button type="button" onclick="wfRemoveAttachment(\${i})" style="border:none;background:none;color:#ef4444;cursor:pointer;">✕</button>
+            </div>\`
+        ).join('');
+    }
+
+    window.wfRemoveAttachment = function(idx) {
+        uploadedAttachments.splice(idx, 1);
+        renderAttachmentList();
+    };
+
+    // ─── 承認者行生成 ──────────────────────────────────────────────────────
     function wfMakeApproverRow(name, userId, roleName) {
         const div = document.createElement('div');
         div.className = 'wf-approver-row';
-        div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px;';
         const nv = escHtml(name || ''), uv = escHtml(userId || ''), rv = escHtml(roleName || '');
         div.innerHTML = \`
             <div class="wf-ac-wrap" style="flex:1;position:relative;">
-                <input type="text" class="ac-name" placeholder="名前で検索…" oninput="wfAcSearch(this)" onblur="wfAcBlur(this)" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" value="\${nv}">
+                <input type="text" class="ac-name" placeholder="\u540d\u524d\u3067\u691c\u7d22\u2026" oninput="wfAcSearch(this)" onblur="wfAcBlur(this)" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" value="\${nv}">
                 <input type="hidden" class="ac-userid" value="\${uv}">
                 <div class="wf-ac-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #d1d5db;border-radius:6px;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,.1);max-height:180px;overflow-y:auto;"></div>
             </div>
-            <input type="text" data-field="roleName" placeholder="役割名（任意）" style="flex:0.7;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" value="\${rv}">
+            <input type="text" data-field="roleName" placeholder="\u5f79\u5272\u540d\uff08\u4efb\u610f\uff09" style="flex:0.7;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" value="\${rv}">
             <button type="button" onclick="this.closest('.wf-approver-row').remove()" style="padding:6px 10px;border:1px solid #fca5a5;border-radius:5px;cursor:pointer;background:#fff1f2;color:#ef4444;">✕</button>
         \`;
         return div;
@@ -1218,32 +1466,50 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
     };
     window.wfAcSelect = function(item) {
         const wrap = item.closest('.wf-ac-wrap');
-        wrap.querySelector('.ac-name').value = item.dataset.name;
+        wrap.querySelector('.ac-name').value  = item.dataset.name;
         wrap.querySelector('.ac-userid').value = item.dataset.id;
         wrap.querySelector('.wf-ac-drop').style.display = 'none';
     };
 
-    window.wfOpenNewModal = function() {
-        editingWfId = null;
-        document.getElementById('wf-new-modal').classList.add('open');
-    };
-    window.wfCloseNewModal = function() {
-        editingWfId = null;
-        document.getElementById('wf-new-modal').classList.remove('open');
+    // ─── モーダル開閉 ──────────────────────────────────────────────────────
+    function resetNewModal() {
+        editingWfId         = null;
+        isResubmitting      = false;
+        uploadedAttachments = [];
         document.getElementById('new-title').value = '';
-        document.getElementById('new-desc').value = '';
-        document.getElementById('new-type').value = '';
+        document.getElementById('new-desc').value  = '';
+        const typeEl = document.getElementById('new-type');
+        typeEl.value    = '';
+        typeEl.disabled = false;
+        document.getElementById('wf-type-fields-container').innerHTML = '';
+        const fs = document.getElementById('wf-file-section');
+        if (fs) fs.style.display = 'none';
+        renderAttachmentList();
         const c = document.getElementById('approver-rows');
         c.innerHTML = '';
         c.appendChild(wfMakeApproverRow());
-        document.querySelector('#wf-new-modal h2').innerHTML = '<i class="fa-solid fa-file-signature" style="margin-right:8px;color:#2563eb;"></i>新規ワークフロー申請';
+    }
+
+    window.wfOpenNewModal = function() {
+        resetNewModal();
+        document.getElementById('wf-new-modal-title').innerHTML =
+            '<i class="fa-solid fa-file-signature" style="margin-right:8px;color:#2563eb;"></i>\u65b0\u898f\u30ef\u30fc\u30af\u30d5\u30ed\u30fc\u7533\u8acb';
+        document.getElementById('wf-submit-btn').textContent = '\u7533\u8acb\u3059\u308b';
+        document.getElementById('wf-draft-btn').style.display = '';
+        document.getElementById('wf-new-modal').classList.add('open');
     };
+
+    window.wfCloseNewModal = function() {
+        document.getElementById('wf-new-modal').classList.remove('open');
+        resetNewModal();
+    };
+
     window.wfAddApproverRow = function() {
         document.getElementById('approver-rows').appendChild(wfMakeApproverRow());
     };
 
     function collectApprovers() {
-        const rows = document.querySelectorAll('#approver-rows .wf-approver-row');
+        const rows      = document.querySelectorAll('#approver-rows .wf-approver-row');
         const approvers = [];
         rows.forEach((row, idx) => {
             const uid  = (row.querySelector('.ac-userid') || {}).value || '';
@@ -1257,126 +1523,236 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
         const title = document.getElementById('new-title').value.trim();
         const type  = document.getElementById('new-type').value;
         const desc  = document.getElementById('new-desc').value.trim();
-        if (!type && !editingWfId) { alert('申請種別を選択してください'); return; }
-        if (!title) { alert('件名を入力してください'); return; }
-        if (!desc)  { alert('内容を入力してください'); return; }
+        if (!editingWfId && !type) { alert('\u7533\u8acb\u7a2e\u5225\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044'); return; }
+        if (!title) { alert('\u4ef6\u540d\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044'); return; }
+        if (!desc)  { alert('\u5185\u5bb9\u3092\u5165\u529b\u3057\u3066\u304f\u3060\u3055\u3044'); return; }
+        if (submit && !validateTypeFields()) return;
         const approvers = collectApprovers();
-        let r, d;
-        if (editingWfId) {
-            r = await fetch('/api/workflow/' + editingWfId, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ title, description: desc, approvers, submit }) });
-        } else {
-            r = await fetch('/api/workflow', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ title, applicationType: type, description: desc, approvers, submit }) });
-        }
-        d = await r.json();
-        if (!d.ok) { alert('エラー: ' + d.error); return; }
-        wfCloseNewModal();
-        wfLoadList();
-        if (submit) alert('申請しました（受付番号: ' + (d.serialNo || '') + '）');
-        else alert('下書き保存しました');
+        const formData  = collectFormData();
+        try {
+            let r, d;
+            if (editingWfId) {
+                r = await fetch('/api/workflow/' + editingWfId, {
+                    method: 'PUT', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ title, description: desc, formData, approvers, submit }),
+                });
+            } else {
+                r = await fetch('/api/workflow', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ title, applicationType: type, description: desc, formData, approvers, submit }),
+                });
+            }
+            d = await r.json();
+            if (!d.ok) { alert('\u30a8\u30e9\u30fc: ' + d.error); return; }
+            wfCloseNewModal();
+            wfLoadList();
+            if (submit) {
+                if (isResubmitting) alert('\u518d\u7533\u8acb\u3057\u307e\u3057\u305f');
+                else alert('\u7533\u8acb\u3057\u307e\u3057\u305f\uff08\u53d7\u4ed8\u756a\u53f7: ' + (d.serialNo || '') + '\uff09');
+            } else { alert('\u4e0b\u66f8\u304d\u4fdd\u5b58\u3057\u307e\u3057\u305f'); }
+        } catch(e) { alert('\u901a\u4fe1\u30a8\u30e9\u30fc\u304c\u767a\u751f\u3057\u307e\u3057\u305f'); }
     }
+
     window.wfSaveDraft = () => wfCreate(false);
     window.wfSubmitNew = () => wfCreate(true);
+
+    // ─── 下書き編集 ────────────────────────────────────────────────────────
     window.wfOpenEditFromDetail = function() {
         const wf = currentWfData;
         if (!wf) return;
-        editingWfId = currentWfId;
+        editingWfId         = currentWfId;
+        isResubmitting      = false;
+        uploadedAttachments = (wf.formData && Array.isArray(wf.formData.attachments)) ? wf.formData.attachments.slice() : [];
         document.getElementById('wf-detail-modal').classList.remove('open');
-        document.getElementById('new-type').value = wf.applicationType || '';
+        document.getElementById('new-type').disabled = false;
+        fillTypeFields(wf.applicationType, wf.formData);
         document.getElementById('new-title').value = wf.title || '';
-        document.getElementById('new-desc').value = wf.description || '';
+        document.getElementById('new-desc').value  = wf.description || '';
         const c = document.getElementById('approver-rows');
         c.innerHTML = '';
-        const aps = wf.approvers || [];
-        if (aps.length) {
-            aps.forEach(a => c.appendChild(wfMakeApproverRow(a.approverName || '', String(a.approverId || ''), a.roleName || '')));
-        } else {
-            c.appendChild(wfMakeApproverRow());
-        }
-        document.querySelector('#wf-new-modal h2').innerHTML = '<i class="fa-solid fa-pencil" style="margin-right:8px;color:#2563eb;"></i>下書き編集';
+        (wf.approvers || []).forEach(a => c.appendChild(wfMakeApproverRow(a.approverName || '', String(a.approverId || ''), a.roleName || '')));
+        if (!wf.approvers || !wf.approvers.length) c.appendChild(wfMakeApproverRow());
+        renderAttachmentList();
+        document.getElementById('wf-new-modal-title').innerHTML =
+            '<i class="fa-solid fa-pencil" style="margin-right:8px;color:#2563eb;"></i>\u4e0b\u66f8\u304d\u7de8\u96c6';
+        document.getElementById('wf-submit-btn').textContent = '\u7533\u8acb\u3059\u308b';
+        document.getElementById('wf-draft-btn').style.display = '';
         document.getElementById('wf-new-modal').classList.add('open');
     };
 
+    // ─── 差し戻し後の再申請（内容編集） ─────────────────────────────────────
+    window.wfOpenResubmitModal = function() {
+        const wf = currentWfData;
+        if (!wf) return;
+        editingWfId         = currentWfId;
+        isResubmitting      = true;
+        uploadedAttachments = (wf.formData && Array.isArray(wf.formData.attachments)) ? wf.formData.attachments.slice() : [];
+        document.getElementById('wf-detail-modal').classList.remove('open');
+        const typeEl = document.getElementById('new-type');
+        typeEl.value    = wf.applicationType || '';
+        typeEl.disabled = true; // 申請種別は変更不可
+        wfOnTypeChange();
+        if (wf.formData) {
+            (FORM_FIELDS[wf.applicationType] || []).forEach(f => {
+                const el = document.getElementById('new-field-' + f.key);
+                if (el && wf.formData[f.key] != null) el.value = wf.formData[f.key];
+            });
+        }
+        document.getElementById('new-title').value = wf.title || '';
+        document.getElementById('new-desc').value  = wf.description || '';
+        const c = document.getElementById('approver-rows');
+        c.innerHTML = '';
+        (wf.approvers || []).forEach(a => c.appendChild(wfMakeApproverRow(a.approverName || '', String(a.approverId || ''), a.roleName || '')));
+        if (!wf.approvers || !wf.approvers.length) c.appendChild(wfMakeApproverRow());
+        renderAttachmentList();
+        document.getElementById('wf-new-modal-title').innerHTML =
+            '<i class="fa-solid fa-rotate-right" style="margin-right:8px;color:#f59e0b;"></i>\u518d\u7533\u8acb\uff08\u5185\u5bb9\u306e\u4fee\u6b63\u30fb\u8ffd\u52a0\uff09';
+        document.getElementById('wf-submit-btn').textContent = '\u518d\u7533\u8acb\u3059\u308b';
+        document.getElementById('wf-draft-btn').style.display = 'none';
+        document.getElementById('wf-new-modal').classList.add('open');
+    };
+
+    // ─── 流用して新規申請 ──────────────────────────────────────────────────
+    window.wfDuplicate = async function(id) {
+        try {
+            const r = await fetch('/api/workflow/' + id);
+            const d = await r.json();
+            if (!d.ok) { alert('\u53d6\u5f97\u5931\u6557'); return; }
+            const wf = d.workflow;
+            resetNewModal();
+            document.getElementById('new-type').disabled = false;
+            fillTypeFields(wf.applicationType, wf.formData);
+            document.getElementById('new-title').value = wf.title ? '\u3010\u6d41\u7528\u3011' + wf.title : '';
+            document.getElementById('new-desc').value  = wf.description || '';
+            renderAttachmentList();
+            document.getElementById('wf-new-modal-title').innerHTML =
+                '<i class="fa-solid fa-copy" style="margin-right:8px;color:#2563eb;"></i>\u6d41\u7528\u3057\u3066\u65b0\u898f\u7533\u8acb';
+            document.getElementById('wf-submit-btn').textContent = '\u7533\u8acb\u3059\u308b';
+            document.getElementById('wf-draft-btn').style.display = '';
+            document.getElementById('wf-new-modal').classList.add('open');
+        } catch(e) { alert('\u30a8\u30e9\u30fc\u304c\u767a\u751f\u3057\u307e\u3057\u305f'); }
+    };
+
+    // ─── 詳細モーダル ──────────────────────────────────────────────────────
     window.wfOpenDetail = async function(id) {
         currentWfId = id;
-        const modal = document.getElementById('wf-detail-modal');
-        const content = document.getElementById('wf-detail-content');
+        const modal      = document.getElementById('wf-detail-modal');
+        const content    = document.getElementById('wf-detail-content');
         const actionBtns = document.getElementById('wf-action-buttons');
         modal.classList.add('open');
-        content.innerHTML = '<div class="wf-empty"><i class="fa-solid fa-spinner fa-spin"></i></div>';
+        content.innerHTML    = '<div class="wf-empty"><i class="fa-solid fa-spinner fa-spin"></i></div>';
         actionBtns.innerHTML = '';
         try {
             const r = await fetch('/api/workflow/' + id);
             const d = await r.json();
-            if (!d.ok) { content.innerHTML = '<div class="wf-empty">取得失敗</div>'; return; }
+            if (!d.ok) { content.innerHTML = '<div class="wf-empty">\u53d6\u5f97\u5931\u6557</div>'; return; }
             const wf = d.workflow;
-            let html = \`
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-                    <h2 style="margin:0;font-size:17px;">\${escHtml(wf.title)}</h2>
-                    \${statusBadgeJs(wf.status)}
-                </div>
-                <div style="font-size:12px;color:#6b7280;margin-bottom:16px;">受付番号: \${wf.serialNo || '（下書き）'} ｜ 申請種別: \${escHtml(wf.applicationType)} ｜ 申請者: \${escHtml(wf.applicantName || '—')}</div>
-                <div class="wf-detail-section">
-                    <h3>申請内容</h3>
-                    <p style="font-size:13px;white-space:pre-wrap;">\${escHtml(wf.description)}</p>
-                </div>
-                <div class="wf-detail-section">
-                    <h3>承認経路</h3>\`;
-            const steps = [...new Set(wf.approvers.map(a => a.step))].sort((a,b)=>a-b);
-            for (const step of steps) {
-                const stepAps = wf.approvers.filter(a => a.step === step);
-                html += \`<div class="wf-step-row">\`;
-                html += \`<span style="background:#e0f2fe;color:#0369a1;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600;">Step \${step}</span>\`;
-                for (const a of stepAps) {
-                    const ASTATUS = { pending:'⏳',approved:'✅',returned:'↩️',rejected:'❌',skipped:'⏭️' };
-                    html += \`<span>\${ASTATUS[a.status]||''} \${escHtml(a.approverName||a.approverId)}\${a.roleName ? ' ('+escHtml(a.roleName)+')' : ''}\${a.comment ? ' — '+escHtml(a.comment) : ''}</span>\`;
+
+            let html = \`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+                <h2 style="margin:0;font-size:17px;">\${escHtml(wf.title)}</h2>
+                \${statusBadgeJs(wf.status)}
+            </div>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:16px;">
+                \u53d7\u4ed8\u756a\u53f7: \${escHtml(wf.serialNo || '\uff08\u4e0b\u66f8\u304d\uff09')} \uff5c \u7533\u8acb\u7a2e\u5225: \${escHtml(wf.applicationType)} \uff5c \u7533\u8acb\u8005: \${escHtml(wf.applicantName || '\u2014')}
+            </div>\`;
+
+            // 申請内容
+            html += '<div class="wf-detail-section"><h3>\u7533\u8acb\u5185\u5bb9</h3>';
+            html += \`<p style="font-size:13px;white-space:pre-wrap;margin:0;">\${escHtml(wf.description)}</p>\`;
+
+            // 申請種別固有フィールド
+            const typeFields = FORM_FIELDS[wf.applicationType] || [];
+            if (typeFields.length && wf.formData) {
+                const hasValues = typeFields.some(f => wf.formData[f.key] != null && wf.formData[f.key] !== '');
+                if (hasValues) {
+                    html += '<div style="margin-top:10px;padding:10px;background:#f8fafc;border-radius:6px;border:1px solid #e5e7eb;">';
+                    for (const f of typeFields) {
+                        const val = wf.formData[f.key];
+                        if (val != null && val !== '') {
+                            html += \`<div style="margin-bottom:6px;font-size:13px;"><span style="font-weight:600;color:#374151;">\${escHtml(f.label)}:</span> \${escHtml(String(val))}\${f.suffix ? ' '+escHtml(f.suffix) : ''}</div>\`;
+                        }
+                    }
+                    html += '</div>';
                 }
-                html += \`</div>\`;
             }
-            html += \`</div>
-                <div class="wf-detail-section">
-                    <h3>承認履歴</h3>
-                    <ul class="wf-timeline">\`;
+
+            // 添付ファイル
+            const attachments = (wf.formData && Array.isArray(wf.formData.attachments)) ? wf.formData.attachments : [];
+            if (attachments.length) {
+                html += '<div style="margin-top:10px;"><strong style="font-size:13px;">\u6dfb\u4ed8\u30d5\u30a1\u30a4\u30eb:</strong><div style="margin-top:4px;">';
+                for (const att of attachments) {
+                    html += \`<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;font-size:12px;">
+                        <i class="fa-solid fa-paperclip" style="color:#15803d;"></i>
+                        <a href="\${escHtml(att.url)}" target="_blank" style="color:#2563eb;">\${escHtml(att.originalName)}</a>
+                    </div>\`;
+                }
+                html += '</div></div>';
+            }
+            html += '</div>';
+
+            // 承認経路（下書きでも常に表示）
+            html += '<div class="wf-detail-section"><h3>\u627f\u8a8d\u7d4c\u8def</h3>';
+            const steps = [...new Set(wf.approvers.map(a => a.step))].sort((a,b)=>a-b);
+            if (steps.length) {
+                for (const step of steps) {
+                    const stepAps   = wf.approvers.filter(a => a.step === step);
+                    const isCurrent = (step === wf.currentStep && wf.status === 'submitted');
+                    html += \`<div class="wf-step-row">
+                        <span style="background:\${isCurrent ? '#bfdbfe' : '#e0f2fe'};color:\${isCurrent ? '#1e40af' : '#0369a1'};border-radius:12px;padding:2px 10px;font-size:12px;font-weight:600;">Step \${step}\${isCurrent ? ' \u25b6' : ''}</span>\`;
+                    const ASTATUS = { pending:'\u23f3', approved:'\u2705', returned:'\u21a9\ufe0f', rejected:'\u274c', skipped:'\u23ed\ufe0f' };
+                    for (const a of stepAps) {
+                        html += \`<span style="font-size:13px;">\${ASTATUS[a.status]||''} \${escHtml(a.approverName||String(a.approverId))}\${a.roleName ? ' ('+escHtml(a.roleName)+')' : ''}\${a.comment ? ' \u2014 <em style="color:#6b7280;">'+escHtml(a.comment)+'</em>' : ''}</span>\`;
+                    }
+                    html += '</div>';
+                }
+            } else {
+                html += '<div style="color:#9ca3af;font-size:13px;">\u627f\u8a8d\u8005\u304c\u8a2d\u5b9a\u3055\u308c\u3066\u3044\u307e\u305b\u3093</div>';
+            }
+            html += '</div>';
+
+            // 承認履歴
+            html += '<div class="wf-detail-section"><h3>\u627f\u8a8d\u5c65\u6b74</h3><ul class="wf-timeline">';
+            const ACT = { created:'\u4f5c\u6210', submitted:'\u7533\u8acb', approved:'\u627f\u8a8d', returned:'\u5dee\u3057\u623b\u3057', rejected:'\u5374\u4e0b', resubmitted:'\u518d\u7533\u8acb', delegated:'\u4ee3\u7406\u627f\u8a8d', commented:'\u30b3\u30e1\u30f3\u30c8' };
             for (const h of (wf.histories || [])) {
-                const ACT = { created:'作成', submitted:'申請', approved:'承認', returned:'差し戻し', rejected:'却下', resubmitted:'再申請', delegated:'代理承認', commented:'コメント' };
                 const at = h.actedAt ? new Date(h.actedAt).toLocaleString('ja-JP') : '';
-                html += \`<li><strong>\${ACT[h.action]||h.action}</strong>: \${escHtml(h.actedByName)} <span style="color:#9ca3af;font-size:11px;">\${at}</span>\${h.comment ? '<br><span style="color:#6b7280;">'+escHtml(h.comment)+'</span>' : ''}</li>\`;
+                html += \`<li><strong>\${escHtml(ACT[h.action]||h.action)}</strong>: \${escHtml(h.actedByName)} <span style="color:#9ca3af;font-size:11px;">\${at}</span>\${h.comment ? '<br><span style="color:#6b7280;font-size:12px;">'+escHtml(h.comment)+'</span>' : ''}</li>\`;
             }
-            html += \`</ul></div>\`;
+            html += '</ul></div>';
             content.innerHTML = html;
             currentWfData = wf;
 
             // アクションボタン
-            let btns = \`<button class="wf-btn" style="background:#f3f4f6;color:#374151;" onclick="document.getElementById('wf-detail-modal').classList.remove('open')">閉じる</button>\`;
-            // 申請者で下書き状態
+            let btns = \`<button class="wf-btn" style="background:#f3f4f6;color:#374151;" onclick="document.getElementById('wf-detail-modal').classList.remove('open')">\u9589\u3058\u308b</button>\`;
+            btns += \`<button class="wf-btn wf-btn-sm" style="background:#e0f2fe;color:#0369a1;padding:8px 16px;" onclick="document.getElementById('wf-detail-modal').classList.remove('open');wfDuplicate('\${escHtml(wf._id)}')"><i class="fa-solid fa-copy" style="margin-right:4px;"></i>\u6d41\u7528</button>\`;
+
             if (wf._isApplicant && wf.status === 'draft') {
-                btns += \`<button class="wf-btn wf-btn-primary" onclick="wfOpenEditFromDetail()">編集</button>\`;
+                btns += \`<button class="wf-btn wf-btn-primary" onclick="wfOpenEditFromDetail()"><i class="fa-solid fa-pencil" style="margin-right:4px;"></i>\u7de8\u96c6</button>\`;
             }
-            // 申請者で差し戻し状態
             if (wf._isApplicant && wf.status === 'returned') {
-                btns += \`<button class="wf-btn wf-btn-primary" onclick="wfOpenActionModal('resubmit')">再申請</button>\`;
+                btns += \`<button class="wf-btn wf-btn-primary" onclick="wfOpenResubmitModal()"><i class="fa-solid fa-rotate-right" style="margin-right:4px;"></i>\u518d\u7533\u8acb</button>\`;
             }
-            // 承認者で申請中（自分が現在の承認者のみ活性）
             if (wf.status === 'submitted') {
                 const canAct = wf._isCurrentApprover;
-                const dis = canAct ? '' : ' disabled title="あなたはこの申請の承認者ではありません"';
-                const opac = canAct ? '' : ' style="opacity:.45;cursor:not-allowed;"';
-                btns += \`<button class="wf-btn wf-btn-success"\${dis}\${opac} onclick="if(this.disabled)return;wfOpenActionModal('approve')">承認</button>\`;
-                btns += \`<button class="wf-btn wf-btn-warn"\${dis}\${opac} onclick="if(this.disabled)return;wfOpenActionModal('return')">差し戻し</button>\`;
-                btns += \`<button class="wf-btn wf-btn-danger"\${dis}\${opac} onclick="if(this.disabled)return;wfOpenActionModal('reject')">却下</button>\`;
+                const dis    = canAct ? '' : ' disabled title="\u3042\u306a\u305f\u306f\u3053\u306e\u7533\u8acb\u306e\u73fe\u5728\u30b9\u30c6\u30c3\u30d7\u306e\u627f\u8a8d\u8005\u3067\u306f\u3042\u308a\u307e\u305b\u3093"';
+                const opac   = canAct ? '' : 'opacity:.45;cursor:not-allowed;';
+                btns += \`<button class="wf-btn wf-btn-success"\${dis} style="\${opac}" onclick="if(this.disabled)return;wfOpenActionModal('approve')">\u627f\u8a8d</button>\`;
+                btns += \`<button class="wf-btn wf-btn-warn"\${dis}    style="\${opac}" onclick="if(this.disabled)return;wfOpenActionModal('return')">\u5dee\u3057\u623b\u3057</button>\`;
+                btns += \`<button class="wf-btn wf-btn-danger"\${dis}   style="\${opac}" onclick="if(this.disabled)return;wfOpenActionModal('reject')">\u5374\u4e0b</button>\`;
             }
             actionBtns.innerHTML = btns;
         } catch(e) {
-            content.innerHTML = '<div class="wf-empty">エラーが発生しました</div>';
+            content.innerHTML = '<div class="wf-empty">\u30a8\u30e9\u30fc\u304c\u767a\u751f\u3057\u307e\u3057\u305f</div>';
         }
     };
 
+    // ─── アクションモーダル ──────────────────────────────────────────────────
     window.wfOpenActionModal = function(action) {
         currentAction = action;
-        const LABELS = { approve:'承認', return:'差し戻し', reject:'却下', resubmit:'再申請' };
+        const LABELS = { approve:'\u627f\u8a8d', return:'\u5dee\u3057\u623b\u3057', reject:'\u5374\u4e0b' };
         document.getElementById('wf-action-title').textContent = LABELS[action] || action;
         document.getElementById('wf-action-comment').value = '';
-        const btn = document.getElementById('wf-action-confirm-btn');
-        const COLORS = { approve:'#22c55e', return:'#f59e0b', reject:'#ef4444', resubmit:'#2563eb' };
+        const btn    = document.getElementById('wf-action-confirm-btn');
+        const COLORS = { approve:'#22c55e', return:'#f59e0b', reject:'#ef4444' };
         btn.style.background = COLORS[action] || '#2563eb';
         btn.style.color = '#fff';
         document.getElementById('wf-action-modal').classList.add('open');
@@ -1385,18 +1761,21 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
         document.getElementById('wf-action-modal').classList.remove('open');
         currentAction = null;
     };
-
     window.wfDoAction = async function() {
-        const comment = document.getElementById('wf-action-comment').value.trim();
-        const URLS = { approve: '/approve', return: '/return', reject: '/reject' };
-        const url = '/api/workflow/' + currentWfId + URLS[currentAction];
-        if (!url) return;
-        const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ comment }) });
-        const d = await r.json();
-        if (!d.ok) { alert('エラー: ' + d.error); return; }
-        wfCloseActionModal();
-        document.getElementById('wf-detail-modal').classList.remove('open');
-        wfLoadList();
+        const comment  = document.getElementById('wf-action-comment').value.trim();
+        const URLS     = { approve: '/approve', return: '/return', reject: '/reject' };
+        const endpoint = URLS[currentAction];
+        if (!endpoint) return;
+        try {
+            const r = await fetch('/api/workflow/' + currentWfId + endpoint, {
+                method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ comment }),
+            });
+            const d = await r.json();
+            if (!d.ok) { alert('\u30a8\u30e9\u30fc: ' + d.error); return; }
+            wfCloseActionModal();
+            document.getElementById('wf-detail-modal').classList.remove('open');
+            wfLoadList();
+        } catch(e) { alert('\u901a\u4fe1\u30a8\u30e9\u30fc\u304c\u767a\u751f\u3057\u307e\u3057\u305f'); }
     };
 
     // 初期ロード
