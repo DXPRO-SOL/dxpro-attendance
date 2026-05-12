@@ -70,6 +70,8 @@
         const relevantDMMy = MODE === 'dm'   && msg.fromUserId === MY_ID && msg.toUserId === TARGET_ID;
         const relevantRoom = MODE === 'room' && msg.roomId === ROOM_ID;
         if (!relevantDM && !relevantDMMy && !relevantRoom) return;
+        // 既に同じIDのメッセージが表示されている場合は重複追加しない（録画保存後のフォールバック表示との衝突防止）
+        if (msg._id && document.querySelector('[data-id="' + msg._id + '"]')) return;
         appendMessage(msg);
         scrollBottom(true);
         // 受信音（他ユーザーからのメッセージのみ）
@@ -1576,17 +1578,37 @@
             recordChunks = [];
             const target = (mediaRecorder && mediaRecorder._target) || recTarget || TARGET_ID;
             mediaRecorder = null;
-            if (!target || blob.size === 0) { hideNoticeBar(); return; }
+            if (blob.size === 0) { hideNoticeBar(); return; }
+            if (!target && !ROOM_ID) {
+                showNoticeBar('⚠️ 録画の保存先が不明のため保存できませんでした', 3000);
+                return;
+            }
             const fd = new FormData();
             fd.append('recording', blob, `recording_${Date.now()}.webm`);
-            fd.append('toUserId', target);
             fd.append('duration', recSeconds);
-            if (ROOM_ID) fd.append('roomId', ROOM_ID);
+            // roomId がある場合はグループ室宛て。toUserId は送らない（二重保存防止）
+            if (ROOM_ID) {
+                fd.append('roomId', ROOM_ID);
+            } else {
+                fd.append('toUserId', target);
+            }
             try {
-                await fetch('/api/chat/recording', { method: 'POST', body: fd });
+                const res  = await fetch('/api/chat/recording', { method: 'POST', body: fd });
+                const data = await res.json();
+                if (!res.ok || !data.ok) {
+                    showNoticeBar('⚠️ 録画の保存に失敗しました: ' + (data.error || res.status), 4000);
+                    return;
+                }
                 showNoticeBar('✅ 録画をチャットに保存しました', 3000);
+                // Socket.IO の new_message が届かない場合のフォールバック：
+                // サーバーから返却されたメッセージをそのまま画面に追加する
+                if (data.message) {
+                    appendMessage(data.message);
+                    scrollBottom(true);
+                }
             } catch (e) {
                 showNoticeBar('⚠️ 録画の保存に失敗しました', 3000);
+                console.error('録画アップロードエラー:', e);
             }
         };
         mediaRecorder.start(1000); // 1秒ごとにデータを収集

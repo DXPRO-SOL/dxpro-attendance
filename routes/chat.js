@@ -817,28 +817,40 @@ router.post('/api/chat/recording', requireLogin, chatUpload.single('recording'),
             attachments: [attachment],
             content:     '🎥 通話録画',
         };
-        if (toUserId)  msgData.toUserId = toUserId;
-        if (roomId)    msgData.roomId   = roomId;
+        // roomId がある場合はグループ室宛て。toUserId は無視する（二重保存防止）
+        if (roomId)        msgData.roomId   = roomId;
+        else if (toUserId) msgData.toUserId = toUserId;
+
         const msg = await ChatMessage.create(msgData);
+
+        // senderName を通常メッセージと同様に取得
+        const [senderEmp, senderUser] = await Promise.all([
+            Employee.findOne({ userId: fromId }).select('name').lean(),
+            User.findById(fromId).select('username').lean(),
+        ]);
+        const senderName = senderEmp ? senderEmp.name : ((senderUser && senderUser.username) || '');
+
         const payload = {
             _id:         String(msg._id),
             fromUserId:  String(fromId),
-            toUserId:    toUserId  ? String(toUserId)  : null,
-            roomId:      roomId    ? String(roomId)    : null,
+            toUserId:    msgData.toUserId ? String(msgData.toUserId) : null,
+            roomId:      msgData.roomId   ? String(msgData.roomId)   : null,
             content:     msg.content,
             attachments: [attachment],
             createdAt:   msg.createdAt,
             reactions:   [],
-            senderName:  '',
+            senderName,
         };
         if (global.io) {
-            if (toUserId) {
-                global.io.to('u_' + String(toUserId)).emit('new_message', payload);
+            if (msgData.toUserId) {
+                global.io.to('u_' + String(msgData.toUserId)).emit('new_message', payload);
                 global.io.to('u_' + String(fromId)).emit('new_message', payload);
             }
-            if (roomId) global.io.to('r_' + roomId).emit('new_message', payload);
+            if (msgData.roomId) global.io.to('r_' + String(msgData.roomId)).emit('new_message', payload);
         }
-        res.json({ ok: true, url: attachment.url });
+        // message をレスポンスに含めることで、フロント側が Socket.IO に頼らず
+        // 直接チャットに表示できるようにする（Socket.IO の遅延・フィルタ外れの保険）
+        res.json({ ok: true, url: attachment.url, message: payload });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
