@@ -67,6 +67,7 @@ const ChatMessageSchema = new mongoose.Schema(
         url: { type: String },
         mimeType: { type: String },
         size: { type: Number },
+        duration: { type: Number },
       },
     ],
     // 既読（DM用）

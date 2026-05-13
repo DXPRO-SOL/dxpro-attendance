@@ -119,6 +119,11 @@ body { background: #0f172a; color: #f1f5f9;
 .popup-btn.recording { background: #ef4444 !important; color: #fff !important; }
 #popup-remote-bar { display: none; text-align: center; font-size: 11px;
                     color: #fbbf24; padding: 2px 0 4px; }
+#popup-rec-status { display: none; font-size: 12px; color: #ef4444;
+                    margin-top: 4px; font-variant-numeric: tabular-nums; }
+#popup-remote-mute { display: none; position: absolute; top: 10px; left: 10px;
+                     background: rgba(0,0,0,.6); color: #f1f5f9; font-size: 12px;
+                     padding: 4px 9px; border-radius: 6px; z-index: 5; }
 `;
   document.head.appendChild(style);
 
@@ -131,11 +136,13 @@ body { background: #0f172a; color: #f1f5f9;
     <div id="popup-avatar-bg">
       <div class="popup-avatar-icon"><i class="fa-solid fa-user"></i></div>
     </div>
+    <div id="popup-remote-mute"><i class="fa-solid fa-microphone-slash"></i> ミュート中</div>
   </div>
   <div id="popup-info">
     <div id="popup-name">---</div>
     <div id="popup-status">接続中...</div>
     <div id="popup-timer">0:00</div>
+    <div id="popup-rec-status"></div>
   </div>
   <div id="popup-controls">
     <button id="popup-mic-btn"    class="popup-btn" title="マイク OFF">
@@ -198,7 +205,7 @@ body { background: #0f172a; color: #f1f5f9;
   function startCallTimer() {
     callStartTime = Date.now();
     const timerEl = document.getElementById("popup-timer");
-    if (timerEl) timerEl.style.display = "";
+    if (timerEl) timerEl.style.display = "block";
     // 通話接続時に追加ボタンを表示
     const ec = document.getElementById("popup-extra-controls");
     if (ec) ec.style.display = "flex";
@@ -213,7 +220,7 @@ body { background: #0f172a; color: #f1f5f9;
   function showRemoteVideo() {
     const rv = document.getElementById("popup-remote-video");
     const av = document.getElementById("popup-avatar-bg");
-    if (rv) rv.style.display = "";
+    if (rv) rv.style.display = "block";
     if (av) av.style.display = "none";
   }
 
@@ -256,7 +263,7 @@ body { background: #0f172a; color: #f1f5f9;
     const lv = document.getElementById("popup-local-video");
     if (lv && localStream.getVideoTracks().length) {
       lv.srcObject = localStream;
-      lv.style.display = "";
+      lv.style.display = "block";
       lv.play().catch(() => {});
     }
     return localStream;
@@ -467,18 +474,36 @@ body { background: #0f172a; color: #f1f5f9;
       const sender =
         callPC &&
         callPC.getSenders().find((s) => s.track && s.track.kind === "video");
-      if (sender) await sender.replaceTrack(videoTrack);
+      if (sender) {
+        await sender.replaceTrack(videoTrack);
+      } else if (callPC) {
+        // 音声のみ通話の場合は映像トラックを追加してネゴシエーション
+        callPC.addTrack(videoTrack, screenStream);
+        const offer = await callPC.createOffer();
+        await callPC.setLocalDescription(offer);
+        socket.emit("webrtc-offer-restart", {
+          toUserId: callTargetId,
+          fromUserId: MY_ID,
+          sdp: offer.sdp,
+          type: offer.type,
+        });
+      }
       isScreenSharing = true;
       const lv = document.getElementById("popup-local-video");
       if (lv) {
         lv.srcObject = screenStream;
-        lv.style.display = "";
+        lv.style.display = "block";
       }
       const btn = document.getElementById("popup-screen-btn");
       if (btn) {
         btn.classList.add("active-feature");
         btn.title = "画面共有停止";
       }
+      if (socket && callTargetId)
+        socket.emit("screen_share_started", {
+          toUserId: callTargetId,
+          fromUserId: MY_ID,
+        });
       setStatus("画面共有中");
       videoTrack.onended = () => stopScreenShare();
     } catch (e) {
@@ -510,6 +535,11 @@ body { background: #0f172a; color: #f1f5f9;
       btn.classList.remove("active-feature");
       btn.title = "画面共有";
     }
+    if (socket && callTargetId)
+      socket.emit("screen_share_stopped", {
+        toUserId: callTargetId,
+        fromUserId: MY_ID,
+      });
     setStatus("通話中");
   }
 
@@ -555,7 +585,7 @@ body { background: #0f172a; color: #f1f5f9;
       btn.disabled = false;
       btn.title = "遠隔操作中";
     }
-    if (bar) bar.style.display = "";
+    if (bar) bar.style.display = "block";
     if (rv) rv.style.cursor = "crosshair";
 
     function normCoords(ev) {
@@ -713,8 +743,16 @@ body { background: #0f172a; color: #f1f5f9;
     mediaRecorder.ondataavailable = (e) => {
       if (e.data.size > 0) recordChunks.push(e.data);
     };
+    let recSecs = 0;
+    let recTimerInterval = null;
     mediaRecorder.onstop = async () => {
+      clearInterval(recTimerInterval);
       const recSeconds = Math.round((Date.now() - recStart) / 1000);
+      const recStatus = document.getElementById("popup-rec-status");
+      if (recStatus) {
+        recStatus.style.display = "none";
+        recStatus.textContent = "";
+      }
       if (btn) {
         btn.classList.remove("recording");
         btn.innerHTML = '<i class="fa-solid fa-circle-dot"></i>';
@@ -753,6 +791,17 @@ body { background: #0f172a; color: #f1f5f9;
       btn.innerHTML = '<i class="fa-solid fa-stop"></i>';
       btn.title = "録画停止";
     }
+    const recStatus = document.getElementById("popup-rec-status");
+    if (recStatus) {
+      recStatus.style.display = "block";
+      recStatus.textContent = "🔴 録画中 0:00";
+    }
+    recTimerInterval = setInterval(() => {
+      recSecs++;
+      const m = Math.floor(recSecs / 60);
+      const s = String(recSecs % 60).padStart(2, "0");
+      if (recStatus) recStatus.textContent = `🔴 録画中 ${m}:${s}`;
+    }, 1000);
   }
 
   // ── マイク / カメラ トグル ────────────────────────────────────
@@ -770,6 +819,8 @@ body { background: #0f172a; color: #f1f5f9;
         : '<i class="fa-solid fa-microphone-slash"></i>';
       btn.title = isMicOn ? "マイク OFF" : "マイク ON";
     }
+    if (socket && callTargetId)
+      socket.emit("call_mic_mute", { toUserId: callTargetId, muted: !isMicOn });
   }
   function toggleCam() {
     if (!localStream) return;
@@ -877,6 +928,12 @@ body { background: #0f172a; color: #f1f5f9;
       } catch (e) {
         console.error("[popup] ICE restart error", e);
       }
+    });
+
+    // 相手のマイクミュート状態を表示
+    socket.on("call_mic_mute", (data) => {
+      const el = document.getElementById("popup-remote-mute");
+      if (el) el.style.display = data.muted ? "block" : "none";
     });
   }
 

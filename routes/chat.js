@@ -1932,7 +1932,9 @@ function buildAttachmentsHtml(attachments) {
     '<div class="sc-atts">' +
     attachments
       .map((a) => {
-        const type = mimeToType(a.mimeType || "");
+        let type = mimeToType(a.mimeType || "");
+        if (type === "file" && /\.(webm|mp4|mov|avi|mkv)$/i.test(a.url || ""))
+          type = "video";
         if (type === "image")
           return (
             '<a href="' +
@@ -2436,6 +2438,7 @@ html, body { overflow: hidden !important; }
 .ctrl-recording{background:#ef4444!important;color:#fff!important}
 .call-remote-bar button{background:none;border:1px solid rgba(255,255,255,.1);color:#64748b;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:.71rem}
 .call-remote-bar button:hover{background:rgba(255,255,255,.06);color:#e2e8f0}
+#call-remote-mute-badge{display:none;position:absolute;top:10px;left:10px;background:rgba(0,0,0,.6);color:#f1f5f9;font-size:.75rem;padding:4px 9px;border-radius:6px;z-index:4}
 
 /* ── Incoming call ── */
 .call-incoming-modal{position:fixed;inset:0;background:rgba(17,24,39,.65);z-index:10100;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
@@ -2529,6 +2532,7 @@ function buildCallOverlay() {
             <video id="remote-video" autoplay playsinline class="call-vid call-vid-remote"></video>
             <canvas id="remote-pointer-canvas" class="call-pointer-canvas"></canvas>
             <video id="local-video"  autoplay playsinline muted class="call-vid call-vid-local"></video>
+            <div id="call-remote-mute-badge"><i class="fa-solid fa-microphone-slash"></i> ミュート中</div>
         </div>
         <div class="call-controls">
             <button class="call-ctrl-btn" id="ctrl-mic"    title="マイク ON/OFF"  onclick="window._chat_webrtc.toggleMic(this)"><i class="fa-solid fa-microphone"></i></button>

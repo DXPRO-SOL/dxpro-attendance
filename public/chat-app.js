@@ -1797,6 +1797,9 @@
         : '<i class="fa-solid fa-microphone-slash"></i>';
       btn.title = isMicOn ? "マイク OFF" : "マイク ON";
     }
+    const _target = callTargetId || TARGET_ID;
+    if (socket && _target)
+      socket.emit("call_mic_mute", { toUserId: _target, muted: !isMicOn });
   }
 
   function toggleCam(btn) {
@@ -2721,6 +2724,12 @@
       recBtn.style.opacity = "";
     }
     hideNoticeBar();
+  });
+
+  // 相手のマイクミュー状態を表示
+  socket.on("call_mic_mute", (data) => {
+    const el = document.getElementById("call-remote-mute-badge");
+    if (el) el.style.display = data.muted ? "block" : "none";
   });
 
   // ─ 公開API（HTMLのonclick / _chat_webrtc 経由） ──────────────
