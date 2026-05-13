@@ -49,6 +49,23 @@
   let _cachedIce = null;
   let _hangingUp = false;
 
+  // ── 画面共有 ──────────────────────────────────────────────────
+  let screenStream = null;
+  let isScreenSharing = false;
+
+  // ── 遠隔操作 ──────────────────────────────────────────────────
+  let isRemoteCtrl = false;
+  let remotePointerHandler = null;
+  let remoteClickHandler = null;
+  let remoteDblHandler = null;
+  let remoteScrollHandler = null;
+  let remoteKeyHandler = null;
+  let remoteKeyUpHandler = null;
+
+  // ── 録画 ──────────────────────────────────────────────────────
+  let mediaRecorder = null;
+  let recordChunks = [];
+
   // ── BroadcastChannel（メインページとの通信）─────────────────
   const bc = new BroadcastChannel("dxpro_call");
 
@@ -93,6 +110,15 @@ body { background: #0f172a; color: #f1f5f9;
 #popup-hangup-btn { background: #ef4444; color: #fff;
                     width: 58px; height: 58px; font-size: 22px; }
 .popup-btn.muted  { background: #475569; color: #94a3b8; }
+#popup-extra-controls { display: none; gap: 10px; justify-content: center;
+                        padding: 4px 0 2px; flex-wrap: wrap; }
+#popup-screen-btn { background: #334155; color: #f1f5f9; width: 44px; height: 44px; font-size: 16px; }
+#popup-remote-btn { background: #334155; color: #f1f5f9; width: 44px; height: 44px; font-size: 16px; }
+#popup-record-btn { background: #334155; color: #f1f5f9; width: 44px; height: 44px; font-size: 16px; }
+.popup-btn.active-feature { background: #1d4ed8; color: #bfdbfe; }
+.popup-btn.recording { background: #ef4444 !important; color: #fff !important; }
+#popup-remote-bar { display: none; text-align: center; font-size: 11px;
+                    color: #fbbf24; padding: 2px 0 4px; }
 `;
   document.head.appendChild(style);
 
@@ -122,11 +148,28 @@ body { background: #0f172a; color: #f1f5f9;
       <i class="fa-solid fa-phone-slash"></i>
     </button>
   </div>
+  <div id="popup-extra-controls">
+    <button id="popup-screen-btn" class="popup-btn" title="画面共有">
+      <i class="fa-solid fa-desktop"></i>
+    </button>
+    <button id="popup-remote-btn" class="popup-btn" title="遠隔操作リクエスト">
+      <i class="fa-solid fa-mouse-pointer"></i>
+    </button>
+    <button id="popup-record-btn" class="popup-btn" title="録画 開始/停止">
+      <i class="fa-solid fa-circle-dot"></i>
+    </button>
+  </div>
+  <div id="popup-remote-bar">🖱 <strong>遠隔操作中</strong> — クリック・キーボード・スクロール転送中
+    <button onclick="stopRemoteControl()" style="margin-left:8px;font-size:11px;padding:1px 7px;border-radius:6px;border:none;cursor:pointer;background:#475569;color:#f1f5f9;">停止</button>
+  </div>
 </div>`;
 
   document.getElementById("popup-mic-btn").onclick = toggleMic;
   document.getElementById("popup-cam-btn").onclick = toggleCam;
   document.getElementById("popup-hangup-btn").onclick = () => doHangup(false);
+  document.getElementById("popup-screen-btn").onclick = toggleScreenShare;
+  document.getElementById("popup-remote-btn").onclick = requestRemote;
+  document.getElementById("popup-record-btn").onclick = toggleRecord;
   window.addEventListener("beforeunload", () => doHangup(false));
 
   // ── BroadcastChannel: メインページからの ICE 候補転送を受信 ──
@@ -156,6 +199,9 @@ body { background: #0f172a; color: #f1f5f9;
     callStartTime = Date.now();
     const timerEl = document.getElementById("popup-timer");
     if (timerEl) timerEl.style.display = "";
+    // 通話接続時に追加ボタンを表示
+    const ec = document.getElementById("popup-extra-controls");
+    if (ec) ec.style.display = "flex";
     callTimer = setInterval(() => {
       if (!callStartTime) return;
       const s = Math.floor((Date.now() - callStartTime) / 1000);
@@ -361,6 +407,18 @@ body { background: #0f172a; color: #f1f5f9;
     _hangingUp = true;
     clearInterval(callTimer);
     callTimer = null;
+    // 画面共有停止
+    if (screenStream) {
+      screenStream.getTracks().forEach((t) => t.stop());
+      screenStream = null;
+    }
+    isScreenSharing = false;
+    // 遠隔操作停止
+    stopRemoteControl();
+    // 録画停止
+    if (mediaRecorder && mediaRecorder.state === "recording") {
+      mediaRecorder.stop();
+    }
     if (window.CallSounds) {
       CallSounds.stopDialing();
       CallSounds.stopIncoming();
@@ -392,6 +450,309 @@ body { background: #0f172a; color: #f1f5f9;
       bc.postMessage({ type: "call_ended" });
     } catch (_) {}
     setTimeout(() => window.close(), 800);
+  }
+
+  // ── 画面共有 ─────────────────────────────────────────────────
+  async function toggleScreenShare() {
+    if (isScreenSharing) {
+      await stopScreenShare();
+      return;
+    }
+    try {
+      screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true,
+      });
+      const videoTrack = screenStream.getVideoTracks()[0];
+      const sender =
+        callPC &&
+        callPC.getSenders().find((s) => s.track && s.track.kind === "video");
+      if (sender) await sender.replaceTrack(videoTrack);
+      isScreenSharing = true;
+      const lv = document.getElementById("popup-local-video");
+      if (lv) {
+        lv.srcObject = screenStream;
+        lv.style.display = "";
+      }
+      const btn = document.getElementById("popup-screen-btn");
+      if (btn) {
+        btn.classList.add("active-feature");
+        btn.title = "画面共有停止";
+      }
+      setStatus("画面共有中");
+      videoTrack.onended = () => stopScreenShare();
+    } catch (e) {
+      if (e.name !== "NotAllowedError")
+        alert("画面共有できませんでした: " + (e.message || e));
+    }
+  }
+
+  async function stopScreenShare() {
+    if (!isScreenSharing) return;
+    isScreenSharing = false;
+    if (screenStream) {
+      screenStream.getTracks().forEach((t) => t.stop());
+      screenStream = null;
+    }
+    if (localStream && callPC) {
+      const camTrack = localStream.getVideoTracks()[0];
+      if (camTrack) {
+        const sender = callPC
+          .getSenders()
+          .find((s) => s.track && s.track.kind === "video");
+        if (sender) await sender.replaceTrack(camTrack).catch(() => {});
+      }
+      const lv = document.getElementById("popup-local-video");
+      if (lv) lv.srcObject = localStream;
+    }
+    const btn = document.getElementById("popup-screen-btn");
+    if (btn) {
+      btn.classList.remove("active-feature");
+      btn.title = "画面共有";
+    }
+    setStatus("通話中");
+  }
+
+  // ── 遠隔操作リクエスト ────────────────────────────────────────
+  function requestRemote() {
+    if (!callPC) return;
+    const serverUrl = location.origin;
+    const cmdText = `node remote-agent.js ${MY_ID} ${serverUrl}`;
+    if (
+      !confirm(
+        `遠隔操作リクエストを送信します。\n\n相手のPCでエージェントが未起動の場合、以下をターミナルで実行してください:\n${cmdText}\n\n送信しますか？`,
+      )
+    )
+      return;
+    socket.emit("remote_control_request", {
+      toUserId: callTargetId,
+      fromUserId: MY_ID,
+      fromName: MY_NAME,
+    });
+    const btn = document.getElementById("popup-remote-btn");
+    if (btn) {
+      btn.classList.add("active-feature");
+      btn.disabled = true;
+      btn.title = "承認待ち...";
+    }
+    setTimeout(() => {
+      if (btn && !isRemoteCtrl) {
+        btn.disabled = false;
+        btn.classList.remove("active-feature");
+        btn.title = "遠隔操作リクエスト";
+      }
+    }, 15000);
+  }
+
+  function startRemoteControl() {
+    if (isRemoteCtrl) return;
+    isRemoteCtrl = true;
+    const rv = document.getElementById("popup-remote-video");
+    const bar = document.getElementById("popup-remote-bar");
+    const btn = document.getElementById("popup-remote-btn");
+    if (btn) {
+      btn.classList.add("active-feature");
+      btn.disabled = false;
+      btn.title = "遠隔操作中";
+    }
+    if (bar) bar.style.display = "";
+    if (rv) rv.style.cursor = "crosshair";
+
+    function normCoords(ev) {
+      const rect = rv.getBoundingClientRect();
+      return {
+        x: +((ev.clientX - rect.left) / rect.width).toFixed(4),
+        y: +((ev.clientY - rect.top) / rect.height).toFixed(4),
+      };
+    }
+    remotePointerHandler = (ev) => {
+      const { x, y } = normCoords(ev);
+      if (x < 0 || x > 1 || y < 0 || y > 1) return;
+      socket.emit("remote_pointer", {
+        toUserId: callTargetId,
+        fromUserId: MY_ID,
+        x,
+        y,
+      });
+    };
+    remoteClickHandler = (ev) => {
+      ev.preventDefault();
+      const { x, y } = normCoords(ev);
+      socket.emit("remote_click", {
+        toUserId: callTargetId,
+        fromUserId: MY_ID,
+        x,
+        y,
+        button: ev.button,
+      });
+    };
+    remoteDblHandler = (ev) => {
+      ev.preventDefault();
+      const { x, y } = normCoords(ev);
+      socket.emit("remote_dblclick", {
+        toUserId: callTargetId,
+        fromUserId: MY_ID,
+        x,
+        y,
+      });
+    };
+    remoteScrollHandler = (ev) => {
+      ev.preventDefault();
+      socket.emit("remote_scroll", {
+        toUserId: callTargetId,
+        fromUserId: MY_ID,
+        deltaX: ev.deltaX,
+        deltaY: ev.deltaY,
+      });
+    };
+    remoteKeyHandler = (ev) => {
+      const tag = (document.activeElement || {}).tagName || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      ev.preventDefault();
+      socket.emit("remote_key", {
+        toUserId: callTargetId,
+        fromUserId: MY_ID,
+        type: "keydown",
+        key: ev.key,
+        code: ev.code,
+        shiftKey: ev.shiftKey,
+        ctrlKey: ev.ctrlKey,
+        altKey: ev.altKey,
+        metaKey: ev.metaKey,
+      });
+    };
+    remoteKeyUpHandler = (ev) => {
+      const tag = (document.activeElement || {}).tagName || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      socket.emit("remote_key", {
+        toUserId: callTargetId,
+        fromUserId: MY_ID,
+        type: "keyup",
+        key: ev.key,
+        code: ev.code,
+        shiftKey: ev.shiftKey,
+        ctrlKey: ev.ctrlKey,
+        altKey: ev.altKey,
+        metaKey: ev.metaKey,
+      });
+    };
+    if (rv) {
+      rv.addEventListener("mousemove", remotePointerHandler);
+      rv.addEventListener("click", remoteClickHandler);
+      rv.addEventListener("dblclick", remoteDblHandler);
+      rv.addEventListener("wheel", remoteScrollHandler, { passive: false });
+    }
+    document.addEventListener("keydown", remoteKeyHandler);
+    document.addEventListener("keyup", remoteKeyUpHandler);
+    setStatus("遠隔操作中");
+  }
+
+  function stopRemoteControl() {
+    if (!isRemoteCtrl) return;
+    isRemoteCtrl = false;
+    const rv = document.getElementById("popup-remote-video");
+    const bar = document.getElementById("popup-remote-bar");
+    const btn = document.getElementById("popup-remote-btn");
+    if (rv) {
+      rv.style.cursor = "";
+      if (remotePointerHandler)
+        rv.removeEventListener("mousemove", remotePointerHandler);
+      if (remoteClickHandler)
+        rv.removeEventListener("click", remoteClickHandler);
+      if (remoteDblHandler)
+        rv.removeEventListener("dblclick", remoteDblHandler);
+      if (remoteScrollHandler)
+        rv.removeEventListener("wheel", remoteScrollHandler);
+    }
+    if (remoteKeyHandler)
+      document.removeEventListener("keydown", remoteKeyHandler);
+    if (remoteKeyUpHandler)
+      document.removeEventListener("keyup", remoteKeyUpHandler);
+    remotePointerHandler =
+      remoteClickHandler =
+      remoteDblHandler =
+      remoteScrollHandler =
+      remoteKeyHandler =
+      remoteKeyUpHandler =
+        null;
+    if (bar) bar.style.display = "none";
+    if (btn) {
+      btn.classList.remove("active-feature");
+      btn.title = "遠隔操作リクエスト";
+    }
+    setStatus("通話中");
+  }
+
+  // ── 録画 ─────────────────────────────────────────────────────
+  async function toggleRecord() {
+    const btn = document.getElementById("popup-record-btn");
+    if (mediaRecorder && mediaRecorder.state === "recording") {
+      mediaRecorder.stop();
+      return;
+    }
+    if (!callPC) return;
+    const tracks = [];
+    const rv = document.getElementById("popup-remote-video");
+    if (rv && rv.srcObject)
+      rv.srcObject.getTracks().forEach((t) => tracks.push(t));
+    if (localStream)
+      localStream.getAudioTracks().forEach((t) => tracks.push(t));
+    if (tracks.length === 0) {
+      alert("録画できるストリームがありません");
+      return;
+    }
+
+    const stream = new MediaStream(tracks);
+    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+      ? "video/webm;codecs=vp9,opus"
+      : "video/webm";
+    recordChunks = [];
+    const recStart = Date.now();
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
+
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) recordChunks.push(e.data);
+    };
+    mediaRecorder.onstop = async () => {
+      const recSeconds = Math.round((Date.now() - recStart) / 1000);
+      if (btn) {
+        btn.classList.remove("recording");
+        btn.innerHTML = '<i class="fa-solid fa-circle-dot"></i>';
+        btn.disabled = false;
+        btn.title = "録画 開始/停止";
+      }
+      const blob = new Blob(recordChunks, { type: mimeType });
+      recordChunks = [];
+      mediaRecorder = null;
+      if (blob.size === 0) return;
+      const fd = new FormData();
+      fd.append("recording", blob, `recording_${Date.now()}.webm`);
+      fd.append("duration", recSeconds);
+      fd.append("toUserId", callTargetId);
+      try {
+        const res = await fetch("/api/chat/recording", {
+          method: "POST",
+          body: fd,
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || !data.ok) {
+          alert(
+            "録画の保存に失敗しました: " +
+              (data && data.error ? data.error : res.status),
+          );
+          return;
+        }
+        alert("✅ 録画をチャットに保存しました");
+      } catch (e) {
+        alert("録画の保存に失敗しました");
+      }
+    };
+    mediaRecorder.start(1000);
+    if (btn) {
+      btn.classList.add("recording");
+      btn.innerHTML = '<i class="fa-solid fa-stop"></i>';
+      btn.title = "録画停止";
+    }
   }
 
   // ── マイク / カメラ トグル ────────────────────────────────────
@@ -476,6 +837,11 @@ body { background: #0f172a; color: #f1f5f9;
 
     socket.on("call_ended", () => {
       doHangup(true);
+    });
+
+    // 遠隔操作リクエストが相手に承認された
+    socket.on("remote_control_approved", () => {
+      startRemoteControl();
     });
 
     socket.on("webrtc-candidate", async (data) => {
