@@ -1319,6 +1319,7 @@
   // 変数
   let localStream = null; // カメラ・マイク
   let screenStream = null; // 画面共有ストリーム
+  let autoFullscreenForScreenShare = false; // 画面共有時に自動全画面した場合のフラグ
   let callPC = null; // RTCPeerConnection
   let isMicOn = true;
   let isCamOn = true;
@@ -1841,7 +1842,14 @@
       if (sender) await sender.replaceTrack(screenStream.getVideoTracks()[0]);
 
       const btn = document.getElementById("ctrl-screen");
-      if (btn) btn.classList.add("active-feature");
+      if (btn) {
+        btn.classList.add("ctrl-sharing");
+        btn.classList.remove("active-feature");
+        btn.innerHTML =
+          '<i class="fa-solid fa-desktop"></i><i class="fa-solid fa-circle" style="font-size:.45em;position:absolute;bottom:8px;right:8px"></i>';
+        btn.style.position = "relative";
+        btn.title = "画面共有停止";
+      }
 
       socket.emit("screen_share_started", {
         toUserId: TARGET_ID,
@@ -1854,6 +1862,18 @@
         viewportH: window.innerHeight,
       });
       showCallOverlay("画面共有中");
+
+      // 画面共有モード: パネルを拡大して見やすく
+      const box = document.getElementById("call-box");
+      if (box) box.classList.add("call-screen-sharing");
+      if (
+        box &&
+        !box.classList.contains("call-fullscreen") &&
+        !document.fullscreenElement
+      ) {
+        autoFullscreenForScreenShare = true;
+        _toggleCSSFullscreen(box, document.getElementById("fullscreen-icon"));
+      }
 
       // 共有停止時（ブラウザの共有停止ボタンも含む）
       screenStream.getVideoTracks()[0].addEventListener("ended", async () => {
@@ -1882,12 +1902,29 @@
       if (sender && camTrack) await sender.replaceTrack(camTrack);
     }
     const btn = document.getElementById("ctrl-screen");
-    if (btn) btn.classList.remove("active-feature");
+    if (btn) {
+      btn.classList.remove("ctrl-sharing", "active-feature");
+      btn.innerHTML = '<i class="fa-solid fa-desktop"></i>';
+      btn.style.position = "";
+      btn.title = "画面共有";
+    }
     socket.emit("screen_share_stopped", {
       toUserId: TARGET_ID,
       fromUserId: MY_ID,
     });
     showCallOverlay("通話中");
+
+    // 画面共有モード解除: パネルをノーマル状態に戻す
+    const box = document.getElementById("call-box");
+    if (box) box.classList.remove("call-screen-sharing");
+    if (autoFullscreenForScreenShare) {
+      autoFullscreenForScreenShare = false;
+      if (box && box.classList.contains("call-fullscreen")) {
+        _toggleCSSFullscreen(box, document.getElementById("fullscreen-icon"));
+      } else if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
   }
 
   // ─ 遠隔操作（ポインタ共有） ────────────────────────────────────
@@ -2497,10 +2534,32 @@
     if (data) remoteScreenInfo = data; // 相手の画面情報を保存
     const sl = document.getElementById("call-status-label");
     if (sl) sl.textContent = "相手が画面共有中";
+    // 受信側: パネルを自動拡大して見やすく
+    const box = document.getElementById("call-box");
+    if (box) box.classList.add("call-screen-sharing");
+    if (
+      box &&
+      !box.classList.contains("call-fullscreen") &&
+      !document.fullscreenElement
+    ) {
+      autoFullscreenForScreenShare = true;
+      _toggleCSSFullscreen(box, document.getElementById("fullscreen-icon"));
+    }
   });
   socket.on("screen_share_stopped", (data) => {
     const sl = document.getElementById("call-status-label");
     if (sl) sl.textContent = "通話中";
+    // 受信側: 自動拡大を解除
+    const box = document.getElementById("call-box");
+    if (box) box.classList.remove("call-screen-sharing");
+    if (autoFullscreenForScreenShare) {
+      autoFullscreenForScreenShare = false;
+      if (box && box.classList.contains("call-fullscreen")) {
+        _toggleCSSFullscreen(box, document.getElementById("fullscreen-icon"));
+      } else if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
   });
 
   // ─ エージェント接続/切断通知 ────────────────────────────────
@@ -2712,6 +2771,8 @@
       recBtn.title = "相手が録画中です";
       recBtn.style.opacity = "0.4";
     }
+    const badge = document.getElementById("call-remote-rec-badge");
+    if (badge) badge.style.display = "block";
     showNoticeBar("🔴 相手が録画中です", 0);
   });
 
@@ -2723,6 +2784,8 @@
       recBtn.title = "録画";
       recBtn.style.opacity = "";
     }
+    const badge = document.getElementById("call-remote-rec-badge");
+    if (badge) badge.style.display = "none";
     hideNoticeBar();
   });
 

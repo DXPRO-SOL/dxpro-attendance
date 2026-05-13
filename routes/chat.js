@@ -2393,14 +2393,22 @@ html, body { overflow: hidden !important; }
 
 /* ── Call overlay（フローティングパネル） ── */
 .call-overlay{position:fixed;bottom:24px;right:24px;z-index:10000;display:flex;}
-.call-box{background:#0f172a;border-radius:var(--radius-xl);width:420px;max-width:calc(100vw - 48px);box-shadow:0 20px 60px rgba(0,0,0,.75);overflow:hidden;display:flex;flex-direction:column;border:1px solid rgba(255,255,255,.08);resize:both;min-width:280px;min-height:200px;}
+.call-box{background:#0f172a;border-radius:var(--radius-xl);width:420px;max-width:calc(100vw - 48px);box-shadow:0 20px 60px rgba(0,0,0,.75);overflow:auto;scrollbar-width:none;display:flex;flex-direction:column;border:1px solid rgba(255,255,255,.08);resize:both;min-width:280px;min-height:200px;}
+.call-box::-webkit-scrollbar{display:none}
 .call-box.call-fullscreen{position:fixed!important;inset:0!important;width:100vw!important;max-width:100vw!important;height:100vh!important;border-radius:0!important;resize:none!important;}
 .call-box.call-fullscreen .call-videos{min-height:0;flex:1}
 .call-box.call-fullscreen .call-vid-remote{max-height:none;height:100%}
-:fullscreen .call-box{width:100vw;height:100vh;border-radius:0;max-width:100vw;position:fixed;inset:0}
+/* 画面共有モード — パネルを広げて視認性を確保 */
+.call-box.call-screen-sharing{width:min(780px,calc(100vw - 48px))}
+.call-box.call-screen-sharing .call-videos{flex:1;min-height:400px}
+.call-box.call-screen-sharing .call-vid-remote{max-height:none}
+/* ネイティブ全画面 — call-box が全画面要素の場合 */
+.call-box:fullscreen{border-radius:0;max-width:100vw}
+:fullscreen .call-box{border-radius:0;max-width:100vw}
 :fullscreen .call-videos{flex:1;min-height:0}
 :fullscreen .call-vid-remote{max-height:none;height:100%}
-:-webkit-full-screen .call-box{width:100vw;height:100vh;border-radius:0;max-width:100vw}
+.call-box:-webkit-full-screen{border-radius:0;max-width:100vw}
+:-webkit-full-screen .call-box{border-radius:0;max-width:100vw}
 :-webkit-full-screen .call-videos{flex:1;min-height:0}
 :-webkit-full-screen .call-vid-remote{max-height:none;height:100%}
 .call-header{display:flex;flex-direction:row;align-items:center;padding:10px 14px;color:#f1f5f9;gap:10px;position:relative;background:#1e293b;border-bottom:1px solid rgba(255,255,255,.08);cursor:move;user-select:none;}
@@ -2421,7 +2429,7 @@ html, body { overflow: hidden !important; }
 .call-mini-end{background:#ef4444!important;color:#fff!important;}
 .call-mini-end:hover{background:#dc2626!important;}
 .call-videos{position:relative;background:#020617;min-height:280px;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.call-vid-remote{width:100%;max-height:70vh;object-fit:contain;background:#020617;display:block}
+.call-vid-remote{width:100%;max-height:80vh;object-fit:contain;background:#020617;display:block}
 .call-vid-local{position:absolute;bottom:12px;right:12px;width:106px;height:76px;object-fit:cover;border-radius:var(--radius-md);border:2px solid rgba(99,102,241,.6);z-index:2;box-shadow:var(--shadow-md)}
 .call-pointer-canvas{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none}
 .call-controls{display:flex;justify-content:center;gap:10px;padding:14px 14px 12px;flex-shrink:0;background:rgba(255,255,255,.03)}
@@ -2436,9 +2444,12 @@ html, body { overflow: hidden !important; }
 .call-record-dot{animation:blink 1s step-start infinite}
 @keyframes blink{50%{opacity:0}}
 .ctrl-recording{background:#ef4444!important;color:#fff!important}
+.ctrl-sharing{background:#22c55e!important;color:#fff!important}
+.ctrl-sharing i{animation:blink 1s step-start infinite}
 .call-remote-bar button{background:none;border:1px solid rgba(255,255,255,.1);color:#64748b;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:.71rem}
 .call-remote-bar button:hover{background:rgba(255,255,255,.06);color:#e2e8f0}
 #call-remote-mute-badge{display:none;position:absolute;top:10px;left:10px;background:rgba(0,0,0,.6);color:#f1f5f9;font-size:.75rem;padding:4px 9px;border-radius:6px;z-index:4}
+#call-remote-rec-badge{display:none;position:absolute;top:10px;right:10px;background:rgba(220,38,38,.85);color:#fff;font-size:.75rem;padding:4px 9px;border-radius:6px;z-index:4;font-weight:700;letter-spacing:.03em}
 
 /* ── Incoming call ── */
 .call-incoming-modal{position:fixed;inset:0;background:rgba(17,24,39,.65);z-index:10100;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
@@ -2533,6 +2544,7 @@ function buildCallOverlay() {
             <canvas id="remote-pointer-canvas" class="call-pointer-canvas"></canvas>
             <video id="local-video"  autoplay playsinline muted class="call-vid call-vid-local"></video>
             <div id="call-remote-mute-badge"><i class="fa-solid fa-microphone-slash"></i> ミュート中</div>
+            <div id="call-remote-rec-badge"><i class="fa-solid fa-circle call-record-dot"></i> 録画中</div>
         </div>
         <div class="call-controls">
             <button class="call-ctrl-btn" id="ctrl-mic"    title="マイク ON/OFF"  onclick="window._chat_webrtc.toggleMic(this)"><i class="fa-solid fa-microphone"></i></button>
