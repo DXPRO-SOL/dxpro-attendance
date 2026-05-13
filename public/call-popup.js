@@ -117,6 +117,12 @@ body { background: #0f172a; color: #f1f5f9;
 #popup-record-btn { background: #334155; color: #f1f5f9; width: 44px; height: 44px; font-size: 16px; }
 .popup-btn.active-feature { background: #1d4ed8; color: #bfdbfe; }
 .popup-btn.recording { background: #ef4444 !important; color: #fff !important; }
+@keyframes screen-pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(34,197,94,.55); }
+  50%      { box-shadow: 0 0 0 7px rgba(34,197,94,0); }
+}
+.popup-btn.screen-sharing { background: #16a34a !important; color: #fff !important;
+  animation: screen-pulse 1.6s ease-in-out infinite; }
 #popup-remote-bar { display: none; text-align: center; font-size: 11px;
                     color: #fbbf24; padding: 2px 0 4px; }
 #popup-rec-status { display: none; font-size: 12px; color: #ef4444;
@@ -124,6 +130,25 @@ body { background: #0f172a; color: #f1f5f9;
 #popup-remote-mute { display: none; position: absolute; top: 10px; left: 10px;
                      background: rgba(0,0,0,.6); color: #f1f5f9; font-size: 12px;
                      padding: 4px 9px; border-radius: 6px; z-index: 5; }
+#popup-fullscreen-btn { position: absolute; top: 8px; right: 8px;
+                        background: rgba(0,0,0,.45); color: #f1f5f9;
+                        border: none; cursor: pointer; border-radius: 6px;
+                        width: 30px; height: 30px; font-size: 14px;
+                        display: flex; align-items: center; justify-content: center;
+                        z-index: 10; transition: background .15s; }
+#popup-fullscreen-btn:hover { background: rgba(0,0,0,.72); }
+#popup-screen-indicator { display: none; position: absolute; top: 10px; left: 50%;
+                          transform: translateX(-50%);
+                          background: rgba(29,78,216,.88); color: #fff;
+                          font-size: 12px; padding: 4px 12px; border-radius: 6px;
+                          z-index: 6; white-space: nowrap; pointer-events: none; }
+#popup-rec-indicator { display: none; position: absolute; top: 40px; left: 50%;
+                       transform: translateX(-50%);
+                       background: rgba(239,68,68,.88); color: #fff;
+                       font-size: 12px; padding: 4px 12px; border-radius: 6px;
+                       z-index: 6; white-space: nowrap; pointer-events: none; }
+#popup-video-wrap:fullscreen { border-radius: 0; }
+#popup-video-wrap:-webkit-full-screen { border-radius: 0; }
 `;
   document.head.appendChild(style);
 
@@ -137,6 +162,9 @@ body { background: #0f172a; color: #f1f5f9;
       <div class="popup-avatar-icon"><i class="fa-solid fa-user"></i></div>
     </div>
     <div id="popup-remote-mute"><i class="fa-solid fa-microphone-slash"></i> ミュート中</div>
+    <button id="popup-fullscreen-btn" title="全画面"><i class="fa-solid fa-expand" id="popup-fullscreen-icon"></i></button>
+    <div id="popup-screen-indicator"><i class="fa-solid fa-desktop"></i> 画面共有中</div>
+    <div id="popup-rec-indicator"><i class="fa-solid fa-circle-dot"></i> 画面録画中</div>
   </div>
   <div id="popup-info">
     <div id="popup-name">---</div>
@@ -177,6 +205,14 @@ body { background: #0f172a; color: #f1f5f9;
   document.getElementById("popup-screen-btn").onclick = toggleScreenShare;
   document.getElementById("popup-remote-btn").onclick = requestRemote;
   document.getElementById("popup-record-btn").onclick = toggleRecord;
+  document.getElementById("popup-fullscreen-btn").onclick = toggleFullscreen;
+  document.addEventListener("fullscreenchange", () => {
+    const icon = document.getElementById("popup-fullscreen-icon");
+    if (icon)
+      icon.className = document.fullscreenElement
+        ? "fa-solid fa-compress"
+        : "fa-solid fa-expand";
+  });
   window.addEventListener("beforeunload", () => doHangup(false));
 
   // ── BroadcastChannel: メインページからの ICE 候補転送を受信 ──
@@ -459,6 +495,24 @@ body { background: #0f172a; color: #f1f5f9;
     setTimeout(() => window.close(), 800);
   }
 
+  // ── 全画面 ──────────────────────────────────────────────────
+  function toggleFullscreen() {
+    const wrap = document.getElementById("popup-video-wrap");
+    if (!document.fullscreenElement) {
+      (
+        wrap.requestFullscreen ||
+        wrap.webkitRequestFullscreen ||
+        wrap.mozRequestFullScreen
+      ).call(wrap);
+    } else {
+      (
+        document.exitFullscreen ||
+        document.webkitExitFullscreen ||
+        document.mozCancelFullScreen
+      ).call(document);
+    }
+  }
+
   // ── 画面共有 ─────────────────────────────────────────────────
   async function toggleScreenShare() {
     if (isScreenSharing) {
@@ -496,7 +550,11 @@ body { background: #0f172a; color: #f1f5f9;
       }
       const btn = document.getElementById("popup-screen-btn");
       if (btn) {
-        btn.classList.add("active-feature");
+        btn.classList.remove("active-feature");
+        btn.classList.add("screen-sharing");
+        btn.innerHTML =
+          '<i class="fa-solid fa-desktop"></i><i class="fa-solid fa-stop" style="font-size:9px;position:absolute;bottom:8px;right:8px;"></i>';
+        btn.style.position = "relative";
         btn.title = "画面共有停止";
       }
       if (socket && callTargetId)
@@ -532,7 +590,9 @@ body { background: #0f172a; color: #f1f5f9;
     }
     const btn = document.getElementById("popup-screen-btn");
     if (btn) {
-      btn.classList.remove("active-feature");
+      btn.classList.remove("active-feature", "screen-sharing");
+      btn.innerHTML = '<i class="fa-solid fa-desktop"></i>';
+      btn.style.position = "";
       btn.title = "画面共有";
     }
     if (socket && callTargetId)
@@ -747,6 +807,11 @@ body { background: #0f172a; color: #f1f5f9;
     let recTimerInterval = null;
     mediaRecorder.onstop = async () => {
       clearInterval(recTimerInterval);
+      if (socket && callTargetId)
+        socket.emit("recording_stopped", {
+          toUserId: callTargetId,
+          fromUserId: MY_ID,
+        });
       const recSeconds = Math.round((Date.now() - recStart) / 1000);
       const recStatus = document.getElementById("popup-rec-status");
       if (recStatus) {
@@ -786,6 +851,11 @@ body { background: #0f172a; color: #f1f5f9;
       }
     };
     mediaRecorder.start(1000);
+    if (socket && callTargetId)
+      socket.emit("recording_started", {
+        toUserId: callTargetId,
+        fromUserId: MY_ID,
+      });
     if (btn) {
       btn.classList.add("recording");
       btn.innerHTML = '<i class="fa-solid fa-stop"></i>';
@@ -934,6 +1004,26 @@ body { background: #0f172a; color: #f1f5f9;
     socket.on("call_mic_mute", (data) => {
       const el = document.getElementById("popup-remote-mute");
       if (el) el.style.display = data.muted ? "block" : "none";
+    });
+
+    // 相手が画面共有中の表示
+    socket.on("screen_share_started", () => {
+      const el = document.getElementById("popup-screen-indicator");
+      if (el) el.style.display = "block";
+    });
+    socket.on("screen_share_stopped", () => {
+      const el = document.getElementById("popup-screen-indicator");
+      if (el) el.style.display = "none";
+    });
+
+    // 相手が録画中の表示
+    socket.on("recording_started", () => {
+      const el = document.getElementById("popup-rec-indicator");
+      if (el) el.style.display = "block";
+    });
+    socket.on("recording_stopped", () => {
+      const el = document.getElementById("popup-rec-indicator");
+      if (el) el.style.display = "none";
     });
   }
 
