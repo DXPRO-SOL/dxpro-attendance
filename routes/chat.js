@@ -2,126 +2,207 @@
 // routes/chat.js - チャット機能 全面改版
 // DM・グループチャット・ファイル添付・メッセージ編集・既読表示
 // ==============================
-'use strict';
+"use strict";
 
-const express   = require('express');
-const router    = express.Router();
-const multer    = require('multer');
-const path      = require('path');
-const fs        = require('fs');
-const mongoose  = require('mongoose');
-const { requireLogin } = require('../middleware/auth');
-const { User, Employee, ChatMessage, ChatRoom } = require('../models');
-const { renderPage } = require('../lib/renderPage');
+const express = require("express");
+const router = express.Router();
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+const mongoose = require("mongoose");
+const { requireLogin } = require("../middleware/auth");
+const { User, Employee, ChatMessage, ChatRoom } = require("../models");
+const { renderPage } = require("../lib/renderPage");
 
-const UPLOAD_DIR = path.join(__dirname, '../uploads/chat');
+const UPLOAD_DIR = path.join(__dirname, "../uploads/chat");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const chatUpload = multer({
-    storage: multer.diskStorage({
-        destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-        filename: (_req, file, cb) =>
-            cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`),
-    }),
-    limits: { fileSize: 20 * 1024 * 1024 },
-    fileFilter: (_req, file, cb) => {
-        const ext = path.extname(file.originalname).toLowerCase();
-        cb(null, /\.(jpg|jpeg|png|gif|webp|pdf|doc|docx|xls|xlsx|txt|zip|csv|mp4|mov|mp3|webm)$/.test(ext));
-    },
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+    filename: (_req, file, cb) =>
+      cb(
+        null,
+        `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`,
+      ),
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(
+      null,
+      /\.(jpg|jpeg|png|gif|webp|pdf|doc|docx|xls|xlsx|txt|zip|csv|mp4|mov|mp3|webm)$/.test(
+        ext,
+      ),
+    );
+  },
 });
 
 const oid = (id) => {
-    try { return new mongoose.Types.ObjectId(String(id)); } catch (e) { return id; }
+  try {
+    return new mongoose.Types.ObjectId(String(id));
+  } catch (e) {
+    return id;
+  }
 };
 
 function escHtml(s) {
-    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function mimeToType(mime) {
-    mime = mime || '';
-    if (/^image\//.test(mime)) return 'image';
-    if (mime === 'application/pdf') return 'pdf';
-    if (/^video\//.test(mime)) return 'video';
-    return 'file';
+  mime = mime || "";
+  if (/^image\//.test(mime)) return "image";
+  if (mime === "application/pdf") return "pdf";
+  if (/^video\//.test(mime)) return "video";
+  return "file";
 }
 
-const STATUS_CLS   = { online: 'pip-online', break: 'pip-break', offline: 'pip-offline' };
-const STATUS_LABEL = { online: 'オンライン', break: '休憩中', offline: 'オフライン' };
+const STATUS_CLS = {
+  online: "pip-online",
+  break: "pip-break",
+  offline: "pip-offline",
+};
+const STATUS_LABEL = {
+  online: "オンライン",
+  break: "休憩中",
+  offline: "オフライン",
+};
 
 // サイドバーデータ構築
 async function buildSidebarData(myId) {
-    const myOid = oid(myId);
-    const [users, employees, recentAgg, unreadDMAgg, rooms] = await Promise.all([
-        User.find({ _id: { $ne: myId } }).select('username chatStatus lastSeenAt').lean(),
-        Employee.find({}).select('userId name department').lean(),
-        ChatMessage.aggregate([
-            { $match: { $or: [{ fromUserId: myOid }, { toUserId: myOid }], roomId: null } },
-            { $sort: { createdAt: -1 } },
-            { $addFields: { otherId: { $cond: [{ $eq: ['$fromUserId', myOid] }, '$toUserId', '$fromUserId'] } } },
-            { $group: { _id: '$otherId', lastAt: { $first: '$createdAt' }, lastMsg: { $first: '$content' } } },
-            { $sort: { lastAt: -1 } },
-            { $limit: 30 },
-        ]),
-        ChatMessage.aggregate([
-            { $match: { toUserId: myOid, read: false, roomId: null } },
-            { $group: { _id: '$fromUserId', count: { $sum: 1 } } },
-        ]),
-        ChatRoom.find({ members: myId }).sort({ lastMessageAt: -1 }).lean(),
+  const myOid = oid(myId);
+  const [users, employees, recentAgg, unreadDMAgg, rooms] = await Promise.all([
+    User.find({ _id: { $ne: myId } })
+      .select("username chatStatus lastSeenAt")
+      .lean(),
+    Employee.find({}).select("userId name department").lean(),
+    ChatMessage.aggregate([
+      {
+        $match: {
+          $or: [{ fromUserId: myOid }, { toUserId: myOid }],
+          roomId: null,
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      {
+        $addFields: {
+          otherId: {
+            $cond: [
+              { $eq: ["$fromUserId", myOid] },
+              "$toUserId",
+              "$fromUserId",
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: "$otherId",
+          lastAt: { $first: "$createdAt" },
+          lastMsg: { $first: "$content" },
+        },
+      },
+      { $sort: { lastAt: -1 } },
+      { $limit: 30 },
+    ]),
+    ChatMessage.aggregate([
+      { $match: { toUserId: myOid, read: false, roomId: null } },
+      { $group: { _id: "$fromUserId", count: { $sum: 1 } } },
+    ]),
+    ChatRoom.find({ members: myId }).sort({ lastMessageAt: -1 }).lean(),
+  ]);
+
+  const empMap = {};
+  employees.forEach((e) => {
+    empMap[String(e.userId)] = e;
+  });
+  const userMap = {};
+  users.forEach((u) => {
+    userMap[String(u._id)] = { ...u, emp: empMap[String(u._id)] || null };
+  });
+
+  const unreadDM = {};
+  unreadDMAgg.forEach((u) => {
+    unreadDM[String(u._id)] = u.count;
+  });
+
+  const recentDMs = recentAgg
+    .map((r) => {
+      const u = userMap[String(r._id)];
+      if (!u) return null;
+      return {
+        ...u,
+        lastAt: r.lastAt,
+        lastMsg: r.lastMsg,
+        unread: unreadDM[String(r._id)] || 0,
+      };
+    })
+    .filter(Boolean);
+
+  let unreadRoomMap = {};
+  if (rooms.length) {
+    const roomUnread = await ChatMessage.aggregate([
+      {
+        $match: {
+          roomId: { $in: rooms.map((r) => oid(r._id)) },
+          fromUserId: { $ne: myOid },
+          deleted: { $ne: true },
+        },
+      },
+      {
+        $project: {
+          roomId: 1,
+          isRead: { $in: [myOid, { $ifNull: ["$readBy.userId", []] }] },
+        },
+      },
+      { $match: { isRead: false } },
+      { $group: { _id: "$roomId", count: { $sum: 1 } } },
     ]);
+    roomUnread.forEach((r) => {
+      unreadRoomMap[String(r._id)] = r.count;
+    });
+  }
 
-    const empMap = {};
-    employees.forEach(e => { empMap[String(e.userId)] = e; });
-    const userMap = {};
-    users.forEach(u => { userMap[String(u._id)] = { ...u, emp: empMap[String(u._id)] || null }; });
-
-    const unreadDM = {};
-    unreadDMAgg.forEach(u => { unreadDM[String(u._id)] = u.count; });
-
-    const recentDMs = recentAgg.map(r => {
-        const u = userMap[String(r._id)];
-        if (!u) return null;
-        return { ...u, lastAt: r.lastAt, lastMsg: r.lastMsg, unread: unreadDM[String(r._id)] || 0 };
-    }).filter(Boolean);
-
-    let unreadRoomMap = {};
-    if (rooms.length) {
-        const roomUnread = await ChatMessage.aggregate([
-            { $match: { roomId: { $in: rooms.map(r => oid(r._id)) }, fromUserId: { $ne: myOid }, deleted: { $ne: true } } },
-            { $project: { roomId: 1, isRead: { $in: [myOid, { $ifNull: ['$readBy.userId', []] }] } } },
-            { $match: { isRead: false } },
-            { $group: { _id: '$roomId', count: { $sum: 1 } } },
-        ]);
-        roomUnread.forEach(r => { unreadRoomMap[String(r._id)] = r.count; });
-    }
-
-    return {
-        allUsers:  Object.values(userMap),
-        recentDMs,
-        roomList: rooms.map(r => ({ ...r, unread: unreadRoomMap[String(r._id)] || 0 })),
-    };
+  return {
+    allUsers: Object.values(userMap),
+    recentDMs,
+    roomList: rooms.map((r) => ({
+      ...r,
+      unread: unreadRoomMap[String(r._id)] || 0,
+    })),
+  };
 }
 
 // ── ページルート ──────────────────────────────────────────────
 
 // エージェントスクリプトのダウンロード
-router.get('/chat/agent/download', requireLogin, (req, res) => {
-    const fs = require('fs');
-    const agentPath = path.join(__dirname, '..', 'remote-agent.js');
-    if (!fs.existsSync(agentPath)) return res.status(404).send('Not found');
-    res.setHeader('Content-Disposition', 'attachment; filename="remote-agent.js"');
-    res.setHeader('Content-Type', 'application/javascript');
-    res.sendFile(agentPath);
+router.get("/chat/agent/download", requireLogin, (req, res) => {
+  const fs = require("fs");
+  const agentPath = path.join(__dirname, "..", "remote-agent.js");
+  if (!fs.existsSync(agentPath)) return res.status(404).send("Not found");
+  res.setHeader(
+    "Content-Disposition",
+    'attachment; filename="remote-agent.js"',
+  );
+  res.setHeader("Content-Type", "application/javascript");
+  res.sendFile(agentPath);
 });
 
 // エージェント セットアップページ
-router.get('/chat/agent/setup', requireLogin, async (req, res) => {
-    const { renderPage } = require('../lib/renderPage');
-    const myId   = req.session.userId;
-    const myUser = await require('../models').User.findById(myId).lean();
-    const SERVER_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 10000}`;
+router.get("/chat/agent/setup", requireLogin, async (req, res) => {
+  const { renderPage } = require("../lib/renderPage");
+  const myId = req.session.userId;
+  const myUser = await require("../models").User.findById(myId).lean();
+  const SERVER_URL =
+    process.env.RENDER_EXTERNAL_URL ||
+    `http://localhost:${process.env.PORT || 10000}`;
 
-    const html = `
+  const html = `
 <style>
 .agent-wizard{max-width:720px;margin:32px auto;padding:0 16px}
 .agent-wizard h1{font-size:1.4rem;font-weight:700;margin-bottom:6px}
@@ -304,617 +385,919 @@ fetch('/api/chat/agent-status')
   });
 </script>
 `;
-    return renderPage(req, res, { title: '遠隔操作セットアップ', body: html });
+  return renderPage(req, res, { title: "遠隔操作セットアップ", body: html });
 });
 
-router.get('/chat', requireLogin, async (req, res) => {
-    try {
-        const myId = req.session.userId;
-        const myOid = oid(myId);
+router.get("/chat", requireLogin, async (req, res) => {
+  try {
+    const myId = req.session.userId;
+    const myOid = oid(myId);
 
-        // 最後に使った会話を探して自動リダイレクト（Slack/Teams方式）
-        const [lastDM, lastRoom] = await Promise.all([
-            ChatMessage.findOne({
-                $or: [{ fromUserId: myOid }, { toUserId: myOid }],
-                roomId: null,
-            }).sort({ createdAt: -1 }).lean(),
-            ChatRoom.findOne({ members: myId }).sort({ lastMessageAt: -1 }).lean(),
-        ]);
+    // 最後に使った会話を探して自動リダイレクト（Slack/Teams方式）
+    const [lastDM, lastRoom] = await Promise.all([
+      ChatMessage.findOne({
+        $or: [{ fromUserId: myOid }, { toUserId: myOid }],
+        roomId: null,
+      })
+        .sort({ createdAt: -1 })
+        .lean(),
+      ChatRoom.findOne({ members: myId }).sort({ lastMessageAt: -1 }).lean(),
+    ]);
 
-        // DM と グループ の最新をそれぞれ比較して直近のほうへ飛ばす
-        const dmTime   = lastDM   ? new Date(lastDM.createdAt).getTime()       : 0;
-        const roomTime = lastRoom ? new Date(lastRoom.lastMessageAt).getTime()  : 0;
+    // DM と グループ の最新をそれぞれ比較して直近のほうへ飛ばす
+    const dmTime = lastDM ? new Date(lastDM.createdAt).getTime() : 0;
+    const roomTime = lastRoom ? new Date(lastRoom.lastMessageAt).getTime() : 0;
 
-        if (dmTime === 0 && roomTime === 0) {
-            // 会話がない場合のみホーム画面を表示
-            const [[cu, myEmp], sideData] = await Promise.all([
-                Promise.all([
-                    User.findById(myId).select('chatStatus').lean(),
-                    Employee.findOne({ userId: myId }).select('name').lean(),
-                ]),
-                buildSidebarData(myId),
-            ]);
-            const myName = myEmp ? myEmp.name : req.session.username;
-            return renderPage(req, res, 'チャット', 'チャット', buildPage({
-                mode: 'home', myId: String(myId), myName,
-                myInitial: (myName || '?').charAt(0).toUpperCase(),
-                myStatus: cu ? cu.chatStatus : 'offline',
-                ...sideData,
-            }));
-        }
+    if (dmTime === 0 && roomTime === 0) {
+      // 会話がない場合のみホーム画面を表示
+      const [[cu, myEmp], sideData] = await Promise.all([
+        Promise.all([
+          User.findById(myId).select("chatStatus").lean(),
+          Employee.findOne({ userId: myId }).select("name").lean(),
+        ]),
+        buildSidebarData(myId),
+      ]);
+      const myName = myEmp ? myEmp.name : req.session.username;
+      return renderPage(
+        req,
+        res,
+        "チャット",
+        "チャット",
+        buildPage({
+          mode: "home",
+          myId: String(myId),
+          myName,
+          myInitial: (myName || "?").charAt(0).toUpperCase(),
+          myStatus: cu ? cu.chatStatus : "offline",
+          ...sideData,
+        }),
+      );
+    }
 
-        if (dmTime >= roomTime && lastDM) {
-            // 最後のDM相手を特定してリダイレクト
-            const otherId = String(lastDM.fromUserId) === String(myId)
-                ? lastDM.toUserId
-                : lastDM.fromUserId;
-            return res.redirect('/chat/dm/' + otherId);
-        } else if (lastRoom) {
-            return res.redirect('/chat/room/' + lastRoom._id);
-        }
+    if (dmTime >= roomTime && lastDM) {
+      // 最後のDM相手を特定してリダイレクト
+      const otherId =
+        String(lastDM.fromUserId) === String(myId)
+          ? lastDM.toUserId
+          : lastDM.fromUserId;
+      return res.redirect("/chat/dm/" + otherId);
+    } else if (lastRoom) {
+      return res.redirect("/chat/room/" + lastRoom._id);
+    }
 
-        return res.redirect('/chat');
-    } catch (e) { console.error('[chat/home]', e); res.status(500).send('エラー'); }
+    return res.redirect("/chat");
+  } catch (e) {
+    console.error("[chat/home]", e);
+    res.status(500).send("エラー");
+  }
 });
 
-router.get('/chat/dm/:userId', requireLogin, async (req, res) => {
-    try {
-        const myId     = req.session.userId;
-        const targetId = req.params.userId;
-        const [targetUser, targetEmp, myEmp, cu, sideData] = await Promise.all([
-            User.findById(targetId).select('username chatStatus lastSeenAt').lean(),
-            Employee.findOne({ userId: targetId }).select('name department position').lean(),
-            Employee.findOne({ userId: myId }).select('name').lean(),
-            User.findById(myId).select('chatStatus').lean(),
-            buildSidebarData(myId),
-        ]);
-        if (!targetUser) return res.status(404).send('ユーザーが見つかりません');
-        await ChatMessage.updateMany(
-            { fromUserId: targetId, toUserId: myId, read: false },
-            { $set: { read: true, readAt: new Date() } }
-        );
-        const messages = (await ChatMessage.find({
-            $or: [{ fromUserId: myId, toUserId: targetId }, { fromUserId: targetId, toUserId: myId }],
-            roomId: null,
-        }).sort({ createdAt: -1 }).limit(100).lean()).reverse();
-        const hasMore = messages.length === 100;
-        const myName     = myEmp ? myEmp.name : req.session.username;
-        const targetName = targetEmp ? targetEmp.name : targetUser.username;
-        renderPage(req, res, `チャット - ${targetName}`, 'チャット', buildPage({
-            mode: 'dm', myId: String(myId), myName,
-            myInitial: (myName || '?').charAt(0).toUpperCase(),
-            myStatus: cu ? cu.chatStatus : 'offline',
-            targetId: String(targetId), targetName,
-            targetStatus: targetUser.chatStatus || 'offline',
-            targetDept: targetEmp ? (targetEmp.department || '') : '',
-            targetPos:  targetEmp ? (targetEmp.position  || '') : '',
-            messages, hasMore, ...sideData,
-        }));
-    } catch (e) { console.error('[chat/dm]', e); res.status(500).send('エラー'); }
+router.get("/chat/dm/:userId", requireLogin, async (req, res) => {
+  try {
+    const myId = req.session.userId;
+    const targetId = req.params.userId;
+    const [targetUser, targetEmp, myEmp, cu, sideData] = await Promise.all([
+      User.findById(targetId).select("username chatStatus lastSeenAt").lean(),
+      Employee.findOne({ userId: targetId })
+        .select("name department position")
+        .lean(),
+      Employee.findOne({ userId: myId }).select("name").lean(),
+      User.findById(myId).select("chatStatus").lean(),
+      buildSidebarData(myId),
+    ]);
+    if (!targetUser) return res.status(404).send("ユーザーが見つかりません");
+    await ChatMessage.updateMany(
+      { fromUserId: targetId, toUserId: myId, read: false },
+      { $set: { read: true, readAt: new Date() } },
+    );
+    const messages = (
+      await ChatMessage.find({
+        $or: [
+          { fromUserId: myId, toUserId: targetId },
+          { fromUserId: targetId, toUserId: myId },
+        ],
+        roomId: null,
+      })
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .lean()
+    ).reverse();
+    const hasMore = messages.length === 100;
+    const myName = myEmp ? myEmp.name : req.session.username;
+    const targetName = targetEmp ? targetEmp.name : targetUser.username;
+    renderPage(
+      req,
+      res,
+      `チャット - ${targetName}`,
+      "チャット",
+      buildPage({
+        mode: "dm",
+        myId: String(myId),
+        myName,
+        myInitial: (myName || "?").charAt(0).toUpperCase(),
+        myStatus: cu ? cu.chatStatus : "offline",
+        targetId: String(targetId),
+        targetName,
+        targetStatus: targetUser.chatStatus || "offline",
+        targetDept: targetEmp ? targetEmp.department || "" : "",
+        targetPos: targetEmp ? targetEmp.position || "" : "",
+        messages,
+        hasMore,
+        ...sideData,
+      }),
+    );
+  } catch (e) {
+    console.error("[chat/dm]", e);
+    res.status(500).send("エラー");
+  }
 });
 
-router.get('/chat/room/:roomId', requireLogin, async (req, res) => {
-    try {
-        const myId   = req.session.userId;
-        const roomId = req.params.roomId;
-        const room   = await ChatRoom.findOne({ _id: roomId, members: myId }).lean();
-        if (!room) return res.status(404).send('ルームが見つかりません');
-        await ChatMessage.updateMany(
-            { roomId: room._id, fromUserId: { $ne: myId }, 'readBy.userId': { $ne: myId } },
-            { $push: { readBy: { userId: myId, readAt: new Date() } } }
-        );
-        const [messages, myEmp, cu, sideData, memberUsers, memberEmps] = await Promise.all([
-            ChatMessage.find({ roomId: room._id }).sort({ createdAt: -1 }).limit(100).lean().then(r => r.reverse()),            Employee.findOne({ userId: myId }).select('name').lean(),
-            User.findById(myId).select('chatStatus').lean(),
-            buildSidebarData(myId),
-            User.find({ _id: { $in: room.members } }).select('username chatStatus').lean(),
-            Employee.find({ userId: { $in: room.members } }).select('userId name department').lean(),
-        ]);
-        const memEmpMap = {};
-        memberEmps.forEach(e => { memEmpMap[String(e.userId)] = e; });
-        const members = memberUsers.map(u => ({ ...u, emp: memEmpMap[String(u._id)] || null }));
-        const myName  = myEmp ? myEmp.name : req.session.username;
-        const hasMore = messages.length === 100;
-        renderPage(req, res, `${room.name} - チャット`, 'チャット', buildPage({
-            mode: 'room', myId: String(myId), myName,
-            myInitial: (myName || '?').charAt(0).toUpperCase(),
-            myStatus: cu ? cu.chatStatus : 'offline',
-            roomId: String(room._id), roomName: room.name,
-            roomIcon: room.icon || '💬', roomDesc: room.description || '',
-            isRoomAdmin: room.admins.some(a => String(a) === String(myId)),
-            members, messages, hasMore, ...sideData,
-        }));
-    } catch (e) { console.error('[chat/room]', e); res.status(500).send('エラー'); }
+router.get("/chat/room/:roomId", requireLogin, async (req, res) => {
+  try {
+    const myId = req.session.userId;
+    const roomId = req.params.roomId;
+    const room = await ChatRoom.findOne({ _id: roomId, members: myId }).lean();
+    if (!room) return res.status(404).send("ルームが見つかりません");
+    await ChatMessage.updateMany(
+      {
+        roomId: room._id,
+        fromUserId: { $ne: myId },
+        "readBy.userId": { $ne: myId },
+      },
+      { $push: { readBy: { userId: myId, readAt: new Date() } } },
+    );
+    const [messages, myEmp, cu, sideData, memberUsers, memberEmps] =
+      await Promise.all([
+        ChatMessage.find({ roomId: room._id })
+          .sort({ createdAt: -1 })
+          .limit(100)
+          .lean()
+          .then((r) => r.reverse()),
+        Employee.findOne({ userId: myId }).select("name").lean(),
+        User.findById(myId).select("chatStatus").lean(),
+        buildSidebarData(myId),
+        User.find({ _id: { $in: room.members } })
+          .select("username chatStatus")
+          .lean(),
+        Employee.find({ userId: { $in: room.members } })
+          .select("userId name department")
+          .lean(),
+      ]);
+    const memEmpMap = {};
+    memberEmps.forEach((e) => {
+      memEmpMap[String(e.userId)] = e;
+    });
+    const members = memberUsers.map((u) => ({
+      ...u,
+      emp: memEmpMap[String(u._id)] || null,
+    }));
+    const myName = myEmp ? myEmp.name : req.session.username;
+    const hasMore = messages.length === 100;
+    renderPage(
+      req,
+      res,
+      `${room.name} - チャット`,
+      "チャット",
+      buildPage({
+        mode: "room",
+        myId: String(myId),
+        myName,
+        myInitial: (myName || "?").charAt(0).toUpperCase(),
+        myStatus: cu ? cu.chatStatus : "offline",
+        roomId: String(room._id),
+        roomName: room.name,
+        roomIcon: room.icon || "💬",
+        roomDesc: room.description || "",
+        isRoomAdmin: room.admins.some((a) => String(a) === String(myId)),
+        members,
+        messages,
+        hasMore,
+        ...sideData,
+      }),
+    );
+  } catch (e) {
+    console.error("[chat/room]", e);
+    res.status(500).send("エラー");
+  }
 });
 
 // ── API ────────────────────────────────────────────────────────
 
 // 過去メッセージ追加読み込み API
-router.get('/api/chat/messages', requireLogin, async (req, res) => {
-    try {
-        const { toUserId, roomId, before } = req.query;
-        const myId = req.session.userId;
-        const filter = {};
-        if (before) filter.createdAt = { $lt: new Date(before) };
-        if (toUserId) {
-            filter.$or = [
-                { fromUserId: oid(myId), toUserId: oid(toUserId) },
-                { fromUserId: oid(toUserId), toUserId: oid(myId) },
-            ];
-            filter.roomId = null;
-        } else if (roomId) {
-            filter.roomId = oid(roomId);
-        } else {
-            return res.status(400).json({ error: 'toUserId か roomId が必要です' });
-        }
-        const messages = (await ChatMessage.find(filter)
-            .sort({ createdAt: -1 }).limit(50).lean()).reverse();
-        // senderName を付与
-        const userIds = [...new Set(messages.map(m => String(m.fromUserId)))];
-        const [emps, users] = await Promise.all([
-            Employee.find({ userId: { $in: userIds } }).select('userId name').lean(),
-            User.find({ _id: { $in: userIds } }).select('username').lean(),
-        ]);
-        const empMap = {}; emps.forEach(e => { empMap[String(e.userId)] = e.name; });
-        const userMap = {}; users.forEach(u => { userMap[String(u._id)] = u.username; });
-        const msgsWithName = messages.map(m => ({
-            ...m,
-            _id: String(m._id),
-            fromUserId: String(m.fromUserId),
-            toUserId: m.toUserId ? String(m.toUserId) : null,
-            roomId: m.roomId ? String(m.roomId) : null,
-            senderName: empMap[String(m.fromUserId)] || userMap[String(m.fromUserId)] || '不明',
-        }));
-        res.json({ ok: true, messages: msgsWithName, hasMore: messages.length === 50 });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+router.get("/api/chat/messages", requireLogin, async (req, res) => {
+  try {
+    const { toUserId, roomId, before } = req.query;
+    const myId = req.session.userId;
+    const filter = {};
+    if (before) filter.createdAt = { $lt: new Date(before) };
+    if (toUserId) {
+      filter.$or = [
+        { fromUserId: oid(myId), toUserId: oid(toUserId) },
+        { fromUserId: oid(toUserId), toUserId: oid(myId) },
+      ];
+      filter.roomId = null;
+    } else if (roomId) {
+      filter.roomId = oid(roomId);
+    } else {
+      return res.status(400).json({ error: "toUserId か roomId が必要です" });
+    }
+    const messages = (
+      await ChatMessage.find(filter).sort({ createdAt: -1 }).limit(50).lean()
+    ).reverse();
+    // senderName を付与
+    const userIds = [...new Set(messages.map((m) => String(m.fromUserId)))];
+    const [emps, users] = await Promise.all([
+      Employee.find({ userId: { $in: userIds } })
+        .select("userId name")
+        .lean(),
+      User.find({ _id: { $in: userIds } })
+        .select("username")
+        .lean(),
+    ]);
+    const empMap = {};
+    emps.forEach((e) => {
+      empMap[String(e.userId)] = e.name;
+    });
+    const userMap = {};
+    users.forEach((u) => {
+      userMap[String(u._id)] = u.username;
+    });
+    const msgsWithName = messages.map((m) => ({
+      ...m,
+      _id: String(m._id),
+      fromUserId: String(m.fromUserId),
+      toUserId: m.toUserId ? String(m.toUserId) : null,
+      roomId: m.roomId ? String(m.roomId) : null,
+      senderName:
+        empMap[String(m.fromUserId)] || userMap[String(m.fromUserId)] || "不明",
+    }));
+    res.json({
+      ok: true,
+      messages: msgsWithName,
+      hasMore: messages.length === 50,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // チャット未読件数（トップバーバッジ用）
-router.get('/api/chat/unread-count', requireLogin, async (req, res) => {
-    try {
-        const myOid = oid(req.session.userId);
-        const [dmCount, roomCount] = await Promise.all([
-            ChatMessage.countDocuments({ toUserId: myOid, read: false, roomId: null, deleted: { $ne: true } }),
-            ChatMessage.aggregate([
-                { $match: { fromUserId: { $ne: myOid }, deleted: { $ne: true }, roomId: { $ne: null } } },
-                { $match: { 'readBy.userId': { $ne: myOid } } },
-                { $lookup: { from: 'chatrooms', localField: 'roomId', foreignField: '_id', as: 'room' } },
-                { $match: { 'room.members': myOid } },
-                { $count: 'n' },
-            ]).then(r => (r[0] ? r[0].n : 0)),
-        ]);
-        res.json({ count: dmCount + roomCount });
-    } catch (e) { res.json({ count: 0 }); }
+router.get("/api/chat/unread-count", requireLogin, async (req, res) => {
+  try {
+    const myOid = oid(req.session.userId);
+    const [dmCount, roomCount] = await Promise.all([
+      ChatMessage.countDocuments({
+        toUserId: myOid,
+        read: false,
+        roomId: null,
+        deleted: { $ne: true },
+      }),
+      ChatMessage.aggregate([
+        {
+          $match: {
+            fromUserId: { $ne: myOid },
+            deleted: { $ne: true },
+            roomId: { $ne: null },
+          },
+        },
+        { $match: { "readBy.userId": { $ne: myOid } } },
+        {
+          $lookup: {
+            from: "chatrooms",
+            localField: "roomId",
+            foreignField: "_id",
+            as: "room",
+          },
+        },
+        { $match: { "room.members": myOid } },
+        { $count: "n" },
+      ]).then((r) => (r[0] ? r[0].n : 0)),
+    ]);
+    res.json({ count: dmCount + roomCount });
+  } catch (e) {
+    res.json({ count: 0 });
+  }
 });
 
-router.get('/api/chat/agent-status', requireLogin, (req, res) => {
-    const agentRegistry = global.agentRegistry || {};
-    const uid = String(req.session.userId);
-    const agent = agentRegistry[uid];
-    res.json({ connected: !!agent, platform: agent ? agent.platform : null });
+router.get("/api/chat/agent-status", requireLogin, (req, res) => {
+  const agentRegistry = global.agentRegistry || {};
+  const uid = String(req.session.userId);
+  const agent = agentRegistry[uid];
+  res.json({ connected: !!agent, platform: agent ? agent.platform : null });
 });
 
-router.post('/api/chat/status', requireLogin, async (req, res) => {
-    try {
-        let body = req.body;
-        if (typeof body === 'string') { try { body = JSON.parse(body); } catch (_) { body = {}; } }
-        const { status } = body;
-        if (!['online', 'offline', 'break'].includes(status))
-            return res.status(400).json({ error: '無効なステータス' });
-        await User.findByIdAndUpdate(req.session.userId, { chatStatus: status, lastSeenAt: new Date() });
-        req.session.chatStatus = status; // セッションにも保存してサイドバーに反映
-        global.io && global.io.emit('status_change', { userId: String(req.session.userId), status });
-        res.json({ ok: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+router.post("/api/chat/status", requireLogin, async (req, res) => {
+  try {
+    let body = req.body;
+    if (typeof body === "string") {
+      try {
+        body = JSON.parse(body);
+      } catch (_) {
+        body = {};
+      }
+    }
+    const { status } = body;
+    if (!["online", "offline", "break"].includes(status))
+      return res.status(400).json({ error: "無効なステータス" });
+    await User.findByIdAndUpdate(req.session.userId, {
+      chatStatus: status,
+      lastSeenAt: new Date(),
+    });
+    req.session.chatStatus = status; // セッションにも保存してサイドバーに反映
+    global.io &&
+      global.io.emit("status_change", {
+        userId: String(req.session.userId),
+        status,
+      });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-router.post('/api/chat/upload', requireLogin, chatUpload.array('files', 5), (req, res) => {
+router.post(
+  "/api/chat/upload",
+  requireLogin,
+  chatUpload.array("files", 5),
+  (req, res) => {
     try {
-        const files = (req.files || []).map(f => ({
-            name: Buffer.from(f.originalname, 'latin1').toString('utf8'),
-            url: '/uploads/chat/' + f.filename,
-            mimeType: f.mimetype, size: f.size,
-        }));
-        res.json({ ok: true, files });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+      const files = (req.files || []).map((f) => ({
+        name: Buffer.from(f.originalname, "latin1").toString("utf8"),
+        url: "/uploads/chat/" + f.filename,
+        mimeType: f.mimetype,
+        size: f.size,
+      }));
+      res.json({ ok: true, files });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
+router.post("/api/chat/send", requireLogin, async (req, res) => {
+  try {
+    const { toUserId, roomId, content, replyToId, attachments } = req.body;
+    if (!toUserId && !roomId)
+      return res.status(400).json({ error: "toUserId か roomId が必要です" });
+    if (!(content && content.trim()) && !(attachments && attachments.length))
+      return res.status(400).json({ error: "コンテンツが空です" });
+    let replyPreview = null;
+    if (replyToId) {
+      const orig = await ChatMessage.findById(replyToId)
+        .select("content")
+        .lean();
+      if (orig && !orig.deleted)
+        replyPreview = (orig.content || "").slice(0, 80);
+    }
+    const msgData = {
+      fromUserId: req.session.userId,
+      content: (content && content.trim()) || "",
+      replyTo: replyToId || null,
+      replyPreview,
+      attachments: attachments || [],
+    };
+    if (toUserId) msgData.toUserId = toUserId;
+    if (roomId) msgData.roomId = roomId;
+    const msg = await ChatMessage.create(msgData);
+    const [senderEmp, senderUser] = await Promise.all([
+      Employee.findOne({ userId: req.session.userId }).select("name").lean(),
+      User.findById(req.session.userId).select("username").lean(),
+    ]);
+    const senderName = senderEmp
+      ? senderEmp.name
+      : (senderUser && senderUser.username) || "";
+    const payload = {
+      _id: String(msg._id),
+      fromUserId: String(req.session.userId),
+      toUserId: toUserId ? String(toUserId) : null,
+      roomId: roomId ? String(roomId) : null,
+      content: msg.content,
+      attachments: msg.attachments,
+      replyTo: replyToId || null,
+      replyPreview,
+      createdAt: msg.createdAt,
+      reactions: [],
+      senderName,
+    };
+    if (toUserId && global.io) {
+      global.io
+        .to("u_" + String(toUserId))
+        .to("u_" + String(req.session.userId))
+        .emit("new_message", payload);
+    }
+    if (roomId && global.io) {
+      global.io.to("r_" + String(roomId)).emit("new_message", payload);
+      await ChatRoom.findByIdAndUpdate(roomId, { lastMessageAt: new Date() });
+    }
+    res.json({ ok: true, msg: payload });
+  } catch (e) {
+    console.error("[chat/send]", e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
-router.post('/api/chat/send', requireLogin, async (req, res) => {
-    try {
-        const { toUserId, roomId, content, replyToId, attachments } = req.body;
-        if (!toUserId && !roomId)
-            return res.status(400).json({ error: 'toUserId か roomId が必要です' });
-        if (!(content && content.trim()) && !(attachments && attachments.length))
-            return res.status(400).json({ error: 'コンテンツが空です' });
-        let replyPreview = null;
-        if (replyToId) {
-            const orig = await ChatMessage.findById(replyToId).select('content').lean();
-            if (orig && !orig.deleted) replyPreview = (orig.content || '').slice(0, 80);
-        }
-        const msgData = {
-            fromUserId: req.session.userId,
-            content: (content && content.trim()) || '',
-            replyTo: replyToId || null,
-            replyPreview,
-            attachments: attachments || [],
-        };
-        if (toUserId) msgData.toUserId = toUserId;
-        if (roomId)   msgData.roomId   = roomId;
-        const msg = await ChatMessage.create(msgData);
-        const [senderEmp, senderUser] = await Promise.all([
-            Employee.findOne({ userId: req.session.userId }).select('name').lean(),
-            User.findById(req.session.userId).select('username').lean(),
-        ]);
-        const senderName = senderEmp ? senderEmp.name : ((senderUser && senderUser.username) || '');
-        const payload = {
-            _id: String(msg._id),
-            fromUserId: String(req.session.userId),
-            toUserId:  toUserId ? String(toUserId) : null,
-            roomId:    roomId   ? String(roomId)   : null,
-            content: msg.content,
-            attachments: msg.attachments,
-            replyTo: replyToId || null,
-            replyPreview,
-            createdAt: msg.createdAt,
-            reactions: [],
-            senderName,
-        };
-        if (toUserId && global.io) {
-            global.io.to('u_' + String(toUserId))
-                     .to('u_' + String(req.session.userId))
-                     .emit('new_message', payload);
-        }
-        if (roomId && global.io) {
-            global.io.to('r_' + String(roomId)).emit('new_message', payload);
-            await ChatRoom.findByIdAndUpdate(roomId, { lastMessageAt: new Date() });
-        }
-        res.json({ ok: true, msg: payload });
-    } catch (e) { console.error('[chat/send]', e); res.status(500).json({ error: e.message }); }
+router.put("/api/chat/msg/:id", requireLogin, async (req, res) => {
+  try {
+    const { content } = req.body;
+    if (!(content && content.trim()))
+      return res.status(400).json({ error: "内容が空です" });
+    const msg = await ChatMessage.findById(req.params.id);
+    if (!msg) return res.status(404).json({ error: "見つかりません" });
+    if (String(msg.fromUserId) !== String(req.session.userId))
+      return res.status(403).json({ error: "権限がありません" });
+    msg.content = content.trim();
+    msg.edited = true;
+    msg.editedAt = new Date();
+    await msg.save();
+    const payload = {
+      _id: String(msg._id),
+      content: msg.content,
+      editedAt: msg.editedAt,
+    };
+    if (msg.toUserId && global.io)
+      global.io
+        .to("u_" + String(msg.toUserId))
+        .to("u_" + String(msg.fromUserId))
+        .emit("msg_edited", payload);
+    if (msg.roomId && global.io)
+      global.io.to("r_" + String(msg.roomId)).emit("msg_edited", payload);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-router.put('/api/chat/msg/:id', requireLogin, async (req, res) => {
-    try {
-        const { content } = req.body;
-        if (!(content && content.trim())) return res.status(400).json({ error: '内容が空です' });
-        const msg = await ChatMessage.findById(req.params.id);
-        if (!msg) return res.status(404).json({ error: '見つかりません' });
-        if (String(msg.fromUserId) !== String(req.session.userId))
-            return res.status(403).json({ error: '権限がありません' });
-        msg.content = content.trim(); msg.edited = true; msg.editedAt = new Date();
+router.delete("/api/chat/msg/:id", requireLogin, async (req, res) => {
+  try {
+    const msg = await ChatMessage.findById(req.params.id);
+    if (!msg) return res.status(404).json({ error: "見つかりません" });
+    if (String(msg.fromUserId) !== String(req.session.userId))
+      return res.status(403).json({ error: "権限がありません" });
+    msg.deleted = true;
+    msg.deletedAt = new Date();
+    msg.content = "（このメッセージは削除されました）";
+    await msg.save();
+    const payload = { _id: String(msg._id) };
+    if (msg.toUserId && global.io)
+      global.io
+        .to("u_" + String(msg.toUserId))
+        .to("u_" + String(msg.fromUserId))
+        .emit("msg_deleted", payload);
+    if (msg.roomId && global.io)
+      global.io.to("r_" + String(msg.roomId)).emit("msg_deleted", payload);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post("/api/chat/react", requireLogin, async (req, res) => {
+  try {
+    const { msgId, emoji } = req.body;
+    const msg = await ChatMessage.findById(msgId);
+    if (!msg || msg.deleted)
+      return res.status(404).json({ error: "見つかりません" });
+    const uid = req.session.userId;
+    let reaction = msg.reactions.find((r) => r.emoji === emoji);
+    if (reaction) {
+      const idx = reaction.userIds.findIndex(
+        (id) => String(id) === String(uid),
+      );
+      if (idx >= 0) reaction.userIds.splice(idx, 1);
+      else reaction.userIds.push(uid);
+      if (reaction.userIds.length === 0)
+        msg.reactions = msg.reactions.filter((r) => r.emoji !== emoji);
+    } else {
+      msg.reactions.push({ emoji, userIds: [uid] });
+    }
+    await msg.save();
+    const reactions = msg.reactions.map((r) => ({
+      emoji: r.emoji,
+      count: r.userIds.length,
+      mine: r.userIds.some((id) => String(id) === String(uid)),
+    }));
+    const payload = { _id: String(msgId), reactions };
+    if (msg.toUserId && global.io)
+      global.io
+        .to("u_" + String(msg.toUserId))
+        .to("u_" + String(msg.fromUserId))
+        .emit("msg_reaction", payload);
+    if (msg.roomId && global.io)
+      global.io.to("r_" + String(msg.roomId)).emit("msg_reaction", payload);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post("/api/chat/read", requireLogin, async (req, res) => {
+  try {
+    const { msgId } = req.body;
+    const msg = await ChatMessage.findById(msgId);
+    if (!msg) return res.json({ ok: false });
+    const uid = req.session.userId;
+    if (msg.roomId) {
+      if (!msg.readBy.some((r) => String(r.userId) === String(uid))) {
+        msg.readBy.push({ userId: uid, readAt: new Date() });
         await msg.save();
-        const payload = { _id: String(msg._id), content: msg.content, editedAt: msg.editedAt };
-        if (msg.toUserId && global.io)
-            global.io.to('u_' + String(msg.toUserId)).to('u_' + String(msg.fromUserId)).emit('msg_edited', payload);
-        if (msg.roomId && global.io)
-            global.io.to('r_' + String(msg.roomId)).emit('msg_edited', payload);
-        res.json({ ok: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+        if (global.io)
+          global.io.to("r_" + String(msg.roomId)).emit("read_receipt", {
+            msgId: String(msgId),
+            userId: String(uid),
+            count: msg.readBy.length,
+          });
+      }
+    } else if (String(msg.toUserId) === String(uid) && !msg.read) {
+      msg.read = true;
+      msg.readAt = new Date();
+      await msg.save();
+      if (global.io)
+        global.io
+          .to("u_" + String(msg.fromUserId))
+          .emit("read_receipt", { msgId: String(msgId), userId: String(uid) });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-router.delete('/api/chat/msg/:id', requireLogin, async (req, res) => {
-    try {
-        const msg = await ChatMessage.findById(req.params.id);
-        if (!msg) return res.status(404).json({ error: '見つかりません' });
-        if (String(msg.fromUserId) !== String(req.session.userId))
-            return res.status(403).json({ error: '権限がありません' });
-        msg.deleted = true; msg.deletedAt = new Date();
-        msg.content = '（このメッセージは削除されました）';
-        await msg.save();
-        const payload = { _id: String(msg._id) };
-        if (msg.toUserId && global.io)
-            global.io.to('u_' + String(msg.toUserId)).to('u_' + String(msg.fromUserId)).emit('msg_deleted', payload);
-        if (msg.roomId && global.io)
-            global.io.to('r_' + String(msg.roomId)).emit('msg_deleted', payload);
-        res.json({ ok: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-router.post('/api/chat/react', requireLogin, async (req, res) => {
-    try {
-        const { msgId, emoji } = req.body;
-        const msg = await ChatMessage.findById(msgId);
-        if (!msg || msg.deleted) return res.status(404).json({ error: '見つかりません' });
-        const uid = req.session.userId;
-        let reaction = msg.reactions.find(r => r.emoji === emoji);
-        if (reaction) {
-            const idx = reaction.userIds.findIndex(id => String(id) === String(uid));
-            if (idx >= 0) reaction.userIds.splice(idx, 1); else reaction.userIds.push(uid);
-            if (reaction.userIds.length === 0) msg.reactions = msg.reactions.filter(r => r.emoji !== emoji);
-        } else { msg.reactions.push({ emoji, userIds: [uid] }); }
-        await msg.save();
-        const reactions = msg.reactions.map(r => ({
-            emoji: r.emoji, count: r.userIds.length,
-            mine: r.userIds.some(id => String(id) === String(uid)),
-        }));
-        const payload = { _id: String(msgId), reactions };
-        if (msg.toUserId && global.io)
-            global.io.to('u_' + String(msg.toUserId)).to('u_' + String(msg.fromUserId)).emit('msg_reaction', payload);
-        if (msg.roomId && global.io)
-            global.io.to('r_' + String(msg.roomId)).emit('msg_reaction', payload);
-        res.json({ ok: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-router.post('/api/chat/read', requireLogin, async (req, res) => {
-    try {
-        const { msgId } = req.body;
-        const msg = await ChatMessage.findById(msgId);
-        if (!msg) return res.json({ ok: false });
-        const uid = req.session.userId;
-        if (msg.roomId) {
-            if (!msg.readBy.some(r => String(r.userId) === String(uid))) {
-                msg.readBy.push({ userId: uid, readAt: new Date() });
-                await msg.save();
-                if (global.io) global.io.to('r_' + String(msg.roomId))
-                    .emit('read_receipt', { msgId: String(msgId), userId: String(uid), count: msg.readBy.length });
-            }
-        } else if (String(msg.toUserId) === String(uid) && !msg.read) {
-            msg.read = true; msg.readAt = new Date(); await msg.save();
-            if (global.io) global.io.to('u_' + String(msg.fromUserId))
-                .emit('read_receipt', { msgId: String(msgId), userId: String(uid) });
-        }
-        res.json({ ok: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-router.post('/api/chat/room', requireLogin, async (req, res) => {
-    try {
-        const { name, description, icon, memberIds } = req.body;
-        if (!(name && name.trim())) return res.status(400).json({ error: '名前が必要です' });
-        const members = [...new Set([String(req.session.userId), ...(memberIds || [])])];
-        const room = await ChatRoom.create({
-            name: name.trim(), description: (description && description.trim()) || '',
-            icon: icon || '💬', members, admins: [req.session.userId], createdBy: req.session.userId,
-        });
-        if (global.io) members.forEach(mid =>
-            global.io.to('u_' + mid).emit('room_created', { roomId: String(room._id), name: room.name, icon: room.icon }));
-        res.json({ ok: true, roomId: String(room._id) });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+router.post("/api/chat/room", requireLogin, async (req, res) => {
+  try {
+    const { name, description, icon, memberIds } = req.body;
+    if (!(name && name.trim()))
+      return res.status(400).json({ error: "名前が必要です" });
+    const members = [
+      ...new Set([String(req.session.userId), ...(memberIds || [])]),
+    ];
+    const room = await ChatRoom.create({
+      name: name.trim(),
+      description: (description && description.trim()) || "",
+      icon: icon || "💬",
+      members,
+      admins: [req.session.userId],
+      createdBy: req.session.userId,
+    });
+    if (global.io)
+      members.forEach((mid) =>
+        global.io.to("u_" + mid).emit("room_created", {
+          roomId: String(room._id),
+          name: room.name,
+          icon: room.icon,
+        }),
+      );
+    res.json({ ok: true, roomId: String(room._id) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ICE サーバー設定を返すエンドポイント（複数 TURN を動的提供）
-router.get('/api/webrtc/ice', requireLogin, async (req, res) => {
-    const iceServers = [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun.cloudflare.com:3478' },
-    ];
+router.get("/api/webrtc/ice", requireLogin, async (req, res) => {
+  const iceServers = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun.cloudflare.com:3478" },
+  ];
 
-    // ── 最優先: Metered.ca REST API（時限トークン方式・最も確実） ────────
-    const meteredKey     = process.env.METERED_API_KEY  || '';
-    const meteredAppName = process.env.METERED_APP_NAME || '';
-    if (meteredKey && meteredAppName) {
-        try {
-            const r = await fetch(
-                `https://${meteredAppName}.metered.live/api/v1/turn/credentials?apiKey=${meteredKey}`
-            );
-            if (r.ok) {
-                const turns = await r.json();
-                iceServers.push(...turns);
-                console.log('[ICE] Metered.ca API から TURN 取得:', turns.length, '件');
-                return res.json({ iceServers });
-            }
-            console.warn('[ICE] Metered API HTTP error:', r.status);
-        } catch (e) {
-            console.warn('[ICE] Metered.ca API 失敗、固定 Credential へ:', e.message);
-        }
-    }
-
-    // ── 第2: 固定 Credential（API が落ちた場合のフォールバック） ─────────
-    const mUser = process.env.METERED_TURN_USERNAME   || '';
-    const mCred = process.env.METERED_TURN_CREDENTIAL || '';
-    if (mUser && mCred) {
-        iceServers.push(
-            { urls: 'turn:a.relay.metered.ca:80',                 username: mUser, credential: mCred },
-            { urls: 'turn:a.relay.metered.ca:80?transport=tcp',   username: mUser, credential: mCred },
-            { urls: 'turn:a.relay.metered.ca:443',                username: mUser, credential: mCred },
-            { urls: 'turns:a.relay.metered.ca:443',               username: mUser, credential: mCred },
-            { urls: 'turns:a.relay.metered.ca:443?transport=tcp', username: mUser, credential: mCred },
-        );
-        console.log('[ICE] Metered.ca 固定 Credential を使用');
+  // ── 最優先: Metered.ca REST API（時限トークン方式・最も確実） ────────
+  const meteredKey = process.env.METERED_API_KEY || "";
+  const meteredAppName = process.env.METERED_APP_NAME || "";
+  if (meteredKey && meteredAppName) {
+    try {
+      const r = await fetch(
+        `https://${meteredAppName}.metered.live/api/v1/turn/credentials?apiKey=${meteredKey}`,
+      );
+      if (r.ok) {
+        const turns = await r.json();
+        iceServers.push(...turns);
+        console.log("[ICE] Metered.ca API から TURN 取得:", turns.length, "件");
         return res.json({ iceServers });
+      }
+      console.warn("[ICE] Metered API HTTP error:", r.status);
+    } catch (e) {
+      console.warn("[ICE] Metered.ca API 失敗、固定 Credential へ:", e.message);
     }
+  }
 
-    // ── 最終フォールバック（TURN 設定なし環境向け） ──────────────────────
+  // ── 第2: 固定 Credential（API が落ちた場合のフォールバック） ─────────
+  const mUser = process.env.METERED_TURN_USERNAME || "";
+  const mCred = process.env.METERED_TURN_CREDENTIAL || "";
+  if (mUser && mCred) {
     iceServers.push(
-        { urls: 'turn:openrelay.metered.ca:80',               username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turns:openrelay.metered.ca:443',             username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:freeturn.net:3478',  username: 'free', credential: 'free' },
-        { urls: 'turns:freeturn.net:5349', username: 'free', credential: 'free' },
+      {
+        urls: "turn:a.relay.metered.ca:80",
+        username: mUser,
+        credential: mCred,
+      },
+      {
+        urls: "turn:a.relay.metered.ca:80?transport=tcp",
+        username: mUser,
+        credential: mCred,
+      },
+      {
+        urls: "turn:a.relay.metered.ca:443",
+        username: mUser,
+        credential: mCred,
+      },
+      {
+        urls: "turns:a.relay.metered.ca:443",
+        username: mUser,
+        credential: mCred,
+      },
+      {
+        urls: "turns:a.relay.metered.ca:443?transport=tcp",
+        username: mUser,
+        credential: mCred,
+      },
     );
-    res.json({ iceServers });
+    console.log("[ICE] Metered.ca 固定 Credential を使用");
+    return res.json({ iceServers });
+  }
+
+  // ── 最終フォールバック（TURN 設定なし環境向け） ──────────────────────
+  iceServers.push(
+    {
+      urls: "turn:openrelay.metered.ca:80",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turn:openrelay.metered.ca:80?transport=tcp",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    {
+      urls: "turns:openrelay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    },
+    { urls: "turn:freeturn.net:3478", username: "free", credential: "free" },
+    { urls: "turns:freeturn.net:5349", username: "free", credential: "free" },
+  );
+  res.json({ iceServers });
 });
 
-router.post('/api/chat/missed-call', requireLogin, async (req, res) => {
-    try {
-        const { toUserId } = req.body;
-        if (!toUserId) return res.status(400).json({ error: 'toUserId が必要です' });
-        const fromId = req.session.userId;
-        // 不在着信をシステムメッセージとして両者のDMに保存
-        const msg = await ChatMessage.create({
-            fromUserId: fromId,
-            toUserId,
-            content: '📵 不在着信',
-            attachments: [],
-            isMissedCall: true,
-        });
-        const payload = {
-            _id: String(msg._id),
-            fromUserId: String(fromId),
-            toUserId:   String(toUserId),
-            roomId:     null,
-            content:    msg.content,
-            attachments: [],
-            isMissedCall: true,
-            createdAt:  msg.createdAt,
-            reactions:  [],
-            senderName: '',
-        };
-        // リアルタイムで両者に通知
-        if (global.io) {
-            global.io.to('u_' + String(toUserId)).emit('new_message', payload);
-            global.io.to('u_' + String(fromId)).emit('new_message', payload);
-        }
-        res.json({ ok: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+router.post("/api/chat/missed-call", requireLogin, async (req, res) => {
+  try {
+    const { toUserId } = req.body;
+    if (!toUserId)
+      return res.status(400).json({ error: "toUserId が必要です" });
+    const fromId = req.session.userId;
+    // 不在着信をシステムメッセージとして両者のDMに保存
+    const msg = await ChatMessage.create({
+      fromUserId: fromId,
+      toUserId,
+      content: "📵 不在着信",
+      attachments: [],
+      isMissedCall: true,
+    });
+    const payload = {
+      _id: String(msg._id),
+      fromUserId: String(fromId),
+      toUserId: String(toUserId),
+      roomId: null,
+      content: msg.content,
+      attachments: [],
+      isMissedCall: true,
+      createdAt: msg.createdAt,
+      reactions: [],
+      senderName: "",
+    };
+    // リアルタイムで両者に通知
+    if (global.io) {
+      global.io.to("u_" + String(toUserId)).emit("new_message", payload);
+      global.io.to("u_" + String(fromId)).emit("new_message", payload);
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // 通話履歴（通話終了時に保存）
-router.post('/api/chat/call-history', requireLogin, async (req, res) => {
-    try {
-        const { toUserId, duration } = req.body;   // duration は秒
-        if (!toUserId) return res.status(400).json({ error: 'toUserId が必要です' });
-        const fromId = req.session.userId;
-        const mins = Math.floor((duration || 0) / 60);
-        const secs = (duration || 0) % 60;
-        const durStr = mins > 0 ? `${mins}分${secs}秒` : `${secs}秒`;
-        const msg = await ChatMessage.create({
-            fromUserId: fromId,
-            toUserId,
-            content: `📞 通話終了 — ${durStr}`,
-            attachments: [],
-            isCallHistory: true,
-            callDuration: duration || 0,
-        });
-        const payload = {
-            _id: String(msg._id),
-            fromUserId: String(fromId),
-            toUserId:   String(toUserId),
-            roomId:     null,
-            content:    msg.content,
-            attachments: [],
-            isCallHistory: true,
-            callDuration:  duration || 0,
-            createdAt:  msg.createdAt,
-            reactions:  [],
-            senderName: '',
-        };
-        if (global.io) {
-            global.io.to('u_' + String(toUserId)).emit('new_message', payload);
-            global.io.to('u_' + String(fromId)).emit('new_message', payload);
-        }
-        res.json({ ok: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+router.post("/api/chat/call-history", requireLogin, async (req, res) => {
+  try {
+    const { toUserId, duration } = req.body; // duration は秒
+    if (!toUserId)
+      return res.status(400).json({ error: "toUserId が必要です" });
+    const fromId = req.session.userId;
+    const mins = Math.floor((duration || 0) / 60);
+    const secs = (duration || 0) % 60;
+    const durStr = mins > 0 ? `${mins}分${secs}秒` : `${secs}秒`;
+    const msg = await ChatMessage.create({
+      fromUserId: fromId,
+      toUserId,
+      content: `📞 通話終了 — ${durStr}`,
+      attachments: [],
+      isCallHistory: true,
+      callDuration: duration || 0,
+    });
+    const payload = {
+      _id: String(msg._id),
+      fromUserId: String(fromId),
+      toUserId: String(toUserId),
+      roomId: null,
+      content: msg.content,
+      attachments: [],
+      isCallHistory: true,
+      callDuration: duration || 0,
+      createdAt: msg.createdAt,
+      reactions: [],
+      senderName: "",
+    };
+    if (global.io) {
+      global.io.to("u_" + String(toUserId)).emit("new_message", payload);
+      global.io.to("u_" + String(fromId)).emit("new_message", payload);
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // 録画ファイルアップロード → チャットメッセージとして保存
-router.post('/api/chat/recording', requireLogin, chatUpload.single('recording'), async (req, res) => {
+router.post(
+  "/api/chat/recording",
+  requireLogin,
+  chatUpload.single("recording"),
+  async (req, res) => {
     try {
-        const { toUserId, roomId, duration } = req.body;
-        if (!req.file) return res.status(400).json({ error: 'ファイルがありません' });
-        const fromId = req.session.userId;
-        const durSec = parseInt(duration, 10) || 0;
-        const attachment = {
-            name:     req.file.originalname || `recording_${Date.now()}.webm`,
-            url:      '/uploads/chat/' + req.file.filename,
-            mimeType: req.file.mimetype || 'video/webm',
-            size:     req.file.size,
-            duration: durSec,
-        };
-        const msgData = {
-            fromUserId:  fromId,
-            attachments: [attachment],
-            content:     '🎥 通話録画',
-        };
-        // roomId がある場合はグループ室宛て。toUserId は無視する（二重保存防止）
-        if (roomId)        msgData.roomId   = roomId;
-        else if (toUserId) msgData.toUserId = toUserId;
+      const { toUserId, roomId, duration } = req.body;
+      if (!req.file)
+        return res.status(400).json({ error: "ファイルがありません" });
+      const fromId = req.session.userId;
+      const durSec = parseInt(duration, 10) || 0;
+      const attachment = {
+        name: req.file.originalname || `recording_${Date.now()}.webm`,
+        url: "/uploads/chat/" + req.file.filename,
+        mimeType: req.file.mimetype || "video/webm",
+        size: req.file.size,
+        duration: durSec,
+      };
+      const msgData = {
+        fromUserId: fromId,
+        attachments: [attachment],
+        content: "🎥 通話録画",
+      };
+      // roomId がある場合はグループ室宛て。toUserId は無視する（二重保存防止）
+      if (roomId) msgData.roomId = roomId;
+      else if (toUserId) msgData.toUserId = toUserId;
 
-        const msg = await ChatMessage.create(msgData);
+      const msg = await ChatMessage.create(msgData);
 
-        // senderName を通常メッセージと同様に取得
-        const [senderEmp, senderUser] = await Promise.all([
-            Employee.findOne({ userId: fromId }).select('name').lean(),
-            User.findById(fromId).select('username').lean(),
-        ]);
-        const senderName = senderEmp ? senderEmp.name : ((senderUser && senderUser.username) || '');
+      // senderName を通常メッセージと同様に取得
+      const [senderEmp, senderUser] = await Promise.all([
+        Employee.findOne({ userId: fromId }).select("name").lean(),
+        User.findById(fromId).select("username").lean(),
+      ]);
+      const senderName = senderEmp
+        ? senderEmp.name
+        : (senderUser && senderUser.username) || "";
 
-        const payload = {
-            _id:         String(msg._id),
-            fromUserId:  String(fromId),
-            toUserId:    msgData.toUserId ? String(msgData.toUserId) : null,
-            roomId:      msgData.roomId   ? String(msgData.roomId)   : null,
-            content:     msg.content,
-            attachments: [attachment],
-            createdAt:   msg.createdAt,
-            reactions:   [],
-            senderName,
-        };
-        if (global.io) {
-            if (msgData.toUserId) {
-                global.io.to('u_' + String(msgData.toUserId)).emit('new_message', payload);
-                global.io.to('u_' + String(fromId)).emit('new_message', payload);
-            }
-            if (msgData.roomId) global.io.to('r_' + String(msgData.roomId)).emit('new_message', payload);
+      const payload = {
+        _id: String(msg._id),
+        fromUserId: String(fromId),
+        toUserId: msgData.toUserId ? String(msgData.toUserId) : null,
+        roomId: msgData.roomId ? String(msgData.roomId) : null,
+        content: msg.content,
+        attachments: [attachment],
+        createdAt: msg.createdAt,
+        reactions: [],
+        senderName,
+      };
+      if (global.io) {
+        if (msgData.toUserId) {
+          global.io
+            .to("u_" + String(msgData.toUserId))
+            .emit("new_message", payload);
+          global.io.to("u_" + String(fromId)).emit("new_message", payload);
         }
-        // message をレスポンスに含めることで、フロント側が Socket.IO に頼らず
-        // 直接チャットに表示できるようにする（Socket.IO の遅延・フィルタ外れの保険）
-        res.json({ ok: true, url: attachment.url, message: payload });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
+        if (msgData.roomId)
+          global.io
+            .to("r_" + String(msgData.roomId))
+            .emit("new_message", payload);
+      }
+      // message をレスポンスに含めることで、フロント側が Socket.IO に頼らず
+      // 直接チャットに表示できるようにする（Socket.IO の遅延・フィルタ外れの保険）
+      res.json({ ok: true, url: attachment.url, message: payload });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
 
 // DM チャット履歴クリア（自分の画面からのみ非表示 / 物理削除は双方合意後）
-router.put('/api/chat/room/:id', requireLogin, async (req, res) => {
-    try {
-        const room = await ChatRoom.findOne({ _id: req.params.id, admins: req.session.userId });
-        if (!room) return res.status(403).json({ error: '権限がありません' });
-        const { name, description, icon } = req.body;
-        if (name) room.name = name.trim();
-        if (description !== undefined) room.description = description.trim();
-        if (icon) room.icon = icon;
-        await room.save();
-        res.json({ ok: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+router.put("/api/chat/room/:id", requireLogin, async (req, res) => {
+  try {
+    const room = await ChatRoom.findOne({
+      _id: req.params.id,
+      admins: req.session.userId,
+    });
+    if (!room) return res.status(403).json({ error: "権限がありません" });
+    const { name, description, icon } = req.body;
+    if (name) room.name = name.trim();
+    if (description !== undefined) room.description = description.trim();
+    if (icon) room.icon = icon;
+    await room.save();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-router.post('/api/chat/room/:id/members', requireLogin, async (req, res) => {
-    try {
-        const room = await ChatRoom.findOne({ _id: req.params.id, admins: req.session.userId });
-        if (!room) return res.status(403).json({ error: '権限がありません' });
-        (req.body.userIds || []).forEach(uid => {
-            if (!room.members.some(m => String(m) === uid)) room.members.push(uid);
-        });
-        await room.save();
-        res.json({ ok: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+router.post("/api/chat/room/:id/members", requireLogin, async (req, res) => {
+  try {
+    const room = await ChatRoom.findOne({
+      _id: req.params.id,
+      admins: req.session.userId,
+    });
+    if (!room) return res.status(403).json({ error: "権限がありません" });
+    (req.body.userIds || []).forEach((uid) => {
+      if (!room.members.some((m) => String(m) === uid)) room.members.push(uid);
+    });
+    await room.save();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-router.delete('/api/chat/room/:id/members/:userId', requireLogin, async (req, res) => {
+router.delete(
+  "/api/chat/room/:id/members/:userId",
+  requireLogin,
+  async (req, res) => {
     try {
-        const room = await ChatRoom.findOne({ _id: req.params.id, admins: req.session.userId });
-        if (!room) return res.status(403).json({ error: '権限がありません' });
-        room.members = room.members.filter(m => String(m) !== req.params.userId);
-        await room.save();
-        res.json({ ok: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
+      const room = await ChatRoom.findOne({
+        _id: req.params.id,
+        admins: req.session.userId,
+      });
+      if (!room) return res.status(403).json({ error: "権限がありません" });
+      room.members = room.members.filter(
+        (m) => String(m) !== req.params.userId,
+      );
+      await room.save();
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
 
 // ── HTML ビルダー ──────────────────────────────────────────────
 
 function buildPage(data) {
-    const { mode, myId, myName, myInitial, myStatus, recentDMs, roomList, allUsers } = data;
-    const clientData = {
-        mode, myId, myName, myInitial, myStatus,
-        allUsers: allUsers.map(u => ({
-            _id: String(u._id), username: u.username, chatStatus: u.chatStatus || 'offline',
-            emp: u.emp ? { name: u.emp.name, department: u.emp.department || '' } : null,
-        })),
-        roomIds: roomList.map(r => String(r._id)),
-    };
-    if (mode === 'dm') {
-        Object.assign(clientData, { targetId: data.targetId, targetName: data.targetName, targetStatus: data.targetStatus, hasMore: !!data.hasMore });
-    }
-    if (mode === 'room') {
-        Object.assign(clientData, {
-            roomId: data.roomId, roomName: data.roomName, isRoomAdmin: data.isRoomAdmin, hasMore: !!data.hasMore,
-            members: (data.members || []).map(m => ({
-                _id: String(m._id), username: m.username, chatStatus: m.chatStatus || 'offline',
-                emp: m.emp ? { name: m.emp.name, department: m.emp.department || '' } : null,
-            })),
-        });
-    }
-    return `${chatStyles()}
+  const {
+    mode,
+    myId,
+    myName,
+    myInitial,
+    myStatus,
+    recentDMs,
+    roomList,
+    allUsers,
+  } = data;
+  const clientData = {
+    mode,
+    myId,
+    myName,
+    myInitial,
+    myStatus,
+    allUsers: allUsers.map((u) => ({
+      _id: String(u._id),
+      username: u.username,
+      chatStatus: u.chatStatus || "offline",
+      emp: u.emp
+        ? { name: u.emp.name, department: u.emp.department || "" }
+        : null,
+    })),
+    roomIds: roomList.map((r) => String(r._id)),
+  };
+  if (mode === "dm") {
+    Object.assign(clientData, {
+      targetId: data.targetId,
+      targetName: data.targetName,
+      targetStatus: data.targetStatus,
+      hasMore: !!data.hasMore,
+    });
+  }
+  if (mode === "room") {
+    Object.assign(clientData, {
+      roomId: data.roomId,
+      roomName: data.roomName,
+      isRoomAdmin: data.isRoomAdmin,
+      hasMore: !!data.hasMore,
+      members: (data.members || []).map((m) => ({
+        _id: String(m._id),
+        username: m.username,
+        chatStatus: m.chatStatus || "offline",
+        emp: m.emp
+          ? { name: m.emp.name, department: m.emp.department || "" }
+          : null,
+      })),
+    });
+  }
+  return `${chatStyles()}
 <div class="sc-root">
     <div class="sc-side-overlay" id="sc-side-overlay" onclick="closeChatSidebar()"></div>
     ${buildSidebarHtml(data)}
@@ -947,32 +1330,52 @@ document.addEventListener('click', function(e){
 }
 
 function buildSidebarHtml(d) {
-    const { myName, myInitial, myStatus, recentDMs, roomList, mode, targetId, roomId } = d;
-    const dmRows = recentDMs.length ? recentDMs.map(u => {
-        const name = u.emp ? u.emp.name : u.username;
-        const dept = u.emp ? (u.emp.department || '') : '';
-        const preview = u.lastMsg ? escHtml(u.lastMsg.slice(0, 26)) + (u.lastMsg.length > 26 ? '…' : '') : '';
-        const active = mode === 'dm' && String(u._id) === targetId;
-        return `<a href="/chat/dm/${u._id}" class="sc-nav-row${active ? ' active' : ''}" data-userid="${u._id}">
+  const {
+    myName,
+    myInitial,
+    myStatus,
+    recentDMs,
+    roomList,
+    mode,
+    targetId,
+    roomId,
+  } = d;
+  const dmRows = recentDMs.length
+    ? recentDMs
+        .map((u) => {
+          const name = u.emp ? u.emp.name : u.username;
+          const dept = u.emp ? u.emp.department || "" : "";
+          const preview = u.lastMsg
+            ? escHtml(u.lastMsg.slice(0, 26)) +
+              (u.lastMsg.length > 26 ? "…" : "")
+            : "";
+          const active = mode === "dm" && String(u._id) === targetId;
+          return `<a href="/chat/dm/${u._id}" class="sc-nav-row${active ? " active" : ""}" data-userid="${u._id}">
             <div class="sc-av-wrap sm"><div class="sc-av sm">${name.charAt(0).toUpperCase()}</div>
-            <span class="sc-pip ${STATUS_CLS[u.chatStatus || 'offline']}" data-uid="${u._id}"></span></div>
+            <span class="sc-pip ${STATUS_CLS[u.chatStatus || "offline"]}" data-uid="${u._id}"></span></div>
             <div class="sc-nav-info"><span class="sc-nav-name">${escHtml(name)}</span>
             <span class="sc-nav-sub">${dept ? escHtml(dept) : preview}</span></div>
-            ${u.unread ? '<span class="sc-badge">' + u.unread + '</span>' : ''}
+            ${u.unread ? '<span class="sc-badge">' + u.unread + "</span>" : ""}
         </a>`;
-    }).join('') : '<div class="sc-empty-row">まだ会話がありません</div>';
+        })
+        .join("")
+    : '<div class="sc-empty-row">まだ会話がありません</div>';
 
-    const roomRows = roomList.length ? roomList.map(r => {
-        const active = mode === 'room' && String(r._id) === roomId;
-        return `<a href="/chat/room/${r._id}" class="sc-nav-row${active ? ' active' : ''}">
-            <div class="sc-room-icon">${escHtml(r.icon || '💬')}</div>
+  const roomRows = roomList.length
+    ? roomList
+        .map((r) => {
+          const active = mode === "room" && String(r._id) === roomId;
+          return `<a href="/chat/room/${r._id}" class="sc-nav-row${active ? " active" : ""}">
+            <div class="sc-room-icon">${escHtml(r.icon || "💬")}</div>
             <div class="sc-nav-info"><span class="sc-nav-name">${escHtml(r.name)}</span>
             <span class="sc-nav-sub">${(r.members && r.members.length) || 0}人</span></div>
-            ${r.unread ? '<span class="sc-badge">' + r.unread + '</span>' : ''}
+            ${r.unread ? '<span class="sc-badge">' + r.unread + "</span>" : ""}
         </a>`;
-    }).join('') : '<div class="sc-empty-row">グループはありません</div>';
+        })
+        .join("")
+    : '<div class="sc-empty-row">グループはありません</div>';
 
-    return `<div class="sc-side">
+  return `<div class="sc-side">
     <div class="sc-side-hd">
         <a href="/dashboard" class="sc-back-btn" title="ダッシュボードに戻る"><i class="fa-solid fa-arrow-left"></i></a>
         <i class="fa-regular fa-comment-dots" style="color:#818cf8;font-size:.85rem;flex-shrink:0"></i>
@@ -980,13 +1383,13 @@ function buildSidebarHtml(d) {
     </div>
     <div class="sc-me-row">
         <div class="sc-av-wrap sm"><div class="sc-av sm sc-av-me">${myInitial}</div>
-        <span class="sc-pip ${STATUS_CLS[myStatus || 'offline']}" id="my-pip"></span></div>
+        <span class="sc-pip ${STATUS_CLS[myStatus || "offline"]}" id="my-pip"></span></div>
         <div class="sc-me-info">
             <span class="sc-me-name">${escHtml(myName)}</span>
             <div class="sc-st-btns">
-                <button class="sc-st-btn${myStatus === 'online'  ? ' active' : ''}" data-st="online"   onclick="chatApp.setStatus('online',this)"><span class="sc-btn-pip pip-online"></span>オンライン</button>
-                <button class="sc-st-btn${myStatus === 'break'   ? ' active' : ''}" data-st="break"    onclick="chatApp.setStatus('break',this)"><span class="sc-btn-pip pip-break"></span>休憩中</button>
-                <button class="sc-st-btn${myStatus === 'offline' ? ' active' : ''}" data-st="offline"  onclick="chatApp.setStatus('offline',this)"><span class="sc-btn-pip pip-offline"></span>オフライン</button>
+                <button class="sc-st-btn${myStatus === "online" ? " active" : ""}" data-st="online"   onclick="chatApp.setStatus('online',this)"><span class="sc-btn-pip pip-online"></span>オンライン</button>
+                <button class="sc-st-btn${myStatus === "break" ? " active" : ""}" data-st="break"    onclick="chatApp.setStatus('break',this)"><span class="sc-btn-pip pip-break"></span>休憩中</button>
+                <button class="sc-st-btn${myStatus === "offline" ? " active" : ""}" data-st="offline"  onclick="chatApp.setStatus('offline',this)"><span class="sc-btn-pip pip-offline"></span>オフライン</button>
             </div>
         </div>
     </div>
@@ -1002,118 +1405,220 @@ function buildSidebarHtml(d) {
 }
 
 function buildMainHtml(data) {
-    if (data.mode === 'home') {
-        const { recentDMs = [], roomList = [], allUsers = [], myName } = data;
+  if (data.mode === "home") {
+    const { recentDMs = [], roomList = [], allUsers = [], myName } = data;
 
-        // 最近のDM（最大6件）
-        const recentRows = recentDMs.slice(0, 6).map(u => {
-            const name    = u.emp ? u.emp.name : u.username;
-            const dept    = u.emp ? (u.emp.department || '') : '';
-            const preview = u.lastMsg ? escHtml(u.lastMsg.slice(0, 30)) + (u.lastMsg.length > 30 ? '…' : '') : 'メッセージを送る';
-            const pip     = STATUS_CLS[u.chatStatus || 'offline'];
-            const initial = (name || '?').charAt(0).toUpperCase();
-            const unread  = u.unread ? `<span class="ch-badge">${u.unread}</span>` : '';
-            return `<a href="/chat/dm/${u._id}" class="ch-card">
+    // 最近のDM（最大6件）
+    const recentRows = recentDMs
+      .slice(0, 6)
+      .map((u) => {
+        const name = u.emp ? u.emp.name : u.username;
+        const dept = u.emp ? u.emp.department || "" : "";
+        const preview = u.lastMsg
+          ? escHtml(u.lastMsg.slice(0, 30)) + (u.lastMsg.length > 30 ? "…" : "")
+          : "メッセージを送る";
+        const pip = STATUS_CLS[u.chatStatus || "offline"];
+        const initial = (name || "?").charAt(0).toUpperCase();
+        const unread = u.unread
+          ? `<span class="ch-badge">${u.unread}</span>`
+          : "";
+        return `<a href="/chat/dm/${u._id}" class="ch-card">
                 <div class="ch-av-wrap"><div class="ch-av">${initial}</div><span class="ch-pip ${pip}"></span></div>
                 <div class="ch-info">
-                    <div class="ch-name">${escHtml(name)}${dept ? `<span class="ch-dept">${escHtml(dept)}</span>` : ''}</div>
+                    <div class="ch-name">${escHtml(name)}${dept ? `<span class="ch-dept">${escHtml(dept)}</span>` : ""}</div>
                     <div class="ch-preview">${preview}</div>
                 </div>
                 ${unread}
             </a>`;
-        }).join('');
+      })
+      .join("");
 
-        // グループ（最大4件）
-        const roomRows = roomList.slice(0, 4).map(r => {
-            const unread = r.unread ? `<span class="ch-badge">${r.unread}</span>` : '';
-            return `<a href="/chat/room/${r._id}" class="ch-card">
-                <div class="ch-room-icon">${escHtml(r.icon || '💬')}</div>
+    // グループ（最大4件）
+    const roomRows = roomList
+      .slice(0, 4)
+      .map((r) => {
+        const unread = r.unread
+          ? `<span class="ch-badge">${r.unread}</span>`
+          : "";
+        return `<a href="/chat/room/${r._id}" class="ch-card">
+                <div class="ch-room-icon">${escHtml(r.icon || "💬")}</div>
                 <div class="ch-info">
                     <div class="ch-name">${escHtml(r.name)}</div>
                     <div class="ch-preview">${(r.members && r.members.length) || 0}人のメンバー</div>
                 </div>
                 ${unread}
             </a>`;
-        }).join('');
+      })
+      .join("");
 
-        // オンラインユーザー
-        const onlineUsers = allUsers.filter(u => u.chatStatus === 'online').slice(0, 8);
-        const onlineHtml = onlineUsers.length ? onlineUsers.map(u => {
-            const name    = u.emp ? u.emp.name : u.username;
-            const initial = (name || '?').charAt(0).toUpperCase();
+    // オンラインユーザー
+    const onlineUsers = allUsers
+      .filter((u) => u.chatStatus === "online")
+      .slice(0, 8);
+    const onlineHtml = onlineUsers.length
+      ? onlineUsers
+          .map((u) => {
+            const name = u.emp ? u.emp.name : u.username;
+            const initial = (name || "?").charAt(0).toUpperCase();
             return `<a href="/chat/dm/${u._id}" class="ch-online-chip" title="${escHtml(name)}">
                 <div class="ch-av sm">${initial}</div>
                 <span>${escHtml(name)}</span>
             </a>`;
-        }).join('') : '<div class="ch-empty-sub">現在オンラインのユーザーはいません</div>';
+          })
+          .join("")
+      : '<div class="ch-empty-sub">現在オンラインのユーザーはいません</div>';
 
-        return `<div class="ch-home">
+    return `<div class="ch-home">
     <div class="ch-home-hd">
         <span class="ch-home-icon">💬</span>
         <div>
             <div class="ch-home-title">チャット</div>
-            <div class="ch-home-sub">こんにちは、${escHtml(myName || '')}さん</div>
+            <div class="ch-home-sub">こんにちは、${escHtml(myName || "")}さん</div>
         </div>
     </div>
 
     <div class="ch-section-label">🟢 オンライン中</div>
     <div class="ch-online-row">${onlineHtml}</div>
 
-    ${recentRows ? `<div class="ch-section-label">🕐 最近のメッセージ</div><div class="ch-cards">${recentRows}</div>
-    <div style="text-align:right;margin-top:4px"><a href="#" onclick="document.getElementById('sc-search').focus();return false" class="ch-more-link">全ユーザーを検索 →</a></div>` : ''}
+    ${
+      recentRows
+        ? `<div class="ch-section-label">🕐 最近のメッセージ</div><div class="ch-cards">${recentRows}</div>
+    <div style="text-align:right;margin-top:4px"><a href="#" onclick="document.getElementById('sc-search').focus();return false" class="ch-more-link">全ユーザーを検索 →</a></div>`
+        : ""
+    }
 
-    ${roomRows ? `<div class="ch-section-label">👥 グループチャット</div><div class="ch-cards">${roomRows}</div>` : ''}
+    ${roomRows ? `<div class="ch-section-label">👥 グループチャット</div><div class="ch-cards">${roomRows}</div>` : ""}
 
-    ${!recentRows && !roomRows ? `<div class="ch-empty">
+    ${
+      !recentRows && !roomRows
+        ? `<div class="ch-empty">
         <div style="font-size:2.5rem;margin-bottom:10px;">💬</div>
         <div style="font-weight:600;color:#1c1917;margin-bottom:6px;">まだ会話がありません</div>
         <div style="font-size:.85rem;color:#78716c;">左のリストからユーザーを選んで<br>メッセージを送ってみましょう。</div>
-    </div>` : ''}
-</div>`;
+    </div>`
+        : ""
     }
-    const isRoom = data.mode === 'room';
-    const EMOJI_CATS = [
-        {
-            id: 'reaction', label: '\u{1F60A} \u30EA\u30A2\u30AF\u30B7\u30E7\u30F3',
-            items: ['\u{1F44D}','\u{1F44E}','\u2764\uFE0F','\u{1F525}','\u{1F602}','\u{1F62E}','\u{1F389}','\u{1F64F}','\u{1F4AA}','\u2705','\u2753','\u{1F440}','\u{1F605}','\u{1F914}','\u{1F4AF}','\u{1F60A}','\u{1F62D}','\u{1F979}','\u{1F929}','\u{1F621}','\u{1F92F}','\u{1F973}','\u{1F634}','\u{1F44F}','\u{1FAF1}','\u{1F91F}','\u{1F497}','\u2B50','\u{1F197}','\u{1F199}','\u{1F192}','\u{1F4AC}','\u{1F4CC}','\u26A1','\u{1F680}']
-        },
-        {
-            id: 'biz', label: '\u{1F4BC} \u696D\u52D9\u7528',
-            items: ['\u2705\u4E86\u89E3\u3067\u3059','\u2705\u627F\u77E5\u3044\u305F\u3057\u307E\u3057\u305F','\u2705\u78BA\u8A8D\u3057\u307E\u3057\u305F','\u{1F50D}\u78BA\u8A8D\u3057\u307E\u3059','\u{1F504}\u78BA\u8A8D\u4E2D','\u2714\uFE0F\u78BA\u8A8D\u6E08','\u2699\uFE0F\u5BFE\u5FDC\u4E2D','\u2705\u5BFE\u5FDC\u3057\u307E\u3057\u305F','\u{1F4DD}\u4FEE\u6B63\u3057\u307E\u3059','\u{1F4DD}\u4FEE\u6B63\u4E2D','\u{1F4DD}\u4FEE\u6B63\u3057\u307E\u3057\u305F','\u23F3\u304A\u5F85\u3061\u304F\u3060\u3055\u3044','\u{1F4E2}\u5171\u6709\u3057\u307E\u3059','\u{1F440}\u78BA\u8A8D\u304A\u9858\u3044\u3057\u307E\u3059','\u{1F4CB}\u5831\u544A\u3057\u307E\u3059','\u{1F64F}\u3088\u308D\u3057\u304F\u304A\u9858\u3044\u3057\u307E\u3059','\u{1F64F}\u304A\u75B2\u308C\u69D8\u3067\u3059','\u{1F647}\u5931\u793C\u3057\u307E\u3059','\u{1F389}\u304A\u75B2\u308C\u69D8\u3067\u3057\u305F','\u{1F4C5}\u5F8C\u3067\u78BA\u8A8D\u3057\u307E\u3059','\u2757\u8981\u78BA\u8A8D','\u274C\u5BFE\u5FDC\u4E0D\u53EF','\u{1F501}\u3084\u308A\u76F4\u3057\u307E\u3059','\u{1F4A1}\u63D0\u6848\u304C\u3042\u308A\u307E\u3059','\u{1F4E3}\u5468\u77E5\u3057\u307E\u3057\u305F','\u{1F197}\u554F\u984C\u3042\u308A\u307E\u305B\u3093','\u26A0\uFE0F\u8981\u6CE8\u610F','\u{1F6D1}\u4E00\u6642\u4E2D\u65AD','\u25B6\uFE0F\u518D\u958B\u3057\u307E\u3059','\u{1F3C1}\u5B8C\u4E86\u3057\u307E\u3057\u305F']
-        },
-    ];
-    function buildEmojiPicker() {
-        const tabs = EMOJI_CATS.map((cat, i) =>
-            `<button class="sc-ep-tab${i===0?' active':''}" data-cat="${cat.id}" onclick="chatApp.switchEmojiTab('${cat.id}',this)">${cat.label}</button>`
-        ).join('');
-        const panels = EMOJI_CATS.map((cat, i) => {
-            const btns = cat.items.map(e => {
-                const safe = e.replace(/'/g, "\\'");
-                return `<button class="sc-emoji-btn" onclick="chatApp.pickEmoji('${safe}')" title="${e}">${e}</button>`;
-            }).join('');
-            return `<div class="sc-ep-panel${i===0?'':' sc-ep-hidden'}" data-panel="${cat.id}">${btns}</div>`;
-        }).join('');
-        return `<div class="sc-emoji-picker" id="sc-emoji-picker" style="display:none">
+</div>`;
+  }
+  const isRoom = data.mode === "room";
+  const EMOJI_CATS = [
+    {
+      id: "reaction",
+      label: "\u{1F60A} \u30EA\u30A2\u30AF\u30B7\u30E7\u30F3",
+      items: [
+        "\u{1F44D}",
+        "\u{1F44E}",
+        "\u2764\uFE0F",
+        "\u{1F525}",
+        "\u{1F602}",
+        "\u{1F62E}",
+        "\u{1F389}",
+        "\u{1F64F}",
+        "\u{1F4AA}",
+        "\u2705",
+        "\u2753",
+        "\u{1F440}",
+        "\u{1F605}",
+        "\u{1F914}",
+        "\u{1F4AF}",
+        "\u{1F60A}",
+        "\u{1F62D}",
+        "\u{1F979}",
+        "\u{1F929}",
+        "\u{1F621}",
+        "\u{1F92F}",
+        "\u{1F973}",
+        "\u{1F634}",
+        "\u{1F44F}",
+        "\u{1FAF1}",
+        "\u{1F91F}",
+        "\u{1F497}",
+        "\u2B50",
+        "\u{1F197}",
+        "\u{1F199}",
+        "\u{1F192}",
+        "\u{1F4AC}",
+        "\u{1F4CC}",
+        "\u26A1",
+        "\u{1F680}",
+      ],
+    },
+    {
+      id: "biz",
+      label: "\u{1F4BC} \u696D\u52D9\u7528",
+      items: [
+        "\u2705\u4E86\u89E3\u3067\u3059",
+        "\u2705\u627F\u77E5\u3044\u305F\u3057\u307E\u3057\u305F",
+        "\u2705\u78BA\u8A8D\u3057\u307E\u3057\u305F",
+        "\u{1F50D}\u78BA\u8A8D\u3057\u307E\u3059",
+        "\u{1F504}\u78BA\u8A8D\u4E2D",
+        "\u2714\uFE0F\u78BA\u8A8D\u6E08",
+        "\u2699\uFE0F\u5BFE\u5FDC\u4E2D",
+        "\u2705\u5BFE\u5FDC\u3057\u307E\u3057\u305F",
+        "\u{1F4DD}\u4FEE\u6B63\u3057\u307E\u3059",
+        "\u{1F4DD}\u4FEE\u6B63\u4E2D",
+        "\u{1F4DD}\u4FEE\u6B63\u3057\u307E\u3057\u305F",
+        "\u23F3\u304A\u5F85\u3061\u304F\u3060\u3055\u3044",
+        "\u{1F4E2}\u5171\u6709\u3057\u307E\u3059",
+        "\u{1F440}\u78BA\u8A8D\u304A\u9858\u3044\u3057\u307E\u3059",
+        "\u{1F4CB}\u5831\u544A\u3057\u307E\u3059",
+        "\u{1F64F}\u3088\u308D\u3057\u304F\u304A\u9858\u3044\u3057\u307E\u3059",
+        "\u{1F64F}\u304A\u75B2\u308C\u69D8\u3067\u3059",
+        "\u{1F647}\u5931\u793C\u3057\u307E\u3059",
+        "\u{1F389}\u304A\u75B2\u308C\u69D8\u3067\u3057\u305F",
+        "\u{1F4C5}\u5F8C\u3067\u78BA\u8A8D\u3057\u307E\u3059",
+        "\u2757\u8981\u78BA\u8A8D",
+        "\u274C\u5BFE\u5FDC\u4E0D\u53EF",
+        "\u{1F501}\u3084\u308A\u76F4\u3057\u307E\u3059",
+        "\u{1F4A1}\u63D0\u6848\u304C\u3042\u308A\u307E\u3059",
+        "\u{1F4E3}\u5468\u77E5\u3057\u307E\u3057\u305F",
+        "\u{1F197}\u554F\u984C\u3042\u308A\u307E\u305B\u3093",
+        "\u26A0\uFE0F\u8981\u6CE8\u610F",
+        "\u{1F6D1}\u4E00\u6642\u4E2D\u65AD",
+        "\u25B6\uFE0F\u518D\u958B\u3057\u307E\u3059",
+        "\u{1F3C1}\u5B8C\u4E86\u3057\u307E\u3057\u305F",
+      ],
+    },
+  ];
+  function buildEmojiPicker() {
+    const tabs = EMOJI_CATS.map(
+      (cat, i) =>
+        `<button class="sc-ep-tab${i === 0 ? " active" : ""}" data-cat="${cat.id}" onclick="chatApp.switchEmojiTab('${cat.id}',this)">${cat.label}</button>`,
+    ).join("");
+    const panels = EMOJI_CATS.map((cat, i) => {
+      const btns = cat.items
+        .map((e) => {
+          const safe = e.replace(/'/g, "\\'");
+          return `<button class="sc-emoji-btn" onclick="chatApp.pickEmoji('${safe}')" title="${e}">${e}</button>`;
+        })
+        .join("");
+      return `<div class="sc-ep-panel${i === 0 ? "" : " sc-ep-hidden"}" data-panel="${cat.id}">${btns}</div>`;
+    }).join("");
+    return `<div class="sc-emoji-picker" id="sc-emoji-picker" style="display:none">
 <div class="sc-ep-tabs">${tabs}</div>
 <div class="sc-ep-body">${panels}</div>
 </div>`;
-    }
-    const headerHtml = isRoom
-        ? `<div class="sc-main-hd">
-            <div class="sc-hd-left"><button class="sc-mobile-back" onclick="openChatSidebar()" title="チャンネル一覧"><i class="fa-solid fa-bars"></i></button><div class="sc-room-icon-lg">${escHtml(data.roomIcon || '💬')}</div>
+  }
+  const headerHtml = isRoom
+    ? `<div class="sc-main-hd">
+            <div class="sc-hd-left"><button class="sc-mobile-back" onclick="openChatSidebar()" title="チャンネル一覧"><i class="fa-solid fa-bars"></i></button><div class="sc-room-icon-lg">${escHtml(data.roomIcon || "💬")}</div>
             <div><div class="sc-hd-name">${escHtml(data.roomName)}</div><div class="sc-hd-sub" id="room-sub">${data.members.length}人のメンバー</div></div></div>
             <div class="sc-hd-actions">
                 <button class="sc-hd-btn" onclick="chatApp.toggleMemberPanel()" title="メンバー"><i class="fa-solid fa-users"></i></button>
-                ${data.isRoomAdmin ? '<button class="sc-hd-btn" onclick="chatApp.openRoomSettings()" title="設定"><i class="fa-solid fa-gear"></i></button>' : ''}
+                ${data.isRoomAdmin ? '<button class="sc-hd-btn" onclick="chatApp.openRoomSettings()" title="設定"><i class="fa-solid fa-gear"></i></button>' : ""}
                 <div class="sc-hd-search"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="msg-search" placeholder="検索..." oninput="chatApp.filterMessages(this.value)"></div>
             </div>
         </div>`
-        : `<div class="sc-main-hd">
-            <div class="sc-hd-left"><button class="sc-mobile-back" onclick="openChatSidebar()" title="チャンネル一覧"><i class="fa-solid fa-bars"></i></button><div class="sc-av-wrap"><div class="sc-av sc-av-target">${escHtml(data.targetName || '?').charAt(0).toUpperCase()}</div>
-            <span class="sc-pip ${STATUS_CLS[data.targetStatus || 'offline']}" id="target-pip"></span></div>
-            <div><div class="sc-hd-name">${escHtml(data.targetName || '')}</div>
-            <div class="sc-hd-sub" id="target-sub">${STATUS_LABEL[data.targetStatus || 'offline']}</div>
-            ${data.targetDept ? `<div class="sc-hd-sub">${escHtml(data.targetDept)}</div>` : ''}</div></div>
+    : `<div class="sc-main-hd">
+            <div class="sc-hd-left"><button class="sc-mobile-back" onclick="openChatSidebar()" title="チャンネル一覧"><i class="fa-solid fa-bars"></i></button><div class="sc-av-wrap"><div class="sc-av sc-av-target">${escHtml(
+              data.targetName || "?",
+            )
+              .charAt(0)
+              .toUpperCase()}</div>
+            <span class="sc-pip ${STATUS_CLS[data.targetStatus || "offline"]}" id="target-pip"></span></div>
+            <div><div class="sc-hd-name">${escHtml(data.targetName || "")}</div>
+            <div class="sc-hd-sub" id="target-sub">${STATUS_LABEL[data.targetStatus || "offline"]}</div>
+            ${data.targetDept ? `<div class="sc-hd-sub">${escHtml(data.targetDept)}</div>` : ""}</div></div>
             <div class="sc-hd-actions">
                 <button class="sc-hd-btn sc-call-btn" id="call-btn" title="音声・ビデオ通話"><i class="fa-solid fa-phone"></i></button>
                 <button class="sc-hd-btn sc-call-btn" id="screen-btn" title="画面共有"><i class="fa-solid fa-desktop"></i></button>
@@ -1121,30 +1626,32 @@ function buildMainHtml(data) {
                 <div class="sc-hd-search"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="msg-search" placeholder="会話内を検索..." oninput="chatApp.filterMessages(this.value)"></div>
             </div>
         </div>`;
-    return `${headerHtml}
+  return `${headerHtml}
 <div class="sc-typing-bar" id="sc-typing"></div>
 <div class="sc-body-wrap">
     <div class="sc-messages" id="sc-messages">
         ${buildThreadStart(data)}
-        ${data.hasMore ? '<div id="sc-load-more-wrap" style="text-align:center;padding:12px 0 4px"><button class="sc-load-more-btn" onclick="chatApp.loadMore()" id="sc-load-more-btn"><i class="fa-solid fa-clock-rotate-left"></i> 過去のメッセージを読み込む</button></div>' : ''}
+        ${data.hasMore ? '<div id="sc-load-more-wrap" style="text-align:center;padding:12px 0 4px"><button class="sc-load-more-btn" onclick="chatApp.loadMore()" id="sc-load-more-btn"><i class="fa-solid fa-clock-rotate-left"></i> 過去のメッセージを読み込む</button></div>' : ""}
         <div id="sc-older-messages"></div>
         ${buildMessagesHtml(data)}
         <div id="sc-msg-bottom"></div>
     </div>
-    ${isRoom ? buildMemberPanel(data) : ''}
+    ${isRoom ? buildMemberPanel(data) : ""}
 </div>
 <div class="sc-emoji-picker" id="sc-emoji-picker" style="display:none">
 <div class="sc-ep-tabs">
-  ${EMOJI_CATS.map((cat, i) => `<button class="sc-ep-tab${i===0?' active':''}" data-cat="${cat.id}" onclick="chatApp.switchEmojiTab('${cat.id}',this)">${cat.label}</button>`).join('')}
+  ${EMOJI_CATS.map((cat, i) => `<button class="sc-ep-tab${i === 0 ? " active" : ""}" data-cat="${cat.id}" onclick="chatApp.switchEmojiTab('${cat.id}',this)">${cat.label}</button>`).join("")}
 </div>
 <div class="sc-ep-body">
   ${EMOJI_CATS.map((cat, i) => {
-    const btns = cat.items.map(e => {
+    const btns = cat.items
+      .map((e) => {
         const safe = e.replace(/'/g, "\\'");
         return `<button class="sc-emoji-btn" onclick="chatApp.pickEmoji('${safe}')" title="${e}">${e}</button>`;
-    }).join('');
-    return `<div class="sc-ep-panel${i===0?'':' sc-ep-hidden'}" data-panel="${cat.id}">${btns}</div>`;
-  }).join('')}
+      })
+      .join("");
+    return `<div class="sc-ep-panel${i === 0 ? "" : " sc-ep-hidden"}" data-panel="${cat.id}">${btns}</div>`;
+  }).join("")}
 </div>
 </div>
 <div class="sc-reply-bar" id="sc-reply-bar" style="display:none">
@@ -1162,7 +1669,7 @@ function buildMainHtml(data) {
         ondragover="event.preventDefault();this.classList.add('drag-over')"
         ondragleave="this.classList.remove('drag-over')"
         ondrop="chatApp.handleDrop(event)">
-        <textarea id="sc-msg-input" placeholder="${isRoom ? escHtml(data.roomName) : escHtml(data.targetName || '')} へメッセージを送る..." rows="1" maxlength="4000" oninput="chatApp.onInput()" onkeydown="if(event.key==='Enter'&&event.shiftKey){event.preventDefault();chatApp.send();}"></textarea>
+        <textarea id="sc-msg-input" placeholder="${isRoom ? escHtml(data.roomName) : escHtml(data.targetName || "")} へメッセージを送る..." rows="1" maxlength="4000" oninput="chatApp.onInput()" onkeydown="if(event.key==='Enter'&&event.shiftKey){event.preventDefault();chatApp.send();}"></textarea>
         <button class="sc-send-btn" id="sc-send-btn" disabled onclick="chatApp.send()"><i class="fa-solid fa-paper-plane"></i></button>
     </div>
     <div class="sc-input-hint">Shift+Enter で送信 · Enter で改行 · ファイルをドロップで添付</div>
@@ -1170,177 +1677,395 @@ function buildMainHtml(data) {
 }
 
 function buildThreadStart(data) {
-    if (data.mode === 'dm') {
-        const initial = (data.targetName || '?').charAt(0).toUpperCase();
-        return `<div class="sc-thread-start"><div class="sc-av sc-av-lg sc-av-target">${initial}</div>
-        <div class="sc-thread-name">${escHtml(data.targetName || '')}</div>
-        <div class="sc-thread-sub">${data.targetDept ? escHtml(data.targetDept) : ''}${data.targetPos ? ' · ' + escHtml(data.targetPos) : ''}</div>
-        <p class="sc-thread-desc">${escHtml(data.targetName || '')} とのダイレクトメッセージです。</p></div>`;
-    }
-    return `<div class="sc-thread-start"><div class="sc-room-icon-xl">${escHtml(data.roomIcon || '💬')}</div>
-    <div class="sc-thread-name">${escHtml(data.roomName || '')}</div>
-    ${data.roomDesc ? '<div class="sc-thread-sub">' + escHtml(data.roomDesc) + '</div>' : ''}
-    <p class="sc-thread-desc">${escHtml(data.roomName || '')} グループチャットへようこそ。</p></div>`;
+  if (data.mode === "dm") {
+    const initial = (data.targetName || "?").charAt(0).toUpperCase();
+    return `<div class="sc-thread-start"><div class="sc-av sc-av-lg sc-av-target">${initial}</div>
+        <div class="sc-thread-name">${escHtml(data.targetName || "")}</div>
+        <div class="sc-thread-sub">${data.targetDept ? escHtml(data.targetDept) : ""}${data.targetPos ? " · " + escHtml(data.targetPos) : ""}</div>
+        <p class="sc-thread-desc">${escHtml(data.targetName || "")} とのダイレクトメッセージです。</p></div>`;
+  }
+  return `<div class="sc-thread-start"><div class="sc-room-icon-xl">${escHtml(data.roomIcon || "💬")}</div>
+    <div class="sc-thread-name">${escHtml(data.roomName || "")}</div>
+    ${data.roomDesc ? '<div class="sc-thread-sub">' + escHtml(data.roomDesc) + "</div>" : ""}
+    <p class="sc-thread-desc">${escHtml(data.roomName || "")} グループチャットへようこそ。</p></div>`;
 }
 
 function buildMemberPanel(data) {
-    const rows = (data.members || []).map(m => {
-        const name = m.emp ? m.emp.name : m.username;
-        const dept = m.emp ? (m.emp.department || '') : '';
-        return `<div class="sc-member-row">
+  const rows = (data.members || [])
+    .map((m) => {
+      const name = m.emp ? m.emp.name : m.username;
+      const dept = m.emp ? m.emp.department || "" : "";
+      return `<div class="sc-member-row">
             <div class="sc-av-wrap sm"><div class="sc-av sm">${name.charAt(0).toUpperCase()}</div>
-            <span class="sc-pip ${STATUS_CLS[m.chatStatus || 'offline']}" data-uid="${m._id}"></span></div>
-            <div class="sc-nav-info"><span class="sc-nav-name">${escHtml(name)}</span>${dept ? '<span class="sc-nav-sub">' + escHtml(dept) + '</span>' : ''}</div>
-            ${data.isRoomAdmin && String(m._id) !== data.myId ? '<button class="sc-member-kick" onclick="chatApp.kickMember(\'' + m._id + '\',\'' + escHtml(name) + '\')" title="除外">×</button>' : ''}
+            <span class="sc-pip ${STATUS_CLS[m.chatStatus || "offline"]}" data-uid="${m._id}"></span></div>
+            <div class="sc-nav-info"><span class="sc-nav-name">${escHtml(name)}</span>${dept ? '<span class="sc-nav-sub">' + escHtml(dept) + "</span>" : ""}</div>
+            ${data.isRoomAdmin && String(m._id) !== data.myId ? '<button class="sc-member-kick" onclick="chatApp.kickMember(\'' + m._id + "','" + escHtml(name) + '\')" title="除外">×</button>' : ""}
         </div>`;
-    }).join('');
-    return `<div class="sc-member-panel" id="sc-member-panel" style="display:none">
+    })
+    .join("");
+  return `<div class="sc-member-panel" id="sc-member-panel" style="display:none">
         <div class="sc-member-hd"><span>メンバー (${data.members.length})</span><button onclick="chatApp.toggleMemberPanel()">×</button></div>
         <div class="sc-member-list">${rows}</div>
-        ${data.isRoomAdmin ? '<div class="sc-member-add"><button class="sc-add-btn" onclick="chatApp.openAddMember()"><i class="fa-solid fa-user-plus"></i> メンバーを追加</button></div>' : ''}
+        ${data.isRoomAdmin ? '<div class="sc-member-add"><button class="sc-add-btn" onclick="chatApp.openAddMember()"><i class="fa-solid fa-user-plus"></i> メンバーを追加</button></div>' : ""}
     </div>`;
 }
 
 function buildMessagesHtml(data) {
-    const { messages, myId, myName, mode } = data;
-    if (!messages || !messages.length) return '';
-    const isRoom = mode === 'room';
-    const memberNameMap = {};
-    if (isRoom && data.members) {
-        data.members.forEach(m => { memberNameMap[String(m._id)] = m.emp ? m.emp.name : m.username; });
-    }
-    memberNameMap[String(myId)] = myName;
+  const { messages, myId, myName, mode } = data;
+  if (!messages || !messages.length) return "";
+  const isRoom = mode === "room";
+  const memberNameMap = {};
+  if (isRoom && data.members) {
+    data.members.forEach((m) => {
+      memberNameMap[String(m._id)] = m.emp ? m.emp.name : m.username;
+    });
+  }
+  memberNameMap[String(myId)] = myName;
 
-    let html = '';
-    let prevFrom = null, prevDate = null;
-    for (const m of messages) {
-        if (m.deleted) {
-            html += '<div class="sc-msg sc-msg-del" data-id="' + m._id + '" data-at="' + m.createdAt.toISOString() + '"><span class="sc-del-icon">🗑</span><span class="sc-del-text">このメッセージは削除されました</span></div>';
-            prevFrom = null; continue;
-        }
-        // 不在着信システムメッセージ
-        if (m.isMissedCall) {
-            const isMine = String(m.fromUserId) === String(myId);
-            const dt2 = new Date(m.createdAt);
-            const timeStr2 = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
-            html += '<div class="sc-missed-call" data-id="' + m._id + '" data-at="' + m.createdAt.toISOString() + '">'
-                + '<span class="sc-missed-icon">📵</span>'
-                + (isMine ? '不在着信（発信）' : '不在着信')
-                + '<span class="sc-missed-time">' + timeStr2 + '</span></div>';
-            prevFrom = null; continue;
-        }
-        // 通話履歴システムメッセージ
-        if (m.isCallHistory) {
-            const dt2 = new Date(m.createdAt);
-            const timeStr2 = dt2.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
-            const mins = Math.floor((m.callDuration || 0) / 60);
-            const secs = (m.callDuration || 0) % 60;
-            const durStr = mins > 0 ? mins + '分' + secs + '秒' : secs + '秒';
-            html += '<div class="sc-call-history" data-id="' + m._id + '" data-at="' + m.createdAt.toISOString() + '">'
-                + '<span>📞</span> 通話 — ' + durStr
-                + '<span class="sc-missed-time">' + timeStr2 + '</span></div>';
-            prevFrom = null; continue;
-        }
-        const isMine     = String(m.fromUserId) === String(myId);
-        const senderName = isRoom ? (memberNameMap[String(m.fromUserId)] || '不明') : (isMine ? myName : data.targetName);
-        const initial    = (senderName || '?').charAt(0).toUpperCase();
-        const colorIdx   = isMine ? 0 : (isRoom ? (([...String(m.fromUserId)].reduce((a, c) => a + c.charCodeAt(0), 0) % 5) + 1) : 1);
-        const dt      = new Date(m.createdAt);
-        const dateStr = dt.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
-    const timeStr = dt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
-        if (prevDate !== dateStr) {
-            html += '<div class="sc-date-div"><span>' + dateStr + '</span></div>';
-            prevDate = dateStr; prevFrom = null;
-        }
-        const isCont = prevFrom === String(m.fromUserId);
-        prevFrom = String(m.fromUserId);
-        const replyBlock = m.replyPreview
-            ? '<div class="sc-reply-quote"><div class="sc-reply-stripe"></div><span>' + escHtml(m.replyPreview.slice(0, 60)) + (m.replyPreview.length > 60 ? '…' : '') + '</span></div>' : '';
-        const attachHtml  = buildAttachmentsHtml(m.attachments || []);
-        const reactHtml   = buildReactHtml(m, myId);
-        const editedBadge = m.edited ? '<span class="sc-edited">（編集済み）</span>' : '';
-        let readBadge = '';
-        if (!isRoom && isMine) {
-            readBadge = m.read
-                ? '<span class="sc-read read" data-read="' + m._id + '">✓✓ 既読</span>'
-                : '<span class="sc-read unread" data-read="' + m._id + '">✓ 未読</span>';
-        } else if (isRoom && isMine) {
-            const rc = (m.readBy || []).length;
-            readBadge = rc > 0
-                ? '<span class="sc-read read" data-read="' + m._id + '">既読 ' + rc + '</span>'
-                : '<span class="sc-read unread" data-read="' + m._id + '"></span>';
-        }
-        const safeContent = escHtml(m.content || '').replace(/'/g, '\\x27').slice(0, 60);
-        const toolbar = '<div class="sc-toolbar">'
-            + '<button class="sc-tb" onclick="chatApp.startReply(\'' + m._id + '\',\'' + safeContent + '\')" title="返信">↩</button>'
-            + '<button class="sc-tb sc-emoji-trig" data-mid="' + m._id + '" title="リアクション">😊</button>'
-            + (isMine ? '<button class="sc-tb" onclick="chatApp.startEdit(\'' + m._id + '\')" title="編集">✏️</button>' : '')
-            + (isMine ? '<button class="sc-tb sc-tb-del" onclick="chatApp.deleteMsg(\'' + m._id + '\')" title="削除">🗑</button>' : '')
-            + '</div>';
-        if (isCont) {
-            html += '<div class="sc-msg sc-msg-cont" data-id="' + m._id + '" data-at="' + m.createdAt.toISOString() + '">' + toolbar
-                + '<div class="sc-ts-hover">' + timeStr + '</div>'
-                + '<div class="sc-body-wrap2">' + replyBlock
-                + '<div class="sc-msg-text" data-mid="' + m._id + '">' + escHtml(m.content || '') + '</div>'
-                + editedBadge + attachHtml + reactHtml + readBadge + '</div></div>';
-        } else {
-            html += '<div class="sc-msg" data-id="' + m._id + '" data-at="' + m.createdAt.toISOString() + '">' + toolbar
-                + '<div class="sc-av sc-av-c' + colorIdx + '">' + initial + '</div>'
-                + '<div class="sc-msg-right"><div class="sc-msg-meta"><span class="sc-sender">' + escHtml(senderName) + '</span><span class="sc-ts">' + timeStr + '</span></div>'
-                + replyBlock + '<div class="sc-msg-text" data-mid="' + m._id + '">' + escHtml(m.content || '') + '</div>'
-                + editedBadge + attachHtml + reactHtml + readBadge + '</div></div>';
-        }
+  let html = "";
+  let prevFrom = null,
+    prevDate = null;
+  for (const m of messages) {
+    if (m.deleted) {
+      html +=
+        '<div class="sc-msg sc-msg-del" data-id="' +
+        m._id +
+        '" data-at="' +
+        m.createdAt.toISOString() +
+        '"><span class="sc-del-icon">🗑</span><span class="sc-del-text">このメッセージは削除されました</span></div>';
+      prevFrom = null;
+      continue;
     }
-    return html;
+    // 不在着信システムメッセージ
+    if (m.isMissedCall) {
+      const isMine = String(m.fromUserId) === String(myId);
+      const dt2 = new Date(m.createdAt);
+      const timeStr2 = dt2.toLocaleTimeString("ja-JP", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Asia/Tokyo",
+      });
+      html +=
+        '<div class="sc-missed-call" data-id="' +
+        m._id +
+        '" data-at="' +
+        m.createdAt.toISOString() +
+        '">' +
+        '<span class="sc-missed-icon">📵</span>' +
+        (isMine ? "不在着信（発信）" : "不在着信") +
+        '<span class="sc-missed-time">' +
+        timeStr2 +
+        "</span></div>";
+      prevFrom = null;
+      continue;
+    }
+    // 通話履歴システムメッセージ
+    if (m.isCallHistory) {
+      const dt2 = new Date(m.createdAt);
+      const timeStr2 = dt2.toLocaleTimeString("ja-JP", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Asia/Tokyo",
+      });
+      const mins = Math.floor((m.callDuration || 0) / 60);
+      const secs = (m.callDuration || 0) % 60;
+      const durStr = mins > 0 ? mins + "分" + secs + "秒" : secs + "秒";
+      html +=
+        '<div class="sc-call-history" data-id="' +
+        m._id +
+        '" data-at="' +
+        m.createdAt.toISOString() +
+        '">' +
+        "<span>📞</span> 通話 — " +
+        durStr +
+        '<span class="sc-missed-time">' +
+        timeStr2 +
+        "</span></div>";
+      prevFrom = null;
+      continue;
+    }
+    const isMine = String(m.fromUserId) === String(myId);
+    const senderName = isRoom
+      ? memberNameMap[String(m.fromUserId)] || "不明"
+      : isMine
+        ? myName
+        : data.targetName;
+    const initial = (senderName || "?").charAt(0).toUpperCase();
+    const colorIdx = isMine
+      ? 0
+      : isRoom
+        ? ([...String(m.fromUserId)].reduce((a, c) => a + c.charCodeAt(0), 0) %
+            5) +
+          1
+        : 1;
+    const dt = new Date(m.createdAt);
+    const dateStr = dt.toLocaleDateString("ja-JP", {
+      month: "long",
+      day: "numeric",
+      weekday: "short",
+    });
+    const timeStr = dt.toLocaleTimeString("ja-JP", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Tokyo",
+    });
+    if (prevDate !== dateStr) {
+      html += '<div class="sc-date-div"><span>' + dateStr + "</span></div>";
+      prevDate = dateStr;
+      prevFrom = null;
+    }
+    const isCont = prevFrom === String(m.fromUserId);
+    prevFrom = String(m.fromUserId);
+    const replyBlock = m.replyPreview
+      ? '<div class="sc-reply-quote"><div class="sc-reply-stripe"></div><span>' +
+        escHtml(m.replyPreview.slice(0, 60)) +
+        (m.replyPreview.length > 60 ? "…" : "") +
+        "</span></div>"
+      : "";
+    const attachHtml = buildAttachmentsHtml(m.attachments || []);
+    const reactHtml = buildReactHtml(m, myId);
+    const editedBadge = m.edited
+      ? '<span class="sc-edited">（編集済み）</span>'
+      : "";
+    let readBadge = "";
+    if (!isRoom && isMine) {
+      readBadge = m.read
+        ? '<span class="sc-read read" data-read="' + m._id + '">✓✓ 既読</span>'
+        : '<span class="sc-read unread" data-read="' +
+          m._id +
+          '">✓ 未読</span>';
+    } else if (isRoom && isMine) {
+      const rc = (m.readBy || []).length;
+      readBadge =
+        rc > 0
+          ? '<span class="sc-read read" data-read="' +
+            m._id +
+            '">既読 ' +
+            rc +
+            "</span>"
+          : '<span class="sc-read unread" data-read="' + m._id + '"></span>';
+    }
+    const safeContent = escHtml(m.content || "")
+      .replace(/'/g, "\\x27")
+      .slice(0, 60);
+    const toolbar =
+      '<div class="sc-toolbar">' +
+      '<button class="sc-tb" onclick="chatApp.startReply(\'' +
+      m._id +
+      "','" +
+      safeContent +
+      '\')" title="返信">↩</button>' +
+      '<button class="sc-tb sc-emoji-trig" data-mid="' +
+      m._id +
+      '" title="リアクション">😊</button>' +
+      (isMine
+        ? '<button class="sc-tb" onclick="chatApp.startEdit(\'' +
+          m._id +
+          '\')" title="編集">✏️</button>'
+        : "") +
+      (isMine
+        ? '<button class="sc-tb sc-tb-del" onclick="chatApp.deleteMsg(\'' +
+          m._id +
+          '\')" title="削除">🗑</button>'
+        : "") +
+      "</div>";
+    if (isCont) {
+      html +=
+        '<div class="sc-msg sc-msg-cont" data-id="' +
+        m._id +
+        '" data-at="' +
+        m.createdAt.toISOString() +
+        '">' +
+        toolbar +
+        '<div class="sc-ts-hover">' +
+        timeStr +
+        "</div>" +
+        '<div class="sc-body-wrap2">' +
+        replyBlock +
+        '<div class="sc-msg-text" data-mid="' +
+        m._id +
+        '">' +
+        escHtml(m.content || "") +
+        "</div>" +
+        editedBadge +
+        attachHtml +
+        reactHtml +
+        readBadge +
+        "</div></div>";
+    } else {
+      html +=
+        '<div class="sc-msg" data-id="' +
+        m._id +
+        '" data-at="' +
+        m.createdAt.toISOString() +
+        '">' +
+        toolbar +
+        '<div class="sc-av sc-av-c' +
+        colorIdx +
+        '">' +
+        initial +
+        "</div>" +
+        '<div class="sc-msg-right"><div class="sc-msg-meta"><span class="sc-sender">' +
+        escHtml(senderName) +
+        '</span><span class="sc-ts">' +
+        timeStr +
+        "</span></div>" +
+        replyBlock +
+        '<div class="sc-msg-text" data-mid="' +
+        m._id +
+        '">' +
+        escHtml(m.content || "") +
+        "</div>" +
+        editedBadge +
+        attachHtml +
+        reactHtml +
+        readBadge +
+        "</div></div>";
+    }
+  }
+  return html;
 }
 
 function buildAttachmentsHtml(attachments) {
-    if (!attachments.length) return '';
-    return '<div class="sc-atts">' + attachments.map(a => {
-        const type = mimeToType(a.mimeType || '');
-        if (type === 'image') return '<a href="' + a.url + '" target="_blank" class="sc-att-img-wrap"><img src="' + a.url + '" alt="' + escHtml(a.name) + '" class="sc-att-img" loading="lazy"></a>';
-        if (type === 'video') {
-            const sz = a.size ? (a.size > 1048576 ? (a.size / 1048576).toFixed(1) + 'MB' : Math.ceil(a.size / 1024) + 'KB') : '';
-            const durSec = parseInt(a.duration, 10) || 0;
-            const durStr = durSec > 0
-                ? (durSec >= 3600
-                    ? Math.floor(durSec/3600) + ':' + String(Math.floor((durSec%3600)/60)).padStart(2,'0') + ':' + String(durSec%60).padStart(2,'0')
-                    : String(Math.floor(durSec/60)).padStart(2,'0') + ':' + String(durSec%60).padStart(2,'0'))
-                : '';
-            const durAttr = durStr ? ' data-duration="' + durStr + '"' : '';
-            return '<div class="sc-att-video">'
-                + '<video src="' + a.url + '" controls preload="metadata" class="sc-att-video-player"' + durAttr
-                + ' onloadedmetadata="if(isFinite(this.duration)){var s=Math.round(this.duration);var ds=s>=3600?Math.floor(s/3600)+\':\'+String(Math.floor((s%3600)/60)).padStart(2,\'0\')+\':\'+String(s%60).padStart(2,\'0\'):String(Math.floor(s/60)).padStart(2,\'0\')+\':\'+String(s%60).padStart(2,\'0\');var el=this.parentNode&&this.parentNode.querySelector(\'.sc-att-vid-dur\');if(el)el.textContent=ds;}"'
-                + '></video>'
-                + '<div class="sc-att-video-info"><span class="sc-att-icon">🎬</span>'
-                + '<div><div class="sc-att-name">' + escHtml(a.name) + '</div>'
-                + '<div class="sc-att-size">' + (durStr ? '<span class="sc-att-vid-dur">⏱ ' + durStr + '</span>' + (sz ? '  ' + sz : '') : sz) + '</div></div>'
-                + '<a href="' + a.url + '" download="' + escHtml(a.name) + '" class="sc-att-dl-btn" title="ダウンロード">⬇</a>'
-                + '</div></div>';
+  if (!attachments.length) return "";
+  return (
+    '<div class="sc-atts">' +
+    attachments
+      .map((a) => {
+        const type = mimeToType(a.mimeType || "");
+        if (type === "image")
+          return (
+            '<a href="' +
+            a.url +
+            '" target="_blank" class="sc-att-img-wrap"><img src="' +
+            a.url +
+            '" alt="' +
+            escHtml(a.name) +
+            '" class="sc-att-img" loading="lazy"></a>'
+          );
+        if (type === "video") {
+          const sz = a.size
+            ? a.size > 1048576
+              ? (a.size / 1048576).toFixed(1) + "MB"
+              : Math.ceil(a.size / 1024) + "KB"
+            : "";
+          const durSec = parseInt(a.duration, 10) || 0;
+          const durStr =
+            durSec > 0
+              ? durSec >= 3600
+                ? Math.floor(durSec / 3600) +
+                  ":" +
+                  String(Math.floor((durSec % 3600) / 60)).padStart(2, "0") +
+                  ":" +
+                  String(durSec % 60).padStart(2, "0")
+                : String(Math.floor(durSec / 60)).padStart(2, "0") +
+                  ":" +
+                  String(durSec % 60).padStart(2, "0")
+              : "";
+          const durAttr = durStr ? ' data-duration="' + durStr + '"' : "";
+          return (
+            '<div class="sc-att-video">' +
+            '<video src="' +
+            a.url +
+            '" controls preload="metadata" class="sc-att-video-player"' +
+            durAttr +
+            " onloadedmetadata=\"if(isFinite(this.duration)){var s=Math.round(this.duration);var ds=s>=3600?Math.floor(s/3600)+':'+String(Math.floor((s%3600)/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'):String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');var el=this.parentNode&&this.parentNode.querySelector('.sc-att-vid-dur');if(el)el.textContent=ds;}\"" +
+            "></video>" +
+            '<div class="sc-att-video-info"><span class="sc-att-icon">🎬</span>' +
+            '<div><div class="sc-att-name">' +
+            escHtml(a.name) +
+            "</div>" +
+            '<div class="sc-att-size">' +
+            (durStr
+              ? '<span class="sc-att-vid-dur">⏱ ' +
+                durStr +
+                "</span>" +
+                (sz ? "  " + sz : "")
+              : sz) +
+            "</div></div>" +
+            '<a href="' +
+            a.url +
+            '" download="' +
+            escHtml(a.name) +
+            '" class="sc-att-dl-btn" title="ダウンロード">⬇</a>' +
+            "</div></div>"
+          );
         }
-        const icon = type === 'pdf' ? '📄' : '📎';
-        const sz   = a.size ? (a.size > 1048576 ? (a.size / 1048576).toFixed(1) + 'MB' : Math.ceil(a.size / 1024) + 'KB') : '';
-        return '<a href="' + a.url + '" target="_blank" download="' + escHtml(a.name) + '" class="sc-att-file"><span class="sc-att-icon">' + icon + '</span><div><div class="sc-att-name">' + escHtml(a.name) + '</div><div class="sc-att-size">' + sz + '</div></div></a>';
-    }).join('') + '</div>';
+        const icon = type === "pdf" ? "📄" : "📎";
+        const sz = a.size
+          ? a.size > 1048576
+            ? (a.size / 1048576).toFixed(1) + "MB"
+            : Math.ceil(a.size / 1024) + "KB"
+          : "";
+        return (
+          '<a href="' +
+          a.url +
+          '" target="_blank" download="' +
+          escHtml(a.name) +
+          '" class="sc-att-file"><span class="sc-att-icon">' +
+          icon +
+          '</span><div><div class="sc-att-name">' +
+          escHtml(a.name) +
+          '</div><div class="sc-att-size">' +
+          sz +
+          "</div></div></a>"
+        );
+      })
+      .join("") +
+    "</div>"
+  );
 }
 
 function buildReactHtml(m, myId) {
-    if (!m.reactions || !m.reactions.length) return '<div class="sc-reactions" data-mid="' + m._id + '"></div>';
-    const chips = m.reactions.map(r => {
-        const mine  = (r.userIds || []).some(id => String(id) === String(myId));
-        const count = (r.userIds || []).length;
-        return '<button class="sc-react-chip' + (mine ? ' mine' : '') + '" data-emoji="' + r.emoji + '" onclick="chatApp.toggleReact(\'' + m._id + '\',\'' + r.emoji + '\',this)">' + r.emoji + ' <span class="sc-react-n">' + count + '</span></button>';
-    }).join('');
-    return '<div class="sc-reactions" data-mid="' + m._id + '">' + chips + '</div>';
+  if (!m.reactions || !m.reactions.length)
+    return '<div class="sc-reactions" data-mid="' + m._id + '"></div>';
+  const chips = m.reactions
+    .map((r) => {
+      const mine = (r.userIds || []).some((id) => String(id) === String(myId));
+      const count = (r.userIds || []).length;
+      return (
+        '<button class="sc-react-chip' +
+        (mine ? " mine" : "") +
+        '" data-emoji="' +
+        r.emoji +
+        '" onclick="chatApp.toggleReact(\'' +
+        m._id +
+        "','" +
+        r.emoji +
+        "',this)\">" +
+        r.emoji +
+        ' <span class="sc-react-n">' +
+        count +
+        "</span></button>"
+      );
+    })
+    .join("");
+  return (
+    '<div class="sc-reactions" data-mid="' + m._id + '">' + chips + "</div>"
+  );
 }
 
 function buildGroupCreateModal(allUsers) {
-    const opts = allUsers.map(u => {
-        const name = u.emp ? u.emp.name : u.username;
-        const dept = u.emp ? (u.emp.department || '') : '';
-        return '<label class="sc-modal-user-row"><input type="checkbox" name="member" value="' + u._id + '"><div class="sc-av sm2">' + name.charAt(0).toUpperCase() + '</div><div><div class="sc-modal-uname">' + escHtml(name) + '</div>' + (dept ? '<div class="sc-modal-udept">' + escHtml(dept) + '</div>' : '') + '</div></label>';
-    }).join('');
-    return `<div class="sc-overlay" id="sc-modal-create" style="display:none" onclick="if(event.target===this)chatApp.closeModal('sc-modal-create')">
+  const opts = allUsers
+    .map((u) => {
+      const name = u.emp ? u.emp.name : u.username;
+      const dept = u.emp ? u.emp.department || "" : "";
+      return (
+        '<label class="sc-modal-user-row"><input type="checkbox" name="member" value="' +
+        u._id +
+        '"><div class="sc-av sm2">' +
+        name.charAt(0).toUpperCase() +
+        '</div><div><div class="sc-modal-uname">' +
+        escHtml(name) +
+        "</div>" +
+        (dept
+          ? '<div class="sc-modal-udept">' + escHtml(dept) + "</div>"
+          : "") +
+        "</div></label>"
+      );
+    })
+    .join("");
+  return `<div class="sc-overlay" id="sc-modal-create" style="display:none" onclick="if(event.target===this)chatApp.closeModal('sc-modal-create')">
     <div class="sc-modal">
         <div class="sc-modal-hd"><h3>グループチャットを作成</h3><button onclick="chatApp.closeModal('sc-modal-create')">×</button></div>
         <div class="sc-modal-body">
@@ -1361,7 +2086,7 @@ function buildGroupCreateModal(allUsers) {
 }
 
 function buildRoomSettingsModal() {
-    return `<div class="sc-overlay" id="sc-modal-room-settings" style="display:none" onclick="if(event.target===this)chatApp.closeModal('sc-modal-room-settings')">
+  return `<div class="sc-overlay" id="sc-modal-room-settings" style="display:none" onclick="if(event.target===this)chatApp.closeModal('sc-modal-room-settings')">
     <div class="sc-modal">
         <div class="sc-modal-hd"><h3>グループ設定</h3><button onclick="chatApp.closeModal('sc-modal-room-settings')">×</button></div>
         <div class="sc-modal-body">
@@ -1378,7 +2103,7 @@ function buildRoomSettingsModal() {
 }
 
 function chatStyles() {
-    return `<style>
+  return `<style>
 /* ── Enterprise Chat UI ── */
 :root {
   --c-side-bg:#1a1d27;--c-side-hd:#0f1117;--c-side-border:rgba(255,255,255,.07);
@@ -1664,24 +2389,35 @@ html, body { overflow: hidden !important; }
 .sc-load-more-btn:hover{background:var(--c-bg-hover);color:var(--c-text-primary)}
 .sc-load-more-btn:disabled{opacity:.5;cursor:not-allowed}
 
-/* ── Call overlay ── */
-.call-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:10000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
-.call-box{background:#0f172a;border-radius:var(--radius-xl);width:580px;max-width:96vw;box-shadow:0 20px 60px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column;transition:all .2s;border:1px solid rgba(255,255,255,.08)}
-.call-box.call-fullscreen{width:100vw;max-width:100vw;height:100vh;border-radius:0}
+/* ── Call overlay（フローティングパネル） ── */
+.call-overlay{position:fixed;bottom:24px;right:24px;z-index:10000;display:flex;}
+.call-box{background:#0f172a;border-radius:var(--radius-xl);width:420px;max-width:calc(100vw - 48px);box-shadow:0 20px 60px rgba(0,0,0,.75);overflow:hidden;display:flex;flex-direction:column;border:1px solid rgba(255,255,255,.08);resize:both;min-width:280px;min-height:200px;}
+.call-box.call-fullscreen{position:fixed!important;inset:0!important;width:100vw!important;max-width:100vw!important;height:100vh!important;border-radius:0!important;resize:none!important;}
 .call-box.call-fullscreen .call-videos{min-height:0;flex:1}
 .call-box.call-fullscreen .call-vid-remote{max-height:none;height:100%}
-:fullscreen .call-box,:fullscreen .call-overlay{width:100vw;height:100vh;border-radius:0;max-width:100vw}
+:fullscreen .call-box{width:100vw;height:100vh;border-radius:0;max-width:100vw;position:fixed;inset:0}
 :fullscreen .call-videos{flex:1;min-height:0}
 :fullscreen .call-vid-remote{max-height:none;height:100%}
 :-webkit-full-screen .call-box{width:100vw;height:100vh;border-radius:0;max-width:100vw}
 :-webkit-full-screen .call-videos{flex:1;min-height:0}
 :-webkit-full-screen .call-vid-remote{max-height:none;height:100%}
-.call-header{display:flex;flex-direction:row;align-items:center;padding:12px 16px 8px;color:#f1f5f9;gap:10px;position:relative;background:rgba(255,255,255,.04)}
+.call-header{display:flex;flex-direction:row;align-items:center;padding:10px 14px;color:#f1f5f9;gap:10px;position:relative;background:#1e293b;border-bottom:1px solid rgba(255,255,255,.08);cursor:move;user-select:none;}
 .call-header-center{display:flex;flex-direction:column;align-items:center;flex:1;gap:2px}
-.call-header span.call-status-sm{font-size:.7rem;color:#64748b;letter-spacing:.06em;text-transform:uppercase}
-.call-partner-name{font-size:1.05rem;font-weight:700;letter-spacing:-.01em}
-.call-fullscreen-btn{background:none;border:none;color:#64748b;font-size:1.05rem;cursor:pointer;padding:5px 8px;border-radius:var(--radius-sm);transition:.15s;flex-shrink:0}
-.call-fullscreen-btn:hover{background:rgba(255,255,255,.08);color:#f1f5f9}
+.call-header span.call-status-sm{font-size:.7rem;color:#22c55e;background:rgba(34,197,94,.15);padding:1px 7px;border-radius:10px;letter-spacing:.04em;}
+.call-partner-name{font-size:.95rem;font-weight:700;letter-spacing:-.01em}
+.call-header-btns{display:flex;gap:4px;flex-shrink:0;}
+.call-fullscreen-btn,.call-minimize-btn{background:rgba(255,255,255,.08);border:none;color:#94a3b8;font-size:.8rem;cursor:pointer;padding:0;border-radius:5px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;transition:.15s;}
+.call-fullscreen-btn:hover,.call-minimize-btn:hover{background:rgba(255,255,255,.18);color:#f1f5f9}
+/* 最小化バー */
+.call-mini-bar{position:fixed;bottom:24px;right:24px;z-index:10000;background:#1e293b;border:1px solid rgba(255,255,255,.13);border-radius:50px;padding:9px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 8px 32px rgba(0,0,0,.55);cursor:default;}
+.call-mini-dot{width:8px;height:8px;background:#22c55e;border-radius:50%;flex-shrink:0;animation:mini-pulse 1.5s ease-in-out infinite;}
+@keyframes mini-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(1.35)}}
+.call-mini-name{font-size:13px;font-weight:600;color:#f1f5f9;}
+.call-mini-status{font-size:11px;color:#22c55e;}
+.call-mini-btn{background:rgba(255,255,255,.08);border:none;color:#94a3b8;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;transition:background .14s;}
+.call-mini-btn:hover{background:rgba(255,255,255,.18);color:#f1f5f9}
+.call-mini-end{background:#ef4444!important;color:#fff!important;}
+.call-mini-end:hover{background:#dc2626!important;}
 .call-videos{position:relative;background:#020617;min-height:280px;display:flex;align-items:center;justify-content:center;overflow:hidden}
 .call-vid-remote{width:100%;max-height:70vh;object-fit:contain;background:#020617;display:block}
 .call-vid-local{position:absolute;bottom:12px;right:12px;width:106px;height:76px;object-fit:cover;border-radius:var(--radius-md);border:2px solid rgba(99,102,241,.6);z-index:2;box-shadow:var(--shadow-md)}
@@ -1769,18 +2505,23 @@ html, body { overflow: hidden !important; }
 }
 
 function buildCallOverlay() {
-    return `
-<!-- 通話UI オーバーレイ -->
+  return `
+<!-- 通話UI フローティングパネル -->
 <div id="call-overlay" style="display:none" class="call-overlay">
     <div class="call-box" id="call-box">
-        <div class="call-header">
+        <div class="call-header" id="call-drag-handle">
             <div class="call-header-center">
-                <span id="call-status-label" class="call-status-sm">通話中...</span>
                 <span id="call-target-name" class="call-partner-name"></span>
+                <span id="call-status-label" class="call-status-sm">発信中...</span>
             </div>
-            <button class="call-fullscreen-btn" id="ctrl-fullscreen" title="全画面 / 元に戻す" onclick="window._chat_webrtc.toggleFullscreen()">
-                <i class="fa-solid fa-expand" id="fullscreen-icon"></i>
-            </button>
+            <div class="call-header-btns">
+                <button class="call-minimize-btn" title="最小化" onclick="window._chat_webrtc.minimizeCall()">
+                    <i class="fa-solid fa-minus"></i>
+                </button>
+                <button class="call-fullscreen-btn" id="ctrl-fullscreen" title="全画面 / 元に戻す" onclick="window._chat_webrtc.toggleFullscreen()">
+                    <i class="fa-solid fa-expand" id="fullscreen-icon"></i>
+                </button>
+            </div>
         </div>
         <!-- 通話内通知バナー（遠隔操作承認など） -->
         <div id="call-inner-notice" style="display:none" class="call-inner-notice"></div>
@@ -1804,6 +2545,17 @@ function buildCallOverlay() {
             <button onclick="window._chat_webrtc.stopRemote()">操作停止</button>
         </div>
     </div>
+</div>
+</div>
+
+<!-- 通話最小化バー -->
+<div id="call-mini-bar" style="display:none" class="call-mini-bar">
+    <div class="call-mini-dot"></div>
+    <span id="call-mini-name"></span>
+    <span id="call-mini-status">通話中</span>
+    <button class="call-mini-btn" id="ctrl-mini-mic" title="マイク ON/OFF" onclick="window._chat_webrtc.toggleMic(this)"><i class="fa-solid fa-microphone"></i></button>
+    <button class="call-mini-btn call-mini-end" title="通話終了" onclick="window._chat_webrtc.hangupCall()"><i class="fa-solid fa-phone-slash"></i></button>
+    <button class="call-mini-btn" title="通話画面を開く" onclick="window._chat_webrtc.expandCall()"><i class="fa-solid fa-expand"></i></button>
 </div>
 
 <!-- 着信モーダル -->
@@ -1841,5 +2593,32 @@ function buildCallOverlay() {
     </div>
 </div>`;
 }
+
+// ===== 通話ポップアップウィンドウ =====
+// Teams方式: 通話はこの独立ウィンドウで完結し、メインウィンドウは自由にナビゲート可能
+router.get("/chat/call-popup", requireLogin, (req, res) => {
+  const userId = String(req.session.userId || "");
+  const emp = req.session.employee || {};
+  const myName = (emp.name || "").replace(/'/g, "\\'");
+  if (!userId) return res.redirect("/login");
+  res.send(`<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>通話中</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>
+window._POPUP_USER_ID = '${userId}';
+window._POPUP_MY_NAME = '${myName}';
+</script>
+</head>
+<body>
+<script src="/call-sounds.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/call-popup.js"></script>
+</body>
+</html>`);
+});
 
 module.exports = router;
