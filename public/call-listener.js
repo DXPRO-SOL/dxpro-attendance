@@ -274,6 +274,8 @@
       btn.innerHTML = `<i class="fa-solid ${icon}"></i>`;
       btn.title = isMicOn ? "マイク OFF" : "マイク ON";
     });
+    if (socket && callTargetId)
+      socket.emit("call_mic_mute", { toUserId: callTargetId, muted: !isMicOn });
   }
 
   // ─── カメラ トグル ─────────────────────────────────────────
@@ -446,6 +448,11 @@
 }
 .gcall-ctrl-btn:hover { background:rgba(255,255,255,.2); transform:scale(1.08); }
 .gcall-ctrl-btn.gcall-btn-muted { background:rgba(239,68,68,.25); color:#fca5a5; }
+#gcall-remote-mute {
+    display:none; position:absolute; top:8px; left:8px;
+    background:rgba(0,0,0,.6); color:#f1f5f9; font-size:12px;
+    padding:4px 9px; border-radius:6px; z-index:5;
+}
 .gcall-end-btn {
     background:#ef4444 !important; color:#fff !important;
     width:48px !important; height:48px !important; font-size:18px !important;
@@ -526,6 +533,7 @@
     <div class="gcall-videos">
         <video id="gcall-remote-video" autoplay playsinline></video>
         <video id="gcall-local-video"  autoplay playsinline muted></video>
+        <div id="gcall-remote-mute"><i class="fa-solid fa-microphone-slash"></i> ミュート中</div>
     </div>
     <div class="gcall-controls">
         <button class="gcall-ctrl-btn" id="gcall-mic-btn" title="マイク ON/OFF">
@@ -733,6 +741,12 @@
     });
     socket.on("screen_share_stopped", () => {
       setCallStatus("通話中");
+    });
+
+    // 相手のマイクミュー状態を表示
+    socket.on("call_mic_mute", (data) => {
+      const el = document.getElementById("gcall-remote-mute");
+      if (el) el.style.display = data.muted ? "block" : "none";
     });
 
     // ── チャット外メッセージ受信トースト ─────────────────

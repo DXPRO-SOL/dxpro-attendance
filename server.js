@@ -222,6 +222,10 @@ io.on("connection", (socket) => {
     if (data && data.toUserId)
       socket.to("u_" + data.toUserId).emit("recording_stopped", data);
   });
+  socket.on("call_mic_mute", (data) => {
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("call_mic_mute", data);
+  });
 
   // ── クラウドドライブ: リアルタイム同時編集 ───────────────────
   // docRooms[fileId] = Map<userId, { username, canEdit, socketId }>
