@@ -1179,11 +1179,11 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
 
     <!-- フィルタ -->
     <div class="wf-filters" id="wf-filters">
-        <select id="wf-filter-type" onchange="wfLoadList()">
+        <select id="wf-filter-type" onchange="currentPage=1;wfLoadList()">
             <option value="">申請種別（全て）</option>
             ${applicationTypes.map((t) => `<option value="${t}">${t}</option>`).join("")}
         </select>
-        <select id="wf-filter-status" onchange="wfLoadList()" style="display:none;">
+        <select id="wf-filter-status" onchange="currentPage=1;wfLoadList()" style="display:none;">
             <option value="">ステータス（全て）</option>
             <option value="draft">下書き</option>
             <option value="submitted">申請中</option>
@@ -1313,6 +1313,8 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
     };
 
     let currentTab       = 'mine';
+    let currentPage      = 1;
+    const PAGE_LIMIT     = 50;
     let currentWfId      = null;
     let currentAction    = null;
     let editingWfId      = null;
@@ -1324,6 +1326,7 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
     // ─── タブ切り替え ──────────────────────────────────────────────────────
     window.wfSwitchTab = function(tab) {
         currentTab = tab;
+        currentPage = 1;
         document.querySelectorAll('.wf-tab').forEach(el => el.classList.remove('active'));
         const btn = document.getElementById('tab-' + tab);
         if (btn) btn.classList.add('active');
@@ -1341,6 +1344,7 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
     let _kwTimer = null;
     window.wfKeywordInput = function() {
         clearTimeout(_kwTimer);
+        currentPage = 1;
         _kwTimer = setTimeout(wfLoadList, 350);
     };
 
@@ -1352,7 +1356,7 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
         const status  = document.getElementById('wf-filter-status').value;
         const keyword = document.getElementById('wf-filter-keyword').value.trim();
         try {
-            const qs = new URLSearchParams({ tab: currentTab });
+            const qs = new URLSearchParams({ tab: currentTab, page: currentPage, limit: PAGE_LIMIT });
             if (type)    qs.set('applicationType', type);
             if (status)  qs.set('status', status);
             if (keyword) qs.set('keyword', keyword);
@@ -1390,10 +1394,37 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
                 </tr>\`;
             }
             html += '</tbody></table>';
+            // ページネーション
+            const total = d.total || 0;
+            const totalPages = Math.ceil(total / PAGE_LIMIT);
+            if (totalPages > 1) {
+                html += '<div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px;font-size:13px;">';
+                html += \`<span style="color:#6b7280;">\${total}件中 \${(currentPage-1)*PAGE_LIMIT+1}〜\${Math.min(currentPage*PAGE_LIMIT,total)}件</span>\`;
+                html += '<div style="display:flex;gap:4px;">';
+                if (currentPage > 1) {
+                    html += \`<button onclick="wfGoPage(\${currentPage-1})" style="padding:4px 10px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:13px;">‹ 前</button>\`;
+                }
+                for (let p = Math.max(1, currentPage-2); p <= Math.min(totalPages, currentPage+2); p++) {
+                    const active = p === currentPage ? 'background:#2563eb;color:#fff;border-color:#2563eb;' : 'background:#fff;';
+                    html += \`<button onclick="wfGoPage(\${p})" style="padding:4px 10px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;font-size:13px;\${active}">\${p}</button>\`;
+                }
+                if (currentPage < totalPages) {
+                    html += \`<button onclick="wfGoPage(\${currentPage+1})" style="padding:4px 10px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#fff;font-size:13px;">次 ›</button>\`;
+                }
+                html += '</div></div>';
+            } else if (total > 0) {
+                html += \`<div style="text-align:center;font-size:12px;color:#9ca3af;margin-top:8px;">\${total}件</div>\`;
+            }
             container.innerHTML = html;
         } catch(e) {
             container.innerHTML = '<div class="wf-empty">エラーが発生しました</div>';
         }
+    };
+
+    window.wfGoPage = function(page) {
+        currentPage = page;
+        wfLoadList();
+        document.getElementById('wf-list-container').scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
 
     function statusBadgeJs(status) {
