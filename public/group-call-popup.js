@@ -36,6 +36,7 @@
   let gcHasJoined = false; // group_call_join 送信済みフラグ（再接続対応）
   const peerStatus = {}; // { userId: { muted, camOff, sharing } }
   const _recordingPeers = new Set(); // 録画中のピアID
+  let spotlightTileId = null; // スポットライト表示中のタイルID（null = グリッド表示）
 
   // ── Socket.IO ────────────────────────────────────────────────────
   const socket = io({ transports: ["websocket", "polling"] });
@@ -126,13 +127,23 @@
     updateRecordingBar();
     const tile = document.getElementById("tile-" + peerId);
     if (tile) tile.remove();
+    if (spotlightTileId === "tile-" + peerId) spotlightTileId = null;
     updateGridLayout();
     updateParticipantCount();
   }
 
+  // ── 名前の長さに応じてフォントサイズを決定 ────────────────────────
+  function avatarFontSize(name) {
+    const len = (name || "").length;
+    if (len <= 3) return "2rem";
+    if (len <= 5) return "1.7rem";
+    if (len <= 7) return "1.4rem";
+    if (len <= 10) return "1.1rem";
+    return "0.85rem";
+  }
+
   // ── ピアのタイル HTML を生成（ステータスバッジ込み） ──────────────
   function makeTileHTML(peerId, peerName) {
-    const initial = (peerName || "?").charAt(0).toUpperCase();
     return (
       '<div class="gc-tile-badges">' +
       '<span class="gc-badge gc-badge-mute" id="badge-mute-' +
@@ -144,15 +155,20 @@
       "</div>" +
       '<div class="gc-tile-avatar" id="av-' +
       peerId +
+      '" style="font-size:' +
+      avatarFontSize(peerName) +
       '">' +
-      escHtml(initial) +
+      escHtml(peerName || "?") +
       "</div>" +
       '<video class="gc-tile-video" id="vid-' +
       peerId +
       '" autoplay playsinline></video>' +
       '<div class="gc-tile-name">' +
       escHtml(peerName || peerId) +
-      "</div>"
+      "</div>" +
+      '<button class="gc-tile-expand-btn" onclick="window._gcExpandTile(\'tile-' +
+      peerId +
+      '\')" title="拡大"><i class="fa-solid fa-expand"></i></button>'
     );
   }
 
@@ -250,15 +266,17 @@
     tile = document.createElement("div");
     tile.className = "gc-tile gc-tile-local";
     tile.id = "tile-local";
-    const initial = (MY_NAME || "?").charAt(0).toUpperCase();
     tile.innerHTML =
-      '<div class="gc-tile-avatar" id="av-local">' +
-      escHtml(initial) +
+      '<div class="gc-tile-avatar" id="av-local" style="font-size:' +
+      avatarFontSize(MY_NAME) +
+      '">' +
+      escHtml(MY_NAME || "?") +
       "</div>" +
       '<video class="gc-tile-video" id="vid-local" autoplay playsinline muted></video>' +
       '<div class="gc-tile-name">' +
       escHtml(MY_NAME) +
-      " (自分)</div>";
+      " (自分)</div>" +
+      '<button class="gc-tile-expand-btn" onclick="window._gcExpandTile(\'tile-local\')" title="拡大"><i class="fa-solid fa-expand"></i></button>';
     grid.appendChild(tile);
     if (localStream) {
       const video = document.getElementById("vid-local");
@@ -276,12 +294,63 @@
 
   // ── グリッドレイアウトを最適化 ──────────────────────────────────
   function updateGridLayout() {
+    if (spotlightTileId) {
+      _applySpotlight();
+      return;
+    }
     const grid = document.getElementById("gc-grid");
     if (!grid) return;
     const count = grid.children.length;
     const cols = count <= 1 ? 1 : count <= 4 ? 2 : count <= 9 ? 3 : 4;
     grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
   }
+
+  // ── スポットライト（タイル拡大表示）制御 ───────────────────────
+  function _gcTileOrder() {
+    const grid = document.getElementById("gc-grid");
+    return grid ? Array.from(grid.children).map((t) => t.id) : [];
+  }
+
+  function _applySpotlight() {
+    const grid = document.getElementById("gc-grid");
+    const overlay = document.getElementById("gc-spotlight-overlay");
+    if (!grid || !overlay) return;
+    if (!spotlightTileId) {
+      Array.from(grid.children).forEach((t) => (t.style.display = ""));
+      overlay.style.display = "none";
+      const count = grid.children.length;
+      const cols = count <= 1 ? 1 : count <= 4 ? 2 : count <= 9 ? 3 : 4;
+      grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+      return;
+    }
+    Array.from(grid.children).forEach((t) => {
+      t.style.display = t.id === spotlightTileId ? "" : "none";
+    });
+    grid.style.gridTemplateColumns = "1fr";
+    const tile = document.getElementById(spotlightTileId);
+    const nameEl = tile ? tile.querySelector(".gc-tile-name") : null;
+    const nameDisp = document.getElementById("gc-spotlight-name");
+    if (nameDisp) nameDisp.textContent = nameEl ? nameEl.textContent : "";
+    overlay.style.display = "flex";
+  }
+
+  window._gcExpandTile = function (tileId) {
+    spotlightTileId = tileId;
+    _applySpotlight();
+  };
+
+  window._gcExitSpotlight = function () {
+    spotlightTileId = null;
+    _applySpotlight();
+  };
+
+  window._gcNavSpotlight = function (dir) {
+    const order = _gcTileOrder();
+    if (!order.length) return;
+    const idx = order.indexOf(spotlightTileId);
+    spotlightTileId = order[(idx + dir + order.length) % order.length];
+    _applySpotlight();
+  };
 
   // ── 参加者数を更新 ──────────────────────────────────────────────
   function updateParticipantCount() {
@@ -304,10 +373,11 @@
 .gc-title-icon{background:rgba(99,102,241,.25);border-radius:8px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:1rem}
 .gc-title-sub{font-size:.72rem;color:#64748b;margin-top:2px}
 .gc-timer{font-size:.82rem;color:#22c55e;font-variant-numeric:tabular-nums;padding:4px 10px;background:rgba(34,197,94,.1);border-radius:20px;border:1px solid rgba(34,197,94,.25)}
-.gc-grid{flex:1;display:grid;gap:8px;padding:10px;overflow:hidden;min-height:0}
+#gc-grid-wrap{flex:1;position:relative;overflow:hidden;min-height:0}
+.gc-grid{width:100%;height:100%;display:grid;gap:8px;padding:10px;overflow:hidden}
 .gc-tile{position:relative;background:#1e293b;border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;aspect-ratio:16/9}
 .gc-tile-local{border:2px solid rgba(99,102,241,.6)}
-.gc-tile-avatar{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:700;background:linear-gradient(135deg,#374151,#1e293b);color:#94a3b8}
+.gc-tile-avatar{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-weight:700;background:linear-gradient(135deg,#374151,#1e293b);color:#94a3b8;padding:0 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;text-align:center}
 .gc-tile-video{width:100%;height:100%;object-fit:cover;display:none}
 .gc-tile-name{position:absolute;bottom:6px;left:8px;font-size:.72rem;font-weight:600;color:#f1f5f9;background:rgba(0,0,0,.55);padding:2px 8px;border-radius:10px;pointer-events:none}
 .gc-controls{display:flex;justify-content:center;gap:10px;padding:12px 16px;background:#0f172a;border-top:1px solid rgba(255,255,255,.07);flex-shrink:0}
@@ -320,6 +390,9 @@
 .gc-ctrl.recording{background:#ef4444;color:#fff}
 .gc-ctrl.recording:hover{background:#b91c1c}
 .gc-record-dot{color:#fca5a5;animation:gc-blink 1s step-start infinite}
+.gc-rec-wrap{display:flex;align-items:center;gap:8px}
+.gc-rec-timer-label{font-size:.85rem;font-weight:700;color:#fca5a5;font-variant-numeric:tabular-nums;min-width:3.8em;display:none;letter-spacing:.03em}
+.gc-rec-timer-label.show{display:block}
 @keyframes gc-blink{0%,100%{opacity:1}50%{opacity:0}}
 .gc-end{background:#ef4444!important;color:#fff!important}
 .gc-end:hover{background:#b91c1c!important}
@@ -333,6 +406,13 @@
 .gc-toast.leave{border-left-color:#94a3b8}
 @keyframes gc-toast-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes gc-toast-out{from{opacity:1}to{opacity:0;transform:translateY(-6px)}}
+.gc-tile-expand-btn{position:absolute;top:6px;right:8px;width:28px;height:28px;border-radius:7px;border:none;background:rgba(0,0,0,.6);color:#f1f5f9;font-size:.72rem;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:6;opacity:0;transition:opacity .15s}
+.gc-tile:hover .gc-tile-expand-btn,.gc-tile-expand-btn:focus{opacity:1}
+#gc-spotlight-overlay{display:none;position:absolute;bottom:0;left:0;right:0;padding:14px 0 18px;align-items:center;justify-content:center;gap:14px;background:linear-gradient(to top,rgba(2,6,23,.8),transparent);z-index:20;pointer-events:none}
+#gc-spotlight-overlay>*{pointer-events:auto}
+.gc-spotlight-btn{width:44px;height:44px;border-radius:50%;border:none;background:rgba(255,255,255,.18);color:#f1f5f9;font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);transition:.15s}
+.gc-spotlight-btn:hover{background:rgba(255,255,255,.35)}
+#gc-spotlight-name{font-size:.85rem;font-weight:600;color:#f1f5f9;background:rgba(0,0,0,.55);padding:4px 16px;border-radius:20px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 <div class="gc-header">
   <div class="gc-title">
@@ -345,7 +425,15 @@
   <span class="gc-timer" id="gc-timer">00:00</span>
 </div>
 <div id="gc-rec-bar"></div>
+<div id="gc-grid-wrap">
 <div id="gc-grid" class="gc-grid" style="grid-template-columns:1fr"></div>
+<div id="gc-spotlight-overlay">
+  <button class="gc-spotlight-btn" onclick="window._gcNavSpotlight(-1)" title="前の参加者"><i class="fa-solid fa-chevron-left"></i></button>
+  <button class="gc-spotlight-btn" onclick="window._gcExitSpotlight()" title="グリッド表示に戻る"><i class="fa-solid fa-table-cells-large"></i></button>
+  <span id="gc-spotlight-name"></span>
+  <button class="gc-spotlight-btn" onclick="window._gcNavSpotlight(1)" title="次の参加者"><i class="fa-solid fa-chevron-right"></i></button>
+</div>
+</div>
 <div class="gc-controls">
   <button class="gc-ctrl" id="gc-mic" title="マイク ON/OFF" onclick="window._gcToggleMic()">
     <i class="fa-solid fa-microphone" id="gc-mic-icon"></i>
@@ -356,9 +444,12 @@
   <button class="gc-ctrl" id="gc-screen" title="画面共有" onclick="window._gcShareScreen()">
     <i class="fa-solid fa-desktop" id="gc-screen-icon"></i>
   </button>
-  <button class="gc-ctrl" id="gc-record" title="録画" onclick="window._gcToggleRecord(this)">
-    <i class="fa-solid fa-circle-dot"></i>
-  </button>
+  <div class="gc-rec-wrap">
+    <button class="gc-ctrl" id="gc-record" title="録画" onclick="window._gcToggleRecord(this)">
+      <i class="fa-solid fa-circle-dot"></i>
+    </button>
+    <span class="gc-rec-timer-label" id="gc-rec-timer-label"></span>
+  </div>
   <button class="gc-ctrl gc-end" title="退出" onclick="window._gcHangup()">
     <i class="fa-solid fa-phone-slash"></i>
   </button>
@@ -575,8 +666,11 @@
       recSeconds++;
       const m = String(Math.floor(recSeconds / 60)).padStart(2, "0");
       const s = String(recSeconds % 60).padStart(2, "0");
-      if (btn)
-        btn.innerHTML = `<i class="fa-solid fa-stop"></i> <span class="gc-record-dot">●</span> ${m}:${s}`;
+      const lbl = document.getElementById("gc-rec-timer-label");
+      if (lbl) {
+        lbl.textContent = `${m}:${s}`;
+        lbl.classList.add("show");
+      }
     }, 1000);
 
     gcMediaRecorder.ondataavailable = (e) => {
@@ -595,6 +689,11 @@
         btn.classList.remove("recording");
         btn.innerHTML = '<i class="fa-solid fa-circle-dot"></i>';
         btn.disabled = false;
+      }
+      const lbl = document.getElementById("gc-rec-timer-label");
+      if (lbl) {
+        lbl.textContent = "";
+        lbl.classList.remove("show");
       }
       const blob = new Blob(gcRecordChunks, { type: mimeType });
       gcRecordChunks = [];
@@ -634,7 +733,10 @@
       type: "record",
       recording: true,
     });
-    if (btn) btn.classList.add("recording");
+    if (btn) {
+      btn.classList.add("recording");
+      btn.innerHTML = '<i class="fa-solid fa-stop"></i>';
+    }
   };
 
   window._gcHangup = function () {
