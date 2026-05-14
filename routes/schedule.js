@@ -279,6 +279,18 @@ router.get("/schedule", requireLogin, async (req, res) => {
                 right: 'dayGridMonth,timeGridWeek,timeGridDay',
             },
             height: 'auto',
+            // 時刻を H:MM 形式で表示（0〜9時はゼロ埋めなし、分は2桁固定）
+            eventTimeFormat: {
+                hour: 'numeric',
+                minute: '2-digit',
+                meridiem: false,
+                hour12: false,
+            },
+            slotLabelFormat: {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: false,
+            },
             events: fetchCalendarEvents,
             eventClick: (info) => openDetail(info.event.id),
             eventDidMount: (info) => {
@@ -363,11 +375,13 @@ router.get("/schedule", requireLogin, async (req, res) => {
             <button class="btn" style="flex:1;background:#fee2e2;color:#b91c1c;font-size:13px;" onclick="respondSchedule('\${s._id}','declined')"><i class="fa-solid fa-xmark"></i> 辞退する</button>
         </div>\` : '';
 
+        // 辞退者のIDリスト（通話通知の送信から除外するために使用）
+        const _declinedIds = (s.attendeeStatus || [])
+            .filter(x => x.status === 'declined').map(x => x.userId).join(',');
         const callHtml = s.chatRoomId ? \`
-        <button class="sch-call-btn" onclick="joinScheduleCall('\${s.createdById||''}', '\${s.chatRoomId}', \${JSON.stringify((s.attendees||[]).map(a=>a.id))}, '\${MY_ID}')">
+        <button class="sch-call-btn" onclick="joinScheduleCall('\${s.chatRoomId}', '\${_declinedIds}')">
             <i class="fa-solid fa-phone"></i> 通話に参加する
-        </button>
-        <div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:5px;">参加者2名 → DM通話 / 3名以上 → グループチャット</div>\` : '';
+        </button>\` : '';
 
         document.getElementById('sch-detail-inner').innerHTML = \`
         <div class="sch-modal-header">
@@ -424,16 +438,12 @@ router.get("/schedule", requireLogin, async (req, res) => {
     };
 
     // ── 通話参加 ───────────────────────────────────────────────────
-    window.joinScheduleCall = function(createdById, chatRoomId, attendeeIds, myId) {
+    window.joinScheduleCall = function(chatRoomId, declinedIds) {
         if (!chatRoomId) { alert('この予定にはアプリ内通話が設定されていません。'); return; }
-        // 主催者IDも含めた全参加者から自分を除いた相手リストを作る
-        const allParticipants = [...new Set([createdById, ...attendeeIds].filter(Boolean))];
-        const others = allParticipants.filter(id => id !== myId);
-        if (others.length === 1) {
-            window.location.href = '/chat/dm/' + others[0] + '?autoCall=1';
-        } else {
-            window.location.href = '/chat/room/' + chatRoomId;
-        }
+        // 常にグループチャットルームへ遷移し、autoGroupCall=1 でグループ通話を自動起動
+        // declinedIds: カンマ区切りのユーザーID（辞退者）→ 通話通知から除外
+        const excludeParam = declinedIds ? '&excludeUserIds=' + encodeURIComponent(declinedIds) : '';
+        window.location.href = '/chat/room/' + chatRoomId + '?autoGroupCall=1' + excludeParam;
     };
 
     // ── 削除 ───────────────────────────────────────────────────────
@@ -592,10 +602,8 @@ router.get("/schedule", requireLogin, async (req, res) => {
 
     function renderAttendeeChips() {
         const container = document.getElementById('attendee-chips');
-        const ph = document.getElementById('attendee-placeholder');
         if (!selectedAttendees.length) {
-            container.innerHTML = '';
-            container.appendChild(ph);
+            container.innerHTML = '<span id="attendee-placeholder" style="color:#9ca3af;font-size:13px;padding:2px 4px;">クリックして参加者を選択...</span>';
             return;
         }
         container.innerHTML = selectedAttendees.map(a =>
@@ -612,7 +620,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
         const y = d.getFullYear();
         const mo = String(d.getMonth()+1).padStart(2,'0');
         const dd = String(d.getDate()).padStart(2,'0');
-        const h  = String(d.getHours()).padStart(2,'0');
+        const h  = String(d.getHours());              // ゼロ埋めなし（9:00、19:00）
         const mi = String(d.getMinutes()).padStart(2,'0');
         return \`\${y}/\${mo}/\${dd} \${h}:\${mi}\`;
     }

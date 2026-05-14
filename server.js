@@ -14,6 +14,11 @@ global.io = io;
 const agentRegistry = {};
 global.agentRegistry = agentRegistry;
 
+// ── グループ通話参加者管理 ─────────────────────────────────────────
+// activeGroupCalls[roomId] = Map<userId, { userName, socketId }>
+const activeGroupCalls = {};
+global.activeGroupCalls = activeGroupCalls;
+
 // ── Socket.io ルーム管理 ─────────────────────────────────────
 io.on("connection", (socket) => {
   // クライアントが自分のユーザールームとグループルームに参加
@@ -69,6 +74,20 @@ io.on("connection", (socket) => {
         delete agentRegistry[uid];
         io.to("u_" + uid).emit("agent_disconnected");
         console.log(`[Agent] 切断: userId=${uid}`);
+      }
+    }
+    // グループ通話から退出
+    for (const roomId of Object.keys(activeGroupCalls)) {
+      const participants = activeGroupCalls[roomId];
+      for (const [uid, info] of participants.entries()) {
+        if (info.socketId === socket.id) {
+          participants.delete(uid);
+          socket
+            .to("gcall_" + roomId)
+            .emit("group_call_peer_left", { roomId, userId: uid });
+          if (participants.size === 0) delete activeGroupCalls[roomId];
+          break;
+        }
       }
     }
     // クラウドドライブのdocルームからも退出
@@ -225,6 +244,70 @@ io.on("connection", (socket) => {
   socket.on("call_mic_mute", (data) => {
     if (data && data.toUserId)
       socket.to("u_" + data.toUserId).emit("call_mic_mute", data);
+  });
+
+  // ── グループ通話シグナリング ──────────────────────────────────────
+  // 通話開始通知（ルームの全メンバーに着信を知らせる）
+  socket.on("group_call_start", (data) => {
+    // data: { roomId, userId, userName }
+    if (!data || !data.roomId) return;
+    socket.to("r_" + data.roomId).emit("group_call_incoming", data);
+  });
+  // 参加: 新規参加者を登録し、既存参加者リストを返す + 既存参加者に通知
+  socket.on("group_call_join", (data) => {
+    // data: { roomId, userId, userName }
+    if (!data || !data.roomId || !data.userId) return;
+    const roomId = String(data.roomId);
+    const userId = String(data.userId);
+    if (!activeGroupCalls[roomId]) activeGroupCalls[roomId] = new Map();
+    const existing = Array.from(activeGroupCalls[roomId].entries()).map(
+      ([uid, info]) => ({ userId: uid, userName: info.userName }),
+    );
+    // 自分を登録
+    activeGroupCalls[roomId].set(userId, {
+      userName: data.userName || "?",
+      socketId: socket.id,
+    });
+    socket.join("gcall_" + roomId);
+    // 参加者リストを送信者に送る（既存メンバーのみ）
+    socket.emit("group_call_participants", { roomId, participants: existing });
+    // 既存参加者全員に新しい参加者を通知
+    socket.to("gcall_" + roomId).emit("group_call_peer_joined", {
+      roomId,
+      userId,
+      userName: data.userName || "?",
+    });
+  });
+  // 退出
+  socket.on("group_call_leave", (data) => {
+    // data: { roomId, userId }
+    if (!data || !data.roomId || !data.userId) return;
+    const roomId = String(data.roomId);
+    const userId = String(data.userId);
+    if (activeGroupCalls[roomId]) {
+      activeGroupCalls[roomId].delete(userId);
+      if (activeGroupCalls[roomId].size === 0) delete activeGroupCalls[roomId];
+    }
+    socket.leave("gcall_" + roomId);
+    socket
+      .to("gcall_" + roomId)
+      .emit("group_call_peer_left", { roomId, userId });
+  });
+  // WebRTC P2P シグナリング（特定ユーザー宛て）
+  socket.on("group_call_offer", (data) => {
+    // data: { toUserId, fromUserId, roomId, sdp }
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("group_call_offer", data);
+  });
+  socket.on("group_call_answer", (data) => {
+    // data: { toUserId, fromUserId, roomId, sdp }
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("group_call_answer", data);
+  });
+  socket.on("group_call_candidate", (data) => {
+    // data: { toUserId, fromUserId, roomId, candidate }
+    if (data && data.toUserId)
+      socket.to("u_" + data.toUserId).emit("group_call_candidate", data);
   });
 
   // ── クラウドドライブ: リアルタイム同時編集 ───────────────────

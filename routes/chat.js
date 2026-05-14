@@ -1606,6 +1606,7 @@ function buildMainHtml(data) {
             <div class="sc-hd-actions">
                 <button class="sc-hd-btn" onclick="chatApp.toggleMemberPanel()" title="メンバー"><i class="fa-solid fa-users"></i></button>
                 ${data.isRoomAdmin ? '<button class="sc-hd-btn" onclick="chatApp.openRoomSettings()" title="設定"><i class="fa-solid fa-gear"></i></button>' : ""}
+                <button class="sc-hd-btn sc-call-btn" onclick="chatApp.doStartGroupCall()" title="グループ通話"><i class="fa-solid fa-phone"></i></button>
                 <div class="sc-hd-search"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="msg-search" placeholder="検索..." oninput="chatApp.filterMessages(this.value)"></div>
             </div>
         </div>`
@@ -1621,8 +1622,6 @@ function buildMainHtml(data) {
             ${data.targetDept ? `<div class="sc-hd-sub">${escHtml(data.targetDept)}</div>` : ""}</div></div>
             <div class="sc-hd-actions">
                 <button class="sc-hd-btn sc-call-btn" id="call-btn" title="音声・ビデオ通話"><i class="fa-solid fa-phone"></i></button>
-                <button class="sc-hd-btn sc-call-btn" id="screen-btn" title="画面共有"><i class="fa-solid fa-desktop"></i></button>
-                <button class="sc-hd-btn sc-call-btn" id="remote-btn" title="遠隔操作リクエスト"><i class="fa-solid fa-mouse-pointer"></i></button>
                 <div class="sc-hd-search"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="msg-search" placeholder="会話内を検索..." oninput="chatApp.filterMessages(this.value)"></div>
             </div>
         </div>`;
@@ -2633,6 +2632,31 @@ window._POPUP_MY_NAME = '${myName}';
 <script src="/call-sounds.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/call-popup.js"></script>
+</body>
+</html>`);
+});
+
+// ── グループ通話ポップアップウィンドウ ──────────────────────────────
+router.get("/chat/group-call-popup", requireLogin, (req, res) => {
+  const userId = String(req.session.userId || "");
+  const emp = req.session.employee || {};
+  const myName = (emp.name || "").replace(/'/g, "\\'");
+  if (!userId) return res.redirect("/login");
+  res.send(`<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>グループ通話</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>
+window._GC_USER_ID = '${userId}';
+window._GC_MY_NAME = '${myName}';
+</script>
+</head>
+<body>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/group-call-popup.js"></script>
 </body>
 </html>`);
 });

@@ -70,6 +70,38 @@
     } catch (_) {}
   }
 
+  // ── スケジューラからのワンクリック発信（autoCall=1） ──────────
+  if (MODE === "dm" && TARGET_ID) {
+    const _autoParams = new URLSearchParams(window.location.search);
+    if (_autoParams.get("autoCall") === "1") {
+      history.replaceState(null, "", window.location.pathname); // URLをクリーン化
+      setTimeout(() => {
+        doStartCall(TARGET_ID);
+      }, 1500);
+    }
+  }
+
+  // ── スケジューラからのグループ通話自動起動（autoGroupCall=1） ──
+  if (MODE === "room" && ROOM_ID) {
+    const _gcParams = new URLSearchParams(window.location.search);
+    if (_gcParams.get("autoGroupCall") === "1") {
+      // 辞退者IDリストを取得（カンマ区切り）
+      const _excludeRaw = _gcParams.get("excludeUserIds") || "";
+      const _excludeIds = _excludeRaw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      history.replaceState(null, "", window.location.pathname); // URLをクリーン化
+      // chatApp は IIFE 末尾で window.chatApp に代入されるため、
+      // スクリプト実行後（2秒待機）で確実に呼び出す
+      setTimeout(() => {
+        if (window.chatApp && window.chatApp.doStartGroupCall) {
+          window.chatApp.doStartGroupCall(_excludeIds);
+        }
+      }, 2000);
+    }
+  }
+
   // ── Socket イベント ───────────────────────────────────────
   socket.on("new_message", (msg) => {
     const relevantDM =
@@ -1654,6 +1686,67 @@
     }
   }
 
+  // ── グループ通話 ─────────────────────────────────────────────────
+  function doStartGroupCall(excludeUserIds) {
+    // グループルームでのみ有効
+    if (!ROOM_ID || MODE !== "room") return;
+    try {
+      localStorage.setItem(
+        "dxpro_group_call_init",
+        JSON.stringify({
+          roomId: ROOM_ID,
+          roomName: ROOM_NAME || ROOM_ID,
+          myId: MY_ID,
+          myName: MY_NAME,
+        }),
+      );
+      // 全メンバーに着信通知を送信（辞退者は除外）
+      socket.emit("group_call_start", {
+        roomId: ROOM_ID,
+        userId: MY_ID,
+        userName: MY_NAME,
+        excludeUserIds: Array.isArray(excludeUserIds) ? excludeUserIds : [],
+      });
+      const popup = window.open(
+        "/chat/group-call-popup",
+        "dxpro_group_call_" + ROOM_ID,
+        "width=900,height=620,resizable=yes,scrollbars=no",
+      );
+      if (!popup)
+        alert(
+          "ポップアップがブロックされています。\nブラウザの設定でこのサイトのポップアップを許可してください。",
+        );
+    } catch (e) {
+      console.error("doStartGroupCall error", e);
+    }
+  }
+
+  function joinGroupCall(roomId) {
+    dismissGroupCallBanner();
+    try {
+      localStorage.setItem(
+        "dxpro_group_call_init",
+        JSON.stringify({
+          roomId: roomId,
+          roomName: ROOM_NAME || roomId,
+          myId: MY_ID,
+          myName: MY_NAME,
+        }),
+      );
+      const popup = window.open(
+        "/chat/group-call-popup",
+        "dxpro_group_call_" + roomId,
+        "width=900,height=620,resizable=yes,scrollbars=no",
+      );
+      if (!popup)
+        alert(
+          "ポップアップがブロックされています。\nブラウザの設定でこのサイトのポップアップを許可してください。",
+        );
+    } catch (e) {
+      console.error("joinGroupCall error", e);
+    }
+  }
+
   // ─ 着信応答 — ポップアップウィンドウで完結 ──────────────────
   async function acceptCall() {
     clearTimeout(incomingTimer);
@@ -2795,6 +2888,65 @@
     if (el) el.style.display = data.muted ? "block" : "none";
   });
 
+  // ── グループ通話 着信バナー ──────────────────────────────────────
+  socket.on("group_call_incoming", ({ roomId, userName, excludeUserIds }) => {
+    // グループルーム画面に居るときだけバナーを表示
+    if (MODE !== "room") return;
+    if (String(roomId) !== String(ROOM_ID)) return;
+    // スケジュールで「辞退」回答済みのユーザーには通知しない
+    if (
+      Array.isArray(excludeUserIds) &&
+      excludeUserIds.map(String).includes(String(MY_ID))
+    )
+      return;
+    showGroupCallBanner(userName, roomId);
+  });
+
+  function showGroupCallBanner(callerName, roomId) {
+    const _esc = (s) =>
+      String(s || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    // 既存バナーを削除
+    dismissGroupCallBanner();
+    const banner = document.createElement("div");
+    banner.id = "group-call-banner";
+    banner.style.cssText =
+      "position:fixed;top:16px;right:16px;z-index:9999;background:#1e293b;color:#f1f5f9;" +
+      "border:1px solid rgba(99,102,241,.5);border-radius:12px;padding:14px 18px;min-width:260px;" +
+      "box-shadow:0 8px 32px rgba(0,0,0,.4);display:flex;flex-direction:column;gap:10px;" +
+      "animation:gc-banner-in .25s ease";
+    banner.innerHTML =
+      "<style>@keyframes gc-banner-in{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}</style>" +
+      '<div style="display:flex;align-items:center;gap:10px">' +
+      '<span style="font-size:1.3rem">📹</span>' +
+      '<div><div style="font-size:.85rem;font-weight:700">' +
+      _esc(callerName) +
+      " がグループ通話を開始しました</div>" +
+      '<div style="font-size:.73rem;color:#94a3b8">参加しますか？</div></div></div>' +
+      '<div style="display:flex;gap:8px">' +
+      "<button onclick=\"chatApp.joinGroupCall('" +
+      String(roomId) +
+      "')\" " +
+      'style="flex:1;padding:7px;background:#6366f1;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">参加する</button>' +
+      '<button onclick="chatApp.dismissGroupCallBanner()" ' +
+      'style="flex:0 0 auto;padding:7px 12px;background:rgba(255,255,255,.08);color:#94a3b8;border:none;border-radius:8px;cursor:pointer">×</button>' +
+      "</div>";
+    document.body.appendChild(banner);
+    // 30秒で自動消去
+    banner._gcBannerTimer = setTimeout(dismissGroupCallBanner, 30000);
+  }
+
+  function dismissGroupCallBanner() {
+    const b = document.getElementById("group-call-banner");
+    if (b) {
+      clearTimeout(b._gcBannerTimer);
+      b.remove();
+    }
+  }
+
   // ─ 公開API（HTMLのonclick / _chat_webrtc 経由） ──────────────
   // ─ フルスクリーン切り替え ──────────────────────────────────────
   function toggleFullscreen() {
@@ -2984,5 +3136,8 @@
     openAddMember,
     openModal,
     closeModal,
+    doStartGroupCall,
+    joinGroupCall,
+    dismissGroupCallBanner,
   };
 })();
