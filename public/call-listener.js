@@ -768,6 +768,22 @@
     });
 
     // ── リアルタイム通知トースト ──────────────────────────
+    // ── グループ通話着信（チャット画面以外のページ用） ────────────
+    socket.on("group_call_incoming", (data) => {
+      if (!data || !data.roomId) return;
+      // チャット画面にいる場合は chat-app.js が処理するので除外
+      if (document.getElementById("sc-init")) return;
+      const excludeIds = Array.isArray(data.excludeUserIds)
+        ? data.excludeUserIds.map(String)
+        : [];
+      if (excludeIds.includes(String(userId))) return;
+      showGroupCallBanner(
+        data.roomId,
+        data.roomName || data.roomId,
+        data.userName,
+      );
+    });
+
     socket.on("notification_new", (data) => {
       if (!data) return;
       const NOTIF_ICON = {
@@ -799,6 +815,77 @@
         badge.classList.add("show");
       }
     });
+  }
+
+  // ─── グループ通話着信バナー ────────────────────────────────
+  let _gcBannerTimer = null;
+
+  function showGroupCallBanner(roomId, roomName, callerName) {
+    dismissGroupCallBanner();
+    if (window.CallSounds) CallSounds.startIncoming();
+    const banner = document.createElement("div");
+    banner.id = "cl-group-call-banner";
+    banner.style.cssText =
+      "position:fixed;top:16px;right:16px;z-index:99999;" +
+      "background:#1e293b;color:#f1f5f9;" +
+      "border:1px solid rgba(99,102,241,.5);border-radius:12px;" +
+      "padding:14px 18px;min-width:280px;max-width:360px;" +
+      "box-shadow:0 8px 32px rgba(0,0,0,.4);" +
+      "display:flex;flex-direction:column;gap:10px;" +
+      "animation:cl-slide-in .25s ease;";
+    banner.innerHTML =
+      '<div style="display:flex;align-items:center;gap:10px">' +
+      '<span style="font-size:1.4rem;animation:gcall-ring .45s ease-in-out infinite alternate;display:inline-block">📹</span>' +
+      '<div><div style="font-size:.85rem;font-weight:700">' +
+      escHtml(callerName || "?") +
+      " がグループ通話を開始しました</div>" +
+      '<div style="font-size:.73rem;color:#94a3b8">' +
+      escHtml(roomName) +
+      "</div></div></div>" +
+      '<div style="display:flex;gap:8px">' +
+      '<button id="cl-gcall-join-btn" style="flex:1;padding:7px;background:#6366f1;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600">' +
+      '<i class="fa-solid fa-phone"></i> 参加する</button>' +
+      '<button id="cl-gcall-dismiss-btn" style="flex:0 0 auto;padding:7px 12px;background:rgba(255,255,255,.08);color:#94a3b8;border:none;border-radius:8px;cursor:pointer">×</button>' +
+      "</div>";
+    document.body.appendChild(banner);
+
+    banner.querySelector("#cl-gcall-join-btn").addEventListener("click", () => {
+      dismissGroupCallBanner();
+      try {
+        localStorage.setItem(
+          "dxpro_group_call_init",
+          JSON.stringify({
+            roomId: roomId,
+            roomName: roomName,
+            myId: userId,
+            myName: "",
+          }),
+        );
+      } catch (_) {}
+      const popup = window.open(
+        "/chat/group-call-popup",
+        "dxpro_group_call_" + roomId,
+        "width=900,height=620,resizable=yes,scrollbars=no",
+      );
+      if (!popup) window.location.href = "/chat/room/" + roomId;
+    });
+    banner
+      .querySelector("#cl-gcall-dismiss-btn")
+      .addEventListener("click", () => {
+        dismissGroupCallBanner();
+      });
+
+    _gcBannerTimer = setTimeout(dismissGroupCallBanner, 30000);
+  }
+
+  function dismissGroupCallBanner() {
+    if (_gcBannerTimer) {
+      clearTimeout(_gcBannerTimer);
+      _gcBannerTimer = null;
+    }
+    if (window.CallSounds) CallSounds.stopIncoming();
+    const b = document.getElementById("cl-group-call-banner");
+    if (b) b.remove();
   }
 
   // ─── トースト通知 ─────────────────────────────────────────
