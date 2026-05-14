@@ -70,6 +70,17 @@
     } catch (_) {}
   }
 
+  // ── スケジューラからのワンクリック発信（autoCall=1） ──────────
+  if (MODE === "dm" && TARGET_ID) {
+    const _autoParams = new URLSearchParams(window.location.search);
+    if (_autoParams.get("autoCall") === "1") {
+      history.replaceState(null, "", window.location.pathname); // URLをクリーン化
+      setTimeout(() => {
+        doStartCall(TARGET_ID);
+      }, 1500);
+    }
+  }
+
   // ── Socket イベント ───────────────────────────────────────
   socket.on("new_message", (msg) => {
     const relevantDM =
