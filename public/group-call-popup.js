@@ -34,6 +34,8 @@
   let callStartTime = null;
   let timerInterval = null;
   let gcHasJoined = false; // group_call_join 送信済みフラグ（再接続対応）
+  const peerStatus = {}; // { userId: { muted, camOff, sharing } }
+  const _recordingPeers = new Set(); // 録画中のピアID
 
   // ── Socket.IO ────────────────────────────────────────────────────
   const socket = io({ transports: ["websocket", "polling"] });
@@ -119,10 +121,96 @@
     }
     delete streams[peerId];
     delete participants[peerId];
+    delete peerStatus[peerId];
+    _recordingPeers.delete(peerId);
+    updateRecordingBar();
     const tile = document.getElementById("tile-" + peerId);
     if (tile) tile.remove();
     updateGridLayout();
     updateParticipantCount();
+  }
+
+  // ── ピアのタイル HTML を生成（ステータスバッジ込み） ──────────────
+  function makeTileHTML(peerId, peerName) {
+    const initial = (peerName || "?").charAt(0).toUpperCase();
+    return (
+      '<div class="gc-tile-badges">' +
+      '<span class="gc-badge gc-badge-mute" id="badge-mute-' +
+      peerId +
+      '">🔇 ミュート</span>' +
+      '<span class="gc-badge gc-badge-share" id="badge-share-' +
+      peerId +
+      '">🖥 共有中</span>' +
+      "</div>" +
+      '<div class="gc-tile-avatar" id="av-' +
+      peerId +
+      '">' +
+      escHtml(initial) +
+      "</div>" +
+      '<video class="gc-tile-video" id="vid-' +
+      peerId +
+      '" autoplay playsinline></video>' +
+      '<div class="gc-tile-name">' +
+      escHtml(peerName || peerId) +
+      "</div>"
+    );
+  }
+
+  // ── ピアのステータスバッジを更新 ─────────────────────────────────
+  function updateTileStatus(userId) {
+    const st = peerStatus[userId] || {};
+    const muteBadge = document.getElementById("badge-mute-" + userId);
+    const shareBadge = document.getElementById("badge-share-" + userId);
+    if (muteBadge) muteBadge.classList.toggle("show", !!st.muted);
+    if (shareBadge) shareBadge.classList.toggle("show", !!st.sharing);
+  }
+
+  // ── 録画中バーを更新 ─────────────────────────────────────────────
+  function updateRecordingBar() {
+    const bar = document.getElementById("gc-rec-bar");
+    if (!bar) return;
+    if (_recordingPeers.size > 0) {
+      const names = Array.from(_recordingPeers).map((uid) =>
+        participants[uid] ? participants[uid].name : uid,
+      );
+      bar.textContent = "🔴 " + names.join(", ") + " が録画中です";
+      bar.style.display = "block";
+    } else {
+      bar.style.display = "none";
+    }
+  }
+
+  // ── 自分の現在ステータスを全員に通知 ─────────────────────────────
+  function sendMyStatus() {
+    if (!ROOM_ID) return;
+    socket.emit("gc_status", {
+      roomId: ROOM_ID,
+      userId: MY_ID,
+      type: "mute",
+      muted: micMuted,
+    });
+    socket.emit("gc_status", {
+      roomId: ROOM_ID,
+      userId: MY_ID,
+      type: "cam",
+      camOff: camOff,
+    });
+    if (gcScreenSharing) {
+      socket.emit("gc_status", {
+        roomId: ROOM_ID,
+        userId: MY_ID,
+        type: "screen",
+        sharing: true,
+      });
+    }
+    if (gcMediaRecorder && gcMediaRecorder.state === "recording") {
+      socket.emit("gc_status", {
+        roomId: ROOM_ID,
+        userId: MY_ID,
+        type: "record",
+        recording: true,
+      });
+    }
   }
 
   // ── ビデオタイルを更新 ───────────────────────────────────────────
@@ -136,19 +224,7 @@
       tile = document.createElement("div");
       tile.className = "gc-tile";
       tile.id = "tile-" + peerId;
-      const initial = (name || "?").charAt(0).toUpperCase();
-      tile.innerHTML =
-        '<div class="gc-tile-avatar" id="av-' +
-        peerId +
-        '">' +
-        escHtml(initial) +
-        "</div>" +
-        '<video class="gc-tile-video" id="vid-' +
-        peerId +
-        '" autoplay playsinline></video>' +
-        '<div class="gc-tile-name">' +
-        escHtml(name) +
-        "</div>";
+      tile.innerHTML = makeTileHTML(peerId, name);
       grid.appendChild(tile);
     }
     const video = document.getElementById("vid-" + peerId);
@@ -248,6 +324,15 @@
 .gc-end{background:#ef4444!important;color:#fff!important}
 .gc-end:hover{background:#b91c1c!important}
 #gc-participant-count{font-size:.72rem;color:#64748b}
+.gc-tile-badges{position:absolute;top:6px;left:8px;display:flex;gap:4px;z-index:5;pointer-events:none}
+.gc-badge{font-size:.64rem;font-weight:700;padding:2px 6px;border-radius:8px;background:rgba(0,0,0,.72);display:none;align-items:center;gap:3px}
+.gc-badge.show{display:inline-flex}.gc-badge-mute{color:#fca5a5}.gc-badge-share{color:#7dd3fc}
+#gc-rec-bar{display:none;background:rgba(220,38,38,.88);color:#fff;text-align:center;padding:3px 8px;font-size:.75rem;font-weight:700;flex-shrink:0}
+#gc-toast-container{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column-reverse;align-items:center;gap:6px;z-index:9999;pointer-events:none}
+.gc-toast{background:rgba(15,23,42,.9);color:#f1f5f9;padding:7px 18px;border-radius:20px;font-size:.8rem;font-weight:600;white-space:nowrap;border-left:4px solid #22c55e;animation:gc-toast-in .25s ease;backdrop-filter:blur(6px)}
+.gc-toast.leave{border-left-color:#94a3b8}
+@keyframes gc-toast-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes gc-toast-out{from{opacity:1}to{opacity:0;transform:translateY(-6px)}}
 </style>
 <div class="gc-header">
   <div class="gc-title">
@@ -259,6 +344,7 @@
   </div>
   <span class="gc-timer" id="gc-timer">00:00</span>
 </div>
+<div id="gc-rec-bar"></div>
 <div id="gc-grid" class="gc-grid" style="grid-template-columns:1fr"></div>
 <div class="gc-controls">
   <button class="gc-ctrl" id="gc-mic" title="マイク ON/OFF" onclick="window._gcToggleMic()">
@@ -276,7 +362,8 @@
   <button class="gc-ctrl gc-end" title="退出" onclick="window._gcHangup()">
     <i class="fa-solid fa-phone-slash"></i>
   </button>
-</div>`;
+</div>
+<div id="gc-toast-container"></div>`;
   }
 
   function escHtml(s) {
@@ -287,7 +374,21 @@
       .replace(/"/g, "&quot;");
   }
 
-  // ── タイマー ─────────────────────────────────────────────────────
+  // ── 入退場トースト通知 ───────────────────────────────────────────
+  function showCallAlert(message, isJoin) {
+    const container = document.getElementById("gc-toast-container");
+    if (!container) return;
+    const toast = document.createElement("div");
+    toast.className = "gc-toast" + (isJoin ? "" : " leave");
+    toast.textContent = (isJoin ? "🟢 " : "⚪️ ") + message;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.style.animation = "gc-toast-out .3s ease forwards";
+      setTimeout(() => toast.remove(), 320);
+    }, 3000);
+  }
+
+  // ── タイマー ─────────────────────────────────────────────────
   function startTimer() {
     callStartTime = Date.now();
     timerInterval = setInterval(() => {
@@ -312,6 +413,12 @@
         ? "fa-solid fa-microphone-slash"
         : "fa-solid fa-microphone";
     }
+    socket.emit("gc_status", {
+      roomId: ROOM_ID,
+      userId: MY_ID,
+      type: "mute",
+      muted: micMuted,
+    });
   };
 
   window._gcToggleCam = function () {
@@ -329,6 +436,12 @@
     const avatar = document.getElementById("av-local");
     if (video) video.style.display = camOff ? "none" : "block";
     if (avatar) avatar.style.display = camOff ? "flex" : "none";
+    socket.emit("gc_status", {
+      roomId: ROOM_ID,
+      userId: MY_ID,
+      type: "cam",
+      camOff: camOff,
+    });
   };
 
   // ─ 画面共有 ──────────────────────────────────────────────────────
@@ -368,6 +481,12 @@
         btn.innerHTML = '<i class="fa-solid fa-desktop"></i>';
         btn.title = "画面共有";
       }
+      socket.emit("gc_status", {
+        roomId: ROOM_ID,
+        userId: MY_ID,
+        type: "screen",
+        sharing: false,
+      });
       return;
     }
 
@@ -404,6 +523,12 @@
           '<i class="fa-solid fa-desktop"></i><i class="fa-solid fa-circle" style="font-size:.4em;position:absolute;bottom:8px;right:8px"></i>';
         btn.title = "画面共有停止";
       }
+      socket.emit("gc_status", {
+        roomId: ROOM_ID,
+        userId: MY_ID,
+        type: "screen",
+        sharing: true,
+      });
 
       // ブラウザの共有停止ボタン対応
       screenTrack.addEventListener("ended", async () => {
@@ -459,6 +584,12 @@
     };
 
     gcMediaRecorder.onstop = async () => {
+      socket.emit("gc_status", {
+        roomId: ROOM_ID,
+        userId: MY_ID,
+        type: "record",
+        recording: false,
+      });
       clearInterval(recTimer);
       if (btn) {
         btn.classList.remove("recording");
@@ -497,6 +628,12 @@
     };
 
     gcMediaRecorder.start(1000);
+    socket.emit("gc_status", {
+      roomId: ROOM_ID,
+      userId: MY_ID,
+      type: "record",
+      recording: true,
+    });
     if (btn) btn.classList.add("recording");
   };
 
@@ -553,19 +690,7 @@
         const tile = document.createElement("div");
         tile.className = "gc-tile";
         tile.id = "tile-" + p.userId;
-        const initial = (p.userName || "?").charAt(0).toUpperCase();
-        tile.innerHTML =
-          '<div class="gc-tile-avatar" id="av-' +
-          p.userId +
-          '">' +
-          escHtml(initial) +
-          "</div>" +
-          '<video class="gc-tile-video" id="vid-' +
-          p.userId +
-          '" autoplay playsinline></video>' +
-          '<div class="gc-tile-name">' +
-          escHtml(p.userName || p.userId) +
-          "</div>";
+        tile.innerHTML = makeTileHTML(p.userId, p.userName || p.userId);
         grid.appendChild(tile);
       }
       updateGridLayout();
@@ -579,29 +704,20 @@
   socket.on("group_call_peer_joined", ({ userId, userName }) => {
     if (!userId || userId === MY_ID) return;
     participants[userId] = { name: userName || userId };
+    showCallAlert((userName || userId) + " が入場しました", true);
     // タイルをアバターで作成
     const grid = document.getElementById("gc-grid");
     if (grid && !document.getElementById("tile-" + userId)) {
       const tile = document.createElement("div");
       tile.className = "gc-tile";
       tile.id = "tile-" + userId;
-      const initial = (userName || "?").charAt(0).toUpperCase();
-      tile.innerHTML =
-        '<div class="gc-tile-avatar" id="av-' +
-        userId +
-        '">' +
-        escHtml(initial) +
-        "</div>" +
-        '<video class="gc-tile-video" id="vid-' +
-        userId +
-        '" autoplay playsinline></video>' +
-        '<div class="gc-tile-name">' +
-        escHtml(userName || userId) +
-        "</div>";
+      tile.innerHTML = makeTileHTML(userId, userName || userId);
       grid.appendChild(tile);
     }
     updateGridLayout();
     updateParticipantCount();
+    // 自分の現在ステータスを新規参加者に通知
+    sendMyStatus();
   });
 
   // オファー受信 → アンサーを返す
@@ -639,9 +755,35 @@
     } catch (_) {}
   });
 
+  // ステータス受信（ミュート／カメラ／画面共有／録画）
+  socket.on(
+    "gc_status",
+    ({ userId, type, muted, camOff, sharing, recording }) => {
+      if (!userId || userId === MY_ID) return;
+      if (!peerStatus[userId]) peerStatus[userId] = {};
+      const st = peerStatus[userId];
+      if (type === "mute") {
+        st.muted = muted;
+        updateTileStatus(userId);
+      } else if (type === "cam") {
+        st.camOff = camOff;
+        updateTileStatus(userId);
+      } else if (type === "screen") {
+        st.sharing = sharing;
+        updateTileStatus(userId);
+      } else if (type === "record") {
+        if (recording) _recordingPeers.add(userId);
+        else _recordingPeers.delete(userId);
+        updateRecordingBar();
+      }
+    },
+  );
+
   // メンバーが退出
   socket.on("group_call_peer_left", ({ userId }) => {
     if (!userId || userId === MY_ID) return;
+    const name = participants[userId] ? participants[userId].name : userId;
+    showCallAlert(name + " が退場しました", false);
     removePeer(userId);
   });
 
