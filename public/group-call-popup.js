@@ -27,8 +27,13 @@
   let localStream = null;
   let micMuted = false;
   let camOff = false;
+  let screenStream = null;
+  let gcScreenSharing = false;
+  let gcMediaRecorder = null;
+  let gcRecordChunks = [];
   let callStartTime = null;
   let timerInterval = null;
+  let gcHasJoined = false; // group_call_join 送信済みフラグ（再接続対応）
 
   // ── Socket.IO ────────────────────────────────────────────────────
   const socket = io({ transports: ["websocket", "polling"] });
@@ -234,6 +239,12 @@
 .gc-ctrl:hover{background:rgba(255,255,255,.15)}
 .gc-ctrl.muted{background:#7c3aed;color:#ede9fe}
 .gc-ctrl.cam-off{background:#7c3aed;color:#ede9fe}
+.gc-ctrl.sharing{background:#0ea5e9;color:#e0f2fe}
+.gc-ctrl.sharing:hover{background:#0284c7}
+.gc-ctrl.recording{background:#ef4444;color:#fff}
+.gc-ctrl.recording:hover{background:#b91c1c}
+.gc-record-dot{color:#fca5a5;animation:gc-blink 1s step-start infinite}
+@keyframes gc-blink{0%,100%{opacity:1}50%{opacity:0}}
 .gc-end{background:#ef4444!important;color:#fff!important}
 .gc-end:hover{background:#b91c1c!important}
 #gc-participant-count{font-size:.72rem;color:#64748b}
@@ -255,6 +266,12 @@
   </button>
   <button class="gc-ctrl" id="gc-cam" title="カメラ ON/OFF" onclick="window._gcToggleCam()">
     <i class="fa-solid fa-video" id="gc-cam-icon"></i>
+  </button>
+  <button class="gc-ctrl" id="gc-screen" title="画面共有" onclick="window._gcShareScreen()">
+    <i class="fa-solid fa-desktop" id="gc-screen-icon"></i>
+  </button>
+  <button class="gc-ctrl" id="gc-record" title="録画" onclick="window._gcToggleRecord(this)">
+    <i class="fa-solid fa-circle-dot"></i>
   </button>
   <button class="gc-ctrl gc-end" title="退出" onclick="window._gcHangup()">
     <i class="fa-solid fa-phone-slash"></i>
@@ -314,6 +331,175 @@
     if (avatar) avatar.style.display = camOff ? "flex" : "none";
   };
 
+  // ─ 画面共有 ──────────────────────────────────────────────────────
+  window._gcShareScreen = async function () {
+    if (gcScreenSharing) {
+      // 停止
+      if (screenStream) {
+        screenStream.getTracks().forEach((t) => t.stop());
+        screenStream = null;
+      }
+      gcScreenSharing = false;
+      // カメラトラックを全PCに戻す
+      if (localStream) {
+        const camTrack = localStream.getVideoTracks()[0];
+        if (camTrack) {
+          Object.values(pcs).forEach(async (pc) => {
+            const sender = pc
+              .getSenders()
+              .find((s) => s.track && s.track.kind === "video");
+            if (sender) await sender.replaceTrack(camTrack).catch(() => {});
+          });
+        }
+      }
+      // ローカルタイルをカメラに戻す
+      const vidLocal = document.getElementById("vid-local");
+      const avLocal = document.getElementById("av-local");
+      if (vidLocal && localStream) {
+        vidLocal.srcObject = localStream;
+        const hasVideo = localStream.getVideoTracks().some((t) => t.enabled);
+        vidLocal.style.display = hasVideo ? "block" : "none";
+        if (avLocal) avLocal.style.display = hasVideo ? "none" : "flex";
+      }
+      const btn = document.getElementById("gc-screen");
+      if (btn) {
+        btn.classList.remove("sharing");
+        btn.style.position = "";
+        btn.innerHTML = '<i class="fa-solid fa-desktop"></i>';
+        btn.title = "画面共有";
+      }
+      return;
+    }
+
+    try {
+      screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { cursor: "always" },
+        audio: false,
+      });
+      gcScreenSharing = true;
+      const screenTrack = screenStream.getVideoTracks()[0];
+
+      // 全ピア接続の映像トラックを画面共有に置き換え
+      Object.values(pcs).forEach(async (pc) => {
+        const sender = pc
+          .getSenders()
+          .find((s) => s.track && s.track.kind === "video");
+        if (sender) await sender.replaceTrack(screenTrack).catch(() => {});
+      });
+
+      // ローカルタイルを画面共有映像に切り替え
+      const vidLocal = document.getElementById("vid-local");
+      const avLocal = document.getElementById("av-local");
+      if (vidLocal) {
+        vidLocal.srcObject = new MediaStream([screenTrack]);
+        vidLocal.style.display = "block";
+        if (avLocal) avLocal.style.display = "none";
+      }
+
+      const btn = document.getElementById("gc-screen");
+      if (btn) {
+        btn.classList.add("sharing");
+        btn.style.position = "relative";
+        btn.innerHTML =
+          '<i class="fa-solid fa-desktop"></i><i class="fa-solid fa-circle" style="font-size:.4em;position:absolute;bottom:8px;right:8px"></i>';
+        btn.title = "画面共有停止";
+      }
+
+      // ブラウザの共有停止ボタン対応
+      screenTrack.addEventListener("ended", async () => {
+        if (gcScreenSharing) await window._gcShareScreen();
+      });
+    } catch (e) {
+      if (e.name !== "NotAllowedError")
+        console.error("group screen share failed", e);
+      if (screenStream) {
+        screenStream.getTracks().forEach((t) => t.stop());
+        screenStream = null;
+      }
+      gcScreenSharing = false;
+    }
+  };
+
+  // ─ 録画 ──────────────────────────────────────────────────────────
+  window._gcToggleRecord = async function (btn) {
+    if (gcMediaRecorder && gcMediaRecorder.state === "recording") {
+      gcMediaRecorder.stop();
+      return;
+    }
+
+    // 録画ストリームを組み立て（ローカル映像 + 全参加者の音声・映像）
+    const tracks = [];
+    if (localStream) localStream.getTracks().forEach((t) => tracks.push(t));
+    Object.values(streams).forEach((s) =>
+      s.getTracks().forEach((t) => tracks.push(t)),
+    );
+    if (tracks.length === 0) {
+      alert("録画できるストリームがありません");
+      return;
+    }
+
+    const recordStream = new MediaStream(tracks);
+    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+      ? "video/webm;codecs=vp9,opus"
+      : "video/webm";
+    gcRecordChunks = [];
+    gcMediaRecorder = new MediaRecorder(recordStream, { mimeType });
+
+    let recSeconds = 0;
+    const recTimer = setInterval(() => {
+      recSeconds++;
+      const m = String(Math.floor(recSeconds / 60)).padStart(2, "0");
+      const s = String(recSeconds % 60).padStart(2, "0");
+      if (btn)
+        btn.innerHTML = `<i class="fa-solid fa-stop"></i> <span class="gc-record-dot">●</span> ${m}:${s}`;
+    }, 1000);
+
+    gcMediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) gcRecordChunks.push(e.data);
+    };
+
+    gcMediaRecorder.onstop = async () => {
+      clearInterval(recTimer);
+      if (btn) {
+        btn.classList.remove("recording");
+        btn.innerHTML = '<i class="fa-solid fa-circle-dot"></i>';
+        btn.disabled = false;
+      }
+      const blob = new Blob(gcRecordChunks, { type: mimeType });
+      gcRecordChunks = [];
+      gcMediaRecorder = null;
+      if (blob.size === 0) return;
+
+      const fd = new FormData();
+      fd.append("recording", blob, `recording_${Date.now()}.webm`);
+      fd.append("duration", recSeconds);
+      if (ROOM_ID) fd.append("roomId", ROOM_ID);
+
+      try {
+        const res = await fetch("/api/chat/recording", {
+          method: "POST",
+          body: fd,
+        });
+        if (res.ok) {
+          alert("録画を保存しました");
+        } else {
+          throw new Error("upload failed");
+        }
+      } catch (_) {
+        // アップロード失敗時はローカルに保存
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `recording_${Date.now()}.webm`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    };
+
+    gcMediaRecorder.start(1000);
+    if (btn) btn.classList.add("recording");
+  };
+
   window._gcHangup = function () {
     socket.emit("group_call_leave", { roomId: ROOM_ID, userId: MY_ID });
     cleanup();
@@ -322,6 +508,16 @@
 
   function cleanup() {
     if (timerInterval) clearInterval(timerInterval);
+    // 画面共有停止
+    if (screenStream) {
+      screenStream.getTracks().forEach((t) => t.stop());
+      screenStream = null;
+    }
+    gcScreenSharing = false;
+    // 録画停止
+    if (gcMediaRecorder && gcMediaRecorder.state !== "inactive") {
+      gcMediaRecorder.stop();
+    }
     Object.keys(pcs).forEach((uid) => {
       try {
         pcs[uid].close();
@@ -336,12 +532,14 @@
   socket.on("connect", () => {
     // ユーザールームに参加
     socket.emit("join_rooms", { userId: MY_ID, roomIds: [] });
-    // グループ通話に参加
-    socket.emit("group_call_join", {
-      roomId: ROOM_ID,
-      userId: MY_ID,
-      userName: MY_NAME,
-    });
+    // 再接続時のみここで group_call_join を再送（初回は init() の getUserMedia 後に送る）
+    if (gcHasJoined && ROOM_ID) {
+      socket.emit("group_call_join", {
+        roomId: ROOM_ID,
+        userId: MY_ID,
+        userName: MY_NAME,
+      });
+    }
   });
 
   // 参加者リスト受信（接続時点での既存メンバー）→ 各自にオファー
@@ -467,8 +665,29 @@
         localStream = null;
       }
     }
+    // getUserMedia 解決後に既存 PC（競合で先に作られたもの）へトラックを追加
+    if (localStream && Object.keys(pcs).length > 0) {
+      Object.values(pcs).forEach((pc) => {
+        const existingKinds = pc
+          .getSenders()
+          .filter((s) => s.track)
+          .map((s) => s.track.kind);
+        localStream.getTracks().forEach((track) => {
+          if (!existingKinds.includes(track.kind)) {
+            pc.addTrack(track, localStream);
+          }
+        });
+      });
+    }
     addLocalTile();
     startTimer();
+    // getUserMedia の後で group_call_join を送信（localStream が確保済みの状態で参加）
+    gcHasJoined = true;
+    socket.emit("group_call_join", {
+      roomId: ROOM_ID,
+      userId: MY_ID,
+      userName: MY_NAME,
+    });
   }
 
   // ウィンドウを閉じる前にクリーンアップ

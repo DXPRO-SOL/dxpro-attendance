@@ -1703,6 +1703,7 @@
       // 全メンバーに着信通知を送信（辞退者は除外）
       socket.emit("group_call_start", {
         roomId: ROOM_ID,
+        roomName: ROOM_NAME || ROOM_ID,
         userId: MY_ID,
         userName: MY_NAME,
         excludeUserIds: Array.isArray(excludeUserIds) ? excludeUserIds : [],

@@ -248,10 +248,31 @@ io.on("connection", (socket) => {
 
   // ── グループ通話シグナリング ──────────────────────────────────────
   // 通話開始通知（ルームの全メンバーに着信を知らせる）
-  socket.on("group_call_start", (data) => {
-    // data: { roomId, userId, userName }
+  socket.on("group_call_start", async (data) => {
+    // data: { roomId, roomName, userId, userName, excludeUserIds }
     if (!data || !data.roomId) return;
+    // チャット画面のソケットルームに配信（従来どおり）
     socket.to("r_" + data.roomId).emit("group_call_incoming", data);
+    // チャット画面以外のページにもメンバー個別 u_ ルームで配信
+    try {
+      const room = await ChatRoom.findById(data.roomId)
+        .select("members")
+        .lean();
+      if (room && room.members) {
+        const callerId = String(data.userId);
+        const excludeIds = Array.isArray(data.excludeUserIds)
+          ? data.excludeUserIds.map(String)
+          : [];
+        room.members.forEach((memberId) => {
+          const mid = String(memberId);
+          if (mid === callerId) return; // 発信者自身は除外
+          if (excludeIds.includes(mid)) return; // 辞退者は除外
+          io.to("u_" + mid).emit("group_call_incoming", data);
+        });
+      }
+    } catch (e) {
+      console.error("group_call_start member lookup error:", e.message);
+    }
   });
   // 参加: 新規参加者を登録し、既存参加者リストを返す + 既存参加者に通知
   socket.on("group_call_join", (data) => {
@@ -368,7 +389,7 @@ process.on("unhandledRejection", (reason, promise) => {
 require("./config/db");
 
 // モデル
-const { User, Employee } = require("./models");
+const { User, Employee, ChatRoom } = require("./models");
 
 // ミドルウェア設定
 app.use(express.urlencoded({ extended: true }));
