@@ -330,6 +330,11 @@ io.on("connection", (socket) => {
     if (data && data.toUserId)
       socket.to("u_" + data.toUserId).emit("group_call_candidate", data);
   });
+  // グループ通話ステータスブロードキャスト（ミュート/カメラ/画面共有/録画）
+  socket.on("gc_status", (data) => {
+    if (!data || !data.roomId) return;
+    socket.to("gcall_" + data.roomId).emit("gc_status", data);
+  });
 
   // ── クラウドドライブ: リアルタイム同時編集 ───────────────────
   // docRooms[fileId] = Map<userId, { username, canEdit, socketId }>
