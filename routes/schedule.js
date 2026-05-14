@@ -375,13 +375,13 @@ router.get("/schedule", requireLogin, async (req, res) => {
             <button class="btn" style="flex:1;background:#fee2e2;color:#b91c1c;font-size:13px;" onclick="respondSchedule('\${s._id}','declined')"><i class="fa-solid fa-xmark"></i> 辞退する</button>
         </div>\` : '';
 
-        // JSON.stringify の " を &quot; にエスケープしないと onclick 属性が途中終端するため必須
-        const _callAttendeesJson = JSON.stringify((s.attendees||[]).map(a=>a.id)).replace(/"/g, '&quot;');
+        // 辞退者のIDリスト（通話通知の送信から除外するために使用）
+        const _declinedIds = (s.attendeeStatus || [])
+            .filter(x => x.status === 'declined').map(x => x.userId).join(',');
         const callHtml = s.chatRoomId ? \`
-        <button class="sch-call-btn" onclick="joinScheduleCall('\${s.createdById||''}', '\${s.chatRoomId}', \${_callAttendeesJson}, '\${MY_ID}')">
+        <button class="sch-call-btn" onclick="joinScheduleCall('\${s.chatRoomId}', '\${_declinedIds}')">
             <i class="fa-solid fa-phone"></i> 通話に参加する
-        </button>
-        <div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:5px;">参加者2名 → DM通話 / 3名以上 → グループチャット</div>\` : '';
+        </button>\` : '';
 
         document.getElementById('sch-detail-inner').innerHTML = \`
         <div class="sch-modal-header">
@@ -438,19 +438,12 @@ router.get("/schedule", requireLogin, async (req, res) => {
     };
 
     // ── 通話参加 ───────────────────────────────────────────────────
-    window.joinScheduleCall = function(createdById, chatRoomId, attendeeIds, myId) {
+    window.joinScheduleCall = function(chatRoomId, declinedIds) {
         if (!chatRoomId) { alert('この予定にはアプリ内通話が設定されていません。'); return; }
-        // 主催者IDも含めた全参加者から自分を除いた相手リストを作る
-        const allParticipants = [...new Set([createdById, ...attendeeIds].filter(Boolean))];
-        const others = allParticipants.filter(id => id !== myId);
-        if (others.length === 1) {
-            // 1:1 → DM画面へ遷移して autoCall=1 で自動発信
-            window.location.href = '/chat/dm/' + others[0] + '?autoCall=1';
-        } else {
-            // 3名以上 → グループチャットルームへ遷移
-            // TODO: グループ通話実装時は ?autoGroupCall=1 等でグループ発信トリガーを追加すること
-            window.location.href = '/chat/room/' + chatRoomId;
-        }
+        // 常にグループチャットルームへ遷移し、autoGroupCall=1 でグループ通話を自動起動
+        // declinedIds: カンマ区切りのユーザーID（辞退者）→ 通話通知から除外
+        const excludeParam = declinedIds ? '&excludeUserIds=' + encodeURIComponent(declinedIds) : '';
+        window.location.href = '/chat/room/' + chatRoomId + '?autoGroupCall=1' + excludeParam;
     };
 
     // ── 削除 ───────────────────────────────────────────────────────
