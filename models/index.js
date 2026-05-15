@@ -913,6 +913,12 @@ const ScheduleSchema = new mongoose.Schema(
       default: null,
     },
     color: { type: String, default: "#3b82f6" },
+    tags: [{ type: String }],
+    visibility: {
+      type: String,
+      enum: ["private", "public"],
+      default: "private",
+    },
     isDeleted: { type: Boolean, default: false },
   },
   { timestamps: true },
