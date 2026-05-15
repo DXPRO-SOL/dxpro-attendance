@@ -46,6 +46,27 @@ const STATUS_LABEL_JP = {
   declined: "辞退",
 };
 
+// ── iCal 日時フォーマット＆エスケープ ────────────────────────────────────
+function toICalDate(date, allDay) {
+  const d = new Date(date);
+  if (allDay) {
+    const y = d.getUTCFullYear();
+    const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(d.getUTCDate()).padStart(2, "0");
+    return "" + y + mo + dd;
+  }
+  const iso = d.toISOString().replace(/-/g, "").replace(/:/g, "");
+  return iso.slice(0, 15) + "Z";
+}
+function icalEscape(str) {
+  return String(str || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "");
+}
+
 // ═══════════════════════════════════════════════════
 // SCH-01: GET /schedule  カレンダービュー
 // ═══════════════════════════════════════════════════
@@ -244,11 +265,61 @@ router.get("/schedule", requireLogin, async (req, res) => {
                         <textarea class="form-control" id="sch-desc" rows="3" placeholder="会議の詳細、議題など"></textarea>
                     </div>
                     <div class="form-group sch-form-full">
+                        <label>タグ <span style="font-size:11.5px;color:#94a3b8;">（任意・Enterで追加）</span></label>
+                        <div id="sch-tag-chips" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:38px;padding:5px 10px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;cursor:text;" onclick="document.getElementById('sch-tag-input').focus()">
+                            <input type="text" id="sch-tag-input" maxlength="30" placeholder="例: 重要、採用面接..." style="border:none;outline:none;font-size:13px;flex:1;min-width:120px;background:transparent;" onkeydown="handleTagInput(event)">
+                        </div>
+                    </div>
+                    <div class="form-group sch-form-full">
+                        <label>公開設定</label>
+                        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                            <label id="sch-vis-private-lbl" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:7px 14px;border:2px solid #3b82f6;border-radius:6px;font-size:13px;user-select:none;">
+                                <input type="radio" name="sch-visibility" id="sch-vis-private" value="private" checked onchange="updateVisLabel()"> 🔒 非公開（参加者のみ）
+                            </label>
+                            <label id="sch-vis-public-lbl" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:7px 14px;border:2px solid #e2e8f0;border-radius:6px;font-size:13px;user-select:none;">
+                                <input type="radio" name="sch-visibility" id="sch-vis-public" value="public" onchange="updateVisLabel()"> 🌐 公開（全員に表示）
+                            </label>
+                        </div>
+                        <div style="font-size:11.5px;color:#94a3b8;margin-top:3px;">公開にすると参加者以外の全メンバーのカレンダーにも表示されます。</div>
+                    </div>
+                    <div class="form-group sch-form-full">
                         <label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer;">
                             <input type="checkbox" id="sch-use-call">
                             📞 アプリ内通話を設定する（会議用チャットルームを自動生成）
                         </label>
                         <div style="font-size:11.5px;color:#94a3b8;margin-top:3px;padding-left:22px;">ONにすると参加者と通話できる専用ルームが作成されます（参加者1名以上必要）</div>
+                    </div>
+                    <div class="form-group sch-form-full" id="sch-repeat-wrap">
+                        <label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer;">
+                            <input type="checkbox" id="sch-repeat-enable" onchange="toggleRepeat(this)">
+                            🔁 繰り返し登録
+                        </label>
+                        <div id="sch-repeat-section" style="display:none;margin-top:10px;padding:12px 14px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+                            <div style="margin-bottom:10px;">
+                                <label style="font-size:12.5px;font-weight:600;display:block;margin-bottom:5px;">繰り返しタイプ</label>
+                                <select id="sch-repeat-mode" class="form-control" onchange="onRepeatModeChange(this.value)">
+                                    <option value="daily">📅 連続登録（期間内毎日）</option>
+                                    <option value="weekly">📆 曜日指定</option>
+                                </select>
+                            </div>
+                            <div id="sch-repeat-days-row" style="display:none;margin-bottom:10px;">
+                                <label style="font-size:12.5px;font-weight:600;display:block;margin-bottom:6px;">繰り返す曜日</label>
+                                <div style="display:flex;gap:12px;flex-wrap:wrap;">
+                                    <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;"><input type="checkbox" class="sch-day-cb" value="0"> 日</label>
+                                    <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;"><input type="checkbox" class="sch-day-cb" value="1"> 月</label>
+                                    <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;"><input type="checkbox" class="sch-day-cb" value="2"> 火</label>
+                                    <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;"><input type="checkbox" class="sch-day-cb" value="3"> 水</label>
+                                    <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;"><input type="checkbox" class="sch-day-cb" value="4"> 木</label>
+                                    <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;"><input type="checkbox" class="sch-day-cb" value="5"> 金</label>
+                                    <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;"><input type="checkbox" class="sch-day-cb" value="6"> 土</label>
+                                </div>
+                            </div>
+                            <div>
+                                <label style="font-size:12.5px;font-weight:600;display:block;margin-bottom:5px;">繰り返し終了日 <span style="color:#ef4444;">*</span></label>
+                                <input type="date" id="sch-repeat-until" class="form-control">
+                            </div>
+                            <div style="font-size:11.5px;color:#94a3b8;margin-top:6px;">※ 繰り返し登録時はアプリ内通話連携は無効になります。最大100件まで登録可能。</div>
+                        </div>
                     </div>
                 </div>
                 <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px;">
@@ -292,6 +363,11 @@ router.get("/schedule", requireLogin, async (req, res) => {
                 hour12: false,
             },
             events: fetchCalendarEvents,
+            editable: true,
+            eventResizableFromStart: true,
+            eventAllow: (dropInfo, draggedEvent) => !!draggedEvent.extendedProps.canEdit,
+            eventDrop: (info) => updateScheduleTime(info.event, info.revert),
+            eventResize: (info) => updateScheduleTime(info.event, info.revert),
             eventClick: (info) => openDetail(info.event.id),
             eventDidMount: (info) => {
                 info.el.title = info.event.title;
@@ -313,6 +389,26 @@ router.get("/schedule", requireLogin, async (req, res) => {
             .then(r => r.json())
             .then(data => successCallback(data.events || []))
             .catch(() => failureCallback());
+    }
+
+    function updateScheduleTime(event, revert) {
+        const id = event.id;
+        const startAt = event.start ? event.start.toISOString() : null;
+        const endAt   = event.end   ? event.end.toISOString()   : null;
+        if (!startAt) { revert(); return; }
+        fetch('/api/schedule/' + id + '/time', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ startAt, endAt }),
+        })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) {
+                    alert(d.error || '日時の更新に失敗しました');
+                    revert();
+                }
+            })
+            .catch(() => { alert('通信エラーが発生しました'); revert(); });
     }
 
     // ── 直近予定 ───────────────────────────────────────────────────
@@ -359,6 +455,8 @@ router.get("/schedule", requireLogin, async (req, res) => {
         const endStr   = s.endAt   ? fmtDate(s.endAt)   : '';
         const typeLabelMap = { meeting:'会議', event:'イベント', other:'その他' };
         const typeBadgeCls = { meeting:'sch-type-meeting', event:'sch-type-event', other:'sch-type-other' };
+        const tagsHtml = (s.tags && s.tags.length) ? \`<div class="sch-modal-row"><div class="sch-modal-row-icon"><i class="fa-solid fa-tags" style="color:#94a3b8;"></i></div><div style="display:flex;flex-wrap:wrap;gap:5px;">\${(s.tags).map(t => '<span style="background:#eff6ff;color:#2563eb;border-radius:999px;padding:2px 10px;font-size:12px;">' + escHtml(t) + '</span>').join('')}</div></div>\` : '';
+        const visHtml = \`<div class="sch-modal-row"><div class="sch-modal-row-icon">\${s.visibility === 'public' ? '<i class="fa-solid fa-globe" style="color:#22c55e;"></i>' : '<i class="fa-solid fa-lock" style="color:#94a3b8;"></i>'}</div><div style="font-size:13px;color:#64748b;">\${s.visibility === 'public' ? '🌐 公開（全員に表示）' : '🔒 非公開（参加者のみ）'}</div></div>\`;
         const attendeesHtml = (s.attendees || []).map(a => {
             const st = (s.attendeeStatus || []).find(x => x.userId === a.id);
             const statusStr = st ? (\`\${STATUS_ICON[st.status]||'⏳'} \${STATUS_LABEL_JP[st.status]||''}\`) : '⏳ 未返答';
@@ -383,6 +481,20 @@ router.get("/schedule", requireLogin, async (req, res) => {
             <i class="fa-solid fa-phone"></i> 通話に参加する
         </button>\` : '';
 
+        const gcalUrl = buildGcalUrl(s);
+        const exportHtml = '<div class="sch-modal-row" style="margin-top:6px;">' +
+            '<div class="sch-modal-row-icon"><i class="fa-solid fa-calendar-plus" style="color:#94a3b8;"></i></div>' +
+            '<div>' +
+            '<button type="button" onclick="toggleExportSection(this)" data-eid="sch-export-' + s._id + '" class="btn" style="background:#f8fafc;border:1px solid #e2e8f0;color:#64748b;font-size:12px;padding:5px 12px;display:inline-flex;align-items:center;gap:5px;">' +
+            '<i class="fa-solid fa-calendar-arrow-up" style="font-size:11px;"></i>&nbsp;外部カレンダーに追加&nbsp;<i class="fa-solid fa-chevron-down" style="font-size:10px;"></i></button>' +
+            '<div id="sch-export-' + s._id + '" style="display:none;flex-direction:column;gap:6px;margin-top:8px;padding:10px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">' +
+            '<p style="font-size:11px;color:#94a3b8;margin:0 0 6px 0;">連携先を選んでください（意図した連携のみ実行してください）</p>' +
+            '<a href="' + gcalUrl + '" target="_blank" rel="noopener noreferrer" class="btn" style="background:#fff;border:1px solid #dadce0;color:#1a73e8;font-size:12px;padding:6px 12px;text-decoration:none;display:inline-flex;align-items:center;gap:6px;">' +
+            '<i class="fa-brands fa-google"></i> Google カレンダーに追加</a>' +
+            '<a href="/api/schedule/' + s._id + '/ical" download class="btn" style="background:#fff;border:1px solid #e2e8f0;color:#475569;font-size:12px;padding:6px 12px;text-decoration:none;display:inline-flex;align-items:center;gap:6px;">' +
+            '<i class="fa-regular fa-calendar-plus"></i> iCal / Outlook / Apple Calendar (.ics) をダウンロード</a>' +
+            '</div></div></div>';
+
         document.getElementById('sch-detail-inner').innerHTML = \`
         <div class="sch-modal-header">
             <div class="sch-modal-color-dot" style="background:\${escHtml(s.color||'#3b82f6')};"></div>
@@ -390,6 +502,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
             <div class="sch-modal-actions">
                 \${canEditFlag ? \`<button class="btn" style="background:#f1f5f9;color:#475569;padding:5px 10px;font-size:12px;" onclick="openEditForm('\${s._id}')"><i class="fa-solid fa-pen"></i></button>\` : ''}
                 \${canEditFlag ? \`<button class="btn" style="background:#fee2e2;color:#b91c1c;padding:5px 10px;font-size:12px;" onclick="deleteSchedule('\${s._id}')"><i class="fa-solid fa-trash"></i></button>\` : ''}
+                <button class="btn" style="background:#eff6ff;color:#2563eb;padding:5px 10px;font-size:12px;" title="この予定を複製" onclick="openCloneForm('\${s._id}')"><i class="fa-solid fa-copy"></i></button>
                 <button class="btn" style="background:#f1f5f9;color:#475569;padding:5px 10px;font-size:12px;" onclick="closeDetailModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
         </div>
@@ -412,6 +525,9 @@ router.get("/schedule", requireLogin, async (req, res) => {
                 </div>
             </div>\` : ''}
             \${s.description ? \`<div class="sch-modal-row"><div class="sch-modal-row-icon"><i class="fa-regular fa-file-lines"></i></div><div style="white-space:pre-wrap;">\${escHtml(s.description)}</div></div>\` : ''}
+            \${tagsHtml}
+            \${visHtml}
+            \${exportHtml}
             \${callHtml}
             \${respondHtml}
         </div>\`;
@@ -468,6 +584,10 @@ router.get("/schedule", requireLogin, async (req, res) => {
         selectedAttendees = [];
         renderAttendeeChips();
         renderAttendeeOpts('');
+        resetRepeatSection();
+        resetTagsUI();
+        setVisibility('private');
+        document.getElementById('sch-repeat-wrap').style.display = '';
         document.getElementById('sch-form-modal').classList.add('open');
     };
 
@@ -492,6 +612,10 @@ router.get("/schedule", requireLogin, async (req, res) => {
                 selectedAttendees = (s.attendees || []).map(a => ({ id: a.id, name: a.name }));
                 renderAttendeeChips();
                 renderAttendeeOpts('');
+                resetRepeatSection();
+                setTagsUI(s.tags || []);
+                setVisibility(s.visibility || 'private');
+                document.getElementById('sch-repeat-wrap').style.display = 'none'; // 編集時は繰り返し非表示
                 document.getElementById('sch-form-modal').classList.add('open');
             });
     };
@@ -500,6 +624,113 @@ router.get("/schedule", requireLogin, async (req, res) => {
         if (!e || e.target === document.getElementById('sch-form-modal')) {
             document.getElementById('sch-form-modal').classList.remove('open');
         }
+    };
+
+    // ── 繰り返し設定 ──────────────────────────────────────────────
+    function resetRepeatSection() {
+        const cb = document.getElementById('sch-repeat-enable');
+        if (cb) cb.checked = false;
+        const sec = document.getElementById('sch-repeat-section');
+        if (sec) sec.style.display = 'none';
+        const modeEl = document.getElementById('sch-repeat-mode');
+        if (modeEl) modeEl.value = 'daily';
+        const daysRow = document.getElementById('sch-repeat-days-row');
+        if (daysRow) daysRow.style.display = 'none';
+        document.querySelectorAll('.sch-day-cb').forEach(el => { el.checked = false; });
+        const untilEl = document.getElementById('sch-repeat-until');
+        if (untilEl) untilEl.value = '';
+    }
+
+    window.toggleRepeat = function(cb) {
+        document.getElementById('sch-repeat-section').style.display = cb.checked ? 'block' : 'none';
+    };
+
+    // ── タグ管理 ─────────────────────────────────────────────────
+    var scheduleTags = [];
+    function renderTagChips() {
+        var container = document.getElementById('sch-tag-chips');
+        var input = document.getElementById('sch-tag-input');
+        if (!container || !input) return;
+        Array.from(container.children).forEach(function(el) { if (el !== input) container.removeChild(el); });
+        scheduleTags.forEach(function(tag, idx) {
+            var chip = document.createElement('span');
+            chip.style.cssText = 'display:inline-flex;align-items:center;gap:3px;background:#eff6ff;color:#2563eb;border-radius:999px;padding:2px 8px;font-size:12px;white-space:nowrap;';
+            chip.textContent = tag;
+            var rm = document.createElement('button');
+            rm.type = 'button';
+            rm.setAttribute('data-tidx', String(idx));
+            rm.style.cssText = 'background:none;border:none;cursor:pointer;color:#2563eb;font-size:14px;line-height:1;padding:0 0 0 3px;';
+            rm.textContent = '\xd7';
+            rm.onclick = function() { scheduleTags.splice(parseInt(this.getAttribute('data-tidx')), 1); renderTagChips(); };
+            chip.appendChild(rm);
+            container.insertBefore(chip, input);
+        });
+    }
+    window.handleTagInput = function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            var val = (e.target.value || '').trim().replace(/^#+/, '').trim();
+            if (val && val.length <= 30 && !scheduleTags.includes(val)) { scheduleTags.push(val); renderTagChips(); }
+            e.target.value = '';
+        }
+    };
+    function resetTagsUI() {
+        scheduleTags = [];
+        var c = document.getElementById('sch-tag-chips');
+        var inp = document.getElementById('sch-tag-input');
+        if (c && inp) { Array.from(c.children).forEach(function(el){ if (el !== inp) c.removeChild(el); }); inp.value = ''; }
+    }
+    function setTagsUI(tags) { scheduleTags = Array.isArray(tags) ? tags.slice() : []; renderTagChips(); }
+    function setVisibility(val) {
+        var priv = document.getElementById('sch-vis-private');
+        var pub  = document.getElementById('sch-vis-public');
+        if (!priv || !pub) return;
+        var isPublic = val === 'public';
+        priv.checked = !isPublic;
+        pub.checked  = isPublic;
+        document.getElementById('sch-vis-private-lbl').style.borderColor = isPublic ? '#e2e8f0' : '#3b82f6';
+        document.getElementById('sch-vis-public-lbl').style.borderColor  = isPublic ? '#3b82f6' : '#e2e8f0';
+    }
+    window.updateVisLabel = function() {
+        var isPublic = document.getElementById('sch-vis-public').checked;
+        document.getElementById('sch-vis-private-lbl').style.borderColor = isPublic ? '#e2e8f0' : '#3b82f6';
+        document.getElementById('sch-vis-public-lbl').style.borderColor  = isPublic ? '#3b82f6' : '#e2e8f0';
+    };
+
+    window.onRepeatModeChange = function(val) {
+        document.getElementById('sch-repeat-days-row').style.display = val === 'weekly' ? 'flex' : 'none';
+    };
+
+    // ── 複製 ──────────────────────────────────────────────────────
+    window.openCloneForm = function(id) {
+        fetch('/api/schedule/' + id)
+            .then(r => r.json())
+            .then(data => {
+                if (!data.ok) return alert(data.error || 'エラー');
+                const s = data.schedule;
+                document.getElementById('sch-detail-modal').classList.remove('open');
+                document.getElementById('sch-form-title').textContent = 'スケジュール複製（新規作成）';
+                document.getElementById('sch-edit-id').value = '';
+                document.getElementById('sch-title').value = s.title + '（複製）';
+                document.getElementById('sch-type').value = s.type;
+                document.getElementById('sch-color').value = s.color || '#3b82f6';
+                if (s.startAt) document.getElementById('sch-start').value = toLocalDatetime(s.startAt);
+                if (s.endAt)   document.getElementById('sch-end').value   = toLocalDatetime(s.endAt);
+                document.getElementById('sch-allday').checked = !!s.allDay;
+                toggleAllDay(document.getElementById('sch-allday'));
+                document.getElementById('sch-location').value = s.location || '';
+                document.getElementById('sch-desc').value = s.description || '';
+                document.getElementById('sch-use-call').checked = false;
+                selectedAttendees = (s.attendees || []).map(a => ({ id: a.id, name: a.name }));
+                renderAttendeeChips();
+                renderAttendeeOpts('');
+                resetRepeatSection();
+                setTagsUI(s.tags || []);
+                setVisibility(s.visibility || 'private');
+                document.getElementById('sch-repeat-wrap').style.display = '';
+                document.getElementById('sch-form-modal').classList.add('open');
+            })
+            .catch(() => alert('データの取得に失敗しました'));
     };
 
     // ── フォーム送信 ───────────────────────────────────────────────
@@ -517,6 +748,22 @@ router.get("/schedule", requireLogin, async (req, res) => {
             alert('通話を設定するには参加者を1名以上選択してください。');
             return;
         }
+        // 繰り返し設定（新規登録のみ）
+        const repeatEnabled = !editId && document.getElementById('sch-repeat-enable').checked;
+        const repeatMode   = repeatEnabled ? document.getElementById('sch-repeat-mode').value : 'none';
+        const repeatUntil  = repeatEnabled ? document.getElementById('sch-repeat-until').value : null;
+        const repeatDays   = (repeatEnabled && repeatMode === 'weekly')
+            ? Array.from(document.querySelectorAll('.sch-day-cb:checked')).map(el => parseInt(el.value))
+            : [];
+        if (repeatEnabled) {
+            if (!repeatUntil) { alert('繰り返し終了日を設定してください。'); return; }
+            if (new Date(repeatUntil) < new Date(startVal.substring(0, 10))) {
+                alert('繰り返し終了日は開始日以降に設定してください。'); return;
+            }
+            if (repeatMode === 'weekly' && repeatDays.length === 0) {
+                alert('繰り返す曜日を1つ以上選択してください。'); return;
+            }
+        }
         const body = {
             title:       document.getElementById('sch-title').value.trim(),
             type:        document.getElementById('sch-type').value,
@@ -527,7 +774,12 @@ router.get("/schedule", requireLogin, async (req, res) => {
             location:    document.getElementById('sch-location').value.trim(),
             description: document.getElementById('sch-desc').value.trim(),
             attendees:   selectedAttendees.map(a => a.id),
-            useAppCall,
+            useAppCall:  useAppCall && !repeatEnabled, // 繰り返し時は通話無効
+            repeatMode,
+            repeatUntil,
+            repeatDays,
+            tags: scheduleTags.slice(),
+            visibility: document.querySelector('input[name="sch-visibility"]:checked').value,
         };
         const url    = editId ? '/api/schedule/' + editId : '/api/schedule';
         const method = editId ? 'PUT' : 'POST';
@@ -541,6 +793,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
                 document.getElementById('sch-form-modal').classList.remove('open');
                 if (calendar) calendar.refetchEvents();
                 loadUpcoming();
+                if (d.count && d.count > 1) alert(d.count + '件のスケジュールを一括登録しました。');
             })
             .catch(() => { btn.disabled = false; alert('通信エラーが発生しました'); });
     };
@@ -633,6 +886,46 @@ router.get("/schedule", requireLogin, async (req, res) => {
     function escHtml(s) {
         return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
+
+    // ── 外部カレンダーURL生成 ─────────────────────────────────────────────
+    window.toggleExportSection = function(btn) {
+        var eid = btn.getAttribute('data-eid');
+        var el = document.getElementById(eid);
+        if (!el) return;
+        var isHidden = el.style.display === 'none';
+        el.style.display = isHidden ? 'flex' : 'none';
+        el.style.flexDirection = 'column';
+        // 矢印アイコンを反転
+        var icon = btn.querySelector('.fa-chevron-down, .fa-chevron-up');
+        if (icon) {
+            icon.classList.toggle('fa-chevron-down', !isHidden);
+            icon.classList.toggle('fa-chevron-up', isHidden);
+        }
+    };
+    function buildGcalUrl(s) {
+        var startD = s.startAt ? new Date(s.startAt) : null;
+        var endD   = s.endAt   ? new Date(s.endAt)   : null;
+        if (!startD) return '#';
+        var fmtUTC = function(d) {
+            var iso = d.toISOString().replace(/-/g,'').replace(/:/g,'');
+            return iso.slice(0, 15) + 'Z';
+        };
+        var fmtDay = function(d) {
+            return d.toISOString().split('T')[0].replace(/-/g,'');
+        };
+        var dates;
+        if (s.allDay) {
+            var eMs = endD ? endD.getTime() + 86400000 : startD.getTime() + 86400000;
+            dates = fmtDay(startD) + '/' + fmtDay(new Date(eMs));
+        } else {
+            var eD = endD || new Date(startD.getTime() + 3600000);
+            dates = fmtUTC(startD) + '/' + fmtUTC(eD);
+        }
+        var params = new URLSearchParams({ action: 'TEMPLATE', text: s.title || '', dates: dates });
+        if (s.description) params.set('details', s.description);
+        if (s.location) params.set('location', s.location);
+        return 'https://calendar.google.com/calendar/render?' + params.toString();
+    }
 })();
 </script>`;
 
@@ -651,9 +944,13 @@ router.get("/api/schedule", requireLogin, async (req, res) => {
     if (start) filter.startAt = { $gte: new Date(start) };
     if (end) filter.endAt = { ...(filter.endAt || {}), $lte: new Date(end) };
 
-    // admin は全件、それ以外は自分が関係するもの
+    // admin は全件、それ以外は自分が関係するもの or 公開予定
     if (!isAdmin(req)) {
-      filter.$or = [{ createdBy: myId }, { attendees: myId }];
+      filter.$or = [
+        { createdBy: myId },
+        { attendees: myId },
+        { visibility: "public" },
+      ];
     }
 
     const schedules = await Schedule.find(filter).sort({ startAt: 1 }).lean();
@@ -666,7 +963,10 @@ router.get("/api/schedule", requireLogin, async (req, res) => {
 
     const events = schedules.map((s) => ({
       id: String(s._id),
-      title: (s.chatRoomId ? "📞 " : "") + s.title,
+      title:
+        (s.chatRoomId ? "📞 " : "") +
+        (s.visibility === "public" ? "🌐 " : "") +
+        s.title,
       start: s.startAt,
       end: s.endAt,
       allDay: s.allDay,
@@ -676,6 +976,8 @@ router.get("/api/schedule", requireLogin, async (req, res) => {
         location: s.location,
         chatRoomId: s.chatRoomId ? String(s.chatRoomId) : null,
         attendeeCount: s.attendees ? s.attendees.length : 0,
+        canEdit: isAdmin(req) || String(s.createdBy) === String(myId),
+        visibility: s.visibility || "private",
       },
     }));
 
@@ -703,6 +1005,11 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
       attendees,
       color,
       useAppCall,
+      repeatMode,
+      repeatUntil,
+      repeatDays: rawRepeatDays,
+      tags: rawTags,
+      visibility: rawVisibility,
     } = req.body;
 
     // バリデーション
@@ -730,24 +1037,27 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
         error: "アプリ内通話を設定するには参加者を1名以上選択してください",
       });
 
-    // スケジュール作成
-    const schedule = await Schedule.create({
-      title: title.trim(),
-      description: (description || "").trim(),
-      location: (location || "").trim(),
-      startAt: new Date(startAt),
-      endAt: new Date(endAt),
-      allDay: !!allDay,
-      type: safeType,
-      createdBy: myId,
-      attendees: attendeeIds,
-      attendeeStatus: attendeeIds.map((uid) => ({
-        userId: uid,
-        status: "pending",
-        updatedAt: new Date(),
-      })),
-      color: color || "#3b82f6",
-    });
+    // 繰り返し日付リスト生成
+    let datesToCreate = [
+      { startAt: new Date(startAt), endAt: new Date(endAt) },
+    ];
+    if (repeatMode && repeatMode !== "none" && repeatUntil) {
+      const safeRepeatDays = Array.isArray(rawRepeatDays)
+        ? rawRepeatDays.map(Number).filter((n) => n >= 0 && n <= 6)
+        : [];
+      datesToCreate = generateRepeatDates(
+        new Date(startAt),
+        new Date(endAt),
+        repeatMode,
+        repeatUntil,
+        safeRepeatDays,
+      );
+      if (!datesToCreate.length)
+        return res.json({
+          ok: false,
+          error: "指定した条件では登録できる日程がありません",
+        });
+    }
 
     // 作成者情報
     const creatorEmployee = await Employee.findOne({ userId: myId }).lean();
@@ -755,8 +1065,40 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
       ? creatorEmployee.name
       : req.session.username || "不明";
 
-    // グループチャットルーム生成（useAppCall=true の場合）
-    if (useAppCall && attendeeIds.length > 0) {
+    // スケジュール一括作成
+    const createdSchedules = [];
+    for (const slot of datesToCreate) {
+      const sch = await Schedule.create({
+        title: title.trim(),
+        description: (description || "").trim(),
+        location: (location || "").trim(),
+        startAt: slot.startAt,
+        endAt: slot.endAt,
+        allDay: !!allDay,
+        type: safeType,
+        createdBy: myId,
+        attendees: attendeeIds,
+        attendeeStatus: attendeeIds.map((uid) => ({
+          userId: uid,
+          status: "pending",
+          updatedAt: new Date(),
+        })),
+        color: color || "#3b82f6",
+        tags: Array.isArray(rawTags)
+          ? rawTags
+              .map((t) => String(t).trim())
+              .filter(Boolean)
+              .slice(0, 20)
+          : [],
+        visibility: rawVisibility === "public" ? "public" : "private",
+      });
+      createdSchedules.push(sch);
+    }
+    const isSingle = createdSchedules.length === 1;
+    const schedule = createdSchedules[0];
+
+    // グループチャットルーム生成（シングル登録 + useAppCall の場合のみ）
+    if (isSingle && useAppCall && attendeeIds.length > 0) {
       const allMembers = [myId, ...attendeeIds];
       const room = await ChatRoom.create({
         name: `${schedule.title} 会議室`,
@@ -769,7 +1111,6 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
       schedule.chatRoomId = room._id;
       await schedule.save();
 
-      // 参加者全員に chat_room_joined 通知
       if (global.io) {
         allMembers.forEach((uid) => {
           global.io.to("u_" + String(uid)).emit("chat_room_joined", {
@@ -782,55 +1123,82 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
     }
 
     // 参加者へ通知
-    const scheduleUrl = `${APP_URL}/schedule/${schedule._id}`;
-    const roomUrl = schedule.chatRoomId
-      ? `${APP_URL}/chat/room/${schedule.chatRoomId}`
-      : null;
-
-    for (const uid of attendeeIds) {
-      const recipientEmp = await Employee.findOne({ userId: uid }).lean();
-      const recipientName = recipientEmp ? recipientEmp.name : "";
-      const recipientUser = await User.findById(uid).lean();
-      const recipientEmail = recipientUser
-        ? recipientUser.email || (recipientEmp && recipientEmp.email)
+    if (isSingle) {
+      // シングル登録：詳細通知＋メール
+      const scheduleUrl = `${APP_URL}/schedule/${schedule._id}`;
+      const roomUrl = schedule.chatRoomId
+        ? `${APP_URL}/chat/room/${schedule.chatRoomId}`
         : null;
 
-      // アプリ内通知
-      await createNotification({
-        userId: uid,
-        type: "schedule_invite",
-        title: "会議招待",
-        body: `${creatorName} さんから「${schedule.title}」の招待が届いています`,
-        link: `/schedule?open=${schedule._id}`,
-        fromUserId: myId,
-        fromName: creatorName,
-      });
+      for (const uid of attendeeIds) {
+        const recipientEmp = await Employee.findOne({ userId: uid }).lean();
+        const recipientName = recipientEmp ? recipientEmp.name : "";
+        const recipientUser = await User.findById(uid).lean();
+        const recipientEmail = recipientUser
+          ? recipientUser.email || (recipientEmp && recipientEmp.email)
+          : null;
 
-      // メール送信
-      if (recipientEmail) {
-        const mailBody = buildInviteMail({
-          recipientName,
-          creatorName,
-          schedule,
-          scheduleUrl,
-          roomUrl,
+        await createNotification({
+          userId: uid,
+          type: "schedule_invite",
+          title: "会議招待",
+          body: `${creatorName} さんから「${schedule.title}」の招待が届いています`,
+          link: `/schedule?open=${schedule._id}`,
+          fromUserId: myId,
+          fromName: creatorName,
         });
-        await sendMail({
-          to: recipientEmail,
-          from:
-            process.env.SMTP_FROM ||
-            process.env.SMTP_USER ||
-            "no-reply@dxpro-sol.com",
-          subject: `【NOKORIスケジューラ】会議招待: ${schedule.title}`,
-          html: mailBody,
-          text: mailBody.replace(/<[^>]+>/g, ""),
-        }).catch((e) =>
-          console.error("[schedule] メール送信エラー:", e.message),
-        );
+
+        if (recipientEmail) {
+          const mailBody = buildInviteMail({
+            recipientName,
+            creatorName,
+            schedule,
+            scheduleUrl,
+            roomUrl,
+          });
+          await sendMail({
+            to: recipientEmail,
+            from:
+              process.env.SMTP_FROM ||
+              process.env.SMTP_USER ||
+              "no-reply@dxpro-sol.com",
+            subject: `【NOKORIスケジューラ】会議招待: ${schedule.title}`,
+            html: mailBody,
+            text: mailBody.replace(/<[^>]+>/g, ""),
+          }).catch((e) =>
+            console.error("[schedule] メール送信エラー:", e.message),
+          );
+        }
+      }
+    } else {
+      // 繰り返し登録：参加者1人につき1件のサマリー通知
+      for (const uid of attendeeIds) {
+        await createNotification({
+          userId: uid,
+          type: "schedule_invite",
+          title: "会議招待（繰り返し登録）",
+          body: `${creatorName} さんから「${schedule.title}」の繰り返し予定（${createdSchedules.length}件）の招待が届いています`,
+          link: `/schedule`,
+          fromUserId: myId,
+          fromName: creatorName,
+        });
+        if (global.io) {
+          global.io.to("u_" + String(uid)).emit("notification_new", {
+            type: "schedule_invite",
+            title: "会議招待（繰り返し登録）",
+            body: `「${schedule.title}」繰り返し予定（${createdSchedules.length}件）`,
+            link: "/schedule",
+            fromName: creatorName,
+          });
+        }
       }
     }
 
-    res.json({ ok: true, scheduleId: String(schedule._id) });
+    res.json({
+      ok: true,
+      scheduleId: String(schedule._id),
+      count: createdSchedules.length,
+    });
   } catch (e) {
     console.error("[schedule] POST /api/schedule エラー:", e.message);
     res.json({ ok: false, error: e.message });
@@ -857,7 +1225,8 @@ router.get("/api/schedule/:id", requireLogin, async (req, res) => {
     const isAttendee = schedule.attendees.some(
       (a) => String(a._id) === String(myId),
     );
-    if (!isAd && !isCreator && !isAttendee)
+    const isPublic = schedule.visibility === "public";
+    if (!isAd && !isCreator && !isAttendee && !isPublic)
       return res.json({ ok: false, error: "アクセス権がありません" });
 
     // 作成者名
@@ -891,6 +1260,8 @@ router.get("/api/schedule/:id", requireLogin, async (req, res) => {
         attendees: attendeesWithNames,
         attendeeStatus: schedule.attendeeStatus,
         chatRoomId: schedule.chatRoomId ? String(schedule.chatRoomId) : null,
+        tags: schedule.tags || [],
+        visibility: schedule.visibility || "private",
         canEdit: isAd || isCreator,
       },
     });
@@ -922,6 +1293,8 @@ router.put("/api/schedule/:id", requireLogin, async (req, res) => {
       type,
       attendees,
       color,
+      tags: rawTags,
+      visibility: rawVisibility,
     } = req.body;
     if (!title || !title.trim())
       return res.json({ ok: false, error: "タイトルは必須です" });
@@ -948,6 +1321,16 @@ router.put("/api/schedule/:id", requireLogin, async (req, res) => {
     schedule.allDay = !!allDay;
     schedule.type = validTypes.includes(type) ? type : schedule.type;
     schedule.color = color || schedule.color;
+    schedule.tags = Array.isArray(rawTags)
+      ? rawTags
+          .map((t) => String(t).trim())
+          .filter(Boolean)
+          .slice(0, 20)
+      : schedule.tags;
+    schedule.visibility =
+      rawVisibility === "public" || rawVisibility === "private"
+        ? rawVisibility
+        : schedule.visibility;
     schedule.attendees = newAttendeeIds;
 
     // 新規追加参加者の attendeeStatus を追加
@@ -1019,6 +1402,37 @@ router.put("/api/schedule/:id", requireLogin, async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error("[schedule] PUT /api/schedule/:id エラー:", e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// PATCH /api/schedule/:id/time — D&D による日時変更（通知なし）
+// ═══════════════════════════════════════════════════
+router.patch("/api/schedule/:id/time", requireLogin, async (req, res) => {
+  try {
+    const schedule = await Schedule.findById(req.params.id);
+    if (!schedule || schedule.isDeleted)
+      return res.json({ ok: false, error: "スケジュールが見つかりません" });
+    if (!canEdit(req, schedule))
+      return res.status(403).json({ ok: false, error: "変更権限がありません" });
+    const { startAt, endAt } = req.body;
+    if (!startAt) return res.json({ ok: false, error: "startAtは必須です" });
+    const newStart = new Date(startAt);
+    const newEnd = endAt ? new Date(endAt) : schedule.endAt;
+    if (isNaN(newStart.getTime()))
+      return res.json({ ok: false, error: "startAtの形式が不正です" });
+    if (newEnd && newEnd <= newStart)
+      return res.json({
+        ok: false,
+        error: "終了日時は開始日時より後に設定してください",
+      });
+    schedule.startAt = newStart;
+    schedule.endAt = newEnd;
+    await schedule.save();
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[schedule] PATCH /api/schedule/:id/time エラー:", e.message);
     res.json({ ok: false, error: e.message });
   }
 });
@@ -1217,6 +1631,48 @@ router.post("/api/schedule/:id/start-call", requireLogin, async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════
+// 繰り返し日付生成ヘルパー
+// ═══════════════════════════════════════════════════
+/**
+ * startAt〜repeatUntil の間に repeatMode に従って日付スロットを生成する。
+ * 最大100件まで。
+ * @param {Date} startAt
+ * @param {Date} endAt
+ * @param {'daily'|'weekly'} repeatMode
+ * @param {string} repeatUntil  YYYY-MM-DD 形式
+ * @param {number[]} repeatDays  週次の場合: [0=日,1=月,...,6=土]
+ */
+function generateRepeatDates(
+  startAt,
+  endAt,
+  repeatMode,
+  repeatUntil,
+  repeatDays,
+) {
+  const duration = endAt - startAt; // ミリ秒
+  const until = new Date(repeatUntil);
+  until.setHours(23, 59, 59, 999);
+  const results = [];
+  const cur = new Date(startAt);
+  while (cur <= until && results.length < 100) {
+    const dayOfWeek = cur.getDay();
+    if (repeatMode === "daily") {
+      results.push({
+        startAt: new Date(cur),
+        endAt: new Date(cur.getTime() + duration),
+      });
+    } else if (repeatMode === "weekly" && repeatDays.includes(dayOfWeek)) {
+      results.push({
+        startAt: new Date(cur),
+        endAt: new Date(cur.getTime() + duration),
+      });
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return results;
+}
+
+// ═══════════════════════════════════════════════════
 // メールテンプレート
 // ═══════════════════════════════════════════════════
 function buildInviteMail({
@@ -1308,6 +1764,65 @@ function buildCancelMail({ recipientName, cancellerName, schedule }) {
 <div style="padding:14px 24px;background:#f8fafc;color:#94a3b8;font-size:11px;border-top:1px solid #f1f5f9;">NOKORIシステム by DXPRO SOLUTIONS</div>
 </div></body></html>`;
 }
+
+// ═══════════════════════════════════════════════════
+// GET /api/schedule/:id/ical — iCalendar形式でエクスポート
+// ═══════════════════════════════════════════════════
+router.get("/api/schedule/:id/ical", requireLogin, async (req, res) => {
+  try {
+    const myId = String(req.session.userId);
+    const schedule = await Schedule.findById(req.params.id).lean();
+    if (!schedule || schedule.isDeleted)
+      return res.status(404).send("Not Found");
+    // アクセス権チェック（管理者・作成者・参加者のみ）
+    if (
+      !isAdmin(req) &&
+      String(schedule.createdBy) !== myId &&
+      !(schedule.attendees || []).map(String).includes(myId) &&
+      schedule.visibility !== "public"
+    ) {
+      return res.status(403).send("Forbidden");
+    }
+    const dtStamp = toICalDate(new Date());
+    const dtStart = toICalDate(schedule.startAt, schedule.allDay);
+    const dtEnd = toICalDate(schedule.endAt, schedule.allDay);
+    const uid = "schedule-" + String(schedule._id) + "@dxpro-nokori";
+    const lines = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//DXPro//NOKORIスケジューラ//JA",
+      "CALSCALE:GREGORIAN",
+      "METHOD:PUBLISH",
+      "BEGIN:VEVENT",
+      "UID:" + uid,
+      "DTSTAMP:" + dtStamp,
+      schedule.allDay ? "DTSTART;VALUE=DATE:" + dtStart : "DTSTART:" + dtStart,
+      schedule.allDay ? "DTEND;VALUE=DATE:" + dtEnd : "DTEND:" + dtEnd,
+      "SUMMARY:" + icalEscape(schedule.title),
+      schedule.description
+        ? "DESCRIPTION:" + icalEscape(schedule.description)
+        : null,
+      schedule.location ? "LOCATION:" + icalEscape(schedule.location) : null,
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ]
+      .filter(Boolean)
+      .join("\r\n");
+    const safeTitle = (schedule.title || "schedule").replace(
+      /[^\w\u3000-\u9fff\u30a0-\u30ff\u3040-\u309f\s-]/g,
+      "_",
+    );
+    res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="' + safeTitle + '.ics"',
+    );
+    res.send(lines);
+  } catch (e) {
+    console.error("[schedule] GET /api/schedule/:id/ical エラー:", e.message);
+    res.status(500).send("Error");
+  }
+});
 
 // テスト用に純粋関数を公開（本番動作には影響しない）
 router._internals = {
