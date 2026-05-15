@@ -250,6 +250,38 @@ router.get("/schedule", requireLogin, async (req, res) => {
                         </label>
                         <div style="font-size:11.5px;color:#94a3b8;margin-top:3px;padding-left:22px;">ONにすると参加者と通話できる専用ルームが作成されます（参加者1名以上必要）</div>
                     </div>
+                    <div class="form-group sch-form-full" id="sch-repeat-wrap">
+                        <label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer;">
+                            <input type="checkbox" id="sch-repeat-enable" onchange="toggleRepeat(this)">
+                            🔁 繰り返し登録
+                        </label>
+                        <div id="sch-repeat-section" style="display:none;margin-top:10px;padding:12px 14px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
+                            <div style="margin-bottom:10px;">
+                                <label style="font-size:12.5px;font-weight:600;display:block;margin-bottom:5px;">繰り返しタイプ</label>
+                                <select id="sch-repeat-mode" class="form-control" onchange="onRepeatModeChange(this.value)">
+                                    <option value="daily">📅 連続登録（期間内毎日）</option>
+                                    <option value="weekly">📆 曜日指定</option>
+                                </select>
+                            </div>
+                            <div id="sch-repeat-days-row" style="display:none;margin-bottom:10px;">
+                                <label style="font-size:12.5px;font-weight:600;display:block;margin-bottom:6px;">繰り返す曜日</label>
+                                <div style="display:flex;gap:12px;flex-wrap:wrap;">
+                                    <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;"><input type="checkbox" class="sch-day-cb" value="0"> 日</label>
+                                    <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;"><input type="checkbox" class="sch-day-cb" value="1"> 月</label>
+                                    <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;"><input type="checkbox" class="sch-day-cb" value="2"> 火</label>
+                                    <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;"><input type="checkbox" class="sch-day-cb" value="3"> 水</label>
+                                    <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;"><input type="checkbox" class="sch-day-cb" value="4"> 木</label>
+                                    <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;"><input type="checkbox" class="sch-day-cb" value="5"> 金</label>
+                                    <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;"><input type="checkbox" class="sch-day-cb" value="6"> 土</label>
+                                </div>
+                            </div>
+                            <div>
+                                <label style="font-size:12.5px;font-weight:600;display:block;margin-bottom:5px;">繰り返し終了日 <span style="color:#ef4444;">*</span></label>
+                                <input type="date" id="sch-repeat-until" class="form-control">
+                            </div>
+                            <div style="font-size:11.5px;color:#94a3b8;margin-top:6px;">※ 繰り返し登録時はアプリ内通話連携は無効になります。最大100件まで登録可能。</div>
+                        </div>
+                    </div>
                 </div>
                 <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px;">
                     <button type="button" class="btn" style="background:#f1f5f9;color:#475569;" onclick="closeFormModal()">キャンセル</button>
@@ -292,6 +324,11 @@ router.get("/schedule", requireLogin, async (req, res) => {
                 hour12: false,
             },
             events: fetchCalendarEvents,
+            editable: true,
+            eventResizableFromStart: true,
+            eventAllow: (dropInfo, draggedEvent) => !!draggedEvent.extendedProps.canEdit,
+            eventDrop: (info) => updateScheduleTime(info.event, info.revert),
+            eventResize: (info) => updateScheduleTime(info.event, info.revert),
             eventClick: (info) => openDetail(info.event.id),
             eventDidMount: (info) => {
                 info.el.title = info.event.title;
@@ -313,6 +350,26 @@ router.get("/schedule", requireLogin, async (req, res) => {
             .then(r => r.json())
             .then(data => successCallback(data.events || []))
             .catch(() => failureCallback());
+    }
+
+    function updateScheduleTime(event, revert) {
+        const id = event.id;
+        const startAt = event.start ? event.start.toISOString() : null;
+        const endAt   = event.end   ? event.end.toISOString()   : null;
+        if (!startAt) { revert(); return; }
+        fetch('/api/schedule/' + id + '/time', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ startAt, endAt }),
+        })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) {
+                    alert(d.error || '日時の更新に失敗しました');
+                    revert();
+                }
+            })
+            .catch(() => { alert('通信エラーが発生しました'); revert(); });
     }
 
     // ── 直近予定 ───────────────────────────────────────────────────
@@ -390,6 +447,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
             <div class="sch-modal-actions">
                 \${canEditFlag ? \`<button class="btn" style="background:#f1f5f9;color:#475569;padding:5px 10px;font-size:12px;" onclick="openEditForm('\${s._id}')"><i class="fa-solid fa-pen"></i></button>\` : ''}
                 \${canEditFlag ? \`<button class="btn" style="background:#fee2e2;color:#b91c1c;padding:5px 10px;font-size:12px;" onclick="deleteSchedule('\${s._id}')"><i class="fa-solid fa-trash"></i></button>\` : ''}
+                <button class="btn" style="background:#eff6ff;color:#2563eb;padding:5px 10px;font-size:12px;" title="この予定を複製" onclick="openCloneForm('\${s._id}')"><i class="fa-solid fa-copy"></i></button>
                 <button class="btn" style="background:#f1f5f9;color:#475569;padding:5px 10px;font-size:12px;" onclick="closeDetailModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
         </div>
@@ -468,6 +526,8 @@ router.get("/schedule", requireLogin, async (req, res) => {
         selectedAttendees = [];
         renderAttendeeChips();
         renderAttendeeOpts('');
+        resetRepeatSection();
+        document.getElementById('sch-repeat-wrap').style.display = '';
         document.getElementById('sch-form-modal').classList.add('open');
     };
 
@@ -492,6 +552,8 @@ router.get("/schedule", requireLogin, async (req, res) => {
                 selectedAttendees = (s.attendees || []).map(a => ({ id: a.id, name: a.name }));
                 renderAttendeeChips();
                 renderAttendeeOpts('');
+                resetRepeatSection();
+                document.getElementById('sch-repeat-wrap').style.display = 'none'; // 編集時は繰り返し非表示
                 document.getElementById('sch-form-modal').classList.add('open');
             });
     };
@@ -500,6 +562,59 @@ router.get("/schedule", requireLogin, async (req, res) => {
         if (!e || e.target === document.getElementById('sch-form-modal')) {
             document.getElementById('sch-form-modal').classList.remove('open');
         }
+    };
+
+    // ── 繰り返し設定 ──────────────────────────────────────────────
+    function resetRepeatSection() {
+        const cb = document.getElementById('sch-repeat-enable');
+        if (cb) cb.checked = false;
+        const sec = document.getElementById('sch-repeat-section');
+        if (sec) sec.style.display = 'none';
+        const modeEl = document.getElementById('sch-repeat-mode');
+        if (modeEl) modeEl.value = 'daily';
+        const daysRow = document.getElementById('sch-repeat-days-row');
+        if (daysRow) daysRow.style.display = 'none';
+        document.querySelectorAll('.sch-day-cb').forEach(el => { el.checked = false; });
+        const untilEl = document.getElementById('sch-repeat-until');
+        if (untilEl) untilEl.value = '';
+    }
+
+    window.toggleRepeat = function(cb) {
+        document.getElementById('sch-repeat-section').style.display = cb.checked ? 'block' : 'none';
+    };
+
+    window.onRepeatModeChange = function(val) {
+        document.getElementById('sch-repeat-days-row').style.display = val === 'weekly' ? 'flex' : 'none';
+    };
+
+    // ── 複製 ──────────────────────────────────────────────────────
+    window.openCloneForm = function(id) {
+        fetch('/api/schedule/' + id)
+            .then(r => r.json())
+            .then(data => {
+                if (!data.ok) return alert(data.error || 'エラー');
+                const s = data.schedule;
+                document.getElementById('sch-detail-modal').classList.remove('open');
+                document.getElementById('sch-form-title').textContent = 'スケジュール複製（新規作成）';
+                document.getElementById('sch-edit-id').value = '';
+                document.getElementById('sch-title').value = s.title + '（複製）';
+                document.getElementById('sch-type').value = s.type;
+                document.getElementById('sch-color').value = s.color || '#3b82f6';
+                if (s.startAt) document.getElementById('sch-start').value = toLocalDatetime(s.startAt);
+                if (s.endAt)   document.getElementById('sch-end').value   = toLocalDatetime(s.endAt);
+                document.getElementById('sch-allday').checked = !!s.allDay;
+                toggleAllDay(document.getElementById('sch-allday'));
+                document.getElementById('sch-location').value = s.location || '';
+                document.getElementById('sch-desc').value = s.description || '';
+                document.getElementById('sch-use-call').checked = false;
+                selectedAttendees = (s.attendees || []).map(a => ({ id: a.id, name: a.name }));
+                renderAttendeeChips();
+                renderAttendeeOpts('');
+                resetRepeatSection();
+                document.getElementById('sch-repeat-wrap').style.display = '';
+                document.getElementById('sch-form-modal').classList.add('open');
+            })
+            .catch(() => alert('データの取得に失敗しました'));
     };
 
     // ── フォーム送信 ───────────────────────────────────────────────
@@ -517,6 +632,22 @@ router.get("/schedule", requireLogin, async (req, res) => {
             alert('通話を設定するには参加者を1名以上選択してください。');
             return;
         }
+        // 繰り返し設定（新規登録のみ）
+        const repeatEnabled = !editId && document.getElementById('sch-repeat-enable').checked;
+        const repeatMode   = repeatEnabled ? document.getElementById('sch-repeat-mode').value : 'none';
+        const repeatUntil  = repeatEnabled ? document.getElementById('sch-repeat-until').value : null;
+        const repeatDays   = (repeatEnabled && repeatMode === 'weekly')
+            ? Array.from(document.querySelectorAll('.sch-day-cb:checked')).map(el => parseInt(el.value))
+            : [];
+        if (repeatEnabled) {
+            if (!repeatUntil) { alert('繰り返し終了日を設定してください。'); return; }
+            if (new Date(repeatUntil) < new Date(startVal.substring(0, 10))) {
+                alert('繰り返し終了日は開始日以降に設定してください。'); return;
+            }
+            if (repeatMode === 'weekly' && repeatDays.length === 0) {
+                alert('繰り返す曜日を1つ以上選択してください。'); return;
+            }
+        }
         const body = {
             title:       document.getElementById('sch-title').value.trim(),
             type:        document.getElementById('sch-type').value,
@@ -527,7 +658,10 @@ router.get("/schedule", requireLogin, async (req, res) => {
             location:    document.getElementById('sch-location').value.trim(),
             description: document.getElementById('sch-desc').value.trim(),
             attendees:   selectedAttendees.map(a => a.id),
-            useAppCall,
+            useAppCall:  useAppCall && !repeatEnabled, // 繰り返し時は通話無効
+            repeatMode,
+            repeatUntil,
+            repeatDays,
         };
         const url    = editId ? '/api/schedule/' + editId : '/api/schedule';
         const method = editId ? 'PUT' : 'POST';
@@ -541,6 +675,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
                 document.getElementById('sch-form-modal').classList.remove('open');
                 if (calendar) calendar.refetchEvents();
                 loadUpcoming();
+                if (d.count && d.count > 1) alert(d.count + '件のスケジュールを一括登録しました。');
             })
             .catch(() => { btn.disabled = false; alert('通信エラーが発生しました'); });
     };
@@ -676,6 +811,7 @@ router.get("/api/schedule", requireLogin, async (req, res) => {
         location: s.location,
         chatRoomId: s.chatRoomId ? String(s.chatRoomId) : null,
         attendeeCount: s.attendees ? s.attendees.length : 0,
+        canEdit: isAdmin(req) || String(s.createdBy) === String(myId),
       },
     }));
 
@@ -703,6 +839,9 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
       attendees,
       color,
       useAppCall,
+      repeatMode,
+      repeatUntil,
+      repeatDays: rawRepeatDays,
     } = req.body;
 
     // バリデーション
@@ -730,24 +869,27 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
         error: "アプリ内通話を設定するには参加者を1名以上選択してください",
       });
 
-    // スケジュール作成
-    const schedule = await Schedule.create({
-      title: title.trim(),
-      description: (description || "").trim(),
-      location: (location || "").trim(),
-      startAt: new Date(startAt),
-      endAt: new Date(endAt),
-      allDay: !!allDay,
-      type: safeType,
-      createdBy: myId,
-      attendees: attendeeIds,
-      attendeeStatus: attendeeIds.map((uid) => ({
-        userId: uid,
-        status: "pending",
-        updatedAt: new Date(),
-      })),
-      color: color || "#3b82f6",
-    });
+    // 繰り返し日付リスト生成
+    let datesToCreate = [
+      { startAt: new Date(startAt), endAt: new Date(endAt) },
+    ];
+    if (repeatMode && repeatMode !== "none" && repeatUntil) {
+      const safeRepeatDays = Array.isArray(rawRepeatDays)
+        ? rawRepeatDays.map(Number).filter((n) => n >= 0 && n <= 6)
+        : [];
+      datesToCreate = generateRepeatDates(
+        new Date(startAt),
+        new Date(endAt),
+        repeatMode,
+        repeatUntil,
+        safeRepeatDays,
+      );
+      if (!datesToCreate.length)
+        return res.json({
+          ok: false,
+          error: "指定した条件では登録できる日程がありません",
+        });
+    }
 
     // 作成者情報
     const creatorEmployee = await Employee.findOne({ userId: myId }).lean();
@@ -755,8 +897,33 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
       ? creatorEmployee.name
       : req.session.username || "不明";
 
-    // グループチャットルーム生成（useAppCall=true の場合）
-    if (useAppCall && attendeeIds.length > 0) {
+    // スケジュール一括作成
+    const createdSchedules = [];
+    for (const slot of datesToCreate) {
+      const sch = await Schedule.create({
+        title: title.trim(),
+        description: (description || "").trim(),
+        location: (location || "").trim(),
+        startAt: slot.startAt,
+        endAt: slot.endAt,
+        allDay: !!allDay,
+        type: safeType,
+        createdBy: myId,
+        attendees: attendeeIds,
+        attendeeStatus: attendeeIds.map((uid) => ({
+          userId: uid,
+          status: "pending",
+          updatedAt: new Date(),
+        })),
+        color: color || "#3b82f6",
+      });
+      createdSchedules.push(sch);
+    }
+    const isSingle = createdSchedules.length === 1;
+    const schedule = createdSchedules[0];
+
+    // グループチャットルーム生成（シングル登録 + useAppCall の場合のみ）
+    if (isSingle && useAppCall && attendeeIds.length > 0) {
       const allMembers = [myId, ...attendeeIds];
       const room = await ChatRoom.create({
         name: `${schedule.title} 会議室`,
@@ -769,7 +936,6 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
       schedule.chatRoomId = room._id;
       await schedule.save();
 
-      // 参加者全員に chat_room_joined 通知
       if (global.io) {
         allMembers.forEach((uid) => {
           global.io.to("u_" + String(uid)).emit("chat_room_joined", {
@@ -782,55 +948,82 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
     }
 
     // 参加者へ通知
-    const scheduleUrl = `${APP_URL}/schedule/${schedule._id}`;
-    const roomUrl = schedule.chatRoomId
-      ? `${APP_URL}/chat/room/${schedule.chatRoomId}`
-      : null;
-
-    for (const uid of attendeeIds) {
-      const recipientEmp = await Employee.findOne({ userId: uid }).lean();
-      const recipientName = recipientEmp ? recipientEmp.name : "";
-      const recipientUser = await User.findById(uid).lean();
-      const recipientEmail = recipientUser
-        ? recipientUser.email || (recipientEmp && recipientEmp.email)
+    if (isSingle) {
+      // シングル登録：詳細通知＋メール
+      const scheduleUrl = `${APP_URL}/schedule/${schedule._id}`;
+      const roomUrl = schedule.chatRoomId
+        ? `${APP_URL}/chat/room/${schedule.chatRoomId}`
         : null;
 
-      // アプリ内通知
-      await createNotification({
-        userId: uid,
-        type: "schedule_invite",
-        title: "会議招待",
-        body: `${creatorName} さんから「${schedule.title}」の招待が届いています`,
-        link: `/schedule?open=${schedule._id}`,
-        fromUserId: myId,
-        fromName: creatorName,
-      });
+      for (const uid of attendeeIds) {
+        const recipientEmp = await Employee.findOne({ userId: uid }).lean();
+        const recipientName = recipientEmp ? recipientEmp.name : "";
+        const recipientUser = await User.findById(uid).lean();
+        const recipientEmail = recipientUser
+          ? recipientUser.email || (recipientEmp && recipientEmp.email)
+          : null;
 
-      // メール送信
-      if (recipientEmail) {
-        const mailBody = buildInviteMail({
-          recipientName,
-          creatorName,
-          schedule,
-          scheduleUrl,
-          roomUrl,
+        await createNotification({
+          userId: uid,
+          type: "schedule_invite",
+          title: "会議招待",
+          body: `${creatorName} さんから「${schedule.title}」の招待が届いています`,
+          link: `/schedule?open=${schedule._id}`,
+          fromUserId: myId,
+          fromName: creatorName,
         });
-        await sendMail({
-          to: recipientEmail,
-          from:
-            process.env.SMTP_FROM ||
-            process.env.SMTP_USER ||
-            "no-reply@dxpro-sol.com",
-          subject: `【NOKORIスケジューラ】会議招待: ${schedule.title}`,
-          html: mailBody,
-          text: mailBody.replace(/<[^>]+>/g, ""),
-        }).catch((e) =>
-          console.error("[schedule] メール送信エラー:", e.message),
-        );
+
+        if (recipientEmail) {
+          const mailBody = buildInviteMail({
+            recipientName,
+            creatorName,
+            schedule,
+            scheduleUrl,
+            roomUrl,
+          });
+          await sendMail({
+            to: recipientEmail,
+            from:
+              process.env.SMTP_FROM ||
+              process.env.SMTP_USER ||
+              "no-reply@dxpro-sol.com",
+            subject: `【NOKORIスケジューラ】会議招待: ${schedule.title}`,
+            html: mailBody,
+            text: mailBody.replace(/<[^>]+>/g, ""),
+          }).catch((e) =>
+            console.error("[schedule] メール送信エラー:", e.message),
+          );
+        }
+      }
+    } else {
+      // 繰り返し登録：参加者1人につき1件のサマリー通知
+      for (const uid of attendeeIds) {
+        await createNotification({
+          userId: uid,
+          type: "schedule_invite",
+          title: "会議招待（繰り返し登録）",
+          body: `${creatorName} さんから「${schedule.title}」の繰り返し予定（${createdSchedules.length}件）の招待が届いています`,
+          link: `/schedule`,
+          fromUserId: myId,
+          fromName: creatorName,
+        });
+        if (global.io) {
+          global.io.to("u_" + String(uid)).emit("notification_new", {
+            type: "schedule_invite",
+            title: "会議招待（繰り返し登録）",
+            body: `「${schedule.title}」繰り返し予定（${createdSchedules.length}件）`,
+            link: "/schedule",
+            fromName: creatorName,
+          });
+        }
       }
     }
 
-    res.json({ ok: true, scheduleId: String(schedule._id) });
+    res.json({
+      ok: true,
+      scheduleId: String(schedule._id),
+      count: createdSchedules.length,
+    });
   } catch (e) {
     console.error("[schedule] POST /api/schedule エラー:", e.message);
     res.json({ ok: false, error: e.message });
@@ -1019,6 +1212,37 @@ router.put("/api/schedule/:id", requireLogin, async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error("[schedule] PUT /api/schedule/:id エラー:", e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// PATCH /api/schedule/:id/time — D&D による日時変更（通知なし）
+// ═══════════════════════════════════════════════════
+router.patch("/api/schedule/:id/time", requireLogin, async (req, res) => {
+  try {
+    const schedule = await Schedule.findById(req.params.id);
+    if (!schedule || schedule.isDeleted)
+      return res.json({ ok: false, error: "スケジュールが見つかりません" });
+    if (!canEdit(req, schedule))
+      return res.status(403).json({ ok: false, error: "変更権限がありません" });
+    const { startAt, endAt } = req.body;
+    if (!startAt) return res.json({ ok: false, error: "startAtは必須です" });
+    const newStart = new Date(startAt);
+    const newEnd = endAt ? new Date(endAt) : schedule.endAt;
+    if (isNaN(newStart.getTime()))
+      return res.json({ ok: false, error: "startAtの形式が不正です" });
+    if (newEnd && newEnd <= newStart)
+      return res.json({
+        ok: false,
+        error: "終了日時は開始日時より後に設定してください",
+      });
+    schedule.startAt = newStart;
+    schedule.endAt = newEnd;
+    await schedule.save();
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[schedule] PATCH /api/schedule/:id/time エラー:", e.message);
     res.json({ ok: false, error: e.message });
   }
 });
@@ -1215,6 +1439,48 @@ router.post("/api/schedule/:id/start-call", requireLogin, async (req, res) => {
     res.json({ ok: false, error: e.message });
   }
 });
+
+// ═══════════════════════════════════════════════════
+// 繰り返し日付生成ヘルパー
+// ═══════════════════════════════════════════════════
+/**
+ * startAt〜repeatUntil の間に repeatMode に従って日付スロットを生成する。
+ * 最大100件まで。
+ * @param {Date} startAt
+ * @param {Date} endAt
+ * @param {'daily'|'weekly'} repeatMode
+ * @param {string} repeatUntil  YYYY-MM-DD 形式
+ * @param {number[]} repeatDays  週次の場合: [0=日,1=月,...,6=土]
+ */
+function generateRepeatDates(
+  startAt,
+  endAt,
+  repeatMode,
+  repeatUntil,
+  repeatDays,
+) {
+  const duration = endAt - startAt; // ミリ秒
+  const until = new Date(repeatUntil);
+  until.setHours(23, 59, 59, 999);
+  const results = [];
+  const cur = new Date(startAt);
+  while (cur <= until && results.length < 100) {
+    const dayOfWeek = cur.getDay();
+    if (repeatMode === "daily") {
+      results.push({
+        startAt: new Date(cur),
+        endAt: new Date(cur.getTime() + duration),
+      });
+    } else if (repeatMode === "weekly" && repeatDays.includes(dayOfWeek)) {
+      results.push({
+        startAt: new Date(cur),
+        endAt: new Date(cur.getTime() + duration),
+      });
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return results;
+}
 
 // ═══════════════════════════════════════════════════
 // メールテンプレート
