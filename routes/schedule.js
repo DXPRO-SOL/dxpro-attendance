@@ -4,6 +4,7 @@
 "use strict";
 const express = require("express");
 const router = express.Router();
+const { randomUUID } = require("crypto");
 const { Schedule, ChatRoom, User, Employee } = require("../models");
 const { requireLogin } = require("../middleware/auth");
 const { buildPageShell, pageFooter } = require("../lib/renderPage");
@@ -32,7 +33,20 @@ function fmtJST(date) {
 function isAdmin(req) {
   return req.session.isAdmin || req.session.orgRole === "admin";
 }
+// JSTで「今日の0時0分0秒」をUTCのDateで返す
+function startOfTodayJST() {
+  const jstMs = Date.now() + 9 * 3600 * 1000;
+  const d = new Date(jstMs);
+  return new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) -
+      9 * 3600 * 1000,
+  );
+}
+
 function canEdit(req, schedule) {
+  // 管理者以外は昨日以前のスケジュールを編集不可
+  if (!isAdmin(req) && new Date(schedule.startAt) < startOfTodayJST())
+    return false;
   return (
     isAdmin(req) || String(schedule.createdBy) === String(req.session.userId)
   );
@@ -151,6 +165,31 @@ router.get("/schedule", requireLogin, async (req, res) => {
 .sch-type-meeting { background:#eff6ff; color:#1d4ed8; }
 .sch-type-event   { background:#f0fdf4; color:#15803d; }
 .sch-type-other   { background:#f8fafc; color:#475569; }
+/* シリーズ操作ダイアログ */
+.sch-scope-modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.50); z-index:9100; align-items:center; justify-content:center; }
+.sch-scope-modal-bg.open { display:flex; }
+.sch-scope-modal { background:#fff; border-radius:12px; width:420px; max-width:calc(100vw - 32px); box-shadow:0 16px 48px rgba(0,0,0,.22); padding:24px; }
+.sch-scope-title { font-size:15px; font-weight:700; color:#0f172a; margin-bottom:6px; }
+.sch-scope-subtitle { font-size:12.5px; color:#64748b; margin-bottom:16px; }
+.sch-scope-options { display:flex; flex-direction:column; gap:8px; margin-bottom:16px; }
+.sch-scope-option { padding:12px 14px; border:2px solid #e2e8f0; border-radius:8px; cursor:pointer; font-size:13.5px; font-weight:500; color:#334155; transition:border-color .15s, background .15s; display:flex; align-items:center; gap:10px; }
+.sch-scope-option:hover { border-color:#3b82f6; background:#f0f7ff; color:#1d4ed8; }
+.sch-scope-option .sch-scope-icon { font-size:16px; flex-shrink:0; }
+/* 複数選択モード */
+.sch-select-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border:1.5px solid #e2e8f0; border-radius:6px; background:#fff; color:#475569; font-size:13px; font-weight:600; cursor:pointer; transition:all .15s; font-family:inherit; }
+.sch-select-btn.active { border-color:#3b82f6; background:#eff6ff; color:#1d4ed8; }
+.sch-event-selected { outline:3px solid #f97316 !important; outline-offset:-2px; opacity:.85; }
+.sch-event-selected::after { content:'✓'; position:absolute; top:1px; right:3px; font-size:11px; font-weight:700; color:#fff; text-shadow:0 0 2px rgba(0,0,0,.6); }
+/* 一括操作バー */
+.sch-bulk-bar { display:none; position:fixed; bottom:0; left:0; right:0; z-index:8000; background:linear-gradient(135deg,#1e40af,#3730a3); color:#fff; padding:12px 24px; flex-direction:row; align-items:center; gap:12px; box-shadow:0 -4px 20px rgba(0,0,0,.2); }
+.sch-bulk-bar.open { display:flex; }
+.sch-bulk-count { font-size:14px; font-weight:700; flex:1; }
+.sch-bulk-actions { display:flex; gap:8px; align-items:center; }
+.sch-bulk-btn { padding:7px 16px; border-radius:6px; border:none; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; transition:opacity .15s; }
+.sch-bulk-btn:hover { opacity:.88; }
+.sch-bulk-btn-delete { background:#ef4444; color:#fff; }
+.sch-bulk-btn-color { background:#fff; color:#1e40af; }
+.sch-bulk-btn-cancel { background:rgba(255,255,255,.18); color:#fff; border:1px solid rgba(255,255,255,.3); }
 </style>`;
 
   const shell = buildPageShell({
@@ -179,11 +218,14 @@ router.get("/schedule", requireLogin, async (req, res) => {
     <!-- カレンダー列 -->
     <div class="sch-cal-col">
         <div class="card" style="padding:18px 20px;">
-            <div class="sch-legend">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+              <div class="sch-legend" style="margin-bottom:0;">
                 <div class="sch-legend-item"><div class="sch-legend-dot" style="background:#3b82f6;"></div>会議</div>
                 <div class="sch-legend-item"><div class="sch-legend-dot" style="background:#22c55e;"></div>イベント</div>
                 <div class="sch-legend-item"><div class="sch-legend-dot" style="background:#94a3b8;"></div>その他</div>
                 <div class="sch-legend-item"><span style="font-size:12px;">📞</span>&nbsp;通話連携あり</div>
+              </div>
+              <button class="sch-select-btn" id="sch-select-btn" onclick="toggleSelectMode()">☑ 複数選択</button>
             </div>
             <div id="sch-calendar"></div>
         </div>
@@ -205,6 +247,36 @@ router.get("/schedule", requireLogin, async (req, res) => {
 <!-- ────── 詳細モーダル ────── -->
 <div class="sch-modal-bg" id="sch-detail-modal" onclick="closeDetailModal(event)">
     <div class="sch-modal" id="sch-detail-inner"></div>
+</div>
+
+<!-- ────── シリーズ操作スコープ選択ダイアログ ────── -->
+<div class="sch-scope-modal-bg" id="sch-scope-modal" onclick="closeSeriesModal(event)">
+  <div class="sch-scope-modal">
+    <div class="sch-scope-title" id="sch-scope-title">繰り返し予定の操作</div>
+    <div class="sch-scope-subtitle" id="sch-scope-subtitle">どの範囲の予定に適用しますか？</div>
+    <div class="sch-scope-options">
+      <div class="sch-scope-option" onclick="confirmSeriesScope('only')">
+        <span class="sch-scope-icon">📅</span>この予定だけ
+      </div>
+      <div class="sch-scope-option" onclick="confirmSeriesScope('future')">
+        <span class="sch-scope-icon">📆</span>この予定以降の同じシリーズ
+      </div>
+      <div class="sch-scope-option" onclick="confirmSeriesScope('all')">
+        <span class="sch-scope-icon">🗓</span>同じシリーズのすべての予定
+      </div>
+    </div>
+    <button onclick="closeSeriesModal()" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:13px;cursor:pointer;font-family:inherit;">キャンセル</button>
+  </div>
+</div>
+
+<!-- ────── 一括操作バー ────── -->
+<div class="sch-bulk-bar" id="sch-bulk-bar">
+  <span class="sch-bulk-count" id="sch-bulk-count">0件選択中</span>
+  <div class="sch-bulk-actions">
+    <button class="sch-bulk-btn sch-bulk-btn-color" onclick="bulkColorChange()">🎨 色変更</button>
+    <button class="sch-bulk-btn sch-bulk-btn-delete" onclick="bulkDelete()">🗑 一括削除</button>
+    <button class="sch-bulk-btn sch-bulk-btn-cancel" onclick="toggleSelectMode(false)">選択解除</button>
+  </div>
 </div>
 
 <!-- ────── 登録・編集フォームモーダル ────── -->
@@ -338,6 +410,13 @@ router.get("/schedule", requireLogin, async (req, res) => {
     let calendar = null;
     let selectedAttendees = []; // [{id, name}]
 
+    // ── シリーズ・複数選択 用 状態変数 ─────────────────────────────
+    let currentDetailData = null;   // 最後に詳細を開いたスケジュールデータ
+    let selectMode = false;         // 複数選択モード
+    let selectedEventIds = new Set(); // 選択中のイベントID集合
+    let pendingSeriesAction = null; // 'edit' | 'delete'
+    let pendingSeriesId = null;     // シリーズ操作対象のスケジュールID
+
     // ── カレンダー初期化 ─────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', () => {
         const calEl = document.getElementById('sch-calendar');
@@ -368,9 +447,26 @@ router.get("/schedule", requireLogin, async (req, res) => {
             eventAllow: (dropInfo, draggedEvent) => !!draggedEvent.extendedProps.canEdit,
             eventDrop: (info) => updateScheduleTime(info.event, info.revert),
             eventResize: (info) => updateScheduleTime(info.event, info.revert),
-            eventClick: (info) => openDetail(info.event.id),
+            eventClick: (info) => {
+                if (selectMode) {
+                    const id = info.event.id;
+                    if (selectedEventIds.has(id)) {
+                        selectedEventIds.delete(id);
+                        info.el.classList.remove('sch-event-selected');
+                    } else {
+                        selectedEventIds.add(id);
+                        info.el.classList.add('sch-event-selected');
+                    }
+                    updateBulkBar();
+                } else {
+                    openDetail(info.event.id);
+                }
+            },
             eventDidMount: (info) => {
                 info.el.title = info.event.title;
+                if (selectMode && selectedEventIds.has(info.event.id)) {
+                    info.el.classList.add('sch-event-selected');
+                }
             },
             buttonText: { today:'今日', month:'月', week:'週', day:'日' },
         });
@@ -450,6 +546,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
     };
 
     function renderDetail(s) {
+        currentDetailData = s; // シリーズ操作のためデータを保持
         const canEditFlag = s.canEdit;
         const startStr = s.startAt ? fmtDate(s.startAt) : '';
         const endStr   = s.endAt   ? fmtDate(s.endAt)   : '';
@@ -564,6 +661,15 @@ router.get("/schedule", requireLogin, async (req, res) => {
 
     // ── 削除 ───────────────────────────────────────────────────────
     window.deleteSchedule = function(id) {
+        // シリーズスケジュールの場合はスコープ選択ダイアログを表示
+        if (currentDetailData && currentDetailData._id === id && currentDetailData.seriesId) {
+            pendingSeriesAction = 'delete';
+            pendingSeriesId = id;
+            document.getElementById('sch-scope-title').textContent = '繰り返し予定の削除';
+            document.getElementById('sch-scope-subtitle').textContent = 'どの範囲の予定を削除しますか？';
+            document.getElementById('sch-scope-modal').classList.add('open');
+            return;
+        }
         if (!confirm('このスケジュールを削除しますか？')) return;
         fetch('/api/schedule/' + id, { method: 'DELETE' })
             .then(r => r.json())
@@ -597,28 +703,46 @@ router.get("/schedule", requireLogin, async (req, res) => {
             .then(data => {
                 if (!data.ok) return alert(data.error || 'エラー');
                 const s = data.schedule;
-                document.getElementById('sch-detail-modal').classList.remove('open');
-                document.getElementById('sch-form-title').textContent = 'スケジュール編集';
-                document.getElementById('sch-edit-id').value = s._id;
-                document.getElementById('sch-title').value = s.title;
-                document.getElementById('sch-type').value = s.type;
-                document.getElementById('sch-color').value = s.color || '#3b82f6';
-                if (s.startAt) document.getElementById('sch-start').value = toLocalDatetime(s.startAt);
-                if (s.endAt)   document.getElementById('sch-end').value   = toLocalDatetime(s.endAt);
-                document.getElementById('sch-allday').checked = !!s.allDay;
-                document.getElementById('sch-location').value = s.location || '';
-                document.getElementById('sch-desc').value = s.description || '';
-                document.getElementById('sch-use-call').checked = !!s.chatRoomId;
-                selectedAttendees = (s.attendees || []).map(a => ({ id: a.id, name: a.name }));
-                renderAttendeeChips();
-                renderAttendeeOpts('');
-                resetRepeatSection();
-                setTagsUI(s.tags || []);
-                setVisibility(s.visibility || 'private');
-                document.getElementById('sch-repeat-wrap').style.display = 'none'; // 編集時は繰り返し非表示
-                document.getElementById('sch-form-modal').classList.add('open');
+                // シリーズスケジュールの場合はスコープ選択ダイアログを表示
+                if (s.seriesId) {
+                    pendingSeriesAction = 'edit';
+                    pendingSeriesId = s._id;
+                    // スコープ選択後に再度フォームを開くため、データを一時保持
+                    pendingSeriesEditData = s;
+                    document.getElementById('sch-scope-title').textContent = '繰り返し予定の編集';
+                    document.getElementById('sch-scope-subtitle').textContent = 'どの範囲の予定を編集しますか？';
+                    document.getElementById('sch-scope-modal').classList.add('open');
+                    return;
+                }
+                _fillAndOpenEditForm(s, 'only');
             });
     };
+
+    function _fillAndOpenEditForm(s, seriesScope) {
+        window._pendingSeriesScope = seriesScope;
+        document.getElementById('sch-detail-modal').classList.remove('open');
+        document.getElementById('sch-form-title').textContent = 'スケジュール編集';
+        document.getElementById('sch-edit-id').value = s._id;
+        document.getElementById('sch-title').value = s.title;
+        document.getElementById('sch-type').value = s.type;
+        document.getElementById('sch-color').value = s.color || '#3b82f6';
+        if (s.startAt) document.getElementById('sch-start').value = toLocalDatetime(s.startAt);
+        if (s.endAt)   document.getElementById('sch-end').value   = toLocalDatetime(s.endAt);
+        document.getElementById('sch-allday').checked = !!s.allDay;
+        document.getElementById('sch-location').value = s.location || '';
+        document.getElementById('sch-desc').value = s.description || '';
+        document.getElementById('sch-use-call').checked = !!s.chatRoomId;
+        selectedAttendees = (s.attendees || []).map(a => ({ id: a.id, name: a.name }));
+        renderAttendeeChips();
+        renderAttendeeOpts('');
+        resetRepeatSection();
+        setTagsUI(s.tags || []);
+        setVisibility(s.visibility || 'private');
+        document.getElementById('sch-repeat-wrap').style.display = 'none'; // 編集時は繰り返し非表示
+        document.getElementById('sch-form-modal').classList.add('open');
+    }
+
+    let pendingSeriesEditData = null; // openEditForm で取得したデータを一時保持
 
     window.closeFormModal = function(e) {
         if (!e || e.target === document.getElementById('sch-form-modal')) {
@@ -781,8 +905,14 @@ router.get("/schedule", requireLogin, async (req, res) => {
             tags: scheduleTags.slice(),
             visibility: document.querySelector('input[name="sch-visibility"]:checked').value,
         };
-        const url    = editId ? '/api/schedule/' + editId : '/api/schedule';
+        // シリーズ一括編集（'future' or 'all'）
+        const seriesScope = window._pendingSeriesScope;
+        const url    = (editId && seriesScope && seriesScope !== 'only')
+            ? '/api/schedule/' + editId + '/series-bulk'
+            : (editId ? '/api/schedule/' + editId : '/api/schedule');
         const method = editId ? 'PUT' : 'POST';
+        if (seriesScope && seriesScope !== 'only') body.scope = seriesScope;
+        window._pendingSeriesScope = null;
         const btn = document.getElementById('sch-submit-btn');
         btn.disabled = true;
         fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -926,6 +1056,129 @@ router.get("/schedule", requireLogin, async (req, res) => {
         if (s.location) params.set('location', s.location);
         return 'https://calendar.google.com/calendar/render?' + params.toString();
     }
+
+    // ── 複数選択モード ───────────────────────────────────────────────
+    window.toggleSelectMode = function(forceOff) {
+        if (forceOff === false || selectMode) {
+            selectMode = false;
+            selectedEventIds.clear();
+        } else {
+            selectMode = true;
+        }
+        const btn = document.getElementById('sch-select-btn');
+        if (btn) btn.classList.toggle('active', selectMode);
+        if (!selectMode) {
+            document.querySelectorAll('.sch-event-selected').forEach(el => el.classList.remove('sch-event-selected'));
+        }
+        updateBulkBar();
+    };
+
+    function updateBulkBar() {
+        const bar = document.getElementById('sch-bulk-bar');
+        const cnt = document.getElementById('sch-bulk-count');
+        if (!bar) return;
+        if (selectMode && selectedEventIds.size > 0) {
+            bar.classList.add('open');
+            cnt.textContent = selectedEventIds.size + '件選択中';
+        } else {
+            bar.classList.remove('open');
+        }
+    }
+
+    // ── シリーズ スコープ選択ダイアログ ──────────────────────────────
+    window.closeSeriesModal = function(e) {
+        if (!e || e.target === document.getElementById('sch-scope-modal')) {
+            document.getElementById('sch-scope-modal').classList.remove('open');
+            pendingSeriesAction = null;
+            pendingSeriesId = null;
+            pendingSeriesEditData = null;
+        }
+    };
+
+    window.confirmSeriesScope = function(scope) {
+        document.getElementById('sch-scope-modal').classList.remove('open');
+        const action = pendingSeriesAction;
+        const id = pendingSeriesId;
+        pendingSeriesAction = null;
+        pendingSeriesId = null;
+        if (action === 'edit') {
+            const s = pendingSeriesEditData;
+            pendingSeriesEditData = null;
+            if (scope === 'only') {
+                _fillAndOpenEditForm(s, 'only');
+            } else {
+                _fillAndOpenEditForm(s, scope); // 'future' or 'all' — フォーム送信時に series-bulk API を使用
+            }
+        } else if (action === 'delete') {
+            if (scope === 'only') {
+                if (!confirm('この予定を削除しますか？')) return;
+                fetch('/api/schedule/' + id, { method: 'DELETE' })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (!d.ok) return alert(d.error || 'エラー');
+                        document.getElementById('sch-detail-modal').classList.remove('open');
+                        if (calendar) calendar.refetchEvents();
+                        loadUpcoming();
+                    });
+            } else {
+                const label = scope === 'future' ? 'この予定以降の同じシリーズ' : '同じシリーズのすべての予定';
+                if (!confirm(label + 'を削除しますか？')) return;
+                fetch('/api/schedule/' + id + '/series-bulk', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scope }),
+                })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (!d.ok) return alert(d.error || 'エラー');
+                        document.getElementById('sch-detail-modal').classList.remove('open');
+                        if (calendar) calendar.refetchEvents();
+                        loadUpcoming();
+                        alert(d.count + '件のスケジュールを削除しました。');
+                    });
+            }
+        }
+    };
+
+    // ── 複数選択 一括操作 ────────────────────────────────────────────
+    window.bulkDelete = function() {
+        const ids = Array.from(selectedEventIds);
+        if (ids.length === 0) return;
+        if (!confirm(ids.length + '件のスケジュールを削除しますか？')) return;
+        fetch('/api/schedule/bulk', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids }),
+        })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) return alert(d.error || '削除に失敗しました');
+                toggleSelectMode(false);
+                if (calendar) calendar.refetchEvents();
+                loadUpcoming();
+                alert(d.count + '件のスケジュールを削除しました。');
+            });
+    };
+
+    window.bulkColorChange = function() {
+        const ids = Array.from(selectedEventIds);
+        if (ids.length === 0) return;
+        const color = prompt('新しい色を16進数で入力してください（例: #ef4444）');
+        if (!color) return;
+        if (!/^#[0-9a-fA-F]{6}$/.test(color)) { alert('カラーコードの形式が正しくありません（例: #ef4444）'); return; }
+        fetch('/api/schedule/bulk/color', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids, color }),
+        })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) return alert(d.error || '色変更に失敗しました');
+                toggleSelectMode(false);
+                if (calendar) calendar.refetchEvents();
+                alert(d.count + '件のスケジュールの色を変更しました。');
+            });
+    };
 })();
 </script>`;
 
@@ -976,8 +1229,12 @@ router.get("/api/schedule", requireLogin, async (req, res) => {
         location: s.location,
         chatRoomId: s.chatRoomId ? String(s.chatRoomId) : null,
         attendeeCount: s.attendees ? s.attendees.length : 0,
-        canEdit: isAdmin(req) || String(s.createdBy) === String(myId),
+        canEdit: isAdmin(req)
+          ? true
+          : String(s.createdBy) === String(myId) &&
+            new Date(s.startAt) >= startOfTodayJST(),
         visibility: s.visibility || "private",
+        seriesId: s.seriesId || null,
       },
     }));
 
@@ -1066,6 +1323,8 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
       : req.session.username || "不明";
 
     // スケジュール一括作成
+    const isRepeat = datesToCreate.length > 1;
+    const seriesId = isRepeat ? randomUUID() : null;
     const createdSchedules = [];
     for (const slot of datesToCreate) {
       const sch = await Schedule.create({
@@ -1091,6 +1350,7 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
               .slice(0, 20)
           : [],
         visibility: rawVisibility === "public" ? "public" : "private",
+        seriesId,
       });
       createdSchedules.push(sch);
     }
@@ -1262,7 +1522,10 @@ router.get("/api/schedule/:id", requireLogin, async (req, res) => {
         chatRoomId: schedule.chatRoomId ? String(schedule.chatRoomId) : null,
         tags: schedule.tags || [],
         visibility: schedule.visibility || "private",
-        canEdit: isAd || isCreator,
+        seriesId: schedule.seriesId || null,
+        canEdit: isAd
+          ? true
+          : isCreator && new Date(schedule.startAt) >= startOfTodayJST(),
       },
     });
   } catch (e) {
@@ -1407,6 +1670,49 @@ router.put("/api/schedule/:id", requireLogin, async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════
+// PATCH /api/schedule/bulk/color — 複数選択一括色変更
+// ═══════════════════════════════════════════════════
+router.patch("/api/schedule/bulk/color", requireLogin, async (req, res) => {
+  try {
+    const { ids, color } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0)
+      return res.json({ ok: false, error: "対象のIDが指定されていません" });
+    if (ids.length > 100)
+      return res.json({
+        ok: false,
+        error: "一度に変更できるのは100件までです",
+      });
+    if (!color || !/^#[0-9a-fA-F]{6}$/.test(color))
+      return res.json({ ok: false, error: "カラーコードの形式が不正です" });
+
+    const schedules = await Schedule.find({
+      _id: { $in: ids },
+      isDeleted: false,
+    });
+    for (const sch of schedules) {
+      if (!canEdit(req, sch))
+        return res
+          .status(403)
+          .json({
+            ok: false,
+            error: "一部のスケジュールに編集権限がありません",
+          });
+    }
+    await Schedule.updateMany(
+      { _id: { $in: ids }, isDeleted: false },
+      { $set: { color } },
+    );
+    res.json({ ok: true, count: schedules.length });
+  } catch (e) {
+    console.error(
+      "[schedule] PATCH /api/schedule/bulk/color エラー:",
+      e.message,
+    );
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
 // PATCH /api/schedule/:id/time — D&D による日時変更（通知なし）
 // ═══════════════════════════════════════════════════
 router.patch("/api/schedule/:id/time", requireLogin, async (req, res) => {
@@ -1433,6 +1739,253 @@ router.patch("/api/schedule/:id/time", requireLogin, async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error("[schedule] PATCH /api/schedule/:id/time エラー:", e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// PUT /api/schedule/:id/series-bulk — シリーズ一括編集
+// scope: 'future' (この予定以降) | 'all' (すべて)
+// ═══════════════════════════════════════════════════
+router.put("/api/schedule/:id/series-bulk", requireLogin, async (req, res) => {
+  try {
+    const myId = req.session.userId;
+    const refSchedule = await Schedule.findById(req.params.id);
+    if (!refSchedule || refSchedule.isDeleted)
+      return res.json({ ok: false, error: "スケジュールが見つかりません" });
+    if (!canEdit(req, refSchedule))
+      return res.status(403).json({ ok: false, error: "編集権限がありません" });
+    if (!refSchedule.seriesId)
+      return res.json({
+        ok: false,
+        error: "このスケジュールはシリーズではありません",
+      });
+
+    const {
+      scope,
+      title,
+      description,
+      location,
+      startAt,
+      endAt,
+      allDay,
+      type,
+      attendees,
+      color,
+      tags: rawTags,
+      visibility: rawVisibility,
+    } = req.body;
+    if (!["future", "all"].includes(scope))
+      return res.json({
+        ok: false,
+        error: "scopeは future または all を指定してください",
+      });
+    if (!title || !title.trim())
+      return res.json({ ok: false, error: "タイトルは必須です" });
+
+    const newStart = new Date(startAt);
+    const newEnd = new Date(endAt);
+    if (isNaN(newStart.getTime()) || isNaN(newEnd.getTime()))
+      return res.json({ ok: false, error: "日時の形式が不正です" });
+    if (newEnd <= newStart)
+      return res.json({
+        ok: false,
+        error: "終了日時は開始日時より後に設定してください",
+      });
+
+    const duration = newEnd - newStart; // ミリ秒
+    // 新しい時刻（UTC）: 各イベントの日付は保持し、時分のみ更新
+    const newStartHour = newStart.getUTCHours();
+    const newStartMin = newStart.getUTCMinutes();
+    const newStartSec = newStart.getUTCSeconds();
+
+    const validTypes = ["meeting", "event", "other"];
+    const safeType = validTypes.includes(type) ? type : refSchedule.type;
+    const safeTags = Array.isArray(rawTags)
+      ? rawTags
+          .map((t) => String(t).trim())
+          .filter(Boolean)
+          .slice(0, 20)
+      : [];
+    const newAttendeeIds = Array.isArray(attendees)
+      ? attendees.slice(0, 50).map(String)
+      : [];
+
+    // 対象スケジュールを絞り込む
+    const filter = { seriesId: refSchedule.seriesId, isDeleted: false };
+    if (scope === "future") {
+      filter.startAt = { $gte: refSchedule.startAt };
+    }
+    const targets = await Schedule.find(filter);
+
+    // 権限チェック（作成者 or admin のみ）
+    for (const t of targets) {
+      if (!canEdit(req, t))
+        return res
+          .status(403)
+          .json({
+            ok: false,
+            error: "一部のスケジュールに編集権限がありません",
+          });
+    }
+
+    // 一括更新
+    for (const sch of targets) {
+      // 日付は保持、時刻のみ新しい値に更新
+      const origDate = new Date(sch.startAt);
+      const newSchStart = new Date(
+        Date.UTC(
+          origDate.getUTCFullYear(),
+          origDate.getUTCMonth(),
+          origDate.getUTCDate(),
+          newStartHour,
+          newStartMin,
+          newStartSec,
+        ),
+      );
+      const newSchEnd = new Date(newSchStart.getTime() + duration);
+
+      const prevAttendees = sch.attendees.map((a) => String(a));
+      const addedAttendees = newAttendeeIds.filter(
+        (id) => !prevAttendees.includes(id),
+      );
+
+      sch.title = title.trim();
+      sch.description = (description || "").trim();
+      sch.location = (location || "").trim();
+      sch.startAt = newSchStart;
+      sch.endAt = newSchEnd;
+      sch.allDay = !!allDay;
+      sch.type = safeType;
+      sch.color = color || sch.color;
+      sch.tags = safeTags;
+      sch.visibility =
+        rawVisibility === "public" || rawVisibility === "private"
+          ? rawVisibility
+          : sch.visibility;
+      sch.attendees = newAttendeeIds;
+      for (const uid of addedAttendees) {
+        const exists = sch.attendeeStatus.some((s) => String(s.userId) === uid);
+        if (!exists)
+          sch.attendeeStatus.push({
+            userId: uid,
+            status: "pending",
+            updatedAt: new Date(),
+          });
+      }
+      await sch.save();
+    }
+
+    res.json({ ok: true, count: targets.length });
+  } catch (e) {
+    console.error(
+      "[schedule] PUT /api/schedule/:id/series-bulk エラー:",
+      e.message,
+    );
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// DELETE /api/schedule/:id/series-bulk — シリーズ一括削除
+// scope: 'future' | 'all'
+// ═══════════════════════════════════════════════════
+router.delete(
+  "/api/schedule/:id/series-bulk",
+  requireLogin,
+  async (req, res) => {
+    try {
+      const myId = req.session.userId;
+      const refSchedule = await Schedule.findById(req.params.id);
+      if (!refSchedule || refSchedule.isDeleted)
+        return res.json({ ok: false, error: "スケジュールが見つかりません" });
+      if (!canEdit(req, refSchedule))
+        return res
+          .status(403)
+          .json({ ok: false, error: "削除権限がありません" });
+      if (!refSchedule.seriesId)
+        return res.json({
+          ok: false,
+          error: "このスケジュールはシリーズではありません",
+        });
+
+      const { scope } = req.body;
+      if (!["future", "all"].includes(scope))
+        return res.json({
+          ok: false,
+          error: "scopeは future または all を指定してください",
+        });
+
+      const filter = { seriesId: refSchedule.seriesId, isDeleted: false };
+      if (scope === "future") {
+        filter.startAt = { $gte: refSchedule.startAt };
+      }
+      const targets = await Schedule.find(filter);
+      for (const t of targets) {
+        if (!canEdit(req, t))
+          return res
+            .status(403)
+            .json({
+              ok: false,
+              error: "一部のスケジュールに削除権限がありません",
+            });
+      }
+      await Schedule.updateMany(
+        {
+          seriesId: refSchedule.seriesId,
+          isDeleted: false,
+          ...(scope === "future"
+            ? { startAt: { $gte: refSchedule.startAt } }
+            : {}),
+        },
+        { $set: { isDeleted: true } },
+      );
+      res.json({ ok: true, count: targets.length });
+    } catch (e) {
+      console.error(
+        "[schedule] DELETE /api/schedule/:id/series-bulk エラー:",
+        e.message,
+      );
+      res.json({ ok: false, error: e.message });
+    }
+  },
+);
+
+// ═══════════════════════════════════════════════════
+// DELETE /api/schedule/bulk — 複数選択一括削除
+// ═══════════════════════════════════════════════════
+router.delete("/api/schedule/bulk", requireLogin, async (req, res) => {
+  try {
+    const myId = req.session.userId;
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0)
+      return res.json({ ok: false, error: "削除対象のIDが指定されていません" });
+    if (ids.length > 100)
+      return res.json({
+        ok: false,
+        error: "一度に削除できるのは100件までです",
+      });
+
+    const schedules = await Schedule.find({
+      _id: { $in: ids },
+      isDeleted: false,
+    });
+    for (const sch of schedules) {
+      if (!canEdit(req, sch))
+        return res
+          .status(403)
+          .json({
+            ok: false,
+            error: "一部のスケジュールに削除権限がありません",
+          });
+    }
+    await Schedule.updateMany(
+      { _id: { $in: ids }, isDeleted: false },
+      { $set: { isDeleted: true } },
+    );
+    res.json({ ok: true, count: schedules.length });
+  } catch (e) {
+    console.error("[schedule] DELETE /api/schedule/bulk エラー:", e.message);
     res.json({ ok: false, error: e.message });
   }
 });

@@ -920,12 +920,15 @@ const ScheduleSchema = new mongoose.Schema(
       default: "private",
     },
     isDeleted: { type: Boolean, default: false },
+    reminderSent: { type: Boolean, default: false }, // 5分前リマインダー送信済みフラグ
+    seriesId: { type: String, default: null }, // 繰り返しシリーズID
   },
   { timestamps: true },
 );
 ScheduleSchema.index({ startAt: 1, endAt: 1 });
 ScheduleSchema.index({ createdBy: 1 });
 ScheduleSchema.index({ attendees: 1 });
+ScheduleSchema.index({ seriesId: 1 });
 const Schedule = mongoose.model("Schedule", ScheduleSchema);
 
 // ─── ユーザー別タスク期限日ローカル上書き ───────────────────────────────────
