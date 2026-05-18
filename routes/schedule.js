@@ -10,6 +10,31 @@ const { requireLogin } = require("../middleware/auth");
 const { buildPageShell, pageFooter } = require("../lib/renderPage");
 const { sendMail } = require("../config/mailer");
 const { createNotification } = require("./notifications");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+
+const schedUploadDir = path.join(__dirname, "..", "uploads", "schedule");
+if (!fs.existsSync(schedUploadDir))
+  fs.mkdirSync(schedUploadDir, { recursive: true });
+
+const schedUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, schedUploadDir),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname) || "";
+      cb(null, Date.now() + "-" + Math.round(Math.random() * 1e9) + ext);
+    },
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).slice(1).toLowerCase();
+    cb(
+      null,
+      /^(pdf|docx?|xlsx?|pptx?|csv|txt|zip|png|jpe?g|gif|webp)$/.test(ext),
+    );
+  },
+});
 
 const APP_URL =
   process.env.APP_URL ||
@@ -294,6 +319,21 @@ router.get("/schedule", requireLogin, async (req, res) => {
 .sch-import-table td { padding:6px 10px; border-bottom:1px solid #f1f5f9; color:#334155; }
 .sch-import-err-box { background:#fef2f2; border:1px solid #fca5a5; border-radius:6px; padding:10px 14px; margin-bottom:10px; font-size:12.5px; color:#b91c1c; max-height:140px; overflow-y:auto; }
 .sch-import-err-box p { margin:2px 0; }
+/* 添付資料 */
+.sch-att-item { display:flex; align-items:center; gap:8px; padding:6px 2px; border-bottom:1px solid #f1f5f9; }
+.sch-att-item:last-child { border-bottom:none; }
+.sch-att-icon { font-size:15px; flex-shrink:0; width:18px; text-align:center; }
+.sch-att-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; color:#2563eb; text-decoration:none; }
+.sch-att-name:hover { text-decoration:underline; }
+.sch-att-size { font-size:11px; color:#94a3b8; flex-shrink:0; }
+.sch-att-del { padding:2px 7px; border:none; background:#fee2e2; color:#b91c1c; border-radius:4px; font-size:11px; cursor:pointer; flex-shrink:0; line-height:1.4; }
+.sch-att-actions { display:flex; gap:7px; margin-top:8px; flex-wrap:wrap; }
+.sch-att-add-btn { padding:5px 12px; background:#f1f5f9; border:1.5px solid #e2e8f0; color:#475569; border-radius:6px; font-size:12px; cursor:pointer; font-family:inherit; display:inline-flex; align-items:center; gap:5px; transition:background .12s; }
+.sch-att-add-btn:hover { background:#e2e8f0; }
+.sch-att-url-form { background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px; margin-top:8px; }
+.sch-att-url-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+.sch-att-url-input { flex:1; min-width:100px; padding:5px 8px; border:1.5px solid #e2e8f0; border-radius:5px; font-size:12px; font-family:inherit; }
+.sch-att-url-submit { padding:5px 14px; background:#3b82f6; color:#fff; border:none; border-radius:5px; font-size:12px; cursor:pointer; font-family:inherit; }
 </style>`;
 
   const shell = buildPageShell({
@@ -612,6 +652,25 @@ router.get("/schedule", requireLogin, async (req, res) => {
                         </div>
                     </div>
                 </div>
+                <div class="form-group sch-form-full" id="sch-form-att-wrap" style="display:none;">
+                    <label><i class="fa-solid fa-paperclip" style="color:#94a3b8;"></i> 添付資料</label>
+                    <div id="sch-form-att-list" style="margin-bottom:6px;min-height:28px;"></div>
+                    <div class="sch-att-actions">
+                        <button type="button" class="sch-att-add-btn" onclick="openEditAddUrl()"><i class="fa-solid fa-link"></i> URLを追加</button>
+                        <label class="sch-att-add-btn"><i class="fa-solid fa-paperclip"></i> ファイルを添付
+                            <input type="file" multiple hidden id="sch-form-att-file-input" onchange="uploadEditFiles(this)" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.zip,.png,.jpg,.jpeg,.gif,.webp">
+                        </label>
+                    </div>
+                    <div id="sch-form-att-url-form" class="sch-att-url-form" style="display:none;margin-top:8px;">
+                        <div style="font-size:12px;color:#475569;font-weight:600;margin-bottom:6px;"><i class="fa-solid fa-link" style="color:#3b82f6;"></i> URLを追加</div>
+                        <div class="sch-att-url-row">
+                            <input type="text" id="sch-form-att-url-name" class="sch-att-url-input" placeholder="表示名（省略可）" style="max-width:160px;">
+                            <input type="url" id="sch-form-att-url-val" class="sch-att-url-input" placeholder="https://...">
+                            <button type="button" class="sch-att-url-submit" onclick="submitEditUrl()">追加</button>
+                            <button type="button" class="sch-att-add-btn" onclick="closeEditAddUrl()">×</button>
+                        </div>
+                    </div>
+                </div>
                 <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px;">
                     <button type="button" class="btn" style="background:#f1f5f9;color:#475569;" onclick="closeFormModal()">キャンセル</button>
                     <button type="submit" class="btn btn-primary" id="sch-submit-btn"><i class="fa-solid fa-check"></i> 保存</button>
@@ -634,6 +693,191 @@ router.get("/schedule", requireLogin, async (req, res) => {
     let selectedEventIds = new Set(); // 選択中のイベントID集合
     let pendingSeriesAction = null; // 'edit' | 'delete'
     let pendingSeriesId = null;     // シリーズ操作対象のスケジュールID
+
+    // ── 添付資料 ユーティリティ ────────────────────────────────────────────
+    function getFileIcon(s2) {
+        var t = (s2 || '').toLowerCase();
+        if (t.indexOf('pdf') !== -1) return '<i class="fa-regular fa-file-pdf" style="color:#ef4444;"></i>';
+        if (t.indexOf('xl') !== -1 || t.indexOf('excel') !== -1) return '<i class="fa-regular fa-file-excel" style="color:#22c55e;"></i>';
+        if (t.indexOf('doc') !== -1 || t.indexOf('word') !== -1) return '<i class="fa-regular fa-file-word" style="color:#3b82f6;"></i>';
+        if (t.indexOf('ppt') !== -1 || t.indexOf('presentation') !== -1) return '<i class="fa-regular fa-file-powerpoint" style="color:#f97316;"></i>';
+        if (t.indexOf('zip') !== -1 || t.indexOf('rar') !== -1) return '<i class="fa-regular fa-file-zipper" style="color:#a855f7;"></i>';
+        if (t.indexOf('png') !== -1 || t.indexOf('jpg') !== -1 || t.indexOf('jpeg') !== -1 || t.indexOf('gif') !== -1 || t.indexOf('webp') !== -1 || t.indexOf('image') !== -1) return '<i class="fa-regular fa-file-image" style="color:#06b6d4;"></i>';
+        return '<i class="fa-regular fa-file" style="color:#94a3b8;"></i>';
+    }
+    function getLinkIcon(url) {
+        if (url.indexOf('zoom.us') !== -1) return '🎥';
+        if (url.indexOf('meet.google.com') !== -1) return '🟩';
+        if (url.indexOf('drive.google.com') !== -1 || url.indexOf('docs.google.com') !== -1) return '📁';
+        if (url.indexOf('teams.microsoft') !== -1) return '🟣';
+        return '🔗';
+    }
+    function fmtSize(b) {
+        if (!b) return '';
+        if (b < 1024) return b + ' B';
+        if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+        return (b / 1048576).toFixed(1) + ' MB';
+    }
+    // ── 添付資料 操作 ──────────────────────────────────────────────────
+    window.deleteAttachment = function(schedId, attId) {
+        if (!confirm('この添付を削除しますか？')) return;
+        fetch('/api/schedule/' + schedId + '/attachments/' + attId, { method: 'DELETE' })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) return alert(d.error || '削除に失敗しました');
+                openDetail(schedId);
+            });
+    };
+    window.openAddUrl = function(schedId) {
+        var el = document.getElementById('sch-att-url-form-' + schedId);
+        if (el) el.style.display = '';
+    };
+    window.closeAddUrl = function(schedId) {
+        var el = document.getElementById('sch-att-url-form-' + schedId);
+        if (el) el.style.display = 'none';
+    };
+    window.submitAddUrl = function(schedId) {
+        var nameEl = document.getElementById('sch-att-url-name-' + schedId);
+        var urlEl  = document.getElementById('sch-att-url-val-' + schedId);
+        var name = nameEl ? nameEl.value.trim() : '';
+        var url  = urlEl  ? urlEl.value.trim()  : '';
+        if (!url) { alert('URLを入力してください'); return; }
+        if (url.indexOf('http') !== 0) { alert('http:// または https:// で始まるURLを入力してください'); return; }
+        if (!name) name = url;
+        fetch('/api/schedule/' + schedId + '/attachments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ attachType: 'url', name: name, url: url }),
+        }).then(r => r.json()).then(d => {
+            if (!d.ok) return alert(d.error || '追加に失敗しました');
+            openDetail(schedId);
+        });
+    };
+    window.uploadAttachFiles = function(schedId, input) {
+        if (!input.files || !input.files.length) return;
+        var form = new FormData();
+        Array.from(input.files).forEach(function(f) { form.append('files', f); });
+        fetch('/api/schedule/' + schedId + '/attachments/file', { method: 'POST', body: form })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) return alert(d.error || 'アップロードに失敗しました');
+                openDetail(schedId);
+            });
+    };
+
+    // ── 編集フォーム内 添付資料 ────────────────────────────────────────
+    var _editFormSchedId = '';
+    var _pendingAttUrls  = []; // 新規作成時にキューする URL [{name,url}]
+    var _pendingAttFiles = []; // 新規作成時にキューする File[]
+    function renderNewFormAtts() {
+        var list = document.getElementById('sch-form-att-list');
+        if (!list) return;
+        var items = [];
+        _pendingAttUrls.forEach(function(u, i) {
+            var icon = getLinkIcon(u.url);
+            items.push('<div class="sch-att-item"><span class="sch-att-icon">' + icon + '</span><span class="sch-att-name" style="color:#475569;">' + escHtml(u.name || u.url) + '</span><span class="sch-att-size">URL</span><button type="button" class="sch-att-del" onclick="removePendingUrl(' + i + ')">\xd7</button></div>');
+        });
+        _pendingAttFiles.forEach(function(f, i) {
+            var icon = getFileIcon(f.type + ' ' + f.name);
+            var sz = fmtSize(f.size);
+            items.push('<div class="sch-att-item"><span class="sch-att-icon">' + icon + '</span><span class="sch-att-name" style="color:#475569;">' + escHtml(f.name) + '</span>' + (sz ? '<span class="sch-att-size">' + sz + '</span>' : '') + '<button type="button" class="sch-att-del" onclick="removePendingFile(' + i + ')">\xd7</button></div>');
+        });
+        list.innerHTML = items.length
+            ? items.join('')
+            : '<div style="color:#94a3b8;font-size:13px;padding:4px 0;">\u6dfb\u4ed8\u8cc7\u6599\u306f\u3042\u308a\u307e\u305b\u3093<span style="font-size:11px;margin-left:6px;">\uff08\u4fdd\u5b58\u6642\u306b\u30a2\u30c3\u30d7\u30ed\u30fc\u30c9\u3055\u308c\u307e\u3059\uff09</span></div>';
+    }
+    window.removePendingUrl = function(i) { _pendingAttUrls.splice(i, 1); renderNewFormAtts(); };
+    window.removePendingFile = function(i) { _pendingAttFiles.splice(i, 1); renderNewFormAtts(); };
+    function renderEditFormAtts(schedId, atts) {
+        _editFormSchedId = schedId;
+        var list = document.getElementById('sch-form-att-list');
+        if (!list) return;
+        if (!atts || !atts.length) {
+            list.innerHTML = '<div style="color:#94a3b8;font-size:13px;padding:4px 0;">添付資料はありません</div>';
+            return;
+        }
+        list.innerHTML = atts.map(function(a) {
+            var icon = a.attachType === 'url' ? getLinkIcon(a.url || '') : getFileIcon((a.mimeType || '') + ' ' + (a.originalName || ''));
+            var nm = escHtml(a.name || a.originalName || a.url || '');
+            var szHtml = a.size ? '<span class="sch-att-size">' + fmtSize(a.size) + '</span>' : '';
+            var href = a.attachType === 'url'
+                ? 'href="' + escHtml(a.url || '') + '" target="_blank" rel="noopener noreferrer"'
+                : 'href="/api/schedule/attachments/download/' + encodeURIComponent(a.storedName || '') + '?name=' + encodeURIComponent(a.originalName || a.name || '') + '" download';
+            return '<div class="sch-att-item"><span class="sch-att-icon">' + icon + '</span><a class="sch-att-name" ' + href + '>' + nm + '</a>' + szHtml + '<button type="button" class="sch-att-del" onclick="deleteEditAtt(\\'' + escHtml(a._id) + '\\')">\xd7</button></div>';
+        }).join('');
+    }
+    window.deleteEditAtt = function(attId) {
+        if (!_editFormSchedId) return;
+        if (!confirm('この添付を削除しますか？')) return;
+        fetch('/api/schedule/' + _editFormSchedId + '/attachments/' + attId, { method: 'DELETE' })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) return alert(d.error || '削除に失敗しました');
+                fetch('/api/schedule/' + _editFormSchedId)
+                    .then(r => r.json())
+                    .then(data => { if (data.ok) renderEditFormAtts(_editFormSchedId, data.schedule.attachments || []); });
+            });
+    };
+    window.openEditAddUrl = function() {
+        var el = document.getElementById('sch-form-att-url-form');
+        if (el) el.style.display = '';
+    };
+    window.closeEditAddUrl = function() {
+        var el = document.getElementById('sch-form-att-url-form');
+        if (el) el.style.display = 'none';
+    };
+    window.submitEditUrl = function() {
+        var nameEl = document.getElementById('sch-form-att-url-name');
+        var urlEl  = document.getElementById('sch-form-att-url-val');
+        var name = nameEl ? nameEl.value.trim() : '';
+        var url  = urlEl  ? urlEl.value.trim()  : '';
+        if (!url) { alert('URLを入力してください'); return; }
+        if (url.indexOf('http') !== 0) { alert('http:// または https:// で始まるURLを入力してください'); return; }
+        if (!name) name = url;
+        if (!_editFormSchedId) {
+            // 新規作成モード: キューに追加
+            _pendingAttUrls.push({ name: name, url: url });
+            if (nameEl) nameEl.value = '';
+            if (urlEl)  urlEl.value  = '';
+            closeEditAddUrl();
+            renderNewFormAtts();
+            return;
+        }
+        fetch('/api/schedule/' + _editFormSchedId + '/attachments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ attachType: 'url', name: name, url: url }),
+        }).then(r => r.json()).then(d => {
+            if (!d.ok) return alert(d.error || '追加に失敗しました');
+            if (nameEl) nameEl.value = '';
+            if (urlEl)  urlEl.value  = '';
+            closeEditAddUrl();
+            fetch('/api/schedule/' + _editFormSchedId)
+                .then(r => r.json())
+                .then(data => { if (data.ok) renderEditFormAtts(_editFormSchedId, data.schedule.attachments || []); });
+        });
+    };
+    window.uploadEditFiles = function(input) {
+        if (!input.files || !input.files.length) return;
+        if (!_editFormSchedId) {
+            // 新規作成モード: キューに追加
+            Array.from(input.files).forEach(function(f) { _pendingAttFiles.push(f); });
+            input.value = '';
+            renderNewFormAtts();
+            return;
+        }
+        var form = new FormData();
+        Array.from(input.files).forEach(function(f) { form.append('files', f); });
+        fetch('/api/schedule/' + _editFormSchedId + '/attachments/file', { method: 'POST', body: form })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) return alert(d.error || 'アップロードに失敗しました');
+                input.value = '';
+                fetch('/api/schedule/' + _editFormSchedId)
+                    .then(r => r.json())
+                    .then(data => { if (data.ok) renderEditFormAtts(_editFormSchedId, data.schedule.attachments || []); });
+            });
+    };
 
     // ── カレンダー初期化 ─────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', () => {
@@ -810,6 +1054,44 @@ router.get("/schedule", requireLogin, async (req, res) => {
             '<i class="fa-regular fa-calendar-plus"></i> iCal / Outlook / Apple Calendar (.ics) をダウンロード</a>' +
             '</div></div></div>';
 
+        // ── 添付資料 HTML 構築 ──
+        var _atts = s.attachments || [];
+        var _attListHtml = _atts.length ? _atts.map(function(a) {
+            var icon = a.attachType === 'url' ? getLinkIcon(a.url || '') : getFileIcon((a.mimeType || '') + ' ' + (a.originalName || ''));
+            var nm = escHtml(a.name || a.originalName || a.url || '');
+            var szHtml = a.size ? \`<span class="sch-att-size">\${fmtSize(a.size)}</span>\` : '';
+            var href = a.attachType === 'url'
+                ? \`href="\${escHtml(a.url || '')}" target="_blank" rel="noopener noreferrer"\`
+                : \`href="/api/schedule/attachments/download/\${encodeURIComponent(a.storedName || '')}?name=\${encodeURIComponent(a.originalName || a.name || '')}" download\`;
+            var delBtn = canEditFlag ? \`<button class="sch-att-del" onclick="deleteAttachment('\${s._id}','\${a._id}')">×</button>\` : '';
+            return \`<div class="sch-att-item"><span class="sch-att-icon">\${icon}</span><a class="sch-att-name" \${href}>\${nm}</a>\${szHtml}\${delBtn}</div>\`;
+        }).join('') : '<div style="color:#94a3b8;font-size:13px;padding:4px 0;">添付資料はありません</div>';
+        var _attActionsHtml = canEditFlag ? \`
+            <div class="sch-att-actions">
+                <button class="sch-att-add-btn" onclick="openAddUrl('\${s._id}')"><i class="fa-solid fa-link"></i> URLを追加</button>
+                <label class="sch-att-add-btn"><i class="fa-solid fa-paperclip"></i> ファイルを添付
+                    <input type="file" multiple hidden onchange="uploadAttachFiles('\${s._id}', this)" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.zip,.png,.jpg,.jpeg,.gif,.webp">
+                </label>
+            </div>
+            <div id="sch-att-url-form-\${s._id}" class="sch-att-url-form" style="display:none;">
+                <div style="font-size:12px;color:#475569;font-weight:600;margin-bottom:6px;"><i class="fa-solid fa-link" style="color:#3b82f6;"></i> URLを追加</div>
+                <div class="sch-att-url-row">
+                    <input type="text" id="sch-att-url-name-\${s._id}" class="sch-att-url-input" placeholder="表示名（省略可）" style="max-width:160px;">
+                    <input type="url" id="sch-att-url-val-\${s._id}" class="sch-att-url-input" placeholder="https://...">
+                    <button class="sch-att-url-submit" onclick="submitAddUrl('\${s._id}')">追加</button>
+                    <button class="sch-att-add-btn" onclick="closeAddUrl('\${s._id}')">×</button>
+                </div>
+            </div>\` : '';
+        var attachHtml = \`
+        <div class="sch-modal-row">
+            <div class="sch-modal-row-icon"><i class="fa-solid fa-paperclip" style="color:#94a3b8;"></i></div>
+            <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;margin-bottom:8px;font-size:13px;">添付資料（\${_atts.length}件）</div>
+                <div id="sch-att-list-\${s._id}">\${_attListHtml}</div>
+                \${_attActionsHtml}
+            </div>
+        </div>\`;
+
         document.getElementById('sch-detail-inner').innerHTML = \`
         <div class="sch-modal-header">
             <div class="sch-modal-color-dot" style="background:\${escHtml(s.color||'#3b82f6')};"></div>
@@ -842,6 +1124,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
             \${s.description ? \`<div class="sch-modal-row"><div class="sch-modal-row-icon"><i class="fa-regular fa-file-lines"></i></div><div style="white-space:pre-wrap;">\${escHtml(s.description)}</div></div>\` : ''}
             \${tagsHtml}
             \${visHtml}
+            \${attachHtml}
             \${exportHtml}
             \${callHtml}
             \${respondHtml}
@@ -912,6 +1195,13 @@ router.get("/schedule", requireLogin, async (req, res) => {
         resetTagsUI();
         setVisibility('private');
         document.getElementById('sch-repeat-wrap').style.display = '';
+        var attWrap = document.getElementById('sch-form-att-wrap');
+        if (attWrap) attWrap.style.display = '';
+        _editFormSchedId = '';
+        _pendingAttUrls  = [];
+        _pendingAttFiles = [];
+        renderNewFormAtts();
+        closeEditAddUrl();
         document.getElementById('sch-form-modal').classList.add('open');
     };
 
@@ -957,6 +1247,11 @@ router.get("/schedule", requireLogin, async (req, res) => {
         setTagsUI(s.tags || []);
         setVisibility(s.visibility || 'private');
         document.getElementById('sch-repeat-wrap').style.display = 'none'; // 編集時は繰り返し非表示
+        // 添付資料セクションを表示・更新
+        var attWrap = document.getElementById('sch-form-att-wrap');
+        if (attWrap) attWrap.style.display = '';
+        renderEditFormAtts(s._id, s.attachments || []);
+        closeEditAddUrl();
         document.getElementById('sch-form-modal').classList.add('open');
     }
 
@@ -1070,6 +1365,13 @@ router.get("/schedule", requireLogin, async (req, res) => {
                 setTagsUI(s.tags || []);
                 setVisibility(s.visibility || 'private');
                 document.getElementById('sch-repeat-wrap').style.display = '';
+                var attWrap = document.getElementById('sch-form-att-wrap');
+                if (attWrap) attWrap.style.display = '';
+                _editFormSchedId = '';
+                _pendingAttUrls  = [];
+                _pendingAttFiles = [];
+                renderNewFormAtts();
+                closeEditAddUrl();
                 document.getElementById('sch-form-modal').classList.add('open');
             })
             .catch(() => alert('データの取得に失敗しました'));
@@ -1138,10 +1440,33 @@ router.get("/schedule", requireLogin, async (req, res) => {
             .then(d => {
                 btn.disabled = false;
                 if (!d.ok) return alert(d.error || '保存に失敗しました');
-                document.getElementById('sch-form-modal').classList.remove('open');
-                if (calendar) calendar.refetchEvents();
-                loadUpcoming();
-                if (d.count && d.count > 1) alert(d.count + '件のスケジュールを一括登録しました。');
+                var _finish = function() {
+                    _pendingAttUrls  = [];
+                    _pendingAttFiles = [];
+                    document.getElementById('sch-form-modal').classList.remove('open');
+                    if (calendar) calendar.refetchEvents();
+                    loadUpcoming();
+                    if (d.count && d.count > 1) alert(d.count + '件のスケジュールを一括登録しました。');
+                };
+                // 新規作成でキュー済み添付がある場合、保存後にアップロード
+                var newId = !editId && d.scheduleId;
+                if (newId && (_pendingAttUrls.length || _pendingAttFiles.length)) {
+                    var uploads = _pendingAttUrls.map(function(u) {
+                        return fetch('/api/schedule/' + newId + '/attachments', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ attachType: 'url', name: u.name, url: u.url }),
+                        });
+                    });
+                    if (_pendingAttFiles.length) {
+                        var fd = new FormData();
+                        _pendingAttFiles.forEach(function(f) { fd.append('files', f); });
+                        uploads.push(fetch('/api/schedule/' + newId + '/attachments/file', { method: 'POST', body: fd }));
+                    }
+                    Promise.all(uploads).then(_finish).catch(_finish);
+                } else {
+                    _finish();
+                }
             })
             .catch(() => { btn.disabled = false; alert('通信エラーが発生しました'); });
     };
@@ -2255,6 +2580,160 @@ router.post("/api/schedule/import/csv", requireLogin, async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════
+// GET /api/schedule/attachments/download/:filename — 添付ファイルダウンロード
+// ※ この route は GET /api/schedule/:id より前に定義すること
+// ═══════════════════════════════════════════════════
+router.get(
+  "/api/schedule/attachments/download/:filename",
+  requireLogin,
+  async (req, res) => {
+    try {
+      const safeName = path.basename(req.params.filename);
+      const filePath = path.join(schedUploadDir, safeName);
+      // パストラバーサル防止
+      if (
+        !filePath.startsWith(schedUploadDir + path.sep) &&
+        filePath !== schedUploadDir
+      )
+        return res.status(403).send("Forbidden");
+      if (!fs.existsSync(filePath)) return res.status(404).send("Not found");
+
+      // アクセス権チェック: このファイルを持つスケジュールを探す
+      const schedule = await Schedule.findOne({
+        "attachments.storedName": safeName,
+        isDeleted: false,
+      }).lean();
+      if (!schedule) return res.status(404).send("Not found");
+      const myId = String(req.session.userId);
+      const isAd = isAdmin(req);
+      const isCreator = String(schedule.createdBy) === myId;
+      const isAtt = (schedule.attendees || []).some((a) => String(a) === myId);
+      const isPub = schedule.visibility === "public";
+      if (!isAd && !isCreator && !isAtt && !isPub)
+        return res.status(403).send("Forbidden");
+
+      const att = schedule.attachments.find((a) => a.storedName === safeName);
+      const displayName = (att && (att.originalName || att.name)) || safeName;
+      const downloadName = req.query.name || displayName;
+      res.setHeader(
+        "Content-Disposition",
+        "attachment; filename*=UTF-8''" + encodeURIComponent(downloadName),
+      );
+      res.sendFile(filePath);
+    } catch (e) {
+      console.error("[schedule] attachment download error:", e.message);
+      res.status(500).send("Error");
+    }
+  },
+);
+
+// ═══════════════════════════════════════════════════
+// POST /api/schedule/:id/attachments — URL添付追加
+// ═══════════════════════════════════════════════════
+router.post("/api/schedule/:id/attachments", requireLogin, async (req, res) => {
+  try {
+    const schedule = await Schedule.findById(req.params.id);
+    if (!schedule || schedule.isDeleted)
+      return res.json({ ok: false, error: "スケジュールが見つかりません" });
+    if (!canEdit(req, schedule))
+      return res.json({ ok: false, error: "権限がありません" });
+    const { attachType, name, url } = req.body;
+    if (attachType !== "url")
+      return res.json({ ok: false, error: "不正なタイプです" });
+    if (!url || !/^https?:\/\//i.test(url))
+      return res.json({
+        ok: false,
+        error:
+          "URLが無効です（https:// または http:// で始まるURLを入力してください）",
+      });
+    schedule.attachments.push({
+      attachType: "url",
+      name: name || url,
+      url,
+      addedBy: req.session.userId,
+    });
+    await schedule.save();
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[schedule] POST attachment url error:", e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// POST /api/schedule/:id/attachments/file — ファイル添付
+// ═══════════════════════════════════════════════════
+router.post(
+  "/api/schedule/:id/attachments/file",
+  requireLogin,
+  schedUpload.array("files", 10),
+  async (req, res) => {
+    try {
+      const schedule = await Schedule.findById(req.params.id);
+      if (!schedule || schedule.isDeleted) {
+        (req.files || []).forEach((f) => fs.unlink(f.path, () => {}));
+        return res.json({ ok: false, error: "スケジュールが見つかりません" });
+      }
+      if (!canEdit(req, schedule)) {
+        (req.files || []).forEach((f) => fs.unlink(f.path, () => {}));
+        return res.json({ ok: false, error: "権限がありません" });
+      }
+      for (const file of req.files || []) {
+        schedule.attachments.push({
+          attachType: "file",
+          name: file.originalname,
+          originalName: file.originalname,
+          storedName: file.filename,
+          filePath: file.path,
+          mimeType: file.mimetype,
+          size: file.size,
+          addedBy: req.session.userId,
+        });
+      }
+      await schedule.save();
+      res.json({ ok: true, count: (req.files || []).length });
+    } catch (e) {
+      (req.files || []).forEach((f) => fs.unlink(f.path, () => {}));
+      console.error("[schedule] POST attachment file error:", e.message);
+      res.json({ ok: false, error: e.message });
+    }
+  },
+);
+
+// ═══════════════════════════════════════════════════
+// DELETE /api/schedule/:id/attachments/:aId — 添付削除
+// ═══════════════════════════════════════════════════
+router.delete(
+  "/api/schedule/:id/attachments/:aId",
+  requireLogin,
+  async (req, res) => {
+    try {
+      const schedule = await Schedule.findById(req.params.id);
+      if (!schedule || schedule.isDeleted)
+        return res.json({ ok: false, error: "スケジュールが見つかりません" });
+      if (!canEdit(req, schedule))
+        return res.json({ ok: false, error: "権限がありません" });
+      const att = schedule.attachments.id(req.params.aId);
+      if (!att) return res.json({ ok: false, error: "添付が見つかりません" });
+      if (att.attachType === "file" && att.filePath) {
+        const fp = path.isAbsolute(att.filePath)
+          ? att.filePath
+          : path.join(__dirname, "..", att.filePath);
+        fs.unlink(fp, (err) => {
+          if (err) console.error("[schedule] file unlink error:", err.message);
+        });
+      }
+      schedule.attachments.pull(req.params.aId);
+      await schedule.save();
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[schedule] DELETE attachment error:", e.message);
+      res.json({ ok: false, error: e.message });
+    }
+  },
+);
+
+// ═══════════════════════════════════════════════════
 // GET /api/schedule/:id — 詳細JSON
 // ═══════════════════════════════════════════════════
 router.get("/api/schedule/:id", requireLogin, async (req, res) => {
@@ -2312,6 +2791,17 @@ router.get("/api/schedule/:id", requireLogin, async (req, res) => {
         tags: schedule.tags || [],
         visibility: schedule.visibility || "private",
         seriesId: schedule.seriesId || null,
+        attachments: (schedule.attachments || []).map((a) => ({
+          _id: String(a._id),
+          attachType: a.attachType,
+          name: a.name || "",
+          url: a.url || "",
+          originalName: a.originalName || "",
+          storedName: a.storedName || "",
+          mimeType: a.mimeType || "",
+          size: a.size || 0,
+          addedAt: a.addedAt,
+        })),
         canEdit: isAd
           ? true
           : isCreator && new Date(schedule.startAt) >= startOfTodayJST(),

@@ -922,6 +922,20 @@ const ScheduleSchema = new mongoose.Schema(
     isDeleted: { type: Boolean, default: false },
     reminderSent: { type: Boolean, default: false }, // 5分前リマインダー送信済みフラグ
     seriesId: { type: String, default: null }, // 繰り返しシリーズID
+    attachments: [
+      {
+        attachType: { type: String, enum: ["file", "url"], required: true },
+        name: { type: String, default: "" },
+        url: { type: String, default: "" },
+        originalName: { type: String, default: "" },
+        storedName: { type: String, default: "" },
+        filePath: { type: String, default: "" },
+        mimeType: { type: String, default: "" },
+        size: { type: Number, default: 0 },
+        addedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        addedAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true },
 );
