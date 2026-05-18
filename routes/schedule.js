@@ -1,5 +1,5 @@
 // ==============================
-// routes/schedule.js - スケジューラ機能
+// routes/schedule.js - スケジュール機能
 // ==============================
 "use strict";
 const express = require("express");
@@ -186,7 +186,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
 <link href='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css' rel='stylesheet' />
 <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js'><\/script>
 <style>
-/* ===== スケジューラ専用スタイル ===== */
+/* ===== スケジュール専用スタイル ===== */
 .sch-wrap { display:flex; gap:20px; align-items:flex-start; }
 .sch-cal-col { flex:1; min-width:0; }
 .sch-side-col { width:300px; flex-shrink:0; }
@@ -297,7 +297,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
 </style>`;
 
   const shell = buildPageShell({
-    title: "スケジューラ",
+    title: "スケジュール",
     currentPath: "/schedule",
     employee,
     isAdmin: req.session.isAdmin,
@@ -310,7 +310,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
 <div class="main"><div class="page-content">
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
     <div>
-        <h2 style="font-size:20px;font-weight:700;color:#0f172a;margin:0 0 4px;">📅 スケジューラ</h2>
+        <h2 style="font-size:20px;font-weight:700;color:#0f172a;margin:0 0 4px;">📅 スケジュール</h2>
         <p style="color:#64748b;font-size:13px;margin:0;">会議・予定の管理とアプリ内通話連携</p>
     </div>
     <div style="display:flex;gap:8px;align-items:center;">
@@ -1882,7 +1882,7 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
               process.env.SMTP_FROM ||
               process.env.SMTP_USER ||
               "no-reply@dxpro-sol.com",
-            subject: `【NOKORIスケジューラ】会議招待: ${schedule.title}`,
+            subject: `【NOKORIスケジュール】会議招待: ${schedule.title}`,
             html: mailBody,
             text: mailBody.replace(/<[^>]+>/g, ""),
           }).catch((e) =>
@@ -2442,7 +2442,7 @@ router.put("/api/schedule/:id", requireLogin, async (req, res) => {
             process.env.SMTP_FROM ||
             process.env.SMTP_USER ||
             "no-reply@dxpro-sol.com",
-          subject: `【NOKORIスケジューラ】スケジュール変更: ${schedule.title}`,
+          subject: `【NOKORIスケジュール】スケジュール変更: ${schedule.title}`,
           html: mailBody,
           text: mailBody.replace(/<[^>]+>/g, ""),
         }).catch((e) =>
@@ -2821,7 +2821,7 @@ router.delete("/api/schedule/:id", requireLogin, async (req, res) => {
             process.env.SMTP_FROM ||
             process.env.SMTP_USER ||
             "no-reply@dxpro-sol.com",
-          subject: `【NOKORIスケジューラ】スケジュールキャンセル: ${schedule.title}`,
+          subject: `【NOKORIスケジュール】スケジュールキャンセル: ${schedule.title}`,
           html: mailBody,
           text: mailBody.replace(/<[^>]+>/g, ""),
         }).catch((e) =>
@@ -3027,7 +3027,7 @@ function buildInviteMail({
   return `<!DOCTYPE html><html><body style="font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f5f7;margin:0;padding:20px;">
 <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
 <div style="background:linear-gradient(135deg,#2563eb,#7c3aed);padding:20px 24px;color:#fff;">
-    <div style="font-size:11px;letter-spacing:.08em;opacity:.8;margin-bottom:6px;">NOKORIスケジューラ</div>
+    <div style="font-size:11px;letter-spacing:.08em;opacity:.8;margin-bottom:6px;">NOKORIスケジュール</div>
     <div style="font-size:20px;font-weight:700;">📅 会議招待</div>
 </div>
 <div style="padding:24px;">
@@ -3058,7 +3058,7 @@ function buildUpdateMail({
   return `<!DOCTYPE html><html><body style="font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f5f7;margin:0;padding:20px;">
 <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
 <div style="background:linear-gradient(135deg,#f59e0b,#ef4444);padding:20px 24px;color:#fff;">
-    <div style="font-size:11px;letter-spacing:.08em;opacity:.8;margin-bottom:6px;">NOKORIスケジューラ</div>
+    <div style="font-size:11px;letter-spacing:.08em;opacity:.8;margin-bottom:6px;">NOKORIスケジュール</div>
     <div style="font-size:20px;font-weight:700;">📝 スケジュール変更</div>
 </div>
 <div style="padding:24px;">
@@ -3083,7 +3083,7 @@ function buildCancelMail({ recipientName, cancellerName, schedule }) {
   return `<!DOCTYPE html><html><body style="font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f5f7;margin:0;padding:20px;">
 <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
 <div style="background:linear-gradient(135deg,#ef4444,#b91c1c);padding:20px 24px;color:#fff;">
-    <div style="font-size:11px;letter-spacing:.08em;opacity:.8;margin-bottom:6px;">NOKORIスケジューラ</div>
+    <div style="font-size:11px;letter-spacing:.08em;opacity:.8;margin-bottom:6px;">NOKORIスケジュール</div>
     <div style="font-size:20px;font-weight:700;">❌ スケジュールキャンセル</div>
 </div>
 <div style="padding:24px;">
@@ -3124,7 +3124,7 @@ router.get("/api/schedule/:id/ical", requireLogin, async (req, res) => {
     const lines = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
-      "PRODID:-//DXPro//NOKORIスケジューラ//JA",
+      "PRODID:-//DXPro//NOKORIスケジュール//JA",
       "CALSCALE:GREGORIAN",
       "METHOD:PUBLISH",
       "BEGIN:VEVENT",
