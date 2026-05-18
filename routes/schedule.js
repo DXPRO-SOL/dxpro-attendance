@@ -82,6 +82,81 @@ function icalEscape(str) {
 }
 
 // ═══════════════════════════════════════════════════
+// CSV ユーティリティ（エクスポート / インポート）
+// ═══════════════════════════════════════════════════
+function csvCell(val) {
+  const s = String(val === null || val === undefined ? "" : val);
+  if (/[,"\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+function toJSTDatetimeStr(date) {
+  if (!date) return "";
+  const d = new Date(new Date(date).getTime() + 9 * 3600 * 1000);
+  const p = (n) => String(n).padStart(2, "0");
+  return (
+    d.getUTCFullYear() +
+    "-" +
+    p(d.getUTCMonth() + 1) +
+    "-" +
+    p(d.getUTCDate()) +
+    " " +
+    p(d.getUTCHours()) +
+    ":" +
+    p(d.getUTCMinutes())
+  );
+}
+function parseCsvJSTDatetime(str) {
+  if (!str) return null;
+  const m = String(str)
+    .trim()
+    .replace(/T/, " ")
+    .match(/^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2}))?/);
+  if (!m) return null;
+  const y = +m[1],
+    mo = +m[2],
+    d = +m[3],
+    h = m[4] ? +m[4] : 0,
+    mi = m[5] ? +m[5] : 0;
+  return new Date(Date.UTC(y, mo - 1, d, h - 9, mi));
+}
+function parseCsvRow(line) {
+  const cells = [];
+  let cur = "",
+    inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '"') {
+      if (inQ && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else inQ = !inQ;
+    } else if (line[i] === "," && !inQ) {
+      cells.push(cur);
+      cur = "";
+    } else cur += line[i];
+  }
+  cells.push(cur);
+  return cells;
+}
+function parseCsvText(text) {
+  const clean = text.replace(/^\uFEFF/, "");
+  const lines = clean.split(/\r?\n/);
+  if (!lines.length) return { headers: [], rows: [] };
+  const headers = parseCsvRow(lines[0]);
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const cells = parseCsvRow(line);
+    const row = {};
+    headers.forEach((h, idx) => {
+      row[h.trim()] = (cells[idx] || "").trim();
+    });
+    rows.push(row);
+  }
+  return { headers, rows };
+}
+
+// ═══════════════════════════════════════════════════
 // SCH-01: GET /schedule  カレンダービュー
 // ═══════════════════════════════════════════════════
 router.get("/schedule", requireLogin, async (req, res) => {
@@ -190,6 +265,35 @@ router.get("/schedule", requireLogin, async (req, res) => {
 .sch-bulk-btn-delete { background:#ef4444; color:#fff; }
 .sch-bulk-btn-color { background:#fff; color:#1e40af; }
 .sch-bulk-btn-cancel { background:rgba(255,255,255,.18); color:#fff; border:1px solid rgba(255,255,255,.3); }
+/* 色変更モーダル */
+.sch-color-modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:9500; align-items:center; justify-content:center; }
+.sch-color-modal-bg.open { display:flex; }
+.sch-color-modal { background:#fff; border-radius:12px; width:360px; max-width:calc(100vw - 32px); box-shadow:0 16px 48px rgba(0,0,0,.22); padding:22px; }
+.sch-color-swatch { width:100%; aspect-ratio:1; border-radius:7px; border:2px solid transparent; cursor:pointer; transition:transform .12s,box-shadow .12s; }
+.sch-color-swatch:hover { transform:scale(1.13); }
+.sch-color-swatch.selected { border-color:#fff; box-shadow:0 0 0 2.5px #1d4ed8; transform:scale(1.08); }
+/* フォーム内カラーピッカー */
+.sch-fcp-swatches { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:7px; }
+.sch-fcp-swatches .sch-color-swatch { width:22px; height:22px; flex-shrink:0; }
+.sch-fcp-row { display:flex; align-items:center; gap:7px; padding:5px 8px; background:#f8fafc; border-radius:6px; }
+.sch-fcp-row label { font-size:12px; color:#475569; flex-shrink:0; font-weight:normal; margin:0; }
+/* CSVエクスポート/インポート モーダル */
+.sch-csv-modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:9200; align-items:center; justify-content:center; }
+.sch-csv-modal-bg.open { display:flex; }
+.sch-csv-modal { background:#fff; border-radius:12px; width:540px; max-width:calc(100vw - 32px); max-height:88vh; overflow-y:auto; box-shadow:0 16px 48px rgba(0,0,0,.22); padding:28px; }
+.sch-csv-title { font-size:16px; font-weight:700; color:#0f172a; }
+.sch-csv-sub { font-size:13px; color:#64748b; margin-bottom:20px; margin-top:2px; }
+.sch-csv-section { margin-bottom:14px; }
+.sch-csv-label { font-size:13px; font-weight:600; color:#334155; margin-bottom:6px; display:block; }
+.sch-csv-radios { display:flex; gap:8px; flex-wrap:wrap; }
+.sch-csv-radio-lbl { display:flex; align-items:center; gap:5px; padding:6px 12px; border:1.5px solid #e2e8f0; border-radius:6px; cursor:pointer; font-size:13px; color:#475569; user-select:none; }
+.sch-csv-radio-lbl:has(input:checked) { border-color:#3b82f6; background:#eff6ff; color:#1d4ed8; }
+.sch-import-table-wrap { max-height:220px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px; margin-bottom:10px; }
+.sch-import-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.sch-import-table th { background:#f8fafc; color:#475569; font-weight:600; padding:7px 10px; text-align:left; position:sticky; top:0; border-bottom:1px solid #e2e8f0; }
+.sch-import-table td { padding:6px 10px; border-bottom:1px solid #f1f5f9; color:#334155; }
+.sch-import-err-box { background:#fef2f2; border:1px solid #fca5a5; border-radius:6px; padding:10px 14px; margin-bottom:10px; font-size:12.5px; color:#b91c1c; max-height:140px; overflow-y:auto; }
+.sch-import-err-box p { margin:2px 0; }
 </style>`;
 
   const shell = buildPageShell({
@@ -209,9 +313,17 @@ router.get("/schedule", requireLogin, async (req, res) => {
         <h2 style="font-size:20px;font-weight:700;color:#0f172a;margin:0 0 4px;">📅 スケジューラ</h2>
         <p style="color:#64748b;font-size:13px;margin:0;">会議・予定の管理とアプリ内通話連携</p>
     </div>
-    <button class="btn btn-primary" onclick="openNewForm()">
-        <i class="fa-solid fa-plus"></i> 新規スケジュール
-    </button>
+    <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn" style="background:#fff;border:1.5px solid #e2e8f0;color:#475569;" onclick="openExportModal()">
+            <i class="fa-solid fa-download"></i> CSV出力
+        </button>
+        <button class="btn" style="background:#fff;border:1.5px solid #e2e8f0;color:#475569;" onclick="openImportModal()">
+            <i class="fa-solid fa-upload"></i> CSV取込
+        </button>
+        <button class="btn btn-primary" onclick="openNewForm()">
+            <i class="fa-solid fa-plus"></i> 新規スケジュール
+        </button>
+    </div>
 </div>
 
 <div class="sch-wrap">
@@ -279,6 +391,105 @@ router.get("/schedule", requireLogin, async (req, res) => {
   </div>
 </div>
 
+<!-- ────── 色変更モーダル ────── -->
+<div class="sch-color-modal-bg" id="sch-color-modal" onclick="closeBulkColorModal(event)">
+  <div class="sch-color-modal">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <div style="font-size:15px;font-weight:700;color:#0f172a;">🎨 色の変更</div>
+      <button onclick="closeBulkColorModal()" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:20px;line-height:1;">&times;</button>
+    </div>
+    <div style="font-size:13px;color:#64748b;margin-bottom:14px;">プリセットから選ぶか、カスタムカラーで指定してください</div>
+    <div id="sch-color-swatches" style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:16px;"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;padding:10px;background:#f8fafc;border-radius:8px;">
+      <label style="font-size:13px;color:#475569;flex-shrink:0;">カスタム：</label>
+      <input type="color" id="sch-color-custom" value="#3b82f6" oninput="onCustomColorChange(this.value)" style="width:36px;height:30px;padding:2px;border:1.5px solid #e2e8f0;border-radius:6px;cursor:pointer;flex-shrink:0;">
+      <span id="sch-color-hex-display" style="font-size:13px;font-family:monospace;color:#334155;">#3b82f6</span>
+      <div id="sch-color-preview" style="margin-left:auto;width:28px;height:28px;border-radius:6px;border:1px solid rgba(0,0,0,.1);background:#3b82f6;flex-shrink:0;"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button onclick="closeBulkColorModal()" style="padding:8px 18px;border:1.5px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:13px;cursor:pointer;font-family:inherit;">キャンセル</button>
+      <button onclick="applyBulkColor()" id="sch-color-apply-btn" style="padding:8px 18px;border:none;border-radius:6px;background:#3b82f6;color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">✓ 適用する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ────── CSVエクスポート モーダル ────── -->
+<div class="sch-csv-modal-bg" id="sch-export-modal" onclick="closeExportModal(event)">
+  <div class="sch-csv-modal">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+      <div class="sch-csv-title">📤 CSVエクスポート</div>
+      <button onclick="closeExportModal()" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:20px;line-height:1;">&times;</button>
+    </div>
+    <div class="sch-csv-sub">スケジュールをCSV形式でダウンロードします</div>
+    <div class="sch-csv-section">
+      <span class="sch-csv-label">出力範囲</span>
+      <div class="sch-csv-radios">
+        <label class="sch-csv-radio-lbl"><input type="radio" name="exp-scope" value="my" checked onchange="updateExportForm()"> 自分</label>
+        <label class="sch-csv-radio-lbl" ${isAdmin(req) ? "" : 'style="display:none"'}><input type="radio" name="exp-scope" value="user" onchange="updateExportForm()"> ユーザー指定</label>
+        <label class="sch-csv-radio-lbl" ${isAdmin(req) ? "" : 'style="display:none"'}><input type="radio" name="exp-scope" value="dept" onchange="updateExportForm()"> 部署別</label>
+      </div>
+    </div>
+    <div class="sch-csv-section" id="exp-user-section" style="display:none">
+      <span class="sch-csv-label">ユーザー選択</span>
+      <select id="exp-user-id" style="width:100%;padding:7px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;font-family:inherit;">
+        <option value="">-- 選択してください --</option>
+      </select>
+    </div>
+    <div class="sch-csv-section" id="exp-dept-section" style="display:none">
+      <span class="sch-csv-label">部署名</span>
+      <input type="text" id="exp-dept-name" placeholder="例: 開発部" style="width:100%;padding:7px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box;">
+    </div>
+    <div class="sch-csv-section">
+      <span class="sch-csv-label">期間</span>
+      <div class="sch-csv-radios">
+        <label class="sch-csv-radio-lbl"><input type="radio" name="exp-period" value="all" checked onchange="updateExportForm()"> 全期間</label>
+        <label class="sch-csv-radio-lbl"><input type="radio" name="exp-period" value="month" onchange="updateExportForm()"> 月別</label>
+      </div>
+    </div>
+    <div class="sch-csv-section" id="exp-month-section" style="display:none">
+      <span class="sch-csv-label">対象年月</span>
+      <input type="month" id="exp-month" style="padding:7px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;font-family:inherit;">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px;">
+      <button onclick="closeExportModal()" style="padding:8px 18px;border:1.5px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:13px;cursor:pointer;font-family:inherit;">キャンセル</button>
+      <button onclick="doExport()" class="btn btn-primary" style="font-size:13px;">📥 ダウンロード</button>
+    </div>
+  </div>
+</div>
+
+<!-- ────── CSVインポート モーダル ────── -->
+<div class="sch-csv-modal-bg" id="sch-import-modal" onclick="closeImportModal(event)">
+  <div class="sch-csv-modal">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+      <div class="sch-csv-title">📥 CSVインポート</div>
+      <button onclick="closeImportModal()" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:20px;line-height:1;">&times;</button>
+    </div>
+    <div class="sch-csv-sub">CSVファイルからスケジュールを一括登録します</div>
+    <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#0369a1;">
+      💡 <strong>テンプレートCSVで入力形式をご確認ください。</strong><br>
+      <a href="#" onclick="downloadImportTemplate();return false;" style="color:#0369a1;font-weight:600;">テンプレートをダウンロード &rarr;</a>
+    </div>
+    <div class="sch-csv-section">
+      <span class="sch-csv-label">CSVファイル選択（UTF-8 推奨）</span>
+      <input type="file" id="sch-import-file" accept=".csv,text/csv" onchange="onImportFileChange()" style="display:block;width:100%;padding:7px 0;font-size:13px;cursor:pointer;">
+    </div>
+    <div id="sch-import-preview" style="display:none">
+      <div id="sch-import-summary" style="font-size:13px;margin-bottom:10px;padding:8px 12px;background:#f8fafc;border-radius:6px;"></div>
+      <div id="sch-import-err-area"></div>
+      <div class="sch-import-table-wrap">
+        <table class="sch-import-table">
+          <thead><tr><th>タイトル</th><th>開始日時</th><th>終了日時</th><th>種別</th><th>参加者数</th><th>繰り返し</th></tr></thead>
+          <tbody id="sch-import-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+      <button onclick="closeImportModal()" style="padding:8px 18px;border:1.5px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:13px;cursor:pointer;font-family:inherit;">キャンセル</button>
+      <button id="sch-import-btn" onclick="executeImport()" class="btn btn-primary" style="font-size:13px;display:none;">✅ インポート実行</button>
+    </div>
+  </div>
+</div>
+
 <!-- ────── 登録・編集フォームモーダル ────── -->
 <div class="sch-form-modal-bg" id="sch-form-modal" onclick="closeFormModal(event)">
     <div class="sch-form-modal">
@@ -299,9 +510,16 @@ router.get("/schedule", requireLogin, async (req, res) => {
                             <option value="other">📌 その他</option>
                         </select>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group sch-form-full">
                         <label>表示色</label>
-                        <input type="color" class="form-control" id="sch-color" value="#3b82f6" style="padding:4px;height:38px;">
+                        <input type="hidden" id="sch-color" value="#3b82f6">
+                        <div id="sch-fcp-swatches" class="sch-fcp-swatches"></div>
+                        <div class="sch-fcp-row">
+                            <label>カスタム：</label>
+                            <input type="color" id="sch-fcp-custom" value="#3b82f6" oninput="onFormColorChange(this.value)" style="width:32px;height:26px;padding:2px;border:1.5px solid #e2e8f0;border-radius:5px;cursor:pointer;flex-shrink:0;">
+                            <span id="sch-fcp-hex" style="font-size:12px;font-family:monospace;color:#334155;">#3b82f6</span>
+                            <div id="sch-fcp-preview" style="margin-left:auto;width:24px;height:24px;border-radius:5px;border:1px solid rgba(0,0,0,.1);background:#3b82f6;flex-shrink:0;"></div>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>開始日時 <span style="color:#ef4444;">*</span></label>
@@ -686,7 +904,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
         document.getElementById('sch-form-title').textContent = 'スケジュール登録';
         document.getElementById('sch-edit-id').value = '';
         document.getElementById('sch-form').reset();
-        document.getElementById('sch-color').value = '#3b82f6';
+        initFormColorPicker('#3b82f6');
         selectedAttendees = [];
         renderAttendeeChips();
         renderAttendeeOpts('');
@@ -725,7 +943,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
         document.getElementById('sch-edit-id').value = s._id;
         document.getElementById('sch-title').value = s.title;
         document.getElementById('sch-type').value = s.type;
-        document.getElementById('sch-color').value = s.color || '#3b82f6';
+        initFormColorPicker(s.color || '#3b82f6');
         if (s.startAt) document.getElementById('sch-start').value = toLocalDatetime(s.startAt);
         if (s.endAt)   document.getElementById('sch-end').value   = toLocalDatetime(s.endAt);
         document.getElementById('sch-allday').checked = !!s.allDay;
@@ -837,7 +1055,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
                 document.getElementById('sch-edit-id').value = '';
                 document.getElementById('sch-title').value = s.title + '（複製）';
                 document.getElementById('sch-type').value = s.type;
-                document.getElementById('sch-color').value = s.color || '#3b82f6';
+                initFormColorPicker(s.color || '#3b82f6');
                 if (s.startAt) document.getElementById('sch-start').value = toLocalDatetime(s.startAt);
                 if (s.endAt)   document.getElementById('sch-end').value   = toLocalDatetime(s.endAt);
                 document.getElementById('sch-allday').checked = !!s.allDay;
@@ -1160,12 +1378,67 @@ router.get("/schedule", requireLogin, async (req, res) => {
             });
     };
 
+    var _bulkColorSelected = '#3b82f6';
+    var _bulkColorPresets = [
+        '#ef4444','#f97316','#f59e0b','#eab308',
+        '#84cc16','#22c55e','#10b981','#06b6d4',
+        '#3b82f6','#6366f1','#8b5cf6','#ec4899',
+        '#64748b','#334155'
+    ];
+
     window.bulkColorChange = function() {
-        const ids = Array.from(selectedEventIds);
+        var ids = Array.from(selectedEventIds);
         if (ids.length === 0) return;
-        const color = prompt('新しい色を16進数で入力してください（例: #ef4444）');
-        if (!color) return;
-        if (!/^#[0-9a-fA-F]{6}$/.test(color)) { alert('カラーコードの形式が正しくありません（例: #ef4444）'); return; }
+        // スウォッチを描画
+        var container = document.getElementById('sch-color-swatches');
+        container.innerHTML = '';
+        _bulkColorPresets.forEach(function(c) {
+            var div = document.createElement('div');
+            div.className = 'sch-color-swatch' + (c === _bulkColorSelected ? ' selected' : '');
+            div.style.background = c;
+            div.title = c;
+            div.onclick = function() { selectBulkColor(c); };
+            container.appendChild(div);
+        });
+        document.getElementById('sch-color-custom').value = _bulkColorSelected;
+        document.getElementById('sch-color-hex-display').textContent = _bulkColorSelected;
+        document.getElementById('sch-color-preview').style.background = _bulkColorSelected;
+        document.getElementById('sch-color-apply-btn').style.background = _bulkColorSelected;
+        document.getElementById('sch-color-modal').classList.add('open');
+    };
+
+    window.closeBulkColorModal = function(e) {
+        if (!e || e.target === document.getElementById('sch-color-modal'))
+            document.getElementById('sch-color-modal').classList.remove('open');
+    };
+
+    window.selectBulkColor = function(c) {
+        _bulkColorSelected = c;
+        document.querySelectorAll('.sch-color-swatch').forEach(function(el) {
+            el.classList.toggle('selected', el.title === c);
+        });
+        document.getElementById('sch-color-custom').value = c;
+        document.getElementById('sch-color-hex-display').textContent = c;
+        document.getElementById('sch-color-preview').style.background = c;
+        document.getElementById('sch-color-apply-btn').style.background = c;
+    };
+
+    window.onCustomColorChange = function(c) {
+        _bulkColorSelected = c;
+        document.getElementById('sch-color-hex-display').textContent = c;
+        document.getElementById('sch-color-preview').style.background = c;
+        document.getElementById('sch-color-apply-btn').style.background = c;
+        document.querySelectorAll('.sch-color-swatch').forEach(function(el) {
+            el.classList.remove('selected');
+        });
+    };
+
+    window.applyBulkColor = function() {
+        var ids = Array.from(selectedEventIds);
+        if (ids.length === 0) return;
+        var color = _bulkColorSelected;
+        if (!/^#[0-9a-fA-F]{6}$/.test(color)) { alert('カラーコードの形式が正しくありません'); return; }
+        document.getElementById('sch-color-modal').classList.remove('open');
         fetch('/api/schedule/bulk/color', {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
@@ -1178,6 +1451,193 @@ router.get("/schedule", requireLogin, async (req, res) => {
                 if (calendar) calendar.refetchEvents();
                 alert(d.count + '件のスケジュールの色を変更しました。');
             });
+    };
+
+    // ── フォーム内カラーピッカー ──────────────────────────────────────
+    function initFormColorPicker(color) {
+        color = color || '#3b82f6';
+        document.getElementById('sch-color').value = color;
+        var container = document.getElementById('sch-fcp-swatches');
+        if (!container) return;
+        container.innerHTML = '';
+        _bulkColorPresets.forEach(function(c) {
+            var div = document.createElement('div');
+            div.className = 'sch-color-swatch' + (c === color ? ' selected' : '');
+            div.style.background = c;
+            div.title = c;
+            div.onclick = function() { selectFormColor(c); };
+            container.appendChild(div);
+        });
+        document.getElementById('sch-fcp-custom').value = color;
+        document.getElementById('sch-fcp-hex').textContent = color;
+        document.getElementById('sch-fcp-preview').style.background = color;
+    }
+
+    window.selectFormColor = function(c) {
+        document.getElementById('sch-color').value = c;
+        document.querySelectorAll('#sch-fcp-swatches .sch-color-swatch').forEach(function(el) {
+            el.classList.toggle('selected', el.title === c);
+        });
+        document.getElementById('sch-fcp-custom').value = c;
+        document.getElementById('sch-fcp-hex').textContent = c;
+        document.getElementById('sch-fcp-preview').style.background = c;
+    };
+
+    window.onFormColorChange = function(c) {
+        document.getElementById('sch-color').value = c;
+        document.getElementById('sch-fcp-hex').textContent = c;
+        document.getElementById('sch-fcp-preview').style.background = c;
+        document.querySelectorAll('#sch-fcp-swatches .sch-color-swatch').forEach(function(el) {
+            el.classList.remove('selected');
+        });
+    };
+
+    // ── CSV エクスポート / インポート ──────────────────────────────────
+    var _importCsvText = null;
+
+    window.openExportModal = function() {
+        var sel = document.getElementById('exp-user-id');
+        if (sel && sel.options.length === 1) {
+            ALL_USERS.forEach(function(u) {
+                var opt = document.createElement('option');
+                opt.value = u.id;
+                opt.textContent = u.name + (u.dept ? ' (' + u.dept + ')' : '');
+                sel.appendChild(opt);
+            });
+        }
+        var today = new Date();
+        var mEl = document.getElementById('exp-month');
+        if (mEl && !mEl.value) mEl.value = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0');
+        document.getElementById('sch-export-modal').classList.add('open');
+    };
+    window.closeExportModal = function(e) {
+        if (!e || e.target === document.getElementById('sch-export-modal'))
+            document.getElementById('sch-export-modal').classList.remove('open');
+    };
+    window.updateExportForm = function() {
+        var scope = document.querySelector('input[name="exp-scope"]:checked');
+        var period = document.querySelector('input[name="exp-period"]:checked');
+        if (!scope || !period) return;
+        document.getElementById('exp-user-section').style.display = scope.value === 'user' ? '' : 'none';
+        document.getElementById('exp-dept-section').style.display = scope.value === 'dept' ? '' : 'none';
+        document.getElementById('exp-month-section').style.display = period.value === 'month' ? '' : 'none';
+    };
+    window.doExport = function() {
+        var scope = document.querySelector('input[name="exp-scope"]:checked');
+        var period = document.querySelector('input[name="exp-period"]:checked');
+        if (!scope || !period) return;
+        var params = new URLSearchParams();
+        if (scope.value === 'user') {
+            var uid = document.getElementById('exp-user-id').value;
+            if (!uid) return alert('ユーザーを選択してください');
+            params.set('userId', uid);
+        } else if (scope.value === 'dept') {
+            var dept = document.getElementById('exp-dept-name').value.trim();
+            if (!dept) return alert('部署名を入力してください');
+            params.set('department', dept);
+        }
+        if (period.value === 'month') {
+            var mv = document.getElementById('exp-month').value;
+            if (!mv) return alert('年月を選択してください');
+            var parts = mv.split('-');
+            params.set('year', parts[0]);
+            params.set('month', parts[1]);
+        }
+        window.location.href = '/api/schedule/export/csv?' + params.toString();
+        closeExportModal();
+    };
+
+    window.openImportModal = function() {
+        _importCsvText = null;
+        document.getElementById('sch-import-file').value = '';
+        document.getElementById('sch-import-preview').style.display = 'none';
+        document.getElementById('sch-import-btn').style.display = 'none';
+        document.getElementById('sch-import-modal').classList.add('open');
+    };
+    window.closeImportModal = function(e) {
+        if (!e || e.target === document.getElementById('sch-import-modal'))
+            document.getElementById('sch-import-modal').classList.remove('open');
+    };
+    window.downloadImportTemplate = function() {
+        var BOM = '\uFEFF';
+        var headers = '\u30BF\u30A4\u30C8\u30EB,\u7A2E\u5225,\u958B\u59CB\u65E5\u6642\uFF08JST\uFF09,\u7D42\u4E86\u65E5\u6642\uFF08JST\uFF09,\u7D42\u65E5,\u5834\u6240,\u30E1\u30E2,\u53C2\u52A0\u8005\u30E1\u30FC\u30EB\uFF08;\u533A\u5207\u308A\uFF09,\u8272,\u30BF\u30B0\uFF08;\u533A\u5207\u308A\uFF09,\u516C\u958B\u8A2D\u5B9A,\u7E70\u308A\u8FD4\u3057\u30E2\u30FC\u30C9,\u7E70\u308A\u8FD4\u3057\u7D42\u4E86\u65E5,\u7E70\u308A\u8FD4\u3057\u66DC\u65E5\uFF080=\u65E5\u30016=\u571F\uFF09';
+        var sample = '\u4F1A\u8B70\u30B5\u30F3\u30D7\u30EB,meeting,2026-06-01 10:00,2026-06-01 11:00,FALSE,\u4F1A\u8B70\u5BA4A,\u8B70\u984C\u5185\u5BB9,user@example.com,#3b82f6,\u30BF\u30B01;\u30BF\u30B02,private,none,,';
+        var csv = BOM + headers + '\\r\\n' + sample;
+        var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = 'schedule_import_template.csv'; a.click();
+        URL.revokeObjectURL(url);
+    };
+    window.onImportFileChange = function() {
+        var file = document.getElementById('sch-import-file').files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+            _importCsvText = ev.target.result;
+            fetch('/api/schedule/import/csv', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csv: _importCsvText, dryRun: true }),
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (!d.ok) return alert(d.error || '\u30A8\u30E9\u30FC\u304C\u767A\u751F\u3057\u307E\u3057\u305F');
+                showImportPreview(d);
+            })
+            .catch(function() { alert('\u901A\u4FE1\u30A8\u30E9\u30FC\u304C\u767A\u751F\u3057\u307E\u3057\u305F'); });
+        };
+        reader.readAsText(file, 'UTF-8');
+    };
+    function showImportPreview(d) {
+        document.getElementById('sch-import-preview').style.display = '';
+        var summary = document.getElementById('sch-import-summary');
+        summary.innerHTML = '<strong>\u8A08 ' + d.totalRows + '\u884C<\/strong> \uFF0F \u6B63\u5E38: <span style="color:#16a34a;font-weight:600;">' + d.validRows + '\u4EF6<\/span> \uFF0F \u30A8\u30E9\u30FC: <span style="color:#dc2626;font-weight:600;">' + d.errorRows + '\u4EF6<\/span>';
+        var errArea = document.getElementById('sch-import-err-area');
+        if (d.errors && d.errors.length) {
+            errArea.innerHTML = '<div class="sch-import-err-box">' +
+                d.errors.slice(0, 30).map(function(e) {
+                    return '<p>\u884C' + e.row + '\u300C' + escHtml(e.title) + '\u300D: ' + e.errors.map(escHtml).join(' / ') + '<\/p>';
+                }).join('') +
+                '<\/div>';
+        } else { errArea.innerHTML = ''; }
+        var tbody = document.getElementById('sch-import-tbody');
+        tbody.innerHTML = (d.preview || []).map(function(r) {
+            return '<tr><td>' + escHtml(r.title) + '<\/td><td>' + escHtml(r.startAt) +
+                '<\/td><td>' + escHtml(r.endAt) + '<\/td><td>' + escHtml(r.type) +
+                '<\/td><td>' + r.attendeeCount + '<\/td><td>' + escHtml(r.repeatMode) + '<\/td><\/tr>';
+        }).join('');
+        var btn = document.getElementById('sch-import-btn');
+        if (d.validRows > 0) {
+            btn.style.display = '';
+            btn.textContent = '\u2705 ' + d.validRows + '\u4EF6\u3092\u30A4\u30F3\u30DD\u30FC\u30C8\u5B9F\u884C';
+            btn.dataset.hasErrors = d.errorRows > 0 ? '1' : '0';
+        } else { btn.style.display = 'none'; }
+    }
+    window.executeImport = function() {
+        if (!_importCsvText) return alert('\u30D5\u30A1\u30A4\u30EB\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044');
+        var btn = document.getElementById('sch-import-btn');
+        if (btn.dataset.hasErrors === '1' &&
+            !confirm('\u30A8\u30E9\u30FC\u306E\u3042\u308B\u884C\u306F\u30B9\u30AD\u30C3\u30D7\u3057\u3066\u30A4\u30F3\u30DD\u30FC\u30C8\u3057\u307E\u3059\u3002\u7D9A\u884C\u3057\u307E\u3059\u304B\uFF1F'))
+            return;
+        btn.disabled = true;
+        btn.textContent = '\u51E6\u7406\u4E2D...';
+        fetch('/api/schedule/import/csv', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ csv: _importCsvText, dryRun: false }),
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            btn.disabled = false;
+            if (!d.ok) return alert(d.error || '\u30A4\u30F3\u30DD\u30FC\u30C8\u306B\u5931\u6557\u3057\u307E\u3057\u305F');
+            closeImportModal();
+            if (calendar) calendar.refetchEvents();
+            loadUpcoming();
+            alert(d.created + '\u4EF6\u306E\u30B9\u30B1\u30B8\u30E5\u30FC\u30EB\u3092\u30A4\u30F3\u30DD\u30FC\u30C8\u3057\u307E\u3057\u305F\u3002' +
+                (d.skipped ? '\uFF08' + d.skipped + '\u884C\u30B9\u30AD\u30C3\u30D7\uFF09' : ''));
+        })
+        .catch(function() { btn.disabled = false; alert('\u901A\u4FE1\u30A8\u30E9\u30FC\u304C\u767A\u751F\u3057\u307E\u3057\u305F'); });
     };
 })();
 </script>`;
@@ -1466,6 +1926,335 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════
+// GET /api/schedule/export/csv — CSVエクスポート
+// query: year?, month?, userId?, department?
+// ═══════════════════════════════════════════════════
+router.get("/api/schedule/export/csv", requireLogin, async (req, res) => {
+  try {
+    const myId = String(req.session.userId);
+    const { year, month, userId, department } = req.query;
+    const filter = { isDeleted: false };
+    // 月別フィルター（JST基準）
+    if (year && month) {
+      const y = parseInt(year, 10),
+        m = parseInt(month, 10) - 1;
+      const startUTC = new Date(Date.UTC(y, m, 1) - 9 * 3600 * 1000);
+      const endUTC = new Date(Date.UTC(y, m + 1, 1) - 9 * 3600 * 1000);
+      filter.startAt = { $gte: startUTC, $lt: endUTC };
+    }
+    // スコープフィルター
+    if (department) {
+      if (!isAdmin(req))
+        return res.status(403).json({
+          ok: false,
+          error: "管理者のみ部署別エクスポートが利用できます",
+        });
+      const deptEmps = await Employee.find({ department }).lean();
+      const deptUIds = deptEmps.map((e) => e.userId);
+      filter.$or = [
+        { createdBy: { $in: deptUIds } },
+        { attendees: { $in: deptUIds } },
+      ];
+    } else if (userId) {
+      if (!isAdmin(req) && userId !== myId)
+        return res.status(403).json({ ok: false, error: "権限がありません" });
+      filter.$or = [{ createdBy: userId }, { attendees: userId }];
+    } else {
+      filter.$or = [{ createdBy: myId }, { attendees: myId }];
+    }
+    const schedules = await Schedule.find(filter).sort({ startAt: 1 }).lean();
+    // 参加者メールアドレス解決
+    const allUIds = [
+      ...new Set(
+        schedules
+          .flatMap((s) => [
+            String(s.createdBy || ""),
+            ...(s.attendees || []).map(String),
+          ])
+          .filter(Boolean),
+      ),
+    ];
+    const emps = await Employee.find({ userId: { $in: allUIds } }).lean();
+    const emailMap = {};
+    emps.forEach((e) => {
+      emailMap[String(e.userId)] = e.email || "";
+    });
+    // CSV生成
+    const CSV_HEADERS = [
+      "タイトル",
+      "種別",
+      "開始日時（JST）",
+      "終了日時（JST）",
+      "終日",
+      "場所",
+      "メモ",
+      "参加者メール（;区切り）",
+      "色",
+      "タグ（;区切り）",
+      "公開設定",
+      "繰り返しモード",
+      "繰り返し終了日",
+      "繰り返し曜日（0=日〜6=土）",
+    ];
+    const rowLines = schedules.map((s) => {
+      const attendeeEmails = (s.attendees || [])
+        .map((id) => emailMap[String(id)] || "")
+        .filter(Boolean)
+        .join(";");
+      return [
+        s.title || "",
+        s.type || "other",
+        toJSTDatetimeStr(s.startAt),
+        toJSTDatetimeStr(s.endAt),
+        s.allDay ? "TRUE" : "FALSE",
+        s.location || "",
+        s.description || "",
+        attendeeEmails,
+        s.color || "#3b82f6",
+        (s.tags || []).join(";"),
+        s.visibility || "private",
+        "none",
+        "",
+        "",
+      ]
+        .map(csvCell)
+        .join(",");
+    });
+    const BOM = "\uFEFF";
+    const csv =
+      BOM + [CSV_HEADERS.map(csvCell).join(","), ...rowLines].join("\r\n");
+    const label = department ? "dept-" + department : userId ? "user" : "my";
+    const dateLabel =
+      year && month ? year + "-" + String(month).padStart(2, "0") : "all";
+    const filename = "schedule_" + label + "_" + dateLabel + ".csv";
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename*=UTF-8''" + encodeURIComponent(filename),
+    );
+    res.send(csv);
+  } catch (e) {
+    console.error("[schedule] GET /api/schedule/export/csv エラー:", e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// POST /api/schedule/import/csv — CSVインポート
+// body: { csv: "文字列", dryRun: boolean }
+// ═══════════════════════════════════════════════════
+router.post("/api/schedule/import/csv", requireLogin, async (req, res) => {
+  try {
+    const myId = req.session.userId;
+    const { csv: csvText, dryRun = true } = req.body;
+    if (!csvText || typeof csvText !== "string")
+      return res.json({ ok: false, error: "CSVデータが含まれていません" });
+    if (csvText.length > 2 * 1024 * 1024)
+      return res.json({
+        ok: false,
+        error: "CSVファイルが大きすぎます（2MB以内）",
+      });
+
+    const { headers, rows } = parseCsvText(csvText);
+    // 列マッピング（日本語/英語ヘッダー両対応）
+    const COL_ALIASES = {
+      title: ["タイトル", "title"],
+      type: ["種別", "type"],
+      startAt: ["開始日時（JST）", "開始日時", "startAt"],
+      endAt: ["終了日時（JST）", "終了日時", "endAt"],
+      allDay: ["終日", "allDay"],
+      location: ["場所", "location"],
+      description: ["メモ", "description"],
+      attendees: ["参加者メール（;区切り）", "参加者メール", "attendees"],
+      color: ["色", "color"],
+      tags: ["タグ（;区切り）", "タグ", "tags"],
+      visibility: ["公開設定", "visibility"],
+      repeatMode: ["繰り返しモード", "repeatMode"],
+      repeatUntil: ["繰り返し終了日", "repeatUntil"],
+      repeatDays: ["繰り返し曜日（0=日〜6=土）", "繰り返し曜日", "repeatDays"],
+    };
+    const colMap = {};
+    for (const [key, aliases] of Object.entries(COL_ALIASES)) {
+      for (const a of aliases) {
+        if (headers.includes(a)) {
+          colMap[key] = a;
+          break;
+        }
+      }
+    }
+    if (!colMap.title || !colMap.startAt || !colMap.endAt)
+      return res.json({
+        ok: false,
+        error:
+          "CSVフォーマットが不正です。『タイトル』『開始日時（JST）』『終了日時（JST）』列が必要です。",
+      });
+
+    // メールアドレス → userId マッピング
+    const emailsAll = new Set();
+    rows.forEach((r) => {
+      (r[colMap.attendees] || "")
+        .split(";")
+        .map((e) => e.trim())
+        .filter(Boolean)
+        .forEach((e) => emailsAll.add(e));
+    });
+    const empsByEmail = await Employee.find({
+      email: { $in: Array.from(emailsAll) },
+    }).lean();
+    const emailToUid = {};
+    empsByEmail.forEach((e) => {
+      if (e.email) emailToUid[e.email.toLowerCase()] = String(e.userId);
+    });
+
+    // 検証 & 変換
+    const VALID_TYPES = ["meeting", "event", "other"];
+    const validated = [];
+    const errors = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const rowNum = i + 2; // ヘッダー行=1
+      const errs = [];
+      const title = r[colMap.title];
+      if (!title) errs.push("タイトルが空です");
+      const startAt = parseCsvJSTDatetime(r[colMap.startAt]);
+      if (!startAt)
+        errs.push('開始日時の形式が不正: "' + r[colMap.startAt] + '"');
+      const endAt = parseCsvJSTDatetime(r[colMap.endAt]);
+      if (!endAt) errs.push('終了日時の形式が不正: "' + r[colMap.endAt] + '"');
+      if (startAt && endAt && endAt <= startAt)
+        errs.push("終了日時は開始日時より後にしてください");
+      const type = VALID_TYPES.includes(r[colMap.type])
+        ? r[colMap.type]
+        : "other";
+      const allDay = (r[colMap.allDay] || "").toUpperCase() === "TRUE";
+      const location = r[colMap.location] || "";
+      const description = r[colMap.description] || "";
+      const color = /^#[0-9a-fA-F]{6}$/.test(r[colMap.color] || "")
+        ? r[colMap.color]
+        : "#3b82f6";
+      const tags = (r[colMap.tags] || "")
+        .split(";")
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .slice(0, 20);
+      const visibility =
+        r[colMap.visibility] === "public" ? "public" : "private";
+      const attendeeEmails = (r[colMap.attendees] || "")
+        .split(";")
+        .map((e) => e.trim())
+        .filter(Boolean);
+      const attendeeIds = [];
+      const unknownEmails = [];
+      attendeeEmails.forEach((e) => {
+        const uid = emailToUid[e.toLowerCase()];
+        if (uid) attendeeIds.push(uid);
+        else unknownEmails.push(e);
+      });
+      if (unknownEmails.length)
+        errs.push("参加者未解決: " + unknownEmails.join(", "));
+      const repeatMode = ["daily", "weekly"].includes(r[colMap.repeatMode])
+        ? r[colMap.repeatMode]
+        : "none";
+      let repeatUntil = null;
+      if (repeatMode !== "none") {
+        repeatUntil = parseCsvJSTDatetime(r[colMap.repeatUntil]);
+        if (!repeatUntil) errs.push("繰り返し終了日が不正です");
+      }
+      const repeatDays = (r[colMap.repeatDays] || "")
+        .split(/[,; ]+/)
+        .map((d) => parseInt(d, 10))
+        .filter((d) => !isNaN(d) && d >= 0 && d <= 6);
+      if (errs.length) {
+        errors.push({ row: rowNum, title: title || "(無題)", errors: errs });
+        continue;
+      }
+      validated.push({
+        title,
+        type,
+        startAt,
+        endAt,
+        allDay,
+        location,
+        description,
+        color,
+        tags,
+        visibility,
+        attendeeIds,
+        repeatMode,
+        repeatUntil,
+        repeatDays,
+      });
+    }
+
+    // dryRun=true: プレビューのみ返す
+    if (dryRun) {
+      return res.json({
+        ok: true,
+        dryRun: true,
+        totalRows: rows.length,
+        validRows: validated.length,
+        errorRows: errors.length,
+        errors,
+        preview: validated.slice(0, 30).map((v) => ({
+          title: v.title,
+          startAt: toJSTDatetimeStr(v.startAt),
+          endAt: toJSTDatetimeStr(v.endAt),
+          type: v.type,
+          attendeeCount: v.attendeeIds.length,
+          repeatMode: v.repeatMode,
+        })),
+      });
+    }
+    // dryRun=false: 有効行を登録（エラー行はスキップ）
+    let created = 0;
+    for (const v of validated) {
+      let datesToCreate = [{ startAt: v.startAt, endAt: v.endAt }];
+      let seriesId = null;
+      if (v.repeatMode !== "none" && v.repeatUntil) {
+        datesToCreate = generateRepeatDates(
+          v.startAt,
+          v.endAt,
+          v.repeatMode,
+          v.repeatUntil,
+          v.repeatDays,
+        );
+        if (datesToCreate.length > 1) seriesId = randomUUID();
+      }
+      for (const slot of datesToCreate) {
+        await Schedule.create({
+          title: v.title,
+          description: v.description,
+          location: v.location,
+          startAt: slot.startAt,
+          endAt: slot.endAt,
+          allDay: v.allDay,
+          type: v.type,
+          createdBy: myId,
+          attendees: v.attendeeIds,
+          attendeeStatus: v.attendeeIds.map((uid) => ({
+            userId: uid,
+            status: "pending",
+            updatedAt: new Date(),
+          })),
+          color: v.color,
+          tags: v.tags,
+          visibility: v.visibility,
+          seriesId,
+        });
+        created++;
+      }
+    }
+    res.json({ ok: true, dryRun: false, created, skipped: errors.length });
+  } catch (e) {
+    console.error(
+      "[schedule] POST /api/schedule/import/csv エラー:",
+      e.message,
+    );
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
 // GET /api/schedule/:id — 詳細JSON
 // ═══════════════════════════════════════════════════
 router.get("/api/schedule/:id", requireLogin, async (req, res) => {
@@ -1691,12 +2480,10 @@ router.patch("/api/schedule/bulk/color", requireLogin, async (req, res) => {
     });
     for (const sch of schedules) {
       if (!canEdit(req, sch))
-        return res
-          .status(403)
-          .json({
-            ok: false,
-            error: "一部のスケジュールに編集権限がありません",
-          });
+        return res.status(403).json({
+          ok: false,
+          error: "一部のスケジュールに編集権限がありません",
+        });
     }
     await Schedule.updateMany(
       { _id: { $in: ids }, isDeleted: false },
@@ -1821,12 +2608,10 @@ router.put("/api/schedule/:id/series-bulk", requireLogin, async (req, res) => {
     // 権限チェック（作成者 or admin のみ）
     for (const t of targets) {
       if (!canEdit(req, t))
-        return res
-          .status(403)
-          .json({
-            ok: false,
-            error: "一部のスケジュールに編集権限がありません",
-          });
+        return res.status(403).json({
+          ok: false,
+          error: "一部のスケジュールに編集権限がありません",
+        });
     }
 
     // 一括更新
@@ -1923,12 +2708,10 @@ router.delete(
       const targets = await Schedule.find(filter);
       for (const t of targets) {
         if (!canEdit(req, t))
-          return res
-            .status(403)
-            .json({
-              ok: false,
-              error: "一部のスケジュールに削除権限がありません",
-            });
+          return res.status(403).json({
+            ok: false,
+            error: "一部のスケジュールに削除権限がありません",
+          });
       }
       await Schedule.updateMany(
         {
@@ -1972,12 +2755,10 @@ router.delete("/api/schedule/bulk", requireLogin, async (req, res) => {
     });
     for (const sch of schedules) {
       if (!canEdit(req, sch))
-        return res
-          .status(403)
-          .json({
-            ok: false,
-            error: "一部のスケジュールに削除権限がありません",
-          });
+        return res.status(403).json({
+          ok: false,
+          error: "一部のスケジュールに削除権限がありません",
+        });
     }
     await Schedule.updateMany(
       { _id: { $in: ids }, isDeleted: false },
