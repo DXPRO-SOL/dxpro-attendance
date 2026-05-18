@@ -5,7 +5,14 @@
 const express = require("express");
 const router = express.Router();
 const { randomUUID } = require("crypto");
-const { Schedule, ChatRoom, User, Employee } = require("../models");
+const {
+  Schedule,
+  ChatRoom,
+  User,
+  Employee,
+  ScheduleComment,
+  ScheduleCommentRead,
+} = require("../models");
 const { requireLogin } = require("../middleware/auth");
 const { buildPageShell, pageFooter } = require("../lib/renderPage");
 const { sendMail } = require("../config/mailer");
@@ -75,6 +82,15 @@ function canEdit(req, schedule) {
   return (
     isAdmin(req) || String(schedule.createdBy) === String(req.session.userId)
   );
+}
+
+function canView(req, schedule) {
+  if (isAdmin(req)) return true;
+  const myId = String(req.session.userId);
+  if (String(schedule.createdBy) === myId) return true;
+  if ((schedule.attendees || []).some((a) => String(a) === myId)) return true;
+  if (schedule.visibility === "public") return true;
+  return false;
 }
 
 // ── 参加応答ステータスラベル ──────────────────────────────────────────────
@@ -328,12 +344,37 @@ router.get("/schedule", requireLogin, async (req, res) => {
 .sch-att-size { font-size:11px; color:#94a3b8; flex-shrink:0; }
 .sch-att-del { padding:2px 7px; border:none; background:#fee2e2; color:#b91c1c; border-radius:4px; font-size:11px; cursor:pointer; flex-shrink:0; line-height:1.4; }
 .sch-att-actions { display:flex; gap:7px; margin-top:8px; flex-wrap:wrap; }
-.sch-att-add-btn { padding:5px 12px; background:#f1f5f9; border:1.5px solid #e2e8f0; color:#475569; border-radius:6px; font-size:12px; cursor:pointer; font-family:inherit; display:inline-flex; align-items:center; gap:5px; transition:background .12s; }
+.sch-att-add-btn { padding:5px 14px; background:#f1f5f9; border:1.5px solid #e2e8f0; color:#475569; border-radius:6px; font-size:12px; cursor:pointer; font-family:inherit; display:inline-flex; align-items:center; justify-content:center; gap:5px; transition:background .12s; min-width:118px; box-sizing:border-box; }
 .sch-att-add-btn:hover { background:#e2e8f0; }
+form label.sch-att-add-btn, .form-group label.sch-att-add-btn { display:inline-flex; flex-direction:row; align-items:center; margin-bottom:0; font-weight:inherit; font-size:12px; color:#475569; }
 .sch-att-url-form { background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px; margin-top:8px; }
 .sch-att-url-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
 .sch-att-url-input { flex:1; min-width:100px; padding:5px 8px; border:1.5px solid #e2e8f0; border-radius:5px; font-size:12px; font-family:inherit; }
 .sch-att-url-submit { padding:5px 14px; background:#3b82f6; color:#fff; border:none; border-radius:5px; font-size:12px; cursor:pointer; font-family:inherit; }
+/* スケジュールコメント */
+.sch-cmt-list { max-height:300px; overflow-y:auto; padding-right:2px; margin-bottom:8px; }
+.sch-cmt-item { display:flex; gap:8px; padding:8px 4px; border-bottom:1px solid #f1f5f9; }
+.sch-cmt-item:last-child { border-bottom:none; }
+.sch-cmt-avatar { width:30px; height:30px; border-radius:50%; background:#dbeafe; color:#2563eb; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0; }
+.sch-cmt-main { flex:1; min-width:0; }
+.sch-cmt-header { display:flex; align-items:baseline; gap:8px; margin-bottom:3px; flex-wrap:wrap; }
+.sch-cmt-name { font-weight:600; font-size:12.5px; color:#1e293b; }
+.sch-cmt-time { font-size:11px; color:#94a3b8; }
+.sch-cmt-edited { font-size:10px; color:#94a3b8; font-style:italic; }
+.sch-cmt-body { font-size:13px; color:#334155; white-space:pre-wrap; word-break:break-word; }
+.sch-cmt-mention { color:#2563eb; font-weight:600; background:#eff6ff; border-radius:3px; padding:0 3px; }
+.sch-cmt-actions-bar { display:flex; gap:4px; margin-top:4px; }
+.sch-cmt-act-btn { padding:1px 7px; border:1px solid #e2e8f0; background:#f8fafc; color:#64748b; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit; }
+.sch-cmt-act-btn:hover { background:#f1f5f9; }
+.sch-cmt-edit-area { margin-top:6px; }
+.sch-cmt-edit-ta { width:100%; padding:5px 8px; border:1.5px solid #3b82f6; border-radius:5px; font-size:12.5px; font-family:inherit; resize:vertical; outline:none; box-sizing:border-box; }
+.sch-cmt-badge { display:inline-block; background:#ef4444; color:#fff; border-radius:999px; padding:1px 7px; font-size:11px; font-weight:700; margin-left:5px; }
+.sch-cmt-input-wrap { margin-top:6px; }
+.sch-cmt-textarea { width:100%; padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; resize:vertical; outline:none; box-sizing:border-box; min-height:56px; }
+.sch-cmt-textarea:focus { border-color:#3b82f6; }
+.sch-cmt-mention-dd { position:absolute; z-index:1000; background:#fff; border:1px solid #e2e8f0; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,.1); max-height:160px; overflow-y:auto; min-width:160px; }
+.sch-cmt-mention-item { padding:6px 12px; cursor:pointer; font-size:13px; }
+.sch-cmt-mention-item:hover { background:#f1f5f9; }
 </style>`;
 
   const shell = buildPageShell({
@@ -788,6 +829,199 @@ router.get("/schedule", requireLogin, async (req, res) => {
     }
     window.removePendingUrl = function(i) { _pendingAttUrls.splice(i, 1); renderNewFormAtts(); };
     window.removePendingFile = function(i) { _pendingAttFiles.splice(i, 1); renderNewFormAtts(); };
+
+    // ── スケジュールコメント ─────────────────────────────────────────────
+    function fmtCmtTime(isoStr) {
+        if (!isoStr) return '';
+        var d = new Date(isoStr);
+        var diff = Date.now() - d;
+        if (diff < 60000)   return '\u305f\u3063\u305f\u4eca';
+        if (diff < 3600000) return Math.floor(diff / 60000) + '\u5206\u524d';
+        if (diff < 86400000) return Math.floor(diff / 3600000) + '\u6642\u9593\u524d';
+        var jst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+        var mo = jst.getUTCMonth() + 1;
+        var da = jst.getUTCDate();
+        var hh = String(jst.getUTCHours()).padStart(2, '0');
+        var mm = String(jst.getUTCMinutes()).padStart(2, '0');
+        return mo + '/' + da + ' ' + hh + ':' + mm;
+    }
+    function hlMentions(text) {
+        var parts = text.split('@');
+        if (parts.length <= 1) return text;
+        var out = parts[0];
+        for (var i = 1; i < parts.length; i++) {
+            var end = -1;
+            for (var j = 0; j < parts[i].length; j++) {
+                var ch = parts[i].charCodeAt(j);
+                if (ch <= 32 || ch === 60) { end = j; break; }
+            }
+            if (end === -1) end = parts[i].length;
+            if (end === 0) { out += '@' + parts[i]; }
+            else { out += '<span class="sch-cmt-mention">@' + parts[i].slice(0, end) + '</span>' + parts[i].slice(end); }
+        }
+        return out;
+    }
+    function renderCommentList(schedId, comments, myId, isAdm) {
+        var list = document.getElementById('sch-cmt-list-' + schedId);
+        if (!list) return;
+        if (!comments || !comments.length) {
+            list.innerHTML = '<div style="color:#94a3b8;font-size:13px;padding:8px 0;">\u30b3\u30e1\u30f3\u30c8\u306f\u307e\u3060\u3042\u308a\u307e\u305b\u3093\u3002</div>';
+            return;
+        }
+        list.innerHTML = comments.map(function(c) {
+            var initials = (c.userName || '?').slice(0, 2);
+            var bodyHtml = hlMentions(escHtml(c.body || ''));
+            var canAct = (c.userId === myId || isAdm);
+            var actHtml = canAct
+                ? '<div class="sch-cmt-actions-bar">'
+                  + '<button class="sch-cmt-act-btn" data-action="edit-comment" data-sched-id="' + schedId + '" data-cmt-id="' + c._id + '">\u7de8\u96c6</button>'
+                  + '<button class="sch-cmt-act-btn" style="color:#b91c1c;" data-action="delete-comment" data-sched-id="' + schedId + '" data-cmt-id="' + c._id + '">\u524a\u9664</button>'
+                  + '</div>'
+                : '';
+            var editedMark = c.editedAt ? ' <span class="sch-cmt-edited">(\u7de8\u96c6\u6e08\u307f)</span>' : '';
+            return '<div class="sch-cmt-item" id="sch-cmt-item-' + c._id + '">'
+                 + '<div class="sch-cmt-avatar">' + escHtml(initials) + '</div>'
+                 + '<div class="sch-cmt-main">'
+                 + '<div class="sch-cmt-header"><span class="sch-cmt-name">' + escHtml(c.userName || '?') + '</span>'
+                 + '<span class="sch-cmt-time">' + fmtCmtTime(c.createdAt) + '</span>' + editedMark + '</div>'
+                 + '<div class="sch-cmt-body" id="sch-cmt-bd-' + c._id + '">' + bodyHtml + '</div>'
+                 + actHtml
+                 + '</div></div>';
+        }).join('');
+        list.scrollTop = list.scrollHeight;
+    }
+    window.loadComments = function(schedId) {
+        fetch('/api/schedule/' + schedId + '/comments')
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) return;
+                renderCommentList(schedId, d.comments, MY_ID, d.isAdmin);
+                var badge = document.getElementById('sch-cmt-badge-' + schedId);
+                if (badge) {
+                    if (d.unreadCount > 0) {
+                        badge.textContent = d.unreadCount + '\u672a\u8aad';
+                        badge.style.display = '';
+                    } else {
+                        badge.style.display = 'none';
+                    }
+                }
+            });
+    };
+    window.submitComment = function(schedId) {
+        var ta = document.getElementById('sch-cmt-body-' + schedId);
+        if (!ta) return;
+        var body = ta.value.trim();
+        if (!body) return;
+        fetch('/api/schedule/' + schedId + '/comments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body: body }),
+        }).then(r => r.json()).then(d => {
+            if (!d.ok) return alert(d.error || '\u9001\u4fe1\u306b\u5931\u6557\u3057\u307e\u3057\u305f');
+            ta.value = '';
+            var dd = document.getElementById('sch-cmt-mention-dd-' + schedId);
+            if (dd) dd.style.display = 'none';
+            loadComments(schedId);
+        });
+    };
+    window.deleteComment = function(schedId, cmtId) {
+        if (!confirm('\u3053\u306e\u30b3\u30e1\u30f3\u30c8\u3092\u524a\u9664\u3057\u307e\u3059\u304b\uff1f')) return;
+        fetch('/api/schedule/' + schedId + '/comments/' + cmtId, { method: 'DELETE' })
+            .then(r => r.json())
+            .then(d => { if (!d.ok) alert(d.error || '\u524a\u9664\u306b\u5931\u6557'); else loadComments(schedId); });
+    };
+    window.startEditComment = function(schedId, cmtId) {
+        var bodyEl = document.getElementById('sch-cmt-bd-' + cmtId);
+        var item   = document.getElementById('sch-cmt-item-' + cmtId);
+        if (!bodyEl || !item) return;
+        var currentText = bodyEl.innerText || bodyEl.textContent || '';
+        bodyEl.style.display = 'none';
+        var editArea = document.createElement('div');
+        editArea.className = 'sch-cmt-edit-area';
+        editArea.id = 'sch-cmt-edit-area-' + cmtId;
+        editArea.innerHTML = '<textarea class="sch-cmt-edit-ta" id="sch-cmt-edit-ta-' + cmtId + '" rows="3"></textarea>'
+            + '<div style="display:flex;gap:6px;margin-top:4px;justify-content:flex-end;">'
+            + '<button class="sch-cmt-act-btn" data-action="cancel-comment" data-sched-id="' + schedId + '" data-cmt-id="' + cmtId + '">\u30ad\u30e3\u30f3\u30bb\u30eb</button>'
+            + '<button class="sch-cmt-act-btn" style="background:#3b82f6;color:#fff;border-color:#3b82f6;" data-action="save-comment" data-sched-id="' + schedId + '" data-cmt-id="' + cmtId + '">\u4fdd\u5b58</button>'
+            + '</div>';
+        bodyEl.parentNode.insertBefore(editArea, bodyEl.nextSibling);
+        var ta = document.getElementById('sch-cmt-edit-ta-' + cmtId);
+        if (ta) { ta.value = currentText; ta.focus(); }
+        var actBar = item.querySelector('.sch-cmt-actions-bar');
+        if (actBar) actBar.style.display = 'none';
+    };
+    window.cancelEditComment = function(schedId, cmtId) {
+        var editArea = document.getElementById('sch-cmt-edit-area-' + cmtId);
+        var bodyEl   = document.getElementById('sch-cmt-bd-' + cmtId);
+        var item     = document.getElementById('sch-cmt-item-' + cmtId);
+        if (editArea) editArea.remove();
+        if (bodyEl) bodyEl.style.display = '';
+        var actBar = item && item.querySelector('.sch-cmt-actions-bar');
+        if (actBar) actBar.style.display = '';
+    };
+    window.saveEditComment = function(schedId, cmtId) {
+        var ta = document.getElementById('sch-cmt-edit-ta-' + cmtId);
+        if (!ta) return;
+        var body = ta.value.trim();
+        if (!body) return;
+        fetch('/api/schedule/' + schedId + '/comments/' + cmtId, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body: body }),
+        }).then(r => r.json()).then(d => {
+            if (!d.ok) return alert(d.error || '\u7de8\u96c6\u306b\u5931\u6557\u3057\u307e\u3057\u305f');
+            loadComments(schedId);
+        });
+    };
+    window.onCmtInput = function(e, schedId) {
+        var ta = e.target;
+        var val = ta.value;
+        var pos = ta.selectionStart;
+        var before = val.slice(0, pos);
+        var atIdx = -1;
+        for (var i = before.length - 1; i >= 0; i--) {
+            if (before[i] === '@') { atIdx = i; break; }
+            if (before.charCodeAt(i) <= 32) break;
+        }
+        var dd = document.getElementById('sch-cmt-mention-dd-' + schedId);
+        if (!dd) return;
+        if (atIdx === -1) { dd.style.display = 'none'; return; }
+        var query = before.slice(atIdx + 1).toLowerCase();
+        var atts = (currentDetailData && currentDetailData.attendees) ? currentDetailData.attendees : [];
+        var matches = atts.filter(function(a) { return (a.name || '').toLowerCase().indexOf(query) !== -1; });
+        if (!matches.length) { dd.style.display = 'none'; return; }
+        dd.style.display = '';
+        dd.innerHTML = matches.slice(0, 8).map(function(a) {
+            return '<div class="sch-cmt-mention-item" data-action="insert-mention" data-sched-id="' + schedId + '" data-name="' + escHtml(a.name) + '" data-at-idx="' + atIdx + '" data-pos="' + pos + '">@' + escHtml(a.name) + '</div>';
+        }).join('');
+    };
+    // コメントアクション委譲リスナー
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('[data-action]');
+        if (!btn) return;
+        var action  = btn.getAttribute('data-action');
+        var schedId = btn.getAttribute('data-sched-id');
+        var cmtId   = btn.getAttribute('data-cmt-id');
+        if      (action === 'submit-comment')  submitComment(schedId);
+        else if (action === 'edit-comment')    startEditComment(schedId, cmtId);
+        else if (action === 'delete-comment')  deleteComment(schedId, cmtId);
+        else if (action === 'save-comment')    saveEditComment(schedId, cmtId);
+        else if (action === 'cancel-comment')  cancelEditComment(schedId, cmtId);
+        else if (action === 'insert-mention') {
+            var name   = btn.getAttribute('data-name');
+            var atIdx2 = parseInt(btn.getAttribute('data-at-idx'));
+            var pos2   = parseInt(btn.getAttribute('data-pos'));
+            var ta2    = document.getElementById('sch-cmt-body-' + schedId);
+            if (ta2) {
+                ta2.value = ta2.value.slice(0, atIdx2) + '@' + name + ' ' + ta2.value.slice(pos2);
+                ta2.focus();
+                ta2.selectionStart = ta2.selectionEnd = atIdx2 + name.length + 2;
+            }
+            var dd2 = document.getElementById('sch-cmt-mention-dd-' + schedId);
+            if (dd2) dd2.style.display = 'none';
+        }
+    });
+
     function renderEditFormAtts(schedId, atts) {
         _editFormSchedId = schedId;
         var list = document.getElementById('sch-form-att-list');
@@ -1003,6 +1237,11 @@ router.get("/schedule", requireLogin, async (req, res) => {
                 if (!data.ok) return alert(data.error || 'エラーが発生しました');
                 renderDetail(data.schedule);
                 document.getElementById('sch-detail-modal').classList.add('open');
+                loadComments(id);
+                var ta = document.getElementById('sch-cmt-body-' + id);
+                if (ta) ta.addEventListener('keydown', function(e) {
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); submitComment(id); }
+                });
             })
             .catch(() => alert('データの取得に失敗しました'));
     };
@@ -1092,6 +1331,23 @@ router.get("/schedule", requireLogin, async (req, res) => {
             </div>
         </div>\`;
 
+        // ── コメント（スレッド）HTML ──
+        var commentHtml = \`
+        <div class="sch-modal-row">
+            <div class="sch-modal-row-icon" style="padding-top:2px;"><i class="fa-solid fa-comments" style="color:#94a3b8;"></i></div>
+            <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;margin-bottom:8px;font-size:13px;">\u30b9\u30ec\u30c3\u30c9 <span id="sch-cmt-badge-\${s._id}" class="sch-cmt-badge" style="display:none;"></span></div>
+                <div id="sch-cmt-list-\${s._id}" class="sch-cmt-list"><div style="color:#94a3b8;font-size:13px;padding:8px 0;">\u8aad\u307f\u8fbc\u307f\u4e2d\u2026</div></div>
+                <div class="sch-cmt-input-wrap" style="position:relative;">
+                    <div id="sch-cmt-mention-dd-\${s._id}" class="sch-cmt-mention-dd" style="display:none;position:absolute;bottom:100%;left:0;margin-bottom:2px;"></div>
+                    <textarea id="sch-cmt-body-\${s._id}" class="sch-cmt-textarea" placeholder="\u30b3\u30e1\u30f3\u30c8\u3092\u5165\u529b\u2026 @\u540d\u524d\u3067\u30e1\u30f3\u30b7\u30e7\u30f3\uff08Ctrl+Enter\u3067\u9001\u4fe1\uff09" rows="2" data-sched-id="\${s._id}" oninput="onCmtInput(event,'\${s._id}')"></textarea>
+                    <div style="display:flex;justify-content:flex-end;margin-top:4px;">
+                        <button type="button" class="btn btn-primary" style="padding:4px 14px;font-size:12px;" data-action="submit-comment" data-sched-id="\${s._id}"><i class="fa-solid fa-paper-plane"></i> \u9001\u4fe1</button>
+                    </div>
+                </div>
+            </div>
+        </div>\`;
+
         document.getElementById('sch-detail-inner').innerHTML = \`
         <div class="sch-modal-header">
             <div class="sch-modal-color-dot" style="background:\${escHtml(s.color||'#3b82f6')};"></div>
@@ -1128,6 +1384,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
             \${exportHtml}
             \${callHtml}
             \${respondHtml}
+            \${commentHtml}
         </div>\`;
     }
 
@@ -2728,6 +2985,188 @@ router.delete(
       res.json({ ok: true });
     } catch (e) {
       console.error("[schedule] DELETE attachment error:", e.message);
+      res.json({ ok: false, error: e.message });
+    }
+  },
+);
+
+// ═══════════════════════════════════════════════════
+// GET /api/schedule/:id/comments — コメント一覧 + 既読更新
+// ═══════════════════════════════════════════════════
+router.get("/api/schedule/:id/comments", requireLogin, async (req, res) => {
+  try {
+    const schedule = await Schedule.findById(req.params.id).lean();
+    if (!schedule || schedule.isDeleted)
+      return res.json({ ok: false, error: "スケジュールが見つかりません" });
+    if (!canView(req, schedule))
+      return res.json({ ok: false, error: "権限がありません" });
+    const myId = String(req.session.userId);
+    const comments = await ScheduleComment.find({
+      scheduleId: req.params.id,
+      isDeleted: false,
+    })
+      .sort({ createdAt: 1 })
+      .lean();
+    const readDoc = await ScheduleCommentRead.findOne({
+      scheduleId: req.params.id,
+      userId: myId,
+    }).lean();
+    const lastReadAt = readDoc ? readDoc.lastReadAt : new Date(0);
+    const unreadCount = comments.filter(
+      (c) => new Date(c.createdAt) > lastReadAt && String(c.userId) !== myId,
+    ).length;
+    await ScheduleCommentRead.findOneAndUpdate(
+      { scheduleId: req.params.id, userId: myId },
+      { lastReadAt: new Date() },
+      { upsert: true },
+    );
+    res.json({ ok: true, comments, unreadCount, isAdmin: isAdmin(req) });
+  } catch (e) {
+    console.error("[schedule] GET comments error:", e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// POST /api/schedule/:id/comments — コメント投稿
+// ═══════════════════════════════════════════════════
+router.post("/api/schedule/:id/comments", requireLogin, async (req, res) => {
+  try {
+    const schedule = await Schedule.findById(req.params.id).lean();
+    if (!schedule || schedule.isDeleted)
+      return res.json({ ok: false, error: "スケジュールが見つかりません" });
+    if (!canView(req, schedule))
+      return res.json({ ok: false, error: "権限がありません" });
+    const myId = String(req.session.userId);
+    const body = (req.body.body || "").trim();
+    if (!body || body.length > 2000)
+      return res.json({ ok: false, error: "本文が不正です" });
+    const emp = await Employee.findOne({ userId: myId }).lean();
+    const userName = emp ? emp.name : req.session.username || "不明";
+    // メンション解析
+    const allParticipantIds = [
+      ...new Set([
+        String(schedule.createdBy),
+        ...(schedule.attendees || []).map(String),
+      ]),
+    ];
+    const allEmps = await Employee.find({
+      userId: { $in: allParticipantIds },
+    }).lean();
+    const mentionedIds = [];
+    let pos = 0;
+    while (pos < body.length) {
+      const atIdx = body.indexOf("@", pos);
+      if (atIdx === -1) break;
+      let end = atIdx + 1;
+      while (end < body.length && body.charCodeAt(end) > 32) end++;
+      const fragment = body.slice(atIdx + 1, end);
+      const matched = allEmps.find(
+        (e) => e.name && e.name.indexOf(fragment) !== -1,
+      );
+      if (matched && !mentionedIds.includes(String(matched.userId)))
+        mentionedIds.push(String(matched.userId));
+      pos = end;
+    }
+    const comment = await ScheduleComment.create({
+      scheduleId: req.params.id,
+      userId: myId,
+      userName,
+      body,
+      mentions: mentionedIds,
+    });
+    // メンション通知
+    for (const uid of mentionedIds) {
+      if (uid === myId) continue;
+      await createNotification({
+        userId: uid,
+        type: "schedule_comment_mention",
+        title: "メンション",
+        body: `${userName} さんが「${schedule.title}」でメンションしました`,
+        link: `/schedule?open=${schedule._id}`,
+        fromUserId: myId,
+        fromName: userName,
+      });
+      if (global.io)
+        global.io.to("u_" + uid).emit("notification_new", {
+          type: "schedule_comment_mention",
+          title: "メンション",
+          body: `${userName} さんが「${schedule.title}」でメンションしました`,
+          link: `/schedule?open=${schedule._id}`,
+        });
+    }
+    // 参加者へリアルタイム更新通知
+    if (global.io) {
+      const all = [
+        ...new Set([
+          String(schedule.createdBy),
+          ...(schedule.attendees || []).map(String),
+        ]),
+      ];
+      all.forEach((uid) => {
+        global.io
+          .to("u_" + uid)
+          .emit("schedule_comment_new", { scheduleId: String(schedule._id) });
+      });
+    }
+    res.json({ ok: true, commentId: String(comment._id) });
+  } catch (e) {
+    console.error("[schedule] POST comment error:", e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// PUT /api/schedule/:id/comments/:cId — コメント編集
+// ═══════════════════════════════════════════════════
+router.put(
+  "/api/schedule/:id/comments/:cId",
+  requireLogin,
+  async (req, res) => {
+    try {
+      const comment = await ScheduleComment.findById(req.params.cId);
+      if (!comment || comment.isDeleted)
+        return res.json({ ok: false, error: "コメントが見つかりません" });
+      if (
+        String(comment.userId) !== String(req.session.userId) &&
+        !isAdmin(req)
+      )
+        return res.json({ ok: false, error: "権限がありません" });
+      const body = (req.body.body || "").trim();
+      if (!body || body.length > 2000)
+        return res.json({ ok: false, error: "本文が不正です" });
+      comment.body = body;
+      comment.editedAt = new Date();
+      await comment.save();
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[schedule] PUT comment error:", e.message);
+      res.json({ ok: false, error: e.message });
+    }
+  },
+);
+
+// ═══════════════════════════════════════════════════
+// DELETE /api/schedule/:id/comments/:cId — コメント削除
+// ═══════════════════════════════════════════════════
+router.delete(
+  "/api/schedule/:id/comments/:cId",
+  requireLogin,
+  async (req, res) => {
+    try {
+      const comment = await ScheduleComment.findById(req.params.cId);
+      if (!comment || comment.isDeleted)
+        return res.json({ ok: false, error: "コメントが見つかりません" });
+      if (
+        String(comment.userId) !== String(req.session.userId) &&
+        !isAdmin(req)
+      )
+        return res.json({ ok: false, error: "権限がありません" });
+      comment.isDeleted = true;
+      await comment.save();
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[schedule] DELETE comment error:", e.message);
       res.json({ ok: false, error: e.message });
     }
   },

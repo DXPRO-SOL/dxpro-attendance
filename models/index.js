@@ -945,6 +945,49 @@ ScheduleSchema.index({ attendees: 1 });
 ScheduleSchema.index({ seriesId: 1 });
 const Schedule = mongoose.model("Schedule", ScheduleSchema);
 
+// ─── スケジュールコメント ────────────────────────────────────────────────────
+const ScheduleCommentSchema = new mongoose.Schema(
+  {
+    scheduleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Schedule",
+      required: true,
+      index: true,
+    },
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    userName: { type: String, default: "" },
+    body: { type: String, required: true, maxlength: 2000 },
+    mentions: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    editedAt: { type: Date },
+    isDeleted: { type: Boolean, default: false },
+  },
+  { timestamps: true },
+);
+const ScheduleComment = mongoose.model(
+  "ScheduleComment",
+  ScheduleCommentSchema,
+);
+
+// ─── スケジュールコメント既読管理 ────────────────────────────────────────────
+const ScheduleCommentReadSchema = new mongoose.Schema({
+  scheduleId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Schedule",
+    required: true,
+  },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  lastReadAt: { type: Date, default: Date.now },
+});
+ScheduleCommentReadSchema.index({ scheduleId: 1, userId: 1 }, { unique: true });
+const ScheduleCommentRead = mongoose.model(
+  "ScheduleCommentRead",
+  ScheduleCommentReadSchema,
+);
+
 // ─── ユーザー別タスク期限日ローカル上書き ───────────────────────────────────
 const TaskDueDateSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -1200,4 +1243,6 @@ module.exports = {
   WorkflowForm,
   WorkflowFlowTemplate,
   Schedule,
+  ScheduleComment,
+  ScheduleCommentRead,
 };
