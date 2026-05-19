@@ -1,14 +1,47 @@
 // ==============================
-// routes/schedule.js - スケジューラ機能
+// routes/schedule.js - スケジュール機能
 // ==============================
 "use strict";
 const express = require("express");
 const router = express.Router();
-const { Schedule, ChatRoom, User, Employee } = require("../models");
+const { randomUUID } = require("crypto");
+const {
+  Schedule,
+  ChatRoom,
+  User,
+  Employee,
+  ScheduleComment,
+  ScheduleCommentRead,
+} = require("../models");
 const { requireLogin } = require("../middleware/auth");
 const { buildPageShell, pageFooter } = require("../lib/renderPage");
 const { sendMail } = require("../config/mailer");
 const { createNotification } = require("./notifications");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+
+const schedUploadDir = path.join(__dirname, "..", "uploads", "schedule");
+if (!fs.existsSync(schedUploadDir))
+  fs.mkdirSync(schedUploadDir, { recursive: true });
+
+const schedUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, schedUploadDir),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname) || "";
+      cb(null, Date.now() + "-" + Math.round(Math.random() * 1e9) + ext);
+    },
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).slice(1).toLowerCase();
+    cb(
+      null,
+      /^(pdf|docx?|xlsx?|pptx?|csv|txt|zip|png|jpe?g|gif|webp)$/.test(ext),
+    );
+  },
+});
 
 const APP_URL =
   process.env.APP_URL ||
@@ -32,10 +65,32 @@ function fmtJST(date) {
 function isAdmin(req) {
   return req.session.isAdmin || req.session.orgRole === "admin";
 }
+// JSTで「今日の0時0分0秒」をUTCのDateで返す
+function startOfTodayJST() {
+  const jstMs = Date.now() + 9 * 3600 * 1000;
+  const d = new Date(jstMs);
+  return new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) -
+      9 * 3600 * 1000,
+  );
+}
+
 function canEdit(req, schedule) {
+  // 管理者以外は昨日以前のスケジュールを編集不可
+  if (!isAdmin(req) && new Date(schedule.startAt) < startOfTodayJST())
+    return false;
   return (
     isAdmin(req) || String(schedule.createdBy) === String(req.session.userId)
   );
+}
+
+function canView(req, schedule) {
+  if (isAdmin(req)) return true;
+  const myId = String(req.session.userId);
+  if (String(schedule.createdBy) === myId) return true;
+  if ((schedule.attendees || []).some((a) => String(a) === myId)) return true;
+  if (schedule.visibility === "public") return true;
+  return false;
 }
 
 // ── 参加応答ステータスラベル ──────────────────────────────────────────────
@@ -68,6 +123,81 @@ function icalEscape(str) {
 }
 
 // ═══════════════════════════════════════════════════
+// CSV ユーティリティ（エクスポート / インポート）
+// ═══════════════════════════════════════════════════
+function csvCell(val) {
+  const s = String(val === null || val === undefined ? "" : val);
+  if (/[,"\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+function toJSTDatetimeStr(date) {
+  if (!date) return "";
+  const d = new Date(new Date(date).getTime() + 9 * 3600 * 1000);
+  const p = (n) => String(n).padStart(2, "0");
+  return (
+    d.getUTCFullYear() +
+    "-" +
+    p(d.getUTCMonth() + 1) +
+    "-" +
+    p(d.getUTCDate()) +
+    " " +
+    p(d.getUTCHours()) +
+    ":" +
+    p(d.getUTCMinutes())
+  );
+}
+function parseCsvJSTDatetime(str) {
+  if (!str) return null;
+  const m = String(str)
+    .trim()
+    .replace(/T/, " ")
+    .match(/^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2}))?/);
+  if (!m) return null;
+  const y = +m[1],
+    mo = +m[2],
+    d = +m[3],
+    h = m[4] ? +m[4] : 0,
+    mi = m[5] ? +m[5] : 0;
+  return new Date(Date.UTC(y, mo - 1, d, h - 9, mi));
+}
+function parseCsvRow(line) {
+  const cells = [];
+  let cur = "",
+    inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '"') {
+      if (inQ && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else inQ = !inQ;
+    } else if (line[i] === "," && !inQ) {
+      cells.push(cur);
+      cur = "";
+    } else cur += line[i];
+  }
+  cells.push(cur);
+  return cells;
+}
+function parseCsvText(text) {
+  const clean = text.replace(/^\uFEFF/, "");
+  const lines = clean.split(/\r?\n/);
+  if (!lines.length) return { headers: [], rows: [] };
+  const headers = parseCsvRow(lines[0]);
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const cells = parseCsvRow(line);
+    const row = {};
+    headers.forEach((h, idx) => {
+      row[h.trim()] = (cells[idx] || "").trim();
+    });
+    rows.push(row);
+  }
+  return { headers, rows };
+}
+
+// ═══════════════════════════════════════════════════
 // SCH-01: GET /schedule  カレンダービュー
 // ═══════════════════════════════════════════════════
 router.get("/schedule", requireLogin, async (req, res) => {
@@ -97,7 +227,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
 <link href='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css' rel='stylesheet' />
 <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js'><\/script>
 <style>
-/* ===== スケジューラ専用スタイル ===== */
+/* ===== スケジュール専用スタイル ===== */
 .sch-wrap { display:flex; gap:20px; align-items:flex-start; }
 .sch-cal-col { flex:1; min-width:0; }
 .sch-side-col { width:300px; flex-shrink:0; }
@@ -151,10 +281,104 @@ router.get("/schedule", requireLogin, async (req, res) => {
 .sch-type-meeting { background:#eff6ff; color:#1d4ed8; }
 .sch-type-event   { background:#f0fdf4; color:#15803d; }
 .sch-type-other   { background:#f8fafc; color:#475569; }
+/* シリーズ操作ダイアログ */
+.sch-scope-modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.50); z-index:9100; align-items:center; justify-content:center; }
+.sch-scope-modal-bg.open { display:flex; }
+.sch-scope-modal { background:#fff; border-radius:12px; width:420px; max-width:calc(100vw - 32px); box-shadow:0 16px 48px rgba(0,0,0,.22); padding:24px; }
+.sch-scope-title { font-size:15px; font-weight:700; color:#0f172a; margin-bottom:6px; }
+.sch-scope-subtitle { font-size:12.5px; color:#64748b; margin-bottom:16px; }
+.sch-scope-options { display:flex; flex-direction:column; gap:8px; margin-bottom:16px; }
+.sch-scope-option { padding:12px 14px; border:2px solid #e2e8f0; border-radius:8px; cursor:pointer; font-size:13.5px; font-weight:500; color:#334155; transition:border-color .15s, background .15s; display:flex; align-items:center; gap:10px; }
+.sch-scope-option:hover { border-color:#3b82f6; background:#f0f7ff; color:#1d4ed8; }
+.sch-scope-option .sch-scope-icon { font-size:16px; flex-shrink:0; }
+/* 複数選択モード */
+.sch-select-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border:1.5px solid #e2e8f0; border-radius:6px; background:#fff; color:#475569; font-size:13px; font-weight:600; cursor:pointer; transition:all .15s; font-family:inherit; }
+.sch-select-btn.active { border-color:#3b82f6; background:#eff6ff; color:#1d4ed8; }
+.sch-event-selected { outline:3px solid #f97316 !important; outline-offset:-2px; opacity:.85; }
+.sch-event-selected::after { content:'✓'; position:absolute; top:1px; right:3px; font-size:11px; font-weight:700; color:#fff; text-shadow:0 0 2px rgba(0,0,0,.6); }
+/* 一括操作バー */
+.sch-bulk-bar { display:none; position:fixed; bottom:0; left:0; right:0; z-index:8000; background:linear-gradient(135deg,#1e40af,#3730a3); color:#fff; padding:12px 24px; flex-direction:row; align-items:center; gap:12px; box-shadow:0 -4px 20px rgba(0,0,0,.2); }
+.sch-bulk-bar.open { display:flex; }
+.sch-bulk-count { font-size:14px; font-weight:700; flex:1; }
+.sch-bulk-actions { display:flex; gap:8px; align-items:center; }
+.sch-bulk-btn { padding:7px 16px; border-radius:6px; border:none; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; transition:opacity .15s; }
+.sch-bulk-btn:hover { opacity:.88; }
+.sch-bulk-btn-delete { background:#ef4444; color:#fff; }
+.sch-bulk-btn-color { background:#fff; color:#1e40af; }
+.sch-bulk-btn-cancel { background:rgba(255,255,255,.18); color:#fff; border:1px solid rgba(255,255,255,.3); }
+/* 色変更モーダル */
+.sch-color-modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:9500; align-items:center; justify-content:center; }
+.sch-color-modal-bg.open { display:flex; }
+.sch-color-modal { background:#fff; border-radius:12px; width:360px; max-width:calc(100vw - 32px); box-shadow:0 16px 48px rgba(0,0,0,.22); padding:22px; }
+.sch-color-swatch { width:100%; aspect-ratio:1; border-radius:7px; border:2px solid transparent; cursor:pointer; transition:transform .12s,box-shadow .12s; }
+.sch-color-swatch:hover { transform:scale(1.13); }
+.sch-color-swatch.selected { border-color:#fff; box-shadow:0 0 0 2.5px #1d4ed8; transform:scale(1.08); }
+/* フォーム内カラーピッカー */
+.sch-fcp-swatches { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:7px; }
+.sch-fcp-swatches .sch-color-swatch { width:22px; height:22px; flex-shrink:0; }
+.sch-fcp-row { display:flex; align-items:center; gap:7px; padding:5px 8px; background:#f8fafc; border-radius:6px; }
+.sch-fcp-row label { font-size:12px; color:#475569; flex-shrink:0; font-weight:normal; margin:0; }
+/* CSVエクスポート/インポート モーダル */
+.sch-csv-modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:9200; align-items:center; justify-content:center; }
+.sch-csv-modal-bg.open { display:flex; }
+.sch-csv-modal { background:#fff; border-radius:12px; width:540px; max-width:calc(100vw - 32px); max-height:88vh; overflow-y:auto; box-shadow:0 16px 48px rgba(0,0,0,.22); padding:28px; }
+.sch-csv-title { font-size:16px; font-weight:700; color:#0f172a; }
+.sch-csv-sub { font-size:13px; color:#64748b; margin-bottom:20px; margin-top:2px; }
+.sch-csv-section { margin-bottom:14px; }
+.sch-csv-label { font-size:13px; font-weight:600; color:#334155; margin-bottom:6px; display:block; }
+.sch-csv-radios { display:flex; gap:8px; flex-wrap:wrap; }
+.sch-csv-radio-lbl { display:flex; align-items:center; gap:5px; padding:6px 12px; border:1.5px solid #e2e8f0; border-radius:6px; cursor:pointer; font-size:13px; color:#475569; user-select:none; }
+.sch-csv-radio-lbl:has(input:checked) { border-color:#3b82f6; background:#eff6ff; color:#1d4ed8; }
+.sch-import-table-wrap { max-height:220px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px; margin-bottom:10px; }
+.sch-import-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.sch-import-table th { background:#f8fafc; color:#475569; font-weight:600; padding:7px 10px; text-align:left; position:sticky; top:0; border-bottom:1px solid #e2e8f0; }
+.sch-import-table td { padding:6px 10px; border-bottom:1px solid #f1f5f9; color:#334155; }
+.sch-import-err-box { background:#fef2f2; border:1px solid #fca5a5; border-radius:6px; padding:10px 14px; margin-bottom:10px; font-size:12.5px; color:#b91c1c; max-height:140px; overflow-y:auto; }
+.sch-import-err-box p { margin:2px 0; }
+/* 添付資料 */
+.sch-att-item { display:flex; align-items:center; gap:8px; padding:6px 2px; border-bottom:1px solid #f1f5f9; }
+.sch-att-item:last-child { border-bottom:none; }
+.sch-att-icon { font-size:15px; flex-shrink:0; width:18px; text-align:center; }
+.sch-att-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; color:#2563eb; text-decoration:none; }
+.sch-att-name:hover { text-decoration:underline; }
+.sch-att-size { font-size:11px; color:#94a3b8; flex-shrink:0; }
+.sch-att-del { padding:2px 7px; border:none; background:#fee2e2; color:#b91c1c; border-radius:4px; font-size:11px; cursor:pointer; flex-shrink:0; line-height:1.4; }
+.sch-att-actions { display:flex; gap:7px; margin-top:8px; flex-wrap:wrap; }
+.sch-att-add-btn { padding:5px 14px; background:#f1f5f9; border:1.5px solid #e2e8f0; color:#475569; border-radius:6px; font-size:12px; cursor:pointer; font-family:inherit; display:inline-flex; align-items:center; justify-content:center; gap:5px; transition:background .12s; min-width:118px; box-sizing:border-box; }
+.sch-att-add-btn:hover { background:#e2e8f0; }
+form label.sch-att-add-btn, .form-group label.sch-att-add-btn { display:inline-flex; flex-direction:row; align-items:center; margin-bottom:0; font-weight:inherit; font-size:12px; color:#475569; }
+.sch-att-url-form { background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px; margin-top:8px; }
+.sch-att-url-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+.sch-att-url-input { flex:1; min-width:100px; padding:5px 8px; border:1.5px solid #e2e8f0; border-radius:5px; font-size:12px; font-family:inherit; }
+.sch-att-url-submit { padding:5px 14px; background:#3b82f6; color:#fff; border:none; border-radius:5px; font-size:12px; cursor:pointer; font-family:inherit; }
+/* スケジュールコメント */
+.sch-cmt-list { max-height:300px; overflow-y:auto; padding-right:2px; margin-bottom:8px; }
+.sch-cmt-item { display:flex; gap:8px; padding:8px 4px; border-bottom:1px solid #f1f5f9; }
+.sch-cmt-item:last-child { border-bottom:none; }
+.sch-cmt-avatar { width:30px; height:30px; border-radius:50%; background:#dbeafe; color:#2563eb; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0; }
+.sch-cmt-main { flex:1; min-width:0; }
+.sch-cmt-header { display:flex; align-items:baseline; gap:8px; margin-bottom:3px; flex-wrap:wrap; }
+.sch-cmt-name { font-weight:600; font-size:12.5px; color:#1e293b; }
+.sch-cmt-time { font-size:11px; color:#94a3b8; }
+.sch-cmt-edited { font-size:10px; color:#94a3b8; font-style:italic; }
+.sch-cmt-body { font-size:13px; color:#334155; white-space:pre-wrap; word-break:break-word; }
+.sch-cmt-mention { color:#2563eb; font-weight:600; background:#eff6ff; border-radius:3px; padding:0 3px; }
+.sch-cmt-actions-bar { display:flex; gap:4px; margin-top:4px; }
+.sch-cmt-act-btn { padding:1px 7px; border:1px solid #e2e8f0; background:#f8fafc; color:#64748b; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit; }
+.sch-cmt-act-btn:hover { background:#f1f5f9; }
+.sch-cmt-edit-area { margin-top:6px; }
+.sch-cmt-edit-ta { width:100%; padding:5px 8px; border:1.5px solid #3b82f6; border-radius:5px; font-size:12.5px; font-family:inherit; resize:vertical; outline:none; box-sizing:border-box; }
+.sch-cmt-badge { display:inline-block; background:#ef4444; color:#fff; border-radius:999px; padding:1px 7px; font-size:11px; font-weight:700; margin-left:5px; }
+.sch-cmt-input-wrap { margin-top:6px; }
+.sch-cmt-textarea { width:100%; padding:7px 10px; border:1.5px solid #e2e8f0; border-radius:6px; font-size:13px; font-family:inherit; resize:vertical; outline:none; box-sizing:border-box; min-height:56px; }
+.sch-cmt-textarea:focus { border-color:#3b82f6; }
+.sch-cmt-mention-dd { position:absolute; z-index:1000; background:#fff; border:1px solid #e2e8f0; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,.1); max-height:160px; overflow-y:auto; min-width:160px; }
+.sch-cmt-mention-item { padding:6px 12px; cursor:pointer; font-size:13px; }
+.sch-cmt-mention-item:hover { background:#f1f5f9; }
 </style>`;
 
   const shell = buildPageShell({
-    title: "スケジューラ",
+    title: "スケジュール",
     currentPath: "/schedule",
     employee,
     isAdmin: req.session.isAdmin,
@@ -167,23 +391,34 @@ router.get("/schedule", requireLogin, async (req, res) => {
 <div class="main"><div class="page-content">
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
     <div>
-        <h2 style="font-size:20px;font-weight:700;color:#0f172a;margin:0 0 4px;">📅 スケジューラ</h2>
+        <h2 style="font-size:20px;font-weight:700;color:#0f172a;margin:0 0 4px;">📅 スケジュール</h2>
         <p style="color:#64748b;font-size:13px;margin:0;">会議・予定の管理とアプリ内通話連携</p>
     </div>
-    <button class="btn btn-primary" onclick="openNewForm()">
-        <i class="fa-solid fa-plus"></i> 新規スケジュール
-    </button>
+    <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn" style="background:#fff;border:1.5px solid #e2e8f0;color:#475569;" onclick="openExportModal()">
+            <i class="fa-solid fa-download"></i> CSV出力
+        </button>
+        <button class="btn" style="background:#fff;border:1.5px solid #e2e8f0;color:#475569;" onclick="openImportModal()">
+            <i class="fa-solid fa-upload"></i> CSV取込
+        </button>
+        <button class="btn btn-primary" onclick="openNewForm()">
+            <i class="fa-solid fa-plus"></i> 新規スケジュール
+        </button>
+    </div>
 </div>
 
 <div class="sch-wrap">
     <!-- カレンダー列 -->
     <div class="sch-cal-col">
         <div class="card" style="padding:18px 20px;">
-            <div class="sch-legend">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+              <div class="sch-legend" style="margin-bottom:0;">
                 <div class="sch-legend-item"><div class="sch-legend-dot" style="background:#3b82f6;"></div>会議</div>
                 <div class="sch-legend-item"><div class="sch-legend-dot" style="background:#22c55e;"></div>イベント</div>
                 <div class="sch-legend-item"><div class="sch-legend-dot" style="background:#94a3b8;"></div>その他</div>
                 <div class="sch-legend-item"><span style="font-size:12px;">📞</span>&nbsp;通話連携あり</div>
+              </div>
+              <button class="sch-select-btn" id="sch-select-btn" onclick="toggleSelectMode()">☑ 複数選択</button>
             </div>
             <div id="sch-calendar"></div>
         </div>
@@ -207,6 +442,135 @@ router.get("/schedule", requireLogin, async (req, res) => {
     <div class="sch-modal" id="sch-detail-inner"></div>
 </div>
 
+<!-- ────── シリーズ操作スコープ選択ダイアログ ────── -->
+<div class="sch-scope-modal-bg" id="sch-scope-modal" onclick="closeSeriesModal(event)">
+  <div class="sch-scope-modal">
+    <div class="sch-scope-title" id="sch-scope-title">繰り返し予定の操作</div>
+    <div class="sch-scope-subtitle" id="sch-scope-subtitle">どの範囲の予定に適用しますか？</div>
+    <div class="sch-scope-options">
+      <div class="sch-scope-option" onclick="confirmSeriesScope('only')">
+        <span class="sch-scope-icon">📅</span>この予定だけ
+      </div>
+      <div class="sch-scope-option" onclick="confirmSeriesScope('future')">
+        <span class="sch-scope-icon">📆</span>この予定以降の同じシリーズ
+      </div>
+      <div class="sch-scope-option" onclick="confirmSeriesScope('all')">
+        <span class="sch-scope-icon">🗓</span>同じシリーズのすべての予定
+      </div>
+    </div>
+    <button onclick="closeSeriesModal()" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:13px;cursor:pointer;font-family:inherit;">キャンセル</button>
+  </div>
+</div>
+
+<!-- ────── 一括操作バー ────── -->
+<div class="sch-bulk-bar" id="sch-bulk-bar">
+  <span class="sch-bulk-count" id="sch-bulk-count">0件選択中</span>
+  <div class="sch-bulk-actions">
+    <button class="sch-bulk-btn sch-bulk-btn-color" onclick="bulkColorChange()">🎨 色変更</button>
+    <button class="sch-bulk-btn sch-bulk-btn-delete" onclick="bulkDelete()">🗑 一括削除</button>
+    <button class="sch-bulk-btn sch-bulk-btn-cancel" onclick="toggleSelectMode(false)">選択解除</button>
+  </div>
+</div>
+
+<!-- ────── 色変更モーダル ────── -->
+<div class="sch-color-modal-bg" id="sch-color-modal" onclick="closeBulkColorModal(event)">
+  <div class="sch-color-modal">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <div style="font-size:15px;font-weight:700;color:#0f172a;">🎨 色の変更</div>
+      <button onclick="closeBulkColorModal()" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:20px;line-height:1;">&times;</button>
+    </div>
+    <div style="font-size:13px;color:#64748b;margin-bottom:14px;">プリセットから選ぶか、カスタムカラーで指定してください</div>
+    <div id="sch-color-swatches" style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:16px;"></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;padding:10px;background:#f8fafc;border-radius:8px;">
+      <label style="font-size:13px;color:#475569;flex-shrink:0;">カスタム：</label>
+      <input type="color" id="sch-color-custom" value="#3b82f6" oninput="onCustomColorChange(this.value)" style="width:36px;height:30px;padding:2px;border:1.5px solid #e2e8f0;border-radius:6px;cursor:pointer;flex-shrink:0;">
+      <span id="sch-color-hex-display" style="font-size:13px;font-family:monospace;color:#334155;">#3b82f6</span>
+      <div id="sch-color-preview" style="margin-left:auto;width:28px;height:28px;border-radius:6px;border:1px solid rgba(0,0,0,.1);background:#3b82f6;flex-shrink:0;"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button onclick="closeBulkColorModal()" style="padding:8px 18px;border:1.5px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:13px;cursor:pointer;font-family:inherit;">キャンセル</button>
+      <button onclick="applyBulkColor()" id="sch-color-apply-btn" style="padding:8px 18px;border:none;border-radius:6px;background:#3b82f6;color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">✓ 適用する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ────── CSVエクスポート モーダル ────── -->
+<div class="sch-csv-modal-bg" id="sch-export-modal" onclick="closeExportModal(event)">
+  <div class="sch-csv-modal">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+      <div class="sch-csv-title">📤 CSVエクスポート</div>
+      <button onclick="closeExportModal()" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:20px;line-height:1;">&times;</button>
+    </div>
+    <div class="sch-csv-sub">スケジュールをCSV形式でダウンロードします</div>
+    <div class="sch-csv-section">
+      <span class="sch-csv-label">出力範囲</span>
+      <div class="sch-csv-radios">
+        <label class="sch-csv-radio-lbl"><input type="radio" name="exp-scope" value="my" checked onchange="updateExportForm()"> 自分</label>
+        <label class="sch-csv-radio-lbl" ${isAdmin(req) ? "" : 'style="display:none"'}><input type="radio" name="exp-scope" value="user" onchange="updateExportForm()"> ユーザー指定</label>
+        <label class="sch-csv-radio-lbl" ${isAdmin(req) ? "" : 'style="display:none"'}><input type="radio" name="exp-scope" value="dept" onchange="updateExportForm()"> 部署別</label>
+      </div>
+    </div>
+    <div class="sch-csv-section" id="exp-user-section" style="display:none">
+      <span class="sch-csv-label">ユーザー選択</span>
+      <select id="exp-user-id" style="width:100%;padding:7px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;font-family:inherit;">
+        <option value="">-- 選択してください --</option>
+      </select>
+    </div>
+    <div class="sch-csv-section" id="exp-dept-section" style="display:none">
+      <span class="sch-csv-label">部署名</span>
+      <input type="text" id="exp-dept-name" placeholder="例: 開発部" style="width:100%;padding:7px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box;">
+    </div>
+    <div class="sch-csv-section">
+      <span class="sch-csv-label">期間</span>
+      <div class="sch-csv-radios">
+        <label class="sch-csv-radio-lbl"><input type="radio" name="exp-period" value="all" checked onchange="updateExportForm()"> 全期間</label>
+        <label class="sch-csv-radio-lbl"><input type="radio" name="exp-period" value="month" onchange="updateExportForm()"> 月別</label>
+      </div>
+    </div>
+    <div class="sch-csv-section" id="exp-month-section" style="display:none">
+      <span class="sch-csv-label">対象年月</span>
+      <input type="month" id="exp-month" style="padding:7px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;font-family:inherit;">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px;">
+      <button onclick="closeExportModal()" style="padding:8px 18px;border:1.5px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:13px;cursor:pointer;font-family:inherit;">キャンセル</button>
+      <button onclick="doExport()" class="btn btn-primary" style="font-size:13px;">📥 ダウンロード</button>
+    </div>
+  </div>
+</div>
+
+<!-- ────── CSVインポート モーダル ────── -->
+<div class="sch-csv-modal-bg" id="sch-import-modal" onclick="closeImportModal(event)">
+  <div class="sch-csv-modal">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+      <div class="sch-csv-title">📥 CSVインポート</div>
+      <button onclick="closeImportModal()" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:20px;line-height:1;">&times;</button>
+    </div>
+    <div class="sch-csv-sub">CSVファイルからスケジュールを一括登録します</div>
+    <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:#0369a1;">
+      💡 <strong>テンプレートCSVで入力形式をご確認ください。</strong><br>
+      <a href="#" onclick="downloadImportTemplate();return false;" style="color:#0369a1;font-weight:600;">テンプレートをダウンロード &rarr;</a>
+    </div>
+    <div class="sch-csv-section">
+      <span class="sch-csv-label">CSVファイル選択（UTF-8 推奨）</span>
+      <input type="file" id="sch-import-file" accept=".csv,text/csv" onchange="onImportFileChange()" style="display:block;width:100%;padding:7px 0;font-size:13px;cursor:pointer;">
+    </div>
+    <div id="sch-import-preview" style="display:none">
+      <div id="sch-import-summary" style="font-size:13px;margin-bottom:10px;padding:8px 12px;background:#f8fafc;border-radius:6px;"></div>
+      <div id="sch-import-err-area"></div>
+      <div class="sch-import-table-wrap">
+        <table class="sch-import-table">
+          <thead><tr><th>タイトル</th><th>開始日時</th><th>終了日時</th><th>種別</th><th>参加者数</th><th>繰り返し</th></tr></thead>
+          <tbody id="sch-import-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+      <button onclick="closeImportModal()" style="padding:8px 18px;border:1.5px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:13px;cursor:pointer;font-family:inherit;">キャンセル</button>
+      <button id="sch-import-btn" onclick="executeImport()" class="btn btn-primary" style="font-size:13px;display:none;">✅ インポート実行</button>
+    </div>
+  </div>
+</div>
+
 <!-- ────── 登録・編集フォームモーダル ────── -->
 <div class="sch-form-modal-bg" id="sch-form-modal" onclick="closeFormModal(event)">
     <div class="sch-form-modal">
@@ -227,9 +591,16 @@ router.get("/schedule", requireLogin, async (req, res) => {
                             <option value="other">📌 その他</option>
                         </select>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group sch-form-full">
                         <label>表示色</label>
-                        <input type="color" class="form-control" id="sch-color" value="#3b82f6" style="padding:4px;height:38px;">
+                        <input type="hidden" id="sch-color" value="#3b82f6">
+                        <div id="sch-fcp-swatches" class="sch-fcp-swatches"></div>
+                        <div class="sch-fcp-row">
+                            <label>カスタム：</label>
+                            <input type="color" id="sch-fcp-custom" value="#3b82f6" oninput="onFormColorChange(this.value)" style="width:32px;height:26px;padding:2px;border:1.5px solid #e2e8f0;border-radius:5px;cursor:pointer;flex-shrink:0;">
+                            <span id="sch-fcp-hex" style="font-size:12px;font-family:monospace;color:#334155;">#3b82f6</span>
+                            <div id="sch-fcp-preview" style="margin-left:auto;width:24px;height:24px;border-radius:5px;border:1px solid rgba(0,0,0,.1);background:#3b82f6;flex-shrink:0;"></div>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>開始日時 <span style="color:#ef4444;">*</span></label>
@@ -322,6 +693,25 @@ router.get("/schedule", requireLogin, async (req, res) => {
                         </div>
                     </div>
                 </div>
+                <div class="form-group sch-form-full" id="sch-form-att-wrap" style="display:none;">
+                    <label><i class="fa-solid fa-paperclip" style="color:#94a3b8;"></i> 添付資料</label>
+                    <div id="sch-form-att-list" style="margin-bottom:6px;min-height:28px;"></div>
+                    <div class="sch-att-actions">
+                        <button type="button" class="sch-att-add-btn" onclick="openEditAddUrl()"><i class="fa-solid fa-link"></i> URLを追加</button>
+                        <label class="sch-att-add-btn"><i class="fa-solid fa-paperclip"></i> ファイルを添付
+                            <input type="file" multiple hidden id="sch-form-att-file-input" onchange="uploadEditFiles(this)" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.zip,.png,.jpg,.jpeg,.gif,.webp">
+                        </label>
+                    </div>
+                    <div id="sch-form-att-url-form" class="sch-att-url-form" style="display:none;margin-top:8px;">
+                        <div style="font-size:12px;color:#475569;font-weight:600;margin-bottom:6px;"><i class="fa-solid fa-link" style="color:#3b82f6;"></i> URLを追加</div>
+                        <div class="sch-att-url-row">
+                            <input type="text" id="sch-form-att-url-name" class="sch-att-url-input" placeholder="表示名（省略可）" style="max-width:160px;">
+                            <input type="url" id="sch-form-att-url-val" class="sch-att-url-input" placeholder="https://...">
+                            <button type="button" class="sch-att-url-submit" onclick="submitEditUrl()">追加</button>
+                            <button type="button" class="sch-att-add-btn" onclick="closeEditAddUrl()">×</button>
+                        </div>
+                    </div>
+                </div>
                 <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px;">
                     <button type="button" class="btn" style="background:#f1f5f9;color:#475569;" onclick="closeFormModal()">キャンセル</button>
                     <button type="submit" class="btn btn-primary" id="sch-submit-btn"><i class="fa-solid fa-check"></i> 保存</button>
@@ -337,6 +727,391 @@ router.get("/schedule", requireLogin, async (req, res) => {
     const ALL_USERS = ${usersJson};
     let calendar = null;
     let selectedAttendees = []; // [{id, name}]
+
+    // ── シリーズ・複数選択 用 状態変数 ─────────────────────────────
+    let currentDetailData = null;   // 最後に詳細を開いたスケジュールデータ
+    let selectMode = false;         // 複数選択モード
+    let selectedEventIds = new Set(); // 選択中のイベントID集合
+    let pendingSeriesAction = null; // 'edit' | 'delete'
+    let pendingSeriesId = null;     // シリーズ操作対象のスケジュールID
+
+    // ── 添付資料 ユーティリティ ────────────────────────────────────────────
+    function getFileIcon(s2) {
+        var t = (s2 || '').toLowerCase();
+        if (t.indexOf('pdf') !== -1) return '<i class="fa-regular fa-file-pdf" style="color:#ef4444;"></i>';
+        if (t.indexOf('xl') !== -1 || t.indexOf('excel') !== -1) return '<i class="fa-regular fa-file-excel" style="color:#22c55e;"></i>';
+        if (t.indexOf('doc') !== -1 || t.indexOf('word') !== -1) return '<i class="fa-regular fa-file-word" style="color:#3b82f6;"></i>';
+        if (t.indexOf('ppt') !== -1 || t.indexOf('presentation') !== -1) return '<i class="fa-regular fa-file-powerpoint" style="color:#f97316;"></i>';
+        if (t.indexOf('zip') !== -1 || t.indexOf('rar') !== -1) return '<i class="fa-regular fa-file-zipper" style="color:#a855f7;"></i>';
+        if (t.indexOf('png') !== -1 || t.indexOf('jpg') !== -1 || t.indexOf('jpeg') !== -1 || t.indexOf('gif') !== -1 || t.indexOf('webp') !== -1 || t.indexOf('image') !== -1) return '<i class="fa-regular fa-file-image" style="color:#06b6d4;"></i>';
+        return '<i class="fa-regular fa-file" style="color:#94a3b8;"></i>';
+    }
+    function getLinkIcon(url) {
+        if (url.indexOf('zoom.us') !== -1) return '🎥';
+        if (url.indexOf('meet.google.com') !== -1) return '🟩';
+        if (url.indexOf('drive.google.com') !== -1 || url.indexOf('docs.google.com') !== -1) return '📁';
+        if (url.indexOf('teams.microsoft') !== -1) return '🟣';
+        return '🔗';
+    }
+    function fmtSize(b) {
+        if (!b) return '';
+        if (b < 1024) return b + ' B';
+        if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+        return (b / 1048576).toFixed(1) + ' MB';
+    }
+    // ── 添付資料 操作 ──────────────────────────────────────────────────
+    window.deleteAttachment = function(schedId, attId) {
+        if (!confirm('この添付を削除しますか？')) return;
+        fetch('/api/schedule/' + schedId + '/attachments/' + attId, { method: 'DELETE' })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) return alert(d.error || '削除に失敗しました');
+                openDetail(schedId);
+            });
+    };
+    window.openAddUrl = function(schedId) {
+        var el = document.getElementById('sch-att-url-form-' + schedId);
+        if (el) el.style.display = '';
+    };
+    window.closeAddUrl = function(schedId) {
+        var el = document.getElementById('sch-att-url-form-' + schedId);
+        if (el) el.style.display = 'none';
+    };
+    window.submitAddUrl = function(schedId) {
+        var nameEl = document.getElementById('sch-att-url-name-' + schedId);
+        var urlEl  = document.getElementById('sch-att-url-val-' + schedId);
+        var name = nameEl ? nameEl.value.trim() : '';
+        var url  = urlEl  ? urlEl.value.trim()  : '';
+        if (!url) { alert('URLを入力してください'); return; }
+        if (url.indexOf('http') !== 0) { alert('http:// または https:// で始まるURLを入力してください'); return; }
+        if (!name) name = url;
+        fetch('/api/schedule/' + schedId + '/attachments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ attachType: 'url', name: name, url: url }),
+        }).then(r => r.json()).then(d => {
+            if (!d.ok) return alert(d.error || '追加に失敗しました');
+            openDetail(schedId);
+        });
+    };
+    window.uploadAttachFiles = function(schedId, input) {
+        if (!input.files || !input.files.length) return;
+        var form = new FormData();
+        Array.from(input.files).forEach(function(f) { form.append('files', f); });
+        fetch('/api/schedule/' + schedId + '/attachments/file', { method: 'POST', body: form })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) return alert(d.error || 'アップロードに失敗しました');
+                openDetail(schedId);
+            });
+    };
+
+    // ── 編集フォーム内 添付資料 ────────────────────────────────────────
+    var _editFormSchedId = '';
+    var _pendingAttUrls  = []; // 新規作成時にキューする URL [{name,url}]
+    var _pendingAttFiles = []; // 新規作成時にキューする File[]
+    function renderNewFormAtts() {
+        var list = document.getElementById('sch-form-att-list');
+        if (!list) return;
+        var items = [];
+        _pendingAttUrls.forEach(function(u, i) {
+            var icon = getLinkIcon(u.url);
+            items.push('<div class="sch-att-item"><span class="sch-att-icon">' + icon + '</span><span class="sch-att-name" style="color:#475569;">' + escHtml(u.name || u.url) + '</span><span class="sch-att-size">URL</span><button type="button" class="sch-att-del" onclick="removePendingUrl(' + i + ')">\xd7</button></div>');
+        });
+        _pendingAttFiles.forEach(function(f, i) {
+            var icon = getFileIcon(f.type + ' ' + f.name);
+            var sz = fmtSize(f.size);
+            items.push('<div class="sch-att-item"><span class="sch-att-icon">' + icon + '</span><span class="sch-att-name" style="color:#475569;">' + escHtml(f.name) + '</span>' + (sz ? '<span class="sch-att-size">' + sz + '</span>' : '') + '<button type="button" class="sch-att-del" onclick="removePendingFile(' + i + ')">\xd7</button></div>');
+        });
+        list.innerHTML = items.length
+            ? items.join('')
+            : '<div style="color:#94a3b8;font-size:13px;padding:4px 0;">\u6dfb\u4ed8\u8cc7\u6599\u306f\u3042\u308a\u307e\u305b\u3093<span style="font-size:11px;margin-left:6px;">\uff08\u4fdd\u5b58\u6642\u306b\u30a2\u30c3\u30d7\u30ed\u30fc\u30c9\u3055\u308c\u307e\u3059\uff09</span></div>';
+    }
+    window.removePendingUrl = function(i) { _pendingAttUrls.splice(i, 1); renderNewFormAtts(); };
+    window.removePendingFile = function(i) { _pendingAttFiles.splice(i, 1); renderNewFormAtts(); };
+
+    // ── スケジュールコメント ─────────────────────────────────────────────
+    function fmtCmtTime(isoStr) {
+        if (!isoStr) return '';
+        var d = new Date(isoStr);
+        var diff = Date.now() - d;
+        if (diff < 60000)   return '\u305f\u3063\u305f\u4eca';
+        if (diff < 3600000) return Math.floor(diff / 60000) + '\u5206\u524d';
+        if (diff < 86400000) return Math.floor(diff / 3600000) + '\u6642\u9593\u524d';
+        var jst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+        var mo = jst.getUTCMonth() + 1;
+        var da = jst.getUTCDate();
+        var hh = String(jst.getUTCHours()).padStart(2, '0');
+        var mm = String(jst.getUTCMinutes()).padStart(2, '0');
+        return mo + '/' + da + ' ' + hh + ':' + mm;
+    }
+    function hlMentions(text) {
+        var parts = text.split('@');
+        if (parts.length <= 1) return text;
+        var out = parts[0];
+        for (var i = 1; i < parts.length; i++) {
+            var end = -1;
+            for (var j = 0; j < parts[i].length; j++) {
+                var ch = parts[i].charCodeAt(j);
+                if (ch <= 32 || ch === 60) { end = j; break; }
+            }
+            if (end === -1) end = parts[i].length;
+            if (end === 0) { out += '@' + parts[i]; }
+            else { out += '<span class="sch-cmt-mention">@' + parts[i].slice(0, end) + '</span>' + parts[i].slice(end); }
+        }
+        return out;
+    }
+    function renderCommentList(schedId, comments, myId, isAdm) {
+        var list = document.getElementById('sch-cmt-list-' + schedId);
+        if (!list) return;
+        if (!comments || !comments.length) {
+            list.innerHTML = '<div style="color:#94a3b8;font-size:13px;padding:8px 0;">\u30b3\u30e1\u30f3\u30c8\u306f\u307e\u3060\u3042\u308a\u307e\u305b\u3093\u3002</div>';
+            return;
+        }
+        list.innerHTML = comments.map(function(c) {
+            var initials = (c.userName || '?').slice(0, 2);
+            var bodyHtml = hlMentions(escHtml(c.body || ''));
+            var canAct = (c.userId === myId || isAdm);
+            var actHtml = canAct
+                ? '<div class="sch-cmt-actions-bar">'
+                  + '<button class="sch-cmt-act-btn" data-action="edit-comment" data-sched-id="' + schedId + '" data-cmt-id="' + c._id + '">\u7de8\u96c6</button>'
+                  + '<button class="sch-cmt-act-btn" style="color:#b91c1c;" data-action="delete-comment" data-sched-id="' + schedId + '" data-cmt-id="' + c._id + '">\u524a\u9664</button>'
+                  + '</div>'
+                : '';
+            var editedMark = c.editedAt ? ' <span class="sch-cmt-edited">(\u7de8\u96c6\u6e08\u307f)</span>' : '';
+            return '<div class="sch-cmt-item" id="sch-cmt-item-' + c._id + '">'
+                 + '<div class="sch-cmt-avatar">' + escHtml(initials) + '</div>'
+                 + '<div class="sch-cmt-main">'
+                 + '<div class="sch-cmt-header"><span class="sch-cmt-name">' + escHtml(c.userName || '?') + '</span>'
+                 + '<span class="sch-cmt-time">' + fmtCmtTime(c.createdAt) + '</span>' + editedMark + '</div>'
+                 + '<div class="sch-cmt-body" id="sch-cmt-bd-' + c._id + '">' + bodyHtml + '</div>'
+                 + actHtml
+                 + '</div></div>';
+        }).join('');
+        list.scrollTop = list.scrollHeight;
+    }
+    window.loadComments = function(schedId) {
+        fetch('/api/schedule/' + schedId + '/comments')
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) return;
+                renderCommentList(schedId, d.comments, MY_ID, d.isAdmin);
+                var badge = document.getElementById('sch-cmt-badge-' + schedId);
+                if (badge) {
+                    if (d.unreadCount > 0) {
+                        badge.textContent = d.unreadCount + '\u672a\u8aad';
+                        badge.style.display = '';
+                    } else {
+                        badge.style.display = 'none';
+                    }
+                }
+            });
+    };
+    window.submitComment = function(schedId) {
+        var ta = document.getElementById('sch-cmt-body-' + schedId);
+        if (!ta) return;
+        var body = ta.value.trim();
+        if (!body) return;
+        fetch('/api/schedule/' + schedId + '/comments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body: body }),
+        }).then(r => r.json()).then(d => {
+            if (!d.ok) return alert(d.error || '\u9001\u4fe1\u306b\u5931\u6557\u3057\u307e\u3057\u305f');
+            ta.value = '';
+            var dd = document.getElementById('sch-cmt-mention-dd-' + schedId);
+            if (dd) dd.style.display = 'none';
+            loadComments(schedId);
+        });
+    };
+    window.deleteComment = function(schedId, cmtId) {
+        if (!confirm('\u3053\u306e\u30b3\u30e1\u30f3\u30c8\u3092\u524a\u9664\u3057\u307e\u3059\u304b\uff1f')) return;
+        fetch('/api/schedule/' + schedId + '/comments/' + cmtId, { method: 'DELETE' })
+            .then(r => r.json())
+            .then(d => { if (!d.ok) alert(d.error || '\u524a\u9664\u306b\u5931\u6557'); else loadComments(schedId); });
+    };
+    window.startEditComment = function(schedId, cmtId) {
+        var bodyEl = document.getElementById('sch-cmt-bd-' + cmtId);
+        var item   = document.getElementById('sch-cmt-item-' + cmtId);
+        if (!bodyEl || !item) return;
+        var currentText = bodyEl.innerText || bodyEl.textContent || '';
+        bodyEl.style.display = 'none';
+        var editArea = document.createElement('div');
+        editArea.className = 'sch-cmt-edit-area';
+        editArea.id = 'sch-cmt-edit-area-' + cmtId;
+        editArea.innerHTML = '<textarea class="sch-cmt-edit-ta" id="sch-cmt-edit-ta-' + cmtId + '" rows="3"></textarea>'
+            + '<div style="display:flex;gap:6px;margin-top:4px;justify-content:flex-end;">'
+            + '<button class="sch-cmt-act-btn" data-action="cancel-comment" data-sched-id="' + schedId + '" data-cmt-id="' + cmtId + '">\u30ad\u30e3\u30f3\u30bb\u30eb</button>'
+            + '<button class="sch-cmt-act-btn" style="background:#3b82f6;color:#fff;border-color:#3b82f6;" data-action="save-comment" data-sched-id="' + schedId + '" data-cmt-id="' + cmtId + '">\u4fdd\u5b58</button>'
+            + '</div>';
+        bodyEl.parentNode.insertBefore(editArea, bodyEl.nextSibling);
+        var ta = document.getElementById('sch-cmt-edit-ta-' + cmtId);
+        if (ta) { ta.value = currentText; ta.focus(); }
+        var actBar = item.querySelector('.sch-cmt-actions-bar');
+        if (actBar) actBar.style.display = 'none';
+    };
+    window.cancelEditComment = function(schedId, cmtId) {
+        var editArea = document.getElementById('sch-cmt-edit-area-' + cmtId);
+        var bodyEl   = document.getElementById('sch-cmt-bd-' + cmtId);
+        var item     = document.getElementById('sch-cmt-item-' + cmtId);
+        if (editArea) editArea.remove();
+        if (bodyEl) bodyEl.style.display = '';
+        var actBar = item && item.querySelector('.sch-cmt-actions-bar');
+        if (actBar) actBar.style.display = '';
+    };
+    window.saveEditComment = function(schedId, cmtId) {
+        var ta = document.getElementById('sch-cmt-edit-ta-' + cmtId);
+        if (!ta) return;
+        var body = ta.value.trim();
+        if (!body) return;
+        fetch('/api/schedule/' + schedId + '/comments/' + cmtId, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body: body }),
+        }).then(r => r.json()).then(d => {
+            if (!d.ok) return alert(d.error || '\u7de8\u96c6\u306b\u5931\u6557\u3057\u307e\u3057\u305f');
+            loadComments(schedId);
+        });
+    };
+    window.onCmtInput = function(e, schedId) {
+        var ta = e.target;
+        var val = ta.value;
+        var pos = ta.selectionStart;
+        var before = val.slice(0, pos);
+        var atIdx = -1;
+        for (var i = before.length - 1; i >= 0; i--) {
+            if (before[i] === '@') { atIdx = i; break; }
+            if (before.charCodeAt(i) <= 32) break;
+        }
+        var dd = document.getElementById('sch-cmt-mention-dd-' + schedId);
+        if (!dd) return;
+        if (atIdx === -1) { dd.style.display = 'none'; return; }
+        var query = before.slice(atIdx + 1).toLowerCase();
+        var atts = (currentDetailData && currentDetailData.attendees) ? currentDetailData.attendees : [];
+        var matches = atts.filter(function(a) { return (a.name || '').toLowerCase().indexOf(query) !== -1; });
+        if (!matches.length) { dd.style.display = 'none'; return; }
+        dd.style.display = '';
+        dd.innerHTML = matches.slice(0, 8).map(function(a) {
+            return '<div class="sch-cmt-mention-item" data-action="insert-mention" data-sched-id="' + schedId + '" data-name="' + escHtml(a.name) + '" data-at-idx="' + atIdx + '" data-pos="' + pos + '">@' + escHtml(a.name) + '</div>';
+        }).join('');
+    };
+    // コメントアクション委譲リスナー
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('[data-action]');
+        if (!btn) return;
+        var action  = btn.getAttribute('data-action');
+        var schedId = btn.getAttribute('data-sched-id');
+        var cmtId   = btn.getAttribute('data-cmt-id');
+        if      (action === 'submit-comment')  submitComment(schedId);
+        else if (action === 'edit-comment')    startEditComment(schedId, cmtId);
+        else if (action === 'delete-comment')  deleteComment(schedId, cmtId);
+        else if (action === 'save-comment')    saveEditComment(schedId, cmtId);
+        else if (action === 'cancel-comment')  cancelEditComment(schedId, cmtId);
+        else if (action === 'insert-mention') {
+            var name   = btn.getAttribute('data-name');
+            var atIdx2 = parseInt(btn.getAttribute('data-at-idx'));
+            var pos2   = parseInt(btn.getAttribute('data-pos'));
+            var ta2    = document.getElementById('sch-cmt-body-' + schedId);
+            if (ta2) {
+                ta2.value = ta2.value.slice(0, atIdx2) + '@' + name + ' ' + ta2.value.slice(pos2);
+                ta2.focus();
+                ta2.selectionStart = ta2.selectionEnd = atIdx2 + name.length + 2;
+            }
+            var dd2 = document.getElementById('sch-cmt-mention-dd-' + schedId);
+            if (dd2) dd2.style.display = 'none';
+        }
+    });
+
+    function renderEditFormAtts(schedId, atts) {
+        _editFormSchedId = schedId;
+        var list = document.getElementById('sch-form-att-list');
+        if (!list) return;
+        if (!atts || !atts.length) {
+            list.innerHTML = '<div style="color:#94a3b8;font-size:13px;padding:4px 0;">添付資料はありません</div>';
+            return;
+        }
+        list.innerHTML = atts.map(function(a) {
+            var icon = a.attachType === 'url' ? getLinkIcon(a.url || '') : getFileIcon((a.mimeType || '') + ' ' + (a.originalName || ''));
+            var nm = escHtml(a.name || a.originalName || a.url || '');
+            var szHtml = a.size ? '<span class="sch-att-size">' + fmtSize(a.size) + '</span>' : '';
+            var href = a.attachType === 'url'
+                ? 'href="' + escHtml(a.url || '') + '" target="_blank" rel="noopener noreferrer"'
+                : 'href="/api/schedule/attachments/download/' + encodeURIComponent(a.storedName || '') + '?name=' + encodeURIComponent(a.originalName || a.name || '') + '" download';
+            return '<div class="sch-att-item"><span class="sch-att-icon">' + icon + '</span><a class="sch-att-name" ' + href + '>' + nm + '</a>' + szHtml + '<button type="button" class="sch-att-del" onclick="deleteEditAtt(\\'' + escHtml(a._id) + '\\')">\xd7</button></div>';
+        }).join('');
+    }
+    window.deleteEditAtt = function(attId) {
+        if (!_editFormSchedId) return;
+        if (!confirm('この添付を削除しますか？')) return;
+        fetch('/api/schedule/' + _editFormSchedId + '/attachments/' + attId, { method: 'DELETE' })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) return alert(d.error || '削除に失敗しました');
+                fetch('/api/schedule/' + _editFormSchedId)
+                    .then(r => r.json())
+                    .then(data => { if (data.ok) renderEditFormAtts(_editFormSchedId, data.schedule.attachments || []); });
+            });
+    };
+    window.openEditAddUrl = function() {
+        var el = document.getElementById('sch-form-att-url-form');
+        if (el) el.style.display = '';
+    };
+    window.closeEditAddUrl = function() {
+        var el = document.getElementById('sch-form-att-url-form');
+        if (el) el.style.display = 'none';
+    };
+    window.submitEditUrl = function() {
+        var nameEl = document.getElementById('sch-form-att-url-name');
+        var urlEl  = document.getElementById('sch-form-att-url-val');
+        var name = nameEl ? nameEl.value.trim() : '';
+        var url  = urlEl  ? urlEl.value.trim()  : '';
+        if (!url) { alert('URLを入力してください'); return; }
+        if (url.indexOf('http') !== 0) { alert('http:// または https:// で始まるURLを入力してください'); return; }
+        if (!name) name = url;
+        if (!_editFormSchedId) {
+            // 新規作成モード: キューに追加
+            _pendingAttUrls.push({ name: name, url: url });
+            if (nameEl) nameEl.value = '';
+            if (urlEl)  urlEl.value  = '';
+            closeEditAddUrl();
+            renderNewFormAtts();
+            return;
+        }
+        fetch('/api/schedule/' + _editFormSchedId + '/attachments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ attachType: 'url', name: name, url: url }),
+        }).then(r => r.json()).then(d => {
+            if (!d.ok) return alert(d.error || '追加に失敗しました');
+            if (nameEl) nameEl.value = '';
+            if (urlEl)  urlEl.value  = '';
+            closeEditAddUrl();
+            fetch('/api/schedule/' + _editFormSchedId)
+                .then(r => r.json())
+                .then(data => { if (data.ok) renderEditFormAtts(_editFormSchedId, data.schedule.attachments || []); });
+        });
+    };
+    window.uploadEditFiles = function(input) {
+        if (!input.files || !input.files.length) return;
+        if (!_editFormSchedId) {
+            // 新規作成モード: キューに追加
+            Array.from(input.files).forEach(function(f) { _pendingAttFiles.push(f); });
+            input.value = '';
+            renderNewFormAtts();
+            return;
+        }
+        var form = new FormData();
+        Array.from(input.files).forEach(function(f) { form.append('files', f); });
+        fetch('/api/schedule/' + _editFormSchedId + '/attachments/file', { method: 'POST', body: form })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) return alert(d.error || 'アップロードに失敗しました');
+                input.value = '';
+                fetch('/api/schedule/' + _editFormSchedId)
+                    .then(r => r.json())
+                    .then(data => { if (data.ok) renderEditFormAtts(_editFormSchedId, data.schedule.attachments || []); });
+            });
+    };
 
     // ── カレンダー初期化 ─────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', () => {
@@ -368,9 +1143,26 @@ router.get("/schedule", requireLogin, async (req, res) => {
             eventAllow: (dropInfo, draggedEvent) => !!draggedEvent.extendedProps.canEdit,
             eventDrop: (info) => updateScheduleTime(info.event, info.revert),
             eventResize: (info) => updateScheduleTime(info.event, info.revert),
-            eventClick: (info) => openDetail(info.event.id),
+            eventClick: (info) => {
+                if (selectMode) {
+                    const id = info.event.id;
+                    if (selectedEventIds.has(id)) {
+                        selectedEventIds.delete(id);
+                        info.el.classList.remove('sch-event-selected');
+                    } else {
+                        selectedEventIds.add(id);
+                        info.el.classList.add('sch-event-selected');
+                    }
+                    updateBulkBar();
+                } else {
+                    openDetail(info.event.id);
+                }
+            },
             eventDidMount: (info) => {
                 info.el.title = info.event.title;
+                if (selectMode && selectedEventIds.has(info.event.id)) {
+                    info.el.classList.add('sch-event-selected');
+                }
             },
             buttonText: { today:'今日', month:'月', week:'週', day:'日' },
         });
@@ -445,11 +1237,17 @@ router.get("/schedule", requireLogin, async (req, res) => {
                 if (!data.ok) return alert(data.error || 'エラーが発生しました');
                 renderDetail(data.schedule);
                 document.getElementById('sch-detail-modal').classList.add('open');
+                loadComments(id);
+                var ta = document.getElementById('sch-cmt-body-' + id);
+                if (ta) ta.addEventListener('keydown', function(e) {
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); submitComment(id); }
+                });
             })
             .catch(() => alert('データの取得に失敗しました'));
     };
 
     function renderDetail(s) {
+        currentDetailData = s; // シリーズ操作のためデータを保持
         const canEditFlag = s.canEdit;
         const startStr = s.startAt ? fmtDate(s.startAt) : '';
         const endStr   = s.endAt   ? fmtDate(s.endAt)   : '';
@@ -495,6 +1293,61 @@ router.get("/schedule", requireLogin, async (req, res) => {
             '<i class="fa-regular fa-calendar-plus"></i> iCal / Outlook / Apple Calendar (.ics) をダウンロード</a>' +
             '</div></div></div>';
 
+        // ── 添付資料 HTML 構築 ──
+        var _atts = s.attachments || [];
+        var _attListHtml = _atts.length ? _atts.map(function(a) {
+            var icon = a.attachType === 'url' ? getLinkIcon(a.url || '') : getFileIcon((a.mimeType || '') + ' ' + (a.originalName || ''));
+            var nm = escHtml(a.name || a.originalName || a.url || '');
+            var szHtml = a.size ? \`<span class="sch-att-size">\${fmtSize(a.size)}</span>\` : '';
+            var href = a.attachType === 'url'
+                ? \`href="\${escHtml(a.url || '')}" target="_blank" rel="noopener noreferrer"\`
+                : \`href="/api/schedule/attachments/download/\${encodeURIComponent(a.storedName || '')}?name=\${encodeURIComponent(a.originalName || a.name || '')}" download\`;
+            var delBtn = canEditFlag ? \`<button class="sch-att-del" onclick="deleteAttachment('\${s._id}','\${a._id}')">×</button>\` : '';
+            return \`<div class="sch-att-item"><span class="sch-att-icon">\${icon}</span><a class="sch-att-name" \${href}>\${nm}</a>\${szHtml}\${delBtn}</div>\`;
+        }).join('') : '<div style="color:#94a3b8;font-size:13px;padding:4px 0;">添付資料はありません</div>';
+        var _attActionsHtml = canEditFlag ? \`
+            <div class="sch-att-actions">
+                <button class="sch-att-add-btn" onclick="openAddUrl('\${s._id}')"><i class="fa-solid fa-link"></i> URLを追加</button>
+                <label class="sch-att-add-btn"><i class="fa-solid fa-paperclip"></i> ファイルを添付
+                    <input type="file" multiple hidden onchange="uploadAttachFiles('\${s._id}', this)" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.zip,.png,.jpg,.jpeg,.gif,.webp">
+                </label>
+            </div>
+            <div id="sch-att-url-form-\${s._id}" class="sch-att-url-form" style="display:none;">
+                <div style="font-size:12px;color:#475569;font-weight:600;margin-bottom:6px;"><i class="fa-solid fa-link" style="color:#3b82f6;"></i> URLを追加</div>
+                <div class="sch-att-url-row">
+                    <input type="text" id="sch-att-url-name-\${s._id}" class="sch-att-url-input" placeholder="表示名（省略可）" style="max-width:160px;">
+                    <input type="url" id="sch-att-url-val-\${s._id}" class="sch-att-url-input" placeholder="https://...">
+                    <button class="sch-att-url-submit" onclick="submitAddUrl('\${s._id}')">追加</button>
+                    <button class="sch-att-add-btn" onclick="closeAddUrl('\${s._id}')">×</button>
+                </div>
+            </div>\` : '';
+        var attachHtml = \`
+        <div class="sch-modal-row">
+            <div class="sch-modal-row-icon"><i class="fa-solid fa-paperclip" style="color:#94a3b8;"></i></div>
+            <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;margin-bottom:8px;font-size:13px;">添付資料（\${_atts.length}件）</div>
+                <div id="sch-att-list-\${s._id}">\${_attListHtml}</div>
+                \${_attActionsHtml}
+            </div>
+        </div>\`;
+
+        // ── コメント（スレッド）HTML ──
+        var commentHtml = \`
+        <div class="sch-modal-row">
+            <div class="sch-modal-row-icon" style="padding-top:2px;"><i class="fa-solid fa-comments" style="color:#94a3b8;"></i></div>
+            <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;margin-bottom:8px;font-size:13px;">\u30b9\u30ec\u30c3\u30c9 <span id="sch-cmt-badge-\${s._id}" class="sch-cmt-badge" style="display:none;"></span></div>
+                <div id="sch-cmt-list-\${s._id}" class="sch-cmt-list"><div style="color:#94a3b8;font-size:13px;padding:8px 0;">\u8aad\u307f\u8fbc\u307f\u4e2d\u2026</div></div>
+                <div class="sch-cmt-input-wrap" style="position:relative;">
+                    <div id="sch-cmt-mention-dd-\${s._id}" class="sch-cmt-mention-dd" style="display:none;position:absolute;bottom:100%;left:0;margin-bottom:2px;"></div>
+                    <textarea id="sch-cmt-body-\${s._id}" class="sch-cmt-textarea" placeholder="\u30b3\u30e1\u30f3\u30c8\u3092\u5165\u529b\u2026 @\u540d\u524d\u3067\u30e1\u30f3\u30b7\u30e7\u30f3\uff08Ctrl+Enter\u3067\u9001\u4fe1\uff09" rows="2" data-sched-id="\${s._id}" oninput="onCmtInput(event,'\${s._id}')"></textarea>
+                    <div style="display:flex;justify-content:flex-end;margin-top:4px;">
+                        <button type="button" class="btn btn-primary" style="padding:4px 14px;font-size:12px;" data-action="submit-comment" data-sched-id="\${s._id}"><i class="fa-solid fa-paper-plane"></i> \u9001\u4fe1</button>
+                    </div>
+                </div>
+            </div>
+        </div>\`;
+
         document.getElementById('sch-detail-inner').innerHTML = \`
         <div class="sch-modal-header">
             <div class="sch-modal-color-dot" style="background:\${escHtml(s.color||'#3b82f6')};"></div>
@@ -527,9 +1380,11 @@ router.get("/schedule", requireLogin, async (req, res) => {
             \${s.description ? \`<div class="sch-modal-row"><div class="sch-modal-row-icon"><i class="fa-regular fa-file-lines"></i></div><div style="white-space:pre-wrap;">\${escHtml(s.description)}</div></div>\` : ''}
             \${tagsHtml}
             \${visHtml}
+            \${attachHtml}
             \${exportHtml}
             \${callHtml}
             \${respondHtml}
+            \${commentHtml}
         </div>\`;
     }
 
@@ -564,6 +1419,15 @@ router.get("/schedule", requireLogin, async (req, res) => {
 
     // ── 削除 ───────────────────────────────────────────────────────
     window.deleteSchedule = function(id) {
+        // シリーズスケジュールの場合はスコープ選択ダイアログを表示
+        if (currentDetailData && currentDetailData._id === id && currentDetailData.seriesId) {
+            pendingSeriesAction = 'delete';
+            pendingSeriesId = id;
+            document.getElementById('sch-scope-title').textContent = '繰り返し予定の削除';
+            document.getElementById('sch-scope-subtitle').textContent = 'どの範囲の予定を削除しますか？';
+            document.getElementById('sch-scope-modal').classList.add('open');
+            return;
+        }
         if (!confirm('このスケジュールを削除しますか？')) return;
         fetch('/api/schedule/' + id, { method: 'DELETE' })
             .then(r => r.json())
@@ -580,7 +1444,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
         document.getElementById('sch-form-title').textContent = 'スケジュール登録';
         document.getElementById('sch-edit-id').value = '';
         document.getElementById('sch-form').reset();
-        document.getElementById('sch-color').value = '#3b82f6';
+        initFormColorPicker('#3b82f6');
         selectedAttendees = [];
         renderAttendeeChips();
         renderAttendeeOpts('');
@@ -588,6 +1452,13 @@ router.get("/schedule", requireLogin, async (req, res) => {
         resetTagsUI();
         setVisibility('private');
         document.getElementById('sch-repeat-wrap').style.display = '';
+        var attWrap = document.getElementById('sch-form-att-wrap');
+        if (attWrap) attWrap.style.display = '';
+        _editFormSchedId = '';
+        _pendingAttUrls  = [];
+        _pendingAttFiles = [];
+        renderNewFormAtts();
+        closeEditAddUrl();
         document.getElementById('sch-form-modal').classList.add('open');
     };
 
@@ -597,28 +1468,51 @@ router.get("/schedule", requireLogin, async (req, res) => {
             .then(data => {
                 if (!data.ok) return alert(data.error || 'エラー');
                 const s = data.schedule;
-                document.getElementById('sch-detail-modal').classList.remove('open');
-                document.getElementById('sch-form-title').textContent = 'スケジュール編集';
-                document.getElementById('sch-edit-id').value = s._id;
-                document.getElementById('sch-title').value = s.title;
-                document.getElementById('sch-type').value = s.type;
-                document.getElementById('sch-color').value = s.color || '#3b82f6';
-                if (s.startAt) document.getElementById('sch-start').value = toLocalDatetime(s.startAt);
-                if (s.endAt)   document.getElementById('sch-end').value   = toLocalDatetime(s.endAt);
-                document.getElementById('sch-allday').checked = !!s.allDay;
-                document.getElementById('sch-location').value = s.location || '';
-                document.getElementById('sch-desc').value = s.description || '';
-                document.getElementById('sch-use-call').checked = !!s.chatRoomId;
-                selectedAttendees = (s.attendees || []).map(a => ({ id: a.id, name: a.name }));
-                renderAttendeeChips();
-                renderAttendeeOpts('');
-                resetRepeatSection();
-                setTagsUI(s.tags || []);
-                setVisibility(s.visibility || 'private');
-                document.getElementById('sch-repeat-wrap').style.display = 'none'; // 編集時は繰り返し非表示
-                document.getElementById('sch-form-modal').classList.add('open');
+                // シリーズスケジュールの場合はスコープ選択ダイアログを表示
+                if (s.seriesId) {
+                    pendingSeriesAction = 'edit';
+                    pendingSeriesId = s._id;
+                    // スコープ選択後に再度フォームを開くため、データを一時保持
+                    pendingSeriesEditData = s;
+                    document.getElementById('sch-scope-title').textContent = '繰り返し予定の編集';
+                    document.getElementById('sch-scope-subtitle').textContent = 'どの範囲の予定を編集しますか？';
+                    document.getElementById('sch-scope-modal').classList.add('open');
+                    return;
+                }
+                _fillAndOpenEditForm(s, 'only');
             });
     };
+
+    function _fillAndOpenEditForm(s, seriesScope) {
+        window._pendingSeriesScope = seriesScope;
+        document.getElementById('sch-detail-modal').classList.remove('open');
+        document.getElementById('sch-form-title').textContent = 'スケジュール編集';
+        document.getElementById('sch-edit-id').value = s._id;
+        document.getElementById('sch-title').value = s.title;
+        document.getElementById('sch-type').value = s.type;
+        initFormColorPicker(s.color || '#3b82f6');
+        if (s.startAt) document.getElementById('sch-start').value = toLocalDatetime(s.startAt);
+        if (s.endAt)   document.getElementById('sch-end').value   = toLocalDatetime(s.endAt);
+        document.getElementById('sch-allday').checked = !!s.allDay;
+        document.getElementById('sch-location').value = s.location || '';
+        document.getElementById('sch-desc').value = s.description || '';
+        document.getElementById('sch-use-call').checked = !!s.chatRoomId;
+        selectedAttendees = (s.attendees || []).map(a => ({ id: a.id, name: a.name }));
+        renderAttendeeChips();
+        renderAttendeeOpts('');
+        resetRepeatSection();
+        setTagsUI(s.tags || []);
+        setVisibility(s.visibility || 'private');
+        document.getElementById('sch-repeat-wrap').style.display = 'none'; // 編集時は繰り返し非表示
+        // 添付資料セクションを表示・更新
+        var attWrap = document.getElementById('sch-form-att-wrap');
+        if (attWrap) attWrap.style.display = '';
+        renderEditFormAtts(s._id, s.attachments || []);
+        closeEditAddUrl();
+        document.getElementById('sch-form-modal').classList.add('open');
+    }
+
+    let pendingSeriesEditData = null; // openEditForm で取得したデータを一時保持
 
     window.closeFormModal = function(e) {
         if (!e || e.target === document.getElementById('sch-form-modal')) {
@@ -713,7 +1607,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
                 document.getElementById('sch-edit-id').value = '';
                 document.getElementById('sch-title').value = s.title + '（複製）';
                 document.getElementById('sch-type').value = s.type;
-                document.getElementById('sch-color').value = s.color || '#3b82f6';
+                initFormColorPicker(s.color || '#3b82f6');
                 if (s.startAt) document.getElementById('sch-start').value = toLocalDatetime(s.startAt);
                 if (s.endAt)   document.getElementById('sch-end').value   = toLocalDatetime(s.endAt);
                 document.getElementById('sch-allday').checked = !!s.allDay;
@@ -728,6 +1622,13 @@ router.get("/schedule", requireLogin, async (req, res) => {
                 setTagsUI(s.tags || []);
                 setVisibility(s.visibility || 'private');
                 document.getElementById('sch-repeat-wrap').style.display = '';
+                var attWrap = document.getElementById('sch-form-att-wrap');
+                if (attWrap) attWrap.style.display = '';
+                _editFormSchedId = '';
+                _pendingAttUrls  = [];
+                _pendingAttFiles = [];
+                renderNewFormAtts();
+                closeEditAddUrl();
                 document.getElementById('sch-form-modal').classList.add('open');
             })
             .catch(() => alert('データの取得に失敗しました'));
@@ -781,8 +1682,14 @@ router.get("/schedule", requireLogin, async (req, res) => {
             tags: scheduleTags.slice(),
             visibility: document.querySelector('input[name="sch-visibility"]:checked').value,
         };
-        const url    = editId ? '/api/schedule/' + editId : '/api/schedule';
+        // シリーズ一括編集（'future' or 'all'）
+        const seriesScope = window._pendingSeriesScope;
+        const url    = (editId && seriesScope && seriesScope !== 'only')
+            ? '/api/schedule/' + editId + '/series-bulk'
+            : (editId ? '/api/schedule/' + editId : '/api/schedule');
         const method = editId ? 'PUT' : 'POST';
+        if (seriesScope && seriesScope !== 'only') body.scope = seriesScope;
+        window._pendingSeriesScope = null;
         const btn = document.getElementById('sch-submit-btn');
         btn.disabled = true;
         fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -790,10 +1697,33 @@ router.get("/schedule", requireLogin, async (req, res) => {
             .then(d => {
                 btn.disabled = false;
                 if (!d.ok) return alert(d.error || '保存に失敗しました');
-                document.getElementById('sch-form-modal').classList.remove('open');
-                if (calendar) calendar.refetchEvents();
-                loadUpcoming();
-                if (d.count && d.count > 1) alert(d.count + '件のスケジュールを一括登録しました。');
+                var _finish = function() {
+                    _pendingAttUrls  = [];
+                    _pendingAttFiles = [];
+                    document.getElementById('sch-form-modal').classList.remove('open');
+                    if (calendar) calendar.refetchEvents();
+                    loadUpcoming();
+                    if (d.count && d.count > 1) alert(d.count + '件のスケジュールを一括登録しました。');
+                };
+                // 新規作成でキュー済み添付がある場合、保存後にアップロード
+                var newId = !editId && d.scheduleId;
+                if (newId && (_pendingAttUrls.length || _pendingAttFiles.length)) {
+                    var uploads = _pendingAttUrls.map(function(u) {
+                        return fetch('/api/schedule/' + newId + '/attachments', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ attachType: 'url', name: u.name, url: u.url }),
+                        });
+                    });
+                    if (_pendingAttFiles.length) {
+                        var fd = new FormData();
+                        _pendingAttFiles.forEach(function(f) { fd.append('files', f); });
+                        uploads.push(fetch('/api/schedule/' + newId + '/attachments/file', { method: 'POST', body: fd }));
+                    }
+                    Promise.all(uploads).then(_finish).catch(_finish);
+                } else {
+                    _finish();
+                }
             })
             .catch(() => { btn.disabled = false; alert('通信エラーが発生しました'); });
     };
@@ -926,6 +1856,371 @@ router.get("/schedule", requireLogin, async (req, res) => {
         if (s.location) params.set('location', s.location);
         return 'https://calendar.google.com/calendar/render?' + params.toString();
     }
+
+    // ── 複数選択モード ───────────────────────────────────────────────
+    window.toggleSelectMode = function(forceOff) {
+        if (forceOff === false || selectMode) {
+            selectMode = false;
+            selectedEventIds.clear();
+        } else {
+            selectMode = true;
+        }
+        const btn = document.getElementById('sch-select-btn');
+        if (btn) btn.classList.toggle('active', selectMode);
+        if (!selectMode) {
+            document.querySelectorAll('.sch-event-selected').forEach(el => el.classList.remove('sch-event-selected'));
+        }
+        updateBulkBar();
+    };
+
+    function updateBulkBar() {
+        const bar = document.getElementById('sch-bulk-bar');
+        const cnt = document.getElementById('sch-bulk-count');
+        if (!bar) return;
+        if (selectMode && selectedEventIds.size > 0) {
+            bar.classList.add('open');
+            cnt.textContent = selectedEventIds.size + '件選択中';
+        } else {
+            bar.classList.remove('open');
+        }
+    }
+
+    // ── シリーズ スコープ選択ダイアログ ──────────────────────────────
+    window.closeSeriesModal = function(e) {
+        if (!e || e.target === document.getElementById('sch-scope-modal')) {
+            document.getElementById('sch-scope-modal').classList.remove('open');
+            pendingSeriesAction = null;
+            pendingSeriesId = null;
+            pendingSeriesEditData = null;
+        }
+    };
+
+    window.confirmSeriesScope = function(scope) {
+        document.getElementById('sch-scope-modal').classList.remove('open');
+        const action = pendingSeriesAction;
+        const id = pendingSeriesId;
+        pendingSeriesAction = null;
+        pendingSeriesId = null;
+        if (action === 'edit') {
+            const s = pendingSeriesEditData;
+            pendingSeriesEditData = null;
+            if (scope === 'only') {
+                _fillAndOpenEditForm(s, 'only');
+            } else {
+                _fillAndOpenEditForm(s, scope); // 'future' or 'all' — フォーム送信時に series-bulk API を使用
+            }
+        } else if (action === 'delete') {
+            if (scope === 'only') {
+                if (!confirm('この予定を削除しますか？')) return;
+                fetch('/api/schedule/' + id, { method: 'DELETE' })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (!d.ok) return alert(d.error || 'エラー');
+                        document.getElementById('sch-detail-modal').classList.remove('open');
+                        if (calendar) calendar.refetchEvents();
+                        loadUpcoming();
+                    });
+            } else {
+                const label = scope === 'future' ? 'この予定以降の同じシリーズ' : '同じシリーズのすべての予定';
+                if (!confirm(label + 'を削除しますか？')) return;
+                fetch('/api/schedule/' + id + '/series-bulk', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scope }),
+                })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (!d.ok) return alert(d.error || 'エラー');
+                        document.getElementById('sch-detail-modal').classList.remove('open');
+                        if (calendar) calendar.refetchEvents();
+                        loadUpcoming();
+                        alert(d.count + '件のスケジュールを削除しました。');
+                    });
+            }
+        }
+    };
+
+    // ── 複数選択 一括操作 ────────────────────────────────────────────
+    window.bulkDelete = function() {
+        const ids = Array.from(selectedEventIds);
+        if (ids.length === 0) return;
+        if (!confirm(ids.length + '件のスケジュールを削除しますか？')) return;
+        fetch('/api/schedule/bulk', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids }),
+        })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) return alert(d.error || '削除に失敗しました');
+                toggleSelectMode(false);
+                if (calendar) calendar.refetchEvents();
+                loadUpcoming();
+                alert(d.count + '件のスケジュールを削除しました。');
+            });
+    };
+
+    var _bulkColorSelected = '#3b82f6';
+    var _bulkColorPresets = [
+        '#ef4444','#f97316','#f59e0b','#eab308',
+        '#84cc16','#22c55e','#10b981','#06b6d4',
+        '#3b82f6','#6366f1','#8b5cf6','#ec4899',
+        '#64748b','#334155'
+    ];
+
+    window.bulkColorChange = function() {
+        var ids = Array.from(selectedEventIds);
+        if (ids.length === 0) return;
+        // スウォッチを描画
+        var container = document.getElementById('sch-color-swatches');
+        container.innerHTML = '';
+        _bulkColorPresets.forEach(function(c) {
+            var div = document.createElement('div');
+            div.className = 'sch-color-swatch' + (c === _bulkColorSelected ? ' selected' : '');
+            div.style.background = c;
+            div.title = c;
+            div.onclick = function() { selectBulkColor(c); };
+            container.appendChild(div);
+        });
+        document.getElementById('sch-color-custom').value = _bulkColorSelected;
+        document.getElementById('sch-color-hex-display').textContent = _bulkColorSelected;
+        document.getElementById('sch-color-preview').style.background = _bulkColorSelected;
+        document.getElementById('sch-color-apply-btn').style.background = _bulkColorSelected;
+        document.getElementById('sch-color-modal').classList.add('open');
+    };
+
+    window.closeBulkColorModal = function(e) {
+        if (!e || e.target === document.getElementById('sch-color-modal'))
+            document.getElementById('sch-color-modal').classList.remove('open');
+    };
+
+    window.selectBulkColor = function(c) {
+        _bulkColorSelected = c;
+        document.querySelectorAll('.sch-color-swatch').forEach(function(el) {
+            el.classList.toggle('selected', el.title === c);
+        });
+        document.getElementById('sch-color-custom').value = c;
+        document.getElementById('sch-color-hex-display').textContent = c;
+        document.getElementById('sch-color-preview').style.background = c;
+        document.getElementById('sch-color-apply-btn').style.background = c;
+    };
+
+    window.onCustomColorChange = function(c) {
+        _bulkColorSelected = c;
+        document.getElementById('sch-color-hex-display').textContent = c;
+        document.getElementById('sch-color-preview').style.background = c;
+        document.getElementById('sch-color-apply-btn').style.background = c;
+        document.querySelectorAll('.sch-color-swatch').forEach(function(el) {
+            el.classList.remove('selected');
+        });
+    };
+
+    window.applyBulkColor = function() {
+        var ids = Array.from(selectedEventIds);
+        if (ids.length === 0) return;
+        var color = _bulkColorSelected;
+        if (!/^#[0-9a-fA-F]{6}$/.test(color)) { alert('カラーコードの形式が正しくありません'); return; }
+        document.getElementById('sch-color-modal').classList.remove('open');
+        fetch('/api/schedule/bulk/color', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids, color }),
+        })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) return alert(d.error || '色変更に失敗しました');
+                toggleSelectMode(false);
+                if (calendar) calendar.refetchEvents();
+                alert(d.count + '件のスケジュールの色を変更しました。');
+            });
+    };
+
+    // ── フォーム内カラーピッカー ──────────────────────────────────────
+    function initFormColorPicker(color) {
+        color = color || '#3b82f6';
+        document.getElementById('sch-color').value = color;
+        var container = document.getElementById('sch-fcp-swatches');
+        if (!container) return;
+        container.innerHTML = '';
+        _bulkColorPresets.forEach(function(c) {
+            var div = document.createElement('div');
+            div.className = 'sch-color-swatch' + (c === color ? ' selected' : '');
+            div.style.background = c;
+            div.title = c;
+            div.onclick = function() { selectFormColor(c); };
+            container.appendChild(div);
+        });
+        document.getElementById('sch-fcp-custom').value = color;
+        document.getElementById('sch-fcp-hex').textContent = color;
+        document.getElementById('sch-fcp-preview').style.background = color;
+    }
+
+    window.selectFormColor = function(c) {
+        document.getElementById('sch-color').value = c;
+        document.querySelectorAll('#sch-fcp-swatches .sch-color-swatch').forEach(function(el) {
+            el.classList.toggle('selected', el.title === c);
+        });
+        document.getElementById('sch-fcp-custom').value = c;
+        document.getElementById('sch-fcp-hex').textContent = c;
+        document.getElementById('sch-fcp-preview').style.background = c;
+    };
+
+    window.onFormColorChange = function(c) {
+        document.getElementById('sch-color').value = c;
+        document.getElementById('sch-fcp-hex').textContent = c;
+        document.getElementById('sch-fcp-preview').style.background = c;
+        document.querySelectorAll('#sch-fcp-swatches .sch-color-swatch').forEach(function(el) {
+            el.classList.remove('selected');
+        });
+    };
+
+    // ── CSV エクスポート / インポート ──────────────────────────────────
+    var _importCsvText = null;
+
+    window.openExportModal = function() {
+        var sel = document.getElementById('exp-user-id');
+        if (sel && sel.options.length === 1) {
+            ALL_USERS.forEach(function(u) {
+                var opt = document.createElement('option');
+                opt.value = u.id;
+                opt.textContent = u.name + (u.dept ? ' (' + u.dept + ')' : '');
+                sel.appendChild(opt);
+            });
+        }
+        var today = new Date();
+        var mEl = document.getElementById('exp-month');
+        if (mEl && !mEl.value) mEl.value = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0');
+        document.getElementById('sch-export-modal').classList.add('open');
+    };
+    window.closeExportModal = function(e) {
+        if (!e || e.target === document.getElementById('sch-export-modal'))
+            document.getElementById('sch-export-modal').classList.remove('open');
+    };
+    window.updateExportForm = function() {
+        var scope = document.querySelector('input[name="exp-scope"]:checked');
+        var period = document.querySelector('input[name="exp-period"]:checked');
+        if (!scope || !period) return;
+        document.getElementById('exp-user-section').style.display = scope.value === 'user' ? '' : 'none';
+        document.getElementById('exp-dept-section').style.display = scope.value === 'dept' ? '' : 'none';
+        document.getElementById('exp-month-section').style.display = period.value === 'month' ? '' : 'none';
+    };
+    window.doExport = function() {
+        var scope = document.querySelector('input[name="exp-scope"]:checked');
+        var period = document.querySelector('input[name="exp-period"]:checked');
+        if (!scope || !period) return;
+        var params = new URLSearchParams();
+        if (scope.value === 'user') {
+            var uid = document.getElementById('exp-user-id').value;
+            if (!uid) return alert('ユーザーを選択してください');
+            params.set('userId', uid);
+        } else if (scope.value === 'dept') {
+            var dept = document.getElementById('exp-dept-name').value.trim();
+            if (!dept) return alert('部署名を入力してください');
+            params.set('department', dept);
+        }
+        if (period.value === 'month') {
+            var mv = document.getElementById('exp-month').value;
+            if (!mv) return alert('年月を選択してください');
+            var parts = mv.split('-');
+            params.set('year', parts[0]);
+            params.set('month', parts[1]);
+        }
+        window.location.href = '/api/schedule/export/csv?' + params.toString();
+        closeExportModal();
+    };
+
+    window.openImportModal = function() {
+        _importCsvText = null;
+        document.getElementById('sch-import-file').value = '';
+        document.getElementById('sch-import-preview').style.display = 'none';
+        document.getElementById('sch-import-btn').style.display = 'none';
+        document.getElementById('sch-import-modal').classList.add('open');
+    };
+    window.closeImportModal = function(e) {
+        if (!e || e.target === document.getElementById('sch-import-modal'))
+            document.getElementById('sch-import-modal').classList.remove('open');
+    };
+    window.downloadImportTemplate = function() {
+        var BOM = '\uFEFF';
+        var headers = '\u30BF\u30A4\u30C8\u30EB,\u7A2E\u5225,\u958B\u59CB\u65E5\u6642\uFF08JST\uFF09,\u7D42\u4E86\u65E5\u6642\uFF08JST\uFF09,\u7D42\u65E5,\u5834\u6240,\u30E1\u30E2,\u53C2\u52A0\u8005\u30E1\u30FC\u30EB\uFF08;\u533A\u5207\u308A\uFF09,\u8272,\u30BF\u30B0\uFF08;\u533A\u5207\u308A\uFF09,\u516C\u958B\u8A2D\u5B9A,\u7E70\u308A\u8FD4\u3057\u30E2\u30FC\u30C9,\u7E70\u308A\u8FD4\u3057\u7D42\u4E86\u65E5,\u7E70\u308A\u8FD4\u3057\u66DC\u65E5\uFF080=\u65E5\u30016=\u571F\uFF09';
+        var sample = '\u4F1A\u8B70\u30B5\u30F3\u30D7\u30EB,meeting,2026-06-01 10:00,2026-06-01 11:00,FALSE,\u4F1A\u8B70\u5BA4A,\u8B70\u984C\u5185\u5BB9,user@example.com,#3b82f6,\u30BF\u30B01;\u30BF\u30B02,private,none,,';
+        var csv = BOM + headers + '\\r\\n' + sample;
+        var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = 'schedule_import_template.csv'; a.click();
+        URL.revokeObjectURL(url);
+    };
+    window.onImportFileChange = function() {
+        var file = document.getElementById('sch-import-file').files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+            _importCsvText = ev.target.result;
+            fetch('/api/schedule/import/csv', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ csv: _importCsvText, dryRun: true }),
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (!d.ok) return alert(d.error || '\u30A8\u30E9\u30FC\u304C\u767A\u751F\u3057\u307E\u3057\u305F');
+                showImportPreview(d);
+            })
+            .catch(function() { alert('\u901A\u4FE1\u30A8\u30E9\u30FC\u304C\u767A\u751F\u3057\u307E\u3057\u305F'); });
+        };
+        reader.readAsText(file, 'UTF-8');
+    };
+    function showImportPreview(d) {
+        document.getElementById('sch-import-preview').style.display = '';
+        var summary = document.getElementById('sch-import-summary');
+        summary.innerHTML = '<strong>\u8A08 ' + d.totalRows + '\u884C<\/strong> \uFF0F \u6B63\u5E38: <span style="color:#16a34a;font-weight:600;">' + d.validRows + '\u4EF6<\/span> \uFF0F \u30A8\u30E9\u30FC: <span style="color:#dc2626;font-weight:600;">' + d.errorRows + '\u4EF6<\/span>';
+        var errArea = document.getElementById('sch-import-err-area');
+        if (d.errors && d.errors.length) {
+            errArea.innerHTML = '<div class="sch-import-err-box">' +
+                d.errors.slice(0, 30).map(function(e) {
+                    return '<p>\u884C' + e.row + '\u300C' + escHtml(e.title) + '\u300D: ' + e.errors.map(escHtml).join(' / ') + '<\/p>';
+                }).join('') +
+                '<\/div>';
+        } else { errArea.innerHTML = ''; }
+        var tbody = document.getElementById('sch-import-tbody');
+        tbody.innerHTML = (d.preview || []).map(function(r) {
+            return '<tr><td>' + escHtml(r.title) + '<\/td><td>' + escHtml(r.startAt) +
+                '<\/td><td>' + escHtml(r.endAt) + '<\/td><td>' + escHtml(r.type) +
+                '<\/td><td>' + r.attendeeCount + '<\/td><td>' + escHtml(r.repeatMode) + '<\/td><\/tr>';
+        }).join('');
+        var btn = document.getElementById('sch-import-btn');
+        if (d.validRows > 0) {
+            btn.style.display = '';
+            btn.textContent = '\u2705 ' + d.validRows + '\u4EF6\u3092\u30A4\u30F3\u30DD\u30FC\u30C8\u5B9F\u884C';
+            btn.dataset.hasErrors = d.errorRows > 0 ? '1' : '0';
+        } else { btn.style.display = 'none'; }
+    }
+    window.executeImport = function() {
+        if (!_importCsvText) return alert('\u30D5\u30A1\u30A4\u30EB\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044');
+        var btn = document.getElementById('sch-import-btn');
+        if (btn.dataset.hasErrors === '1' &&
+            !confirm('\u30A8\u30E9\u30FC\u306E\u3042\u308B\u884C\u306F\u30B9\u30AD\u30C3\u30D7\u3057\u3066\u30A4\u30F3\u30DD\u30FC\u30C8\u3057\u307E\u3059\u3002\u7D9A\u884C\u3057\u307E\u3059\u304B\uFF1F'))
+            return;
+        btn.disabled = true;
+        btn.textContent = '\u51E6\u7406\u4E2D...';
+        fetch('/api/schedule/import/csv', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ csv: _importCsvText, dryRun: false }),
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            btn.disabled = false;
+            if (!d.ok) return alert(d.error || '\u30A4\u30F3\u30DD\u30FC\u30C8\u306B\u5931\u6557\u3057\u307E\u3057\u305F');
+            closeImportModal();
+            if (calendar) calendar.refetchEvents();
+            loadUpcoming();
+            alert(d.created + '\u4EF6\u306E\u30B9\u30B1\u30B8\u30E5\u30FC\u30EB\u3092\u30A4\u30F3\u30DD\u30FC\u30C8\u3057\u307E\u3057\u305F\u3002' +
+                (d.skipped ? '\uFF08' + d.skipped + '\u884C\u30B9\u30AD\u30C3\u30D7\uFF09' : ''));
+        })
+        .catch(function() { btn.disabled = false; alert('\u901A\u4FE1\u30A8\u30E9\u30FC\u304C\u767A\u751F\u3057\u307E\u3057\u305F'); });
+    };
 })();
 </script>`;
 
@@ -976,8 +2271,12 @@ router.get("/api/schedule", requireLogin, async (req, res) => {
         location: s.location,
         chatRoomId: s.chatRoomId ? String(s.chatRoomId) : null,
         attendeeCount: s.attendees ? s.attendees.length : 0,
-        canEdit: isAdmin(req) || String(s.createdBy) === String(myId),
+        canEdit: isAdmin(req)
+          ? true
+          : String(s.createdBy) === String(myId) &&
+            new Date(s.startAt) >= startOfTodayJST(),
         visibility: s.visibility || "private",
+        seriesId: s.seriesId || null,
       },
     }));
 
@@ -1066,6 +2365,8 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
       : req.session.username || "不明";
 
     // スケジュール一括作成
+    const isRepeat = datesToCreate.length > 1;
+    const seriesId = isRepeat ? randomUUID() : null;
     const createdSchedules = [];
     for (const slot of datesToCreate) {
       const sch = await Schedule.create({
@@ -1091,6 +2392,7 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
               .slice(0, 20)
           : [],
         visibility: rawVisibility === "public" ? "public" : "private",
+        seriesId,
       });
       createdSchedules.push(sch);
     }
@@ -1162,7 +2464,7 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
               process.env.SMTP_FROM ||
               process.env.SMTP_USER ||
               "no-reply@dxpro-sol.com",
-            subject: `【NOKORIスケジューラ】会議招待: ${schedule.title}`,
+            subject: `【NOKORIスケジュール】会議招待: ${schedule.title}`,
             html: mailBody,
             text: mailBody.replace(/<[^>]+>/g, ""),
           }).catch((e) =>
@@ -1204,6 +2506,671 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
     res.json({ ok: false, error: e.message });
   }
 });
+
+// ═══════════════════════════════════════════════════
+// GET /api/schedule/export/csv — CSVエクスポート
+// query: year?, month?, userId?, department?
+// ═══════════════════════════════════════════════════
+router.get("/api/schedule/export/csv", requireLogin, async (req, res) => {
+  try {
+    const myId = String(req.session.userId);
+    const { year, month, userId, department } = req.query;
+    const filter = { isDeleted: false };
+    // 月別フィルター（JST基準）
+    if (year && month) {
+      const y = parseInt(year, 10),
+        m = parseInt(month, 10) - 1;
+      const startUTC = new Date(Date.UTC(y, m, 1) - 9 * 3600 * 1000);
+      const endUTC = new Date(Date.UTC(y, m + 1, 1) - 9 * 3600 * 1000);
+      filter.startAt = { $gte: startUTC, $lt: endUTC };
+    }
+    // スコープフィルター
+    if (department) {
+      if (!isAdmin(req))
+        return res.status(403).json({
+          ok: false,
+          error: "管理者のみ部署別エクスポートが利用できます",
+        });
+      const deptEmps = await Employee.find({ department }).lean();
+      const deptUIds = deptEmps.map((e) => e.userId);
+      filter.$or = [
+        { createdBy: { $in: deptUIds } },
+        { attendees: { $in: deptUIds } },
+      ];
+    } else if (userId) {
+      if (!isAdmin(req) && userId !== myId)
+        return res.status(403).json({ ok: false, error: "権限がありません" });
+      filter.$or = [{ createdBy: userId }, { attendees: userId }];
+    } else {
+      filter.$or = [{ createdBy: myId }, { attendees: myId }];
+    }
+    const schedules = await Schedule.find(filter).sort({ startAt: 1 }).lean();
+    // 参加者メールアドレス解決
+    const allUIds = [
+      ...new Set(
+        schedules
+          .flatMap((s) => [
+            String(s.createdBy || ""),
+            ...(s.attendees || []).map(String),
+          ])
+          .filter(Boolean),
+      ),
+    ];
+    const emps = await Employee.find({ userId: { $in: allUIds } }).lean();
+    const emailMap = {};
+    emps.forEach((e) => {
+      emailMap[String(e.userId)] = e.email || "";
+    });
+    // CSV生成
+    const CSV_HEADERS = [
+      "タイトル",
+      "種別",
+      "開始日時（JST）",
+      "終了日時（JST）",
+      "終日",
+      "場所",
+      "メモ",
+      "参加者メール（;区切り）",
+      "色",
+      "タグ（;区切り）",
+      "公開設定",
+      "繰り返しモード",
+      "繰り返し終了日",
+      "繰り返し曜日（0=日〜6=土）",
+    ];
+    const rowLines = schedules.map((s) => {
+      const attendeeEmails = (s.attendees || [])
+        .map((id) => emailMap[String(id)] || "")
+        .filter(Boolean)
+        .join(";");
+      return [
+        s.title || "",
+        s.type || "other",
+        toJSTDatetimeStr(s.startAt),
+        toJSTDatetimeStr(s.endAt),
+        s.allDay ? "TRUE" : "FALSE",
+        s.location || "",
+        s.description || "",
+        attendeeEmails,
+        s.color || "#3b82f6",
+        (s.tags || []).join(";"),
+        s.visibility || "private",
+        "none",
+        "",
+        "",
+      ]
+        .map(csvCell)
+        .join(",");
+    });
+    const BOM = "\uFEFF";
+    const csv =
+      BOM + [CSV_HEADERS.map(csvCell).join(","), ...rowLines].join("\r\n");
+    const label = department ? "dept-" + department : userId ? "user" : "my";
+    const dateLabel =
+      year && month ? year + "-" + String(month).padStart(2, "0") : "all";
+    const filename = "schedule_" + label + "_" + dateLabel + ".csv";
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename*=UTF-8''" + encodeURIComponent(filename),
+    );
+    res.send(csv);
+  } catch (e) {
+    console.error("[schedule] GET /api/schedule/export/csv エラー:", e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// POST /api/schedule/import/csv — CSVインポート
+// body: { csv: "文字列", dryRun: boolean }
+// ═══════════════════════════════════════════════════
+router.post("/api/schedule/import/csv", requireLogin, async (req, res) => {
+  try {
+    const myId = req.session.userId;
+    const { csv: csvText, dryRun = true } = req.body;
+    if (!csvText || typeof csvText !== "string")
+      return res.json({ ok: false, error: "CSVデータが含まれていません" });
+    if (csvText.length > 2 * 1024 * 1024)
+      return res.json({
+        ok: false,
+        error: "CSVファイルが大きすぎます（2MB以内）",
+      });
+
+    const { headers, rows } = parseCsvText(csvText);
+    // 列マッピング（日本語/英語ヘッダー両対応）
+    const COL_ALIASES = {
+      title: ["タイトル", "title"],
+      type: ["種別", "type"],
+      startAt: ["開始日時（JST）", "開始日時", "startAt"],
+      endAt: ["終了日時（JST）", "終了日時", "endAt"],
+      allDay: ["終日", "allDay"],
+      location: ["場所", "location"],
+      description: ["メモ", "description"],
+      attendees: ["参加者メール（;区切り）", "参加者メール", "attendees"],
+      color: ["色", "color"],
+      tags: ["タグ（;区切り）", "タグ", "tags"],
+      visibility: ["公開設定", "visibility"],
+      repeatMode: ["繰り返しモード", "repeatMode"],
+      repeatUntil: ["繰り返し終了日", "repeatUntil"],
+      repeatDays: ["繰り返し曜日（0=日〜6=土）", "繰り返し曜日", "repeatDays"],
+    };
+    const colMap = {};
+    for (const [key, aliases] of Object.entries(COL_ALIASES)) {
+      for (const a of aliases) {
+        if (headers.includes(a)) {
+          colMap[key] = a;
+          break;
+        }
+      }
+    }
+    if (!colMap.title || !colMap.startAt || !colMap.endAt)
+      return res.json({
+        ok: false,
+        error:
+          "CSVフォーマットが不正です。『タイトル』『開始日時（JST）』『終了日時（JST）』列が必要です。",
+      });
+
+    // メールアドレス → userId マッピング
+    const emailsAll = new Set();
+    rows.forEach((r) => {
+      (r[colMap.attendees] || "")
+        .split(";")
+        .map((e) => e.trim())
+        .filter(Boolean)
+        .forEach((e) => emailsAll.add(e));
+    });
+    const empsByEmail = await Employee.find({
+      email: { $in: Array.from(emailsAll) },
+    }).lean();
+    const emailToUid = {};
+    empsByEmail.forEach((e) => {
+      if (e.email) emailToUid[e.email.toLowerCase()] = String(e.userId);
+    });
+
+    // 検証 & 変換
+    const VALID_TYPES = ["meeting", "event", "other"];
+    const validated = [];
+    const errors = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const rowNum = i + 2; // ヘッダー行=1
+      const errs = [];
+      const title = r[colMap.title];
+      if (!title) errs.push("タイトルが空です");
+      const startAt = parseCsvJSTDatetime(r[colMap.startAt]);
+      if (!startAt)
+        errs.push('開始日時の形式が不正: "' + r[colMap.startAt] + '"');
+      const endAt = parseCsvJSTDatetime(r[colMap.endAt]);
+      if (!endAt) errs.push('終了日時の形式が不正: "' + r[colMap.endAt] + '"');
+      if (startAt && endAt && endAt <= startAt)
+        errs.push("終了日時は開始日時より後にしてください");
+      const type = VALID_TYPES.includes(r[colMap.type])
+        ? r[colMap.type]
+        : "other";
+      const allDay = (r[colMap.allDay] || "").toUpperCase() === "TRUE";
+      const location = r[colMap.location] || "";
+      const description = r[colMap.description] || "";
+      const color = /^#[0-9a-fA-F]{6}$/.test(r[colMap.color] || "")
+        ? r[colMap.color]
+        : "#3b82f6";
+      const tags = (r[colMap.tags] || "")
+        .split(";")
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .slice(0, 20);
+      const visibility =
+        r[colMap.visibility] === "public" ? "public" : "private";
+      const attendeeEmails = (r[colMap.attendees] || "")
+        .split(";")
+        .map((e) => e.trim())
+        .filter(Boolean);
+      const attendeeIds = [];
+      const unknownEmails = [];
+      attendeeEmails.forEach((e) => {
+        const uid = emailToUid[e.toLowerCase()];
+        if (uid) attendeeIds.push(uid);
+        else unknownEmails.push(e);
+      });
+      if (unknownEmails.length)
+        errs.push("参加者未解決: " + unknownEmails.join(", "));
+      const repeatMode = ["daily", "weekly"].includes(r[colMap.repeatMode])
+        ? r[colMap.repeatMode]
+        : "none";
+      let repeatUntil = null;
+      if (repeatMode !== "none") {
+        repeatUntil = parseCsvJSTDatetime(r[colMap.repeatUntil]);
+        if (!repeatUntil) errs.push("繰り返し終了日が不正です");
+      }
+      const repeatDays = (r[colMap.repeatDays] || "")
+        .split(/[,; ]+/)
+        .map((d) => parseInt(d, 10))
+        .filter((d) => !isNaN(d) && d >= 0 && d <= 6);
+      if (errs.length) {
+        errors.push({ row: rowNum, title: title || "(無題)", errors: errs });
+        continue;
+      }
+      validated.push({
+        title,
+        type,
+        startAt,
+        endAt,
+        allDay,
+        location,
+        description,
+        color,
+        tags,
+        visibility,
+        attendeeIds,
+        repeatMode,
+        repeatUntil,
+        repeatDays,
+      });
+    }
+
+    // dryRun=true: プレビューのみ返す
+    if (dryRun) {
+      return res.json({
+        ok: true,
+        dryRun: true,
+        totalRows: rows.length,
+        validRows: validated.length,
+        errorRows: errors.length,
+        errors,
+        preview: validated.slice(0, 30).map((v) => ({
+          title: v.title,
+          startAt: toJSTDatetimeStr(v.startAt),
+          endAt: toJSTDatetimeStr(v.endAt),
+          type: v.type,
+          attendeeCount: v.attendeeIds.length,
+          repeatMode: v.repeatMode,
+        })),
+      });
+    }
+    // dryRun=false: 有効行を登録（エラー行はスキップ）
+    let created = 0;
+    for (const v of validated) {
+      let datesToCreate = [{ startAt: v.startAt, endAt: v.endAt }];
+      let seriesId = null;
+      if (v.repeatMode !== "none" && v.repeatUntil) {
+        datesToCreate = generateRepeatDates(
+          v.startAt,
+          v.endAt,
+          v.repeatMode,
+          v.repeatUntil,
+          v.repeatDays,
+        );
+        if (datesToCreate.length > 1) seriesId = randomUUID();
+      }
+      for (const slot of datesToCreate) {
+        await Schedule.create({
+          title: v.title,
+          description: v.description,
+          location: v.location,
+          startAt: slot.startAt,
+          endAt: slot.endAt,
+          allDay: v.allDay,
+          type: v.type,
+          createdBy: myId,
+          attendees: v.attendeeIds,
+          attendeeStatus: v.attendeeIds.map((uid) => ({
+            userId: uid,
+            status: "pending",
+            updatedAt: new Date(),
+          })),
+          color: v.color,
+          tags: v.tags,
+          visibility: v.visibility,
+          seriesId,
+        });
+        created++;
+      }
+    }
+    res.json({ ok: true, dryRun: false, created, skipped: errors.length });
+  } catch (e) {
+    console.error(
+      "[schedule] POST /api/schedule/import/csv エラー:",
+      e.message,
+    );
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// GET /api/schedule/attachments/download/:filename — 添付ファイルダウンロード
+// ※ この route は GET /api/schedule/:id より前に定義すること
+// ═══════════════════════════════════════════════════
+router.get(
+  "/api/schedule/attachments/download/:filename",
+  requireLogin,
+  async (req, res) => {
+    try {
+      const safeName = path.basename(req.params.filename);
+      const filePath = path.join(schedUploadDir, safeName);
+      // パストラバーサル防止
+      if (
+        !filePath.startsWith(schedUploadDir + path.sep) &&
+        filePath !== schedUploadDir
+      )
+        return res.status(403).send("Forbidden");
+      if (!fs.existsSync(filePath)) return res.status(404).send("Not found");
+
+      // アクセス権チェック: このファイルを持つスケジュールを探す
+      const schedule = await Schedule.findOne({
+        "attachments.storedName": safeName,
+        isDeleted: false,
+      }).lean();
+      if (!schedule) return res.status(404).send("Not found");
+      const myId = String(req.session.userId);
+      const isAd = isAdmin(req);
+      const isCreator = String(schedule.createdBy) === myId;
+      const isAtt = (schedule.attendees || []).some((a) => String(a) === myId);
+      const isPub = schedule.visibility === "public";
+      if (!isAd && !isCreator && !isAtt && !isPub)
+        return res.status(403).send("Forbidden");
+
+      const att = schedule.attachments.find((a) => a.storedName === safeName);
+      const displayName = (att && (att.originalName || att.name)) || safeName;
+      const downloadName = req.query.name || displayName;
+      res.setHeader(
+        "Content-Disposition",
+        "attachment; filename*=UTF-8''" + encodeURIComponent(downloadName),
+      );
+      res.sendFile(filePath);
+    } catch (e) {
+      console.error("[schedule] attachment download error:", e.message);
+      res.status(500).send("Error");
+    }
+  },
+);
+
+// ═══════════════════════════════════════════════════
+// POST /api/schedule/:id/attachments — URL添付追加
+// ═══════════════════════════════════════════════════
+router.post("/api/schedule/:id/attachments", requireLogin, async (req, res) => {
+  try {
+    const schedule = await Schedule.findById(req.params.id);
+    if (!schedule || schedule.isDeleted)
+      return res.json({ ok: false, error: "スケジュールが見つかりません" });
+    if (!canEdit(req, schedule))
+      return res.json({ ok: false, error: "権限がありません" });
+    const { attachType, name, url } = req.body;
+    if (attachType !== "url")
+      return res.json({ ok: false, error: "不正なタイプです" });
+    if (!url || !/^https?:\/\//i.test(url))
+      return res.json({
+        ok: false,
+        error:
+          "URLが無効です（https:// または http:// で始まるURLを入力してください）",
+      });
+    schedule.attachments.push({
+      attachType: "url",
+      name: name || url,
+      url,
+      addedBy: req.session.userId,
+    });
+    await schedule.save();
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[schedule] POST attachment url error:", e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// POST /api/schedule/:id/attachments/file — ファイル添付
+// ═══════════════════════════════════════════════════
+router.post(
+  "/api/schedule/:id/attachments/file",
+  requireLogin,
+  schedUpload.array("files", 10),
+  async (req, res) => {
+    try {
+      const schedule = await Schedule.findById(req.params.id);
+      if (!schedule || schedule.isDeleted) {
+        (req.files || []).forEach((f) => fs.unlink(f.path, () => {}));
+        return res.json({ ok: false, error: "スケジュールが見つかりません" });
+      }
+      if (!canEdit(req, schedule)) {
+        (req.files || []).forEach((f) => fs.unlink(f.path, () => {}));
+        return res.json({ ok: false, error: "権限がありません" });
+      }
+      for (const file of req.files || []) {
+        schedule.attachments.push({
+          attachType: "file",
+          name: file.originalname,
+          originalName: file.originalname,
+          storedName: file.filename,
+          filePath: file.path,
+          mimeType: file.mimetype,
+          size: file.size,
+          addedBy: req.session.userId,
+        });
+      }
+      await schedule.save();
+      res.json({ ok: true, count: (req.files || []).length });
+    } catch (e) {
+      (req.files || []).forEach((f) => fs.unlink(f.path, () => {}));
+      console.error("[schedule] POST attachment file error:", e.message);
+      res.json({ ok: false, error: e.message });
+    }
+  },
+);
+
+// ═══════════════════════════════════════════════════
+// DELETE /api/schedule/:id/attachments/:aId — 添付削除
+// ═══════════════════════════════════════════════════
+router.delete(
+  "/api/schedule/:id/attachments/:aId",
+  requireLogin,
+  async (req, res) => {
+    try {
+      const schedule = await Schedule.findById(req.params.id);
+      if (!schedule || schedule.isDeleted)
+        return res.json({ ok: false, error: "スケジュールが見つかりません" });
+      if (!canEdit(req, schedule))
+        return res.json({ ok: false, error: "権限がありません" });
+      const att = schedule.attachments.id(req.params.aId);
+      if (!att) return res.json({ ok: false, error: "添付が見つかりません" });
+      if (att.attachType === "file" && att.filePath) {
+        const fp = path.isAbsolute(att.filePath)
+          ? att.filePath
+          : path.join(__dirname, "..", att.filePath);
+        fs.unlink(fp, (err) => {
+          if (err) console.error("[schedule] file unlink error:", err.message);
+        });
+      }
+      schedule.attachments.pull(req.params.aId);
+      await schedule.save();
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[schedule] DELETE attachment error:", e.message);
+      res.json({ ok: false, error: e.message });
+    }
+  },
+);
+
+// ═══════════════════════════════════════════════════
+// GET /api/schedule/:id/comments — コメント一覧 + 既読更新
+// ═══════════════════════════════════════════════════
+router.get("/api/schedule/:id/comments", requireLogin, async (req, res) => {
+  try {
+    const schedule = await Schedule.findById(req.params.id).lean();
+    if (!schedule || schedule.isDeleted)
+      return res.json({ ok: false, error: "スケジュールが見つかりません" });
+    if (!canView(req, schedule))
+      return res.json({ ok: false, error: "権限がありません" });
+    const myId = String(req.session.userId);
+    const comments = await ScheduleComment.find({
+      scheduleId: req.params.id,
+      isDeleted: false,
+    })
+      .sort({ createdAt: 1 })
+      .lean();
+    const readDoc = await ScheduleCommentRead.findOne({
+      scheduleId: req.params.id,
+      userId: myId,
+    }).lean();
+    const lastReadAt = readDoc ? readDoc.lastReadAt : new Date(0);
+    const unreadCount = comments.filter(
+      (c) => new Date(c.createdAt) > lastReadAt && String(c.userId) !== myId,
+    ).length;
+    await ScheduleCommentRead.findOneAndUpdate(
+      { scheduleId: req.params.id, userId: myId },
+      { lastReadAt: new Date() },
+      { upsert: true },
+    );
+    res.json({ ok: true, comments, unreadCount, isAdmin: isAdmin(req) });
+  } catch (e) {
+    console.error("[schedule] GET comments error:", e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// POST /api/schedule/:id/comments — コメント投稿
+// ═══════════════════════════════════════════════════
+router.post("/api/schedule/:id/comments", requireLogin, async (req, res) => {
+  try {
+    const schedule = await Schedule.findById(req.params.id).lean();
+    if (!schedule || schedule.isDeleted)
+      return res.json({ ok: false, error: "スケジュールが見つかりません" });
+    if (!canView(req, schedule))
+      return res.json({ ok: false, error: "権限がありません" });
+    const myId = String(req.session.userId);
+    const body = (req.body.body || "").trim();
+    if (!body || body.length > 2000)
+      return res.json({ ok: false, error: "本文が不正です" });
+    const emp = await Employee.findOne({ userId: myId }).lean();
+    const userName = emp ? emp.name : req.session.username || "不明";
+    // メンション解析
+    const allParticipantIds = [
+      ...new Set([
+        String(schedule.createdBy),
+        ...(schedule.attendees || []).map(String),
+      ]),
+    ];
+    const allEmps = await Employee.find({
+      userId: { $in: allParticipantIds },
+    }).lean();
+    const mentionedIds = [];
+    let pos = 0;
+    while (pos < body.length) {
+      const atIdx = body.indexOf("@", pos);
+      if (atIdx === -1) break;
+      let end = atIdx + 1;
+      while (end < body.length && body.charCodeAt(end) > 32) end++;
+      const fragment = body.slice(atIdx + 1, end);
+      const matched = allEmps.find(
+        (e) => e.name && e.name.indexOf(fragment) !== -1,
+      );
+      if (matched && !mentionedIds.includes(String(matched.userId)))
+        mentionedIds.push(String(matched.userId));
+      pos = end;
+    }
+    const comment = await ScheduleComment.create({
+      scheduleId: req.params.id,
+      userId: myId,
+      userName,
+      body,
+      mentions: mentionedIds,
+    });
+    // メンション通知
+    for (const uid of mentionedIds) {
+      if (uid === myId) continue;
+      await createNotification({
+        userId: uid,
+        type: "schedule_comment_mention",
+        title: "メンション",
+        body: `${userName} さんが「${schedule.title}」でメンションしました`,
+        link: `/schedule?open=${schedule._id}`,
+        fromUserId: myId,
+        fromName: userName,
+      });
+      if (global.io)
+        global.io.to("u_" + uid).emit("notification_new", {
+          type: "schedule_comment_mention",
+          title: "メンション",
+          body: `${userName} さんが「${schedule.title}」でメンションしました`,
+          link: `/schedule?open=${schedule._id}`,
+        });
+    }
+    // 参加者へリアルタイム更新通知
+    if (global.io) {
+      const all = [
+        ...new Set([
+          String(schedule.createdBy),
+          ...(schedule.attendees || []).map(String),
+        ]),
+      ];
+      all.forEach((uid) => {
+        global.io
+          .to("u_" + uid)
+          .emit("schedule_comment_new", { scheduleId: String(schedule._id) });
+      });
+    }
+    res.json({ ok: true, commentId: String(comment._id) });
+  } catch (e) {
+    console.error("[schedule] POST comment error:", e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// PUT /api/schedule/:id/comments/:cId — コメント編集
+// ═══════════════════════════════════════════════════
+router.put(
+  "/api/schedule/:id/comments/:cId",
+  requireLogin,
+  async (req, res) => {
+    try {
+      const comment = await ScheduleComment.findById(req.params.cId);
+      if (!comment || comment.isDeleted)
+        return res.json({ ok: false, error: "コメントが見つかりません" });
+      if (
+        String(comment.userId) !== String(req.session.userId) &&
+        !isAdmin(req)
+      )
+        return res.json({ ok: false, error: "権限がありません" });
+      const body = (req.body.body || "").trim();
+      if (!body || body.length > 2000)
+        return res.json({ ok: false, error: "本文が不正です" });
+      comment.body = body;
+      comment.editedAt = new Date();
+      await comment.save();
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[schedule] PUT comment error:", e.message);
+      res.json({ ok: false, error: e.message });
+    }
+  },
+);
+
+// ═══════════════════════════════════════════════════
+// DELETE /api/schedule/:id/comments/:cId — コメント削除
+// ═══════════════════════════════════════════════════
+router.delete(
+  "/api/schedule/:id/comments/:cId",
+  requireLogin,
+  async (req, res) => {
+    try {
+      const comment = await ScheduleComment.findById(req.params.cId);
+      if (!comment || comment.isDeleted)
+        return res.json({ ok: false, error: "コメントが見つかりません" });
+      if (
+        String(comment.userId) !== String(req.session.userId) &&
+        !isAdmin(req)
+      )
+        return res.json({ ok: false, error: "権限がありません" });
+      comment.isDeleted = true;
+      await comment.save();
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[schedule] DELETE comment error:", e.message);
+      res.json({ ok: false, error: e.message });
+    }
+  },
+);
 
 // ═══════════════════════════════════════════════════
 // GET /api/schedule/:id — 詳細JSON
@@ -1262,7 +3229,21 @@ router.get("/api/schedule/:id", requireLogin, async (req, res) => {
         chatRoomId: schedule.chatRoomId ? String(schedule.chatRoomId) : null,
         tags: schedule.tags || [],
         visibility: schedule.visibility || "private",
-        canEdit: isAd || isCreator,
+        seriesId: schedule.seriesId || null,
+        attachments: (schedule.attachments || []).map((a) => ({
+          _id: String(a._id),
+          attachType: a.attachType,
+          name: a.name || "",
+          url: a.url || "",
+          originalName: a.originalName || "",
+          storedName: a.storedName || "",
+          mimeType: a.mimeType || "",
+          size: a.size || 0,
+          addedAt: a.addedAt,
+        })),
+        canEdit: isAd
+          ? true
+          : isCreator && new Date(schedule.startAt) >= startOfTodayJST(),
       },
     });
   } catch (e) {
@@ -1390,7 +3371,7 @@ router.put("/api/schedule/:id", requireLogin, async (req, res) => {
             process.env.SMTP_FROM ||
             process.env.SMTP_USER ||
             "no-reply@dxpro-sol.com",
-          subject: `【NOKORIスケジューラ】スケジュール変更: ${schedule.title}`,
+          subject: `【NOKORIスケジュール】スケジュール変更: ${schedule.title}`,
           html: mailBody,
           text: mailBody.replace(/<[^>]+>/g, ""),
         }).catch((e) =>
@@ -1402,6 +3383,47 @@ router.put("/api/schedule/:id", requireLogin, async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error("[schedule] PUT /api/schedule/:id エラー:", e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// PATCH /api/schedule/bulk/color — 複数選択一括色変更
+// ═══════════════════════════════════════════════════
+router.patch("/api/schedule/bulk/color", requireLogin, async (req, res) => {
+  try {
+    const { ids, color } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0)
+      return res.json({ ok: false, error: "対象のIDが指定されていません" });
+    if (ids.length > 100)
+      return res.json({
+        ok: false,
+        error: "一度に変更できるのは100件までです",
+      });
+    if (!color || !/^#[0-9a-fA-F]{6}$/.test(color))
+      return res.json({ ok: false, error: "カラーコードの形式が不正です" });
+
+    const schedules = await Schedule.find({
+      _id: { $in: ids },
+      isDeleted: false,
+    });
+    for (const sch of schedules) {
+      if (!canEdit(req, sch))
+        return res.status(403).json({
+          ok: false,
+          error: "一部のスケジュールに編集権限がありません",
+        });
+    }
+    await Schedule.updateMany(
+      { _id: { $in: ids }, isDeleted: false },
+      { $set: { color } },
+    );
+    res.json({ ok: true, count: schedules.length });
+  } catch (e) {
+    console.error(
+      "[schedule] PATCH /api/schedule/bulk/color エラー:",
+      e.message,
+    );
     res.json({ ok: false, error: e.message });
   }
 });
@@ -1433,6 +3455,247 @@ router.patch("/api/schedule/:id/time", requireLogin, async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error("[schedule] PATCH /api/schedule/:id/time エラー:", e.message);
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// PUT /api/schedule/:id/series-bulk — シリーズ一括編集
+// scope: 'future' (この予定以降) | 'all' (すべて)
+// ═══════════════════════════════════════════════════
+router.put("/api/schedule/:id/series-bulk", requireLogin, async (req, res) => {
+  try {
+    const myId = req.session.userId;
+    const refSchedule = await Schedule.findById(req.params.id);
+    if (!refSchedule || refSchedule.isDeleted)
+      return res.json({ ok: false, error: "スケジュールが見つかりません" });
+    if (!canEdit(req, refSchedule))
+      return res.status(403).json({ ok: false, error: "編集権限がありません" });
+    if (!refSchedule.seriesId)
+      return res.json({
+        ok: false,
+        error: "このスケジュールはシリーズではありません",
+      });
+
+    const {
+      scope,
+      title,
+      description,
+      location,
+      startAt,
+      endAt,
+      allDay,
+      type,
+      attendees,
+      color,
+      tags: rawTags,
+      visibility: rawVisibility,
+    } = req.body;
+    if (!["future", "all"].includes(scope))
+      return res.json({
+        ok: false,
+        error: "scopeは future または all を指定してください",
+      });
+    if (!title || !title.trim())
+      return res.json({ ok: false, error: "タイトルは必須です" });
+
+    const newStart = new Date(startAt);
+    const newEnd = new Date(endAt);
+    if (isNaN(newStart.getTime()) || isNaN(newEnd.getTime()))
+      return res.json({ ok: false, error: "日時の形式が不正です" });
+    if (newEnd <= newStart)
+      return res.json({
+        ok: false,
+        error: "終了日時は開始日時より後に設定してください",
+      });
+
+    const duration = newEnd - newStart; // ミリ秒
+    // 新しい時刻（UTC）: 各イベントの日付は保持し、時分のみ更新
+    const newStartHour = newStart.getUTCHours();
+    const newStartMin = newStart.getUTCMinutes();
+    const newStartSec = newStart.getUTCSeconds();
+
+    const validTypes = ["meeting", "event", "other"];
+    const safeType = validTypes.includes(type) ? type : refSchedule.type;
+    const safeTags = Array.isArray(rawTags)
+      ? rawTags
+          .map((t) => String(t).trim())
+          .filter(Boolean)
+          .slice(0, 20)
+      : [];
+    const newAttendeeIds = Array.isArray(attendees)
+      ? attendees.slice(0, 50).map(String)
+      : [];
+
+    // 対象スケジュールを絞り込む
+    const filter = { seriesId: refSchedule.seriesId, isDeleted: false };
+    if (scope === "future") {
+      filter.startAt = { $gte: refSchedule.startAt };
+    }
+    const targets = await Schedule.find(filter);
+
+    // 権限チェック（作成者 or admin のみ）
+    for (const t of targets) {
+      if (!canEdit(req, t))
+        return res.status(403).json({
+          ok: false,
+          error: "一部のスケジュールに編集権限がありません",
+        });
+    }
+
+    // 一括更新
+    for (const sch of targets) {
+      // 日付は保持、時刻のみ新しい値に更新
+      const origDate = new Date(sch.startAt);
+      const newSchStart = new Date(
+        Date.UTC(
+          origDate.getUTCFullYear(),
+          origDate.getUTCMonth(),
+          origDate.getUTCDate(),
+          newStartHour,
+          newStartMin,
+          newStartSec,
+        ),
+      );
+      const newSchEnd = new Date(newSchStart.getTime() + duration);
+
+      const prevAttendees = sch.attendees.map((a) => String(a));
+      const addedAttendees = newAttendeeIds.filter(
+        (id) => !prevAttendees.includes(id),
+      );
+
+      sch.title = title.trim();
+      sch.description = (description || "").trim();
+      sch.location = (location || "").trim();
+      sch.startAt = newSchStart;
+      sch.endAt = newSchEnd;
+      sch.allDay = !!allDay;
+      sch.type = safeType;
+      sch.color = color || sch.color;
+      sch.tags = safeTags;
+      sch.visibility =
+        rawVisibility === "public" || rawVisibility === "private"
+          ? rawVisibility
+          : sch.visibility;
+      sch.attendees = newAttendeeIds;
+      for (const uid of addedAttendees) {
+        const exists = sch.attendeeStatus.some((s) => String(s.userId) === uid);
+        if (!exists)
+          sch.attendeeStatus.push({
+            userId: uid,
+            status: "pending",
+            updatedAt: new Date(),
+          });
+      }
+      await sch.save();
+    }
+
+    res.json({ ok: true, count: targets.length });
+  } catch (e) {
+    console.error(
+      "[schedule] PUT /api/schedule/:id/series-bulk エラー:",
+      e.message,
+    );
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// DELETE /api/schedule/:id/series-bulk — シリーズ一括削除
+// scope: 'future' | 'all'
+// ═══════════════════════════════════════════════════
+router.delete(
+  "/api/schedule/:id/series-bulk",
+  requireLogin,
+  async (req, res) => {
+    try {
+      const myId = req.session.userId;
+      const refSchedule = await Schedule.findById(req.params.id);
+      if (!refSchedule || refSchedule.isDeleted)
+        return res.json({ ok: false, error: "スケジュールが見つかりません" });
+      if (!canEdit(req, refSchedule))
+        return res
+          .status(403)
+          .json({ ok: false, error: "削除権限がありません" });
+      if (!refSchedule.seriesId)
+        return res.json({
+          ok: false,
+          error: "このスケジュールはシリーズではありません",
+        });
+
+      const { scope } = req.body;
+      if (!["future", "all"].includes(scope))
+        return res.json({
+          ok: false,
+          error: "scopeは future または all を指定してください",
+        });
+
+      const filter = { seriesId: refSchedule.seriesId, isDeleted: false };
+      if (scope === "future") {
+        filter.startAt = { $gte: refSchedule.startAt };
+      }
+      const targets = await Schedule.find(filter);
+      for (const t of targets) {
+        if (!canEdit(req, t))
+          return res.status(403).json({
+            ok: false,
+            error: "一部のスケジュールに削除権限がありません",
+          });
+      }
+      await Schedule.updateMany(
+        {
+          seriesId: refSchedule.seriesId,
+          isDeleted: false,
+          ...(scope === "future"
+            ? { startAt: { $gte: refSchedule.startAt } }
+            : {}),
+        },
+        { $set: { isDeleted: true } },
+      );
+      res.json({ ok: true, count: targets.length });
+    } catch (e) {
+      console.error(
+        "[schedule] DELETE /api/schedule/:id/series-bulk エラー:",
+        e.message,
+      );
+      res.json({ ok: false, error: e.message });
+    }
+  },
+);
+
+// ═══════════════════════════════════════════════════
+// DELETE /api/schedule/bulk — 複数選択一括削除
+// ═══════════════════════════════════════════════════
+router.delete("/api/schedule/bulk", requireLogin, async (req, res) => {
+  try {
+    const myId = req.session.userId;
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0)
+      return res.json({ ok: false, error: "削除対象のIDが指定されていません" });
+    if (ids.length > 100)
+      return res.json({
+        ok: false,
+        error: "一度に削除できるのは100件までです",
+      });
+
+    const schedules = await Schedule.find({
+      _id: { $in: ids },
+      isDeleted: false,
+    });
+    for (const sch of schedules) {
+      if (!canEdit(req, sch))
+        return res.status(403).json({
+          ok: false,
+          error: "一部のスケジュールに削除権限がありません",
+        });
+    }
+    await Schedule.updateMany(
+      { _id: { $in: ids }, isDeleted: false },
+      { $set: { isDeleted: true } },
+    );
+    res.json({ ok: true, count: schedules.length });
+  } catch (e) {
+    console.error("[schedule] DELETE /api/schedule/bulk エラー:", e.message);
     res.json({ ok: false, error: e.message });
   }
 });
@@ -1487,7 +3750,7 @@ router.delete("/api/schedule/:id", requireLogin, async (req, res) => {
             process.env.SMTP_FROM ||
             process.env.SMTP_USER ||
             "no-reply@dxpro-sol.com",
-          subject: `【NOKORIスケジューラ】スケジュールキャンセル: ${schedule.title}`,
+          subject: `【NOKORIスケジュール】スケジュールキャンセル: ${schedule.title}`,
           html: mailBody,
           text: mailBody.replace(/<[^>]+>/g, ""),
         }).catch((e) =>
@@ -1693,7 +3956,7 @@ function buildInviteMail({
   return `<!DOCTYPE html><html><body style="font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f5f7;margin:0;padding:20px;">
 <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
 <div style="background:linear-gradient(135deg,#2563eb,#7c3aed);padding:20px 24px;color:#fff;">
-    <div style="font-size:11px;letter-spacing:.08em;opacity:.8;margin-bottom:6px;">NOKORIスケジューラ</div>
+    <div style="font-size:11px;letter-spacing:.08em;opacity:.8;margin-bottom:6px;">NOKORIスケジュール</div>
     <div style="font-size:20px;font-weight:700;">📅 会議招待</div>
 </div>
 <div style="padding:24px;">
@@ -1724,7 +3987,7 @@ function buildUpdateMail({
   return `<!DOCTYPE html><html><body style="font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f5f7;margin:0;padding:20px;">
 <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
 <div style="background:linear-gradient(135deg,#f59e0b,#ef4444);padding:20px 24px;color:#fff;">
-    <div style="font-size:11px;letter-spacing:.08em;opacity:.8;margin-bottom:6px;">NOKORIスケジューラ</div>
+    <div style="font-size:11px;letter-spacing:.08em;opacity:.8;margin-bottom:6px;">NOKORIスケジュール</div>
     <div style="font-size:20px;font-weight:700;">📝 スケジュール変更</div>
 </div>
 <div style="padding:24px;">
@@ -1749,7 +4012,7 @@ function buildCancelMail({ recipientName, cancellerName, schedule }) {
   return `<!DOCTYPE html><html><body style="font-family:'Helvetica Neue',Arial,sans-serif;background:#f4f5f7;margin:0;padding:20px;">
 <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
 <div style="background:linear-gradient(135deg,#ef4444,#b91c1c);padding:20px 24px;color:#fff;">
-    <div style="font-size:11px;letter-spacing:.08em;opacity:.8;margin-bottom:6px;">NOKORIスケジューラ</div>
+    <div style="font-size:11px;letter-spacing:.08em;opacity:.8;margin-bottom:6px;">NOKORIスケジュール</div>
     <div style="font-size:20px;font-weight:700;">❌ スケジュールキャンセル</div>
 </div>
 <div style="padding:24px;">
@@ -1790,7 +4053,7 @@ router.get("/api/schedule/:id/ical", requireLogin, async (req, res) => {
     const lines = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
-      "PRODID:-//DXPro//NOKORIスケジューラ//JA",
+      "PRODID:-//DXPro//NOKORIスケジュール//JA",
       "CALSCALE:GREGORIAN",
       "METHOD:PUBLISH",
       "BEGIN:VEVENT",

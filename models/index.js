@@ -920,13 +920,73 @@ const ScheduleSchema = new mongoose.Schema(
       default: "private",
     },
     isDeleted: { type: Boolean, default: false },
+    reminderSent: { type: Boolean, default: false }, // 5分前リマインダー送信済みフラグ
+    seriesId: { type: String, default: null }, // 繰り返しシリーズID
+    attachments: [
+      {
+        attachType: { type: String, enum: ["file", "url"], required: true },
+        name: { type: String, default: "" },
+        url: { type: String, default: "" },
+        originalName: { type: String, default: "" },
+        storedName: { type: String, default: "" },
+        filePath: { type: String, default: "" },
+        mimeType: { type: String, default: "" },
+        size: { type: Number, default: 0 },
+        addedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        addedAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true },
 );
 ScheduleSchema.index({ startAt: 1, endAt: 1 });
 ScheduleSchema.index({ createdBy: 1 });
 ScheduleSchema.index({ attendees: 1 });
+ScheduleSchema.index({ seriesId: 1 });
 const Schedule = mongoose.model("Schedule", ScheduleSchema);
+
+// ─── スケジュールコメント ────────────────────────────────────────────────────
+const ScheduleCommentSchema = new mongoose.Schema(
+  {
+    scheduleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Schedule",
+      required: true,
+      index: true,
+    },
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    userName: { type: String, default: "" },
+    body: { type: String, required: true, maxlength: 2000 },
+    mentions: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    editedAt: { type: Date },
+    isDeleted: { type: Boolean, default: false },
+  },
+  { timestamps: true },
+);
+const ScheduleComment = mongoose.model(
+  "ScheduleComment",
+  ScheduleCommentSchema,
+);
+
+// ─── スケジュールコメント既読管理 ────────────────────────────────────────────
+const ScheduleCommentReadSchema = new mongoose.Schema({
+  scheduleId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Schedule",
+    required: true,
+  },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  lastReadAt: { type: Date, default: Date.now },
+});
+ScheduleCommentReadSchema.index({ scheduleId: 1, userId: 1 }, { unique: true });
+const ScheduleCommentRead = mongoose.model(
+  "ScheduleCommentRead",
+  ScheduleCommentReadSchema,
+);
 
 // ─── ユーザー別タスク期限日ローカル上書き ───────────────────────────────────
 const TaskDueDateSchema = new mongoose.Schema({
@@ -1183,4 +1243,6 @@ module.exports = {
   WorkflowForm,
   WorkflowFlowTemplate,
   Schedule,
+  ScheduleComment,
+  ScheduleCommentRead,
 };
