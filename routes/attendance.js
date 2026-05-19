@@ -1,47 +1,49 @@
 // ==============================
 // routes/attendance.js - 勤怠管理
 // ==============================
-const router = require('express').Router();
-const moment = require('moment-timezone');
-const { User, Employee, Attendance, ApprovalRequest } = require('../models');
-const { requireLogin } = require('../middleware/auth');
-const { escapeHtml } = require('../lib/helpers');
-const { buildPageShell, pageFooter } = require('../lib/renderPage');
+const router = require("express").Router();
+const moment = require("moment-timezone");
+const { User, Employee, Attendance, ApprovalRequest } = require("../models");
+const { requireLogin } = require("../middleware/auth");
+const { escapeHtml } = require("../lib/helpers");
+const { buildPageShell, pageFooter } = require("../lib/renderPage");
 
-router.get('/attendance-main', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
+router.get("/attendance-main", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
+    const employee = await Employee.findOne({ userId: user._id });
 
-        if (!employee) {
-            return res.status(400).send(`
+    if (!employee) {
+      return res.status(400).send(`
                 <div style="text-align:center; padding:50px; font-family:'Segoe UI', sans-serif;">
                     <h2>エラー: 従業員情報なし</h2>
                     <p>管理者に問い合わせて従業員情報を登録してください</p>
                     <a href="/logout" style="display:inline-block; padding:12px 20px; background:#0984e3; color:#fff; border-radius:6px; text-decoration:none;">ログアウト</a>
                 </div>
             `);
-        }
+    }
 
-        const today = moment().tz('Asia/Tokyo').startOf('day').toDate();
-        const tomorrow = moment(today).add(1, 'day').toDate();
+    const today = moment().tz("Asia/Tokyo").startOf("day").toDate();
+    const tomorrow = moment(today).add(1, "day").toDate();
 
-        const todayAttendance = await Attendance.findOne({
-            userId: user._id,
-            date: { $gte: today, $lt: tomorrow }
-        }).sort({ checkIn: 1 });
+    const todayAttendance = await Attendance.findOne({
+      userId: user._id,
+      date: { $gte: today, $lt: tomorrow },
+    }).sort({ checkIn: 1 });
 
-        const firstDayOfMonth = moment().tz('Asia/Tokyo').startOf('month').toDate();
-        // 上限は次月の1日を排他的に使う（$lt）ことで、タイムゾーン/時刻丸めにより月初のレコードが抜ける問題を防ぐ
-        const firstDayOfNextMonth = moment(firstDayOfMonth).add(1, 'month').toDate();
+    const firstDayOfMonth = moment().tz("Asia/Tokyo").startOf("month").toDate();
+    // 上限は次月の1日を排他的に使う（$lt）ことで、タイムゾーン/時刻丸めにより月初のレコードが抜ける問題を防ぐ
+    const firstDayOfNextMonth = moment(firstDayOfMonth)
+      .add(1, "month")
+      .toDate();
 
-        const monthlyAttendance = await Attendance.find({
-            userId: user._id,
-            date: { $gte: firstDayOfMonth, $lt: firstDayOfNextMonth }
-        }).sort({ date: 1 });
+    const monthlyAttendance = await Attendance.find({
+      userId: user._id,
+      date: { $gte: firstDayOfMonth, $lt: firstDayOfNextMonth },
+    }).sort({ date: 1 });
 
-        // 新デザインの HTML
-        res.send(`
+    // 新デザインの HTML
+    res.send(`
 <!doctype html>
 <html lang="ja">
 <head>
@@ -184,7 +186,7 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
   <div class="header-right">
     <div class="user-info">
       <div class="name">${employee.name}（${employee.employeeId}）</div>
-      <div class="clock" id="header-clock">${moment().tz('Asia/Tokyo').format('YYYY/MM/DD HH:mm:ss')}</div>
+      <div class="clock" id="header-clock">${moment().tz("Asia/Tokyo").format("YYYY/MM/DD HH:mm:ss")}</div>
     </div>
     <div style="width:12px"></div>
     <a href="/dashboard" class="btn btn--ghost" title="ダッシュボード"><i class="fa-solid fa-house"></i></a>
@@ -203,30 +205,30 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <a href="/add-attendance" class="btn btn--ghost"><i class="fa-solid fa-plus"></i> 打刻追加</a>
-            <a href="/attendance/bulk-register?year=${moment().tz('Asia/Tokyo').year()}&month=${moment().tz('Asia/Tokyo').month()+1}" class="btn btn--ghost"><i class="fa-solid fa-calendar-check"></i> 一括登録</a>
-            ${req.session.isAdmin ? `<a href="/admin/monthly-attendance" class="btn btn--ghost">管理メニュー</a>` : ''}
+            <a href="/attendance/bulk-register?year=${moment().tz("Asia/Tokyo").year()}&month=${moment().tz("Asia/Tokyo").month() + 1}" class="btn btn--ghost"><i class="fa-solid fa-calendar-check"></i> 一括登録</a>
+            ${req.session.isAdmin ? `<a href="/admin/monthly-attendance" class="btn btn--ghost">管理メニュー</a>` : ""}
           </div>
         </div>
 
         <div class="kpis">
           <div class="kpi">
             <div class="label">出勤</div>
-            <div class="value">${todayAttendance && todayAttendance.checkIn ? moment(todayAttendance.checkIn).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}</div>
+            <div class="value">${todayAttendance && todayAttendance.checkIn ? moment(todayAttendance.checkIn).tz("Asia/Tokyo").format("HH:mm:ss") : "-"}</div>
             <div class="sub">出勤時間</div>
           </div>
           <div class="kpi">
             <div class="label">退勤</div>
-            <div class="value">${todayAttendance && todayAttendance.checkOut ? moment(todayAttendance.checkOut).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}</div>
+            <div class="value">${todayAttendance && todayAttendance.checkOut ? moment(todayAttendance.checkOut).tz("Asia/Tokyo").format("HH:mm:ss") : "-"}</div>
             <div class="sub">退勤時間</div>
           </div>
           <div class="kpi">
             <div class="label">勤務時間</div>
-            <div class="value">${todayAttendance && todayAttendance.workingHours ? (todayAttendance.workingHours + ' h') : '-'}</div>
+            <div class="value">${todayAttendance && todayAttendance.workingHours ? todayAttendance.workingHours + " h" : "-"}</div>
             <div class="sub">昼休みを除く</div>
           </div>
           <div class="kpi">
             <div class="label">状態</div>
-            <div class="value">${todayAttendance ? todayAttendance.status : '-'}</div>
+            <div class="value">${todayAttendance ? todayAttendance.status : "-"}</div>
             <div class="sub">勤怠ステータス</div>
           </div>
         </div>
@@ -236,22 +238,32 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
             <div style="display:flex;justify-content:space-between;width:100%;align-items:center">
               <div>
                 <div style="color:var(--muted);font-size:13px">現在時刻（JST）</div>
-                <div class="time" id="main-clock">${moment().tz('Asia/Tokyo').format('HH:mm:ss')}</div>
-                <div style="color:var(--muted);font-size:13px;margin-top:6px">${moment().tz('Asia/Tokyo').format('YYYY年MM月DD日')}</div>
+                <div class="time" id="main-clock">${moment().tz("Asia/Tokyo").format("HH:mm:ss")}</div>
+                <div style="color:var(--muted);font-size:13px;margin-top:6px">${moment().tz("Asia/Tokyo").format("YYYY年MM月DD日")}</div>
               </div>
               <div style="text-align:right">
-                ${todayAttendance ? `
+                ${
+                  todayAttendance
+                    ? `
                   ${todayAttendance.checkOut ? `<span class="tag tag--normal">退勤済</span>` : `<span class="tag tag--late">${todayAttendance.status}</span>`}
-                ` : `<span class="tag tag--absent">未打刻</span>`}
+                `
+                    : `<span class="tag tag--absent">未打刻</span>`
+                }
               </div>
             </div>
 
             <div class="actions">
-              ${todayAttendance ? `
-                ${todayAttendance.checkOut ? `
+              ${
+                todayAttendance
+                  ? `
+                ${
+                  todayAttendance.checkOut
+                    ? `
                   <!-- 退勤済 → 打刻ボタンなし -->
                   <a href="/edit-attendance/${todayAttendance._id}" class="btn btn--ghost">編集</a>
-                ` : todayAttendance.lunchEnd ? `
+                `
+                    : todayAttendance.lunchEnd
+                      ? `
                   <!-- 昼休み終了済 → 退勤ボタン -->
                   <form id="checkoutForm" action="/checkout" method="POST" style="display:inline">
                     <input type="hidden" name="gpsLat" id="coGpsLat">
@@ -263,20 +275,25 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
                   </form>
                   <div id="coGpsStatus" style="font-size:12px;color:#64748b;margin-top:6px;text-align:center"></div>
                   <a href="/edit-attendance/${todayAttendance._id}" class="btn btn--ghost">編集</a>
-                ` : todayAttendance.lunchStart ? `
+                `
+                      : todayAttendance.lunchStart
+                        ? `
                   <!-- 昼休み開始済 → 昼休み終了ボタン -->
                   <form action="/end-lunch" method="POST" style="display:inline">
                     <button class="btn btn--success" type="submit"><i class="fa-solid fa-handshake"></i> 昼休み終了</button>
                   </form>
                   <a href="/edit-attendance/${todayAttendance._id}" class="btn btn--ghost">編集</a>
-                ` : `
+                `
+                        : `
                   <!-- 出勤済・昼休みなし → 昼休み開始ボタン -->
                   <form action="/start-lunch" method="POST" style="display:inline">
                     <button class="btn btn--primary" type="submit"><i class="fa-solid fa-utensils"></i> 昼休み開始</button>
                   </form>
                   <a href="/edit-attendance/${todayAttendance._id}" class="btn btn--ghost">編集</a>
-                `}
-              ` : `
+                `
+                }
+              `
+                  : `
                 <!-- 未打刻 → 出勤ボタン -->
                 <form id="checkinForm" action="/checkin" method="POST" style="display:inline">
                   <input type="hidden" name="gpsLat" id="gpsLat">
@@ -287,21 +304,22 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
                   </button>
                 </form>
                 <div id="gpsStatus" style="font-size:12px;color:#64748b;margin-top:6px;text-align:center"></div>
-              `}
+              `
+              }
             </div>
           </div>
 
           <div class="info-list">
             <div class="info-item">
-              <div class="name">${todayAttendance && todayAttendance.totalHours ? (todayAttendance.totalHours + ' h') : '-'}</div>
+              <div class="name">${todayAttendance && todayAttendance.totalHours ? todayAttendance.totalHours + " h" : "-"}</div>
               <div class="muted">滞在時間</div>
             </div>
             <div class="info-item">
-              <div class="name">${todayAttendance && todayAttendance.lunchStart ? moment(todayAttendance.lunchStart).tz('Asia/Tokyo').format('HH:mm') : '-'}</div>
+              <div class="name">${todayAttendance && todayAttendance.lunchStart ? moment(todayAttendance.lunchStart).tz("Asia/Tokyo").format("HH:mm") : "-"}</div>
               <div class="muted">昼休み開始</div>
             </div>
             <div class="info-item">
-              <div class="name">${todayAttendance && todayAttendance.lunchEnd ? moment(todayAttendance.lunchEnd).tz('Asia/Tokyo').format('HH:mm') : '-'}</div>
+              <div class="name">${todayAttendance && todayAttendance.lunchEnd ? moment(todayAttendance.lunchEnd).tz("Asia/Tokyo").format("HH:mm") : "-"}</div>
               <div class="muted">昼休み終了</div>
             </div>
             <div class="info-item">
@@ -334,58 +352,96 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
               </tr>
             </thead>
             <tbody>
-              ${monthlyAttendance.map(record => {
-                  const lunch = record.lunchStart ? `${moment(record.lunchStart).tz('Asia/Tokyo').format('HH:mm')}～${record.lunchEnd ? moment(record.lunchEnd).tz('Asia/Tokyo').format('HH:mm') : '-'}` : '-';
-                  const statusClass = record.status === '正常' ? 'tag--normal' : record.status === '遅刻' ? 'tag--late' : record.status === '早退' ? 'tag--early' : record.status === '有休' ? 'tag--paid' : ['午前休','午後休'].includes(record.status) ? 'tag--half' : record.status === '休暇' ? 'tag--vacation' : 'tag--absent';
+              ${monthlyAttendance
+                .map((record) => {
+                  const lunch = record.lunchStart
+                    ? `${moment(record.lunchStart).tz("Asia/Tokyo").format("HH:mm")}～${record.lunchEnd ? moment(record.lunchEnd).tz("Asia/Tokyo").format("HH:mm") : "-"}`
+                    : "-";
+                  const statusClass =
+                    record.status === "正常"
+                      ? "tag--normal"
+                      : record.status === "遅刻"
+                        ? "tag--late"
+                        : record.status === "早退"
+                          ? "tag--early"
+                          : record.status === "有休"
+                            ? "tag--paid"
+                            : ["午前休", "午後休"].includes(record.status)
+                              ? "tag--half"
+                              : record.status === "休暇"
+                                ? "tag--vacation"
+                                : "tag--absent";
                   return `
                     <tr>
-                      <td>${moment(record.date).tz('Asia/Tokyo').format('MM/DD')}</td>
+                      <td>${moment(record.date).tz("Asia/Tokyo").format("MM/DD")}</td>
                       <td>
-                        ${record.checkIn ? moment(record.checkIn).tz('Asia/Tokyo').format('HH:mm') : '-'}
+                        ${record.checkIn ? moment(record.checkIn).tz("Asia/Tokyo").format("HH:mm") : "-"}
                         ${record.isGpsVerified ? '<span style="background:#dcfce7;color:#16a34a;font-size:10px;padding:1px 5px;border-radius:4px;margin-left:4px;font-weight:600">GPS</span>' : '<span style="background:#f1f5f9;color:#94a3b8;font-size:10px;padding:1px 5px;border-radius:4px;margin-left:4px;font-weight:600">手動</span>'}
                       </td>
-                      <td>${record.checkOut ? moment(record.checkOut).tz('Asia/Tokyo').format('HH:mm') : '-'}</td>
+                      <td>${record.checkOut ? moment(record.checkOut).tz("Asia/Tokyo").format("HH:mm") : "-"}</td>
                       <td>${lunch}</td>
-                      <td>${record.workingHours ? record.workingHours + ' h' : '-'}</td>
+                      <td>${record.workingHours ? record.workingHours + " h" : "-"}</td>
                       <td><span class="tag ${statusClass}">${record.status}</span></td>
-                      <td class="note-cell">${record.notes || '-'}</td>
+                      <td class="note-cell">${record.notes || "-"}</td>
                       <td>
                         <a class="btn btn--ghost" href="/edit-attendance/${record._id}">編集</a>
                       </td>
                     </tr>
                   `;
-              }).join('')}
+                })
+                .join("")}
 
-              ${monthlyAttendance.length === 0 ? `
+              ${
+                monthlyAttendance.length === 0
+                  ? `
                 <tr><td colspan="8"><div class="empty-state">該当する勤怠記録がありません</div></td></tr>
-              ` : ''}
+              `
+                  : ""
+              }
             </tbody>
           </table>
         </div>
 
         <!-- モバイル用カード表示 -->
         <div class="mobile-cards">
-          ${monthlyAttendance.length === 0 ? `<div class="empty-state">該当する勤怠記録がありません</div>` :
-            monthlyAttendance.map(record => {
-              const statusClass = record.status === '正常' ? 'tag--normal' : record.status === '遅刻' ? 'tag--late' : record.status === '早退' ? 'tag--early' : record.status === '有休' ? 'tag--paid' : ['午前休','午後休'].includes(record.status) ? 'tag--half' : record.status === '休暇' ? 'tag--vacation' : 'tag--absent';
-              return `
+          ${
+            monthlyAttendance.length === 0
+              ? `<div class="empty-state">該当する勤怠記録がありません</div>`
+              : monthlyAttendance
+                  .map((record) => {
+                    const statusClass =
+                      record.status === "正常"
+                        ? "tag--normal"
+                        : record.status === "遅刻"
+                          ? "tag--late"
+                          : record.status === "早退"
+                            ? "tag--early"
+                            : record.status === "有休"
+                              ? "tag--paid"
+                              : ["午前休", "午後休"].includes(record.status)
+                                ? "tag--half"
+                                : record.status === "休暇"
+                                  ? "tag--vacation"
+                                  : "tag--absent";
+                    return `
               <div style="background:linear-gradient(180deg,#fff,#fbfdff);border-radius:10px;padding:12px 14px;box-shadow:0 4px 12px rgba(12,20,40,0.04);border:1px solid rgba(12,20,40,0.04)">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                  <div style="font-weight:700;font-size:15px">${moment(record.date).tz('Asia/Tokyo').format('M月D日（ddd）')}</div>
+                  <div style="font-weight:700;font-size:15px">${moment(record.date).tz("Asia/Tokyo").format("M月D日（ddd）")}</div>
                   <span class="tag ${statusClass}">${record.status}</span>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
-                  <div><span style="color:var(--muted)">出勤：</span>${record.checkIn ? moment(record.checkIn).tz('Asia/Tokyo').format('HH:mm') : '-'}</div>
-                  <div><span style="color:var(--muted)">退勤：</span>${record.checkOut ? moment(record.checkOut).tz('Asia/Tokyo').format('HH:mm') : '-'}</div>
-                  <div><span style="color:var(--muted)">勤務：</span>${record.workingHours ? record.workingHours + ' h' : '-'}</div>
-                  <div><span style="color:var(--muted)">昼休：</span>${record.lunchStart ? moment(record.lunchStart).tz('Asia/Tokyo').format('HH:mm') + '〜' + (record.lunchEnd ? moment(record.lunchEnd).tz('Asia/Tokyo').format('HH:mm') : '-') : '-'}</div>
+                  <div><span style="color:var(--muted)">出勤：</span>${record.checkIn ? moment(record.checkIn).tz("Asia/Tokyo").format("HH:mm") : "-"}</div>
+                  <div><span style="color:var(--muted)">退勤：</span>${record.checkOut ? moment(record.checkOut).tz("Asia/Tokyo").format("HH:mm") : "-"}</div>
+                  <div><span style="color:var(--muted)">勤務：</span>${record.workingHours ? record.workingHours + " h" : "-"}</div>
+                  <div><span style="color:var(--muted)">昼休：</span>${record.lunchStart ? moment(record.lunchStart).tz("Asia/Tokyo").format("HH:mm") + "〜" + (record.lunchEnd ? moment(record.lunchEnd).tz("Asia/Tokyo").format("HH:mm") : "-") : "-"}</div>
                 </div>
-                ${record.notes ? `<div style="margin-top:6px;font-size:12px;color:var(--muted)">📝 ${record.notes}</div>` : ''}
+                ${record.notes ? `<div style="margin-top:6px;font-size:12px;color:var(--muted)">📝 ${record.notes}</div>` : ""}
                 <div style="margin-top:8px;text-align:right">
                   <a class="btn btn--ghost" href="/edit-attendance/${record._id}" style="font-size:12px;padding:6px 10px">編集</a>
                 </div>
               </div>`;
-            }).join('')
+                  })
+                  .join("")
           }
         </div>
 
@@ -396,7 +452,7 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
       <div class="panel">
         <h4 style="margin-top:0">クイック操作</h4>
         <div class="quick-links">
-          <a class="link-card" href="/my-monthly-attendance?year=${moment().tz('Asia/Tokyo').year()}&month=${moment().tz('Asia/Tokyo').month()+1}">
+          <a class="link-card" href="/my-monthly-attendance?year=${moment().tz("Asia/Tokyo").year()}&month=${moment().tz("Asia/Tokyo").month() + 1}">
             <div>
               <div style="font-weight:700">月別勤怠</div>
               <small>詳細・承認リクエスト</small>
@@ -604,58 +660,64 @@ table.att-table{width:100%;border-collapse:collapse;min-width:800px}
 </body>
 </html>
         `);
-
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('サーバーエラー');
-    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("サーバーエラー");
+  }
 });
 
 // パスワード変更ページルート (GET)
-router.get('/edit-attendance/:id', requireLogin, async (req, res) => {
-    try {
-        const attendance = await Attendance.findById(req.params.id);
-        if (!attendance) return res.redirect('/attendance-main');
+router.get("/edit-attendance/:id", requireLogin, async (req, res) => {
+  try {
+    const attendance = await Attendance.findById(req.params.id);
+    if (!attendance) return res.redirect("/attendance-main");
 
-        // 承認リクエスト中か確認
-        const year = attendance.date.getFullYear();
-        const month = attendance.date.getMonth() + 1;
+    // 承認リクエスト中か確認
+    const year = attendance.date.getFullYear();
+    const month = attendance.date.getMonth() + 1;
 
-        const approvalRequest = await ApprovalRequest.findOne({
-            userId: req.session.userId,
-            year: year,
-            month: month,
-            status: 'pending'
-        });
+    const approvalRequest = await ApprovalRequest.findOne({
+      userId: req.session.userId,
+      year: year,
+      month: month,
+      status: "pending",
+    });
 
-        const employee = req.session.employee;
-        const isAdmin  = !!req.session.isAdmin;
+    const employee = req.session.employee;
+    const isAdmin = !!req.session.isAdmin;
 
-        if (attendance.isConfirmed || approvalRequest) {
-            const shell = buildPageShell({ title: '編集不可', currentPath: '/edit-attendance', employee, isAdmin });
-            return res.send(`${shell}
+    if (attendance.isConfirmed || approvalRequest) {
+      const shell = buildPageShell({
+        title: "編集不可",
+        currentPath: "/edit-attendance",
+        employee,
+        isAdmin,
+      });
+      return res.send(`${shell}
 <div class="card" style="max-width:480px;text-align:center;padding:40px">
     <div style="font-size:48px;margin-bottom:16px">🔒</div>
     <h3 style="color:#0b2540;margin:0 0 8px">編集できません</h3>
-    <p style="color:#6b7280;margin-bottom:20px">この勤怠記録は<strong>${attendance.isConfirmed ? '承認済み' : '承認リクエスト中'}</strong>のため編集できません。</p>
+    <p style="color:#6b7280;margin-bottom:20px">この勤怠記録は<strong>${attendance.isConfirmed ? "承認済み" : "承認リクエスト中"}</strong>のため編集できません。</p>
     <a href="/my-monthly-attendance?year=${year}&month=${month}" class="btn btn-ghost">勤怠一覧に戻る</a>
 </div>
 ${pageFooter()}`);
-        }
+    }
 
-        function formatDateTimeForInput(date) {
-            if (!date) return '';
-            return moment(date).tz('Asia/Tokyo').format('HH:mm');
-        }
+    function formatDateTimeForInput(date) {
+      if (!date) return "";
+      return moment(date).tz("Asia/Tokyo").format("HH:mm");
+    }
 
-        const dateValue = moment(attendance.date).tz('Asia/Tokyo').format('YYYY-MM-DD');
+    const dateValue = moment(attendance.date)
+      .tz("Asia/Tokyo")
+      .format("YYYY-MM-DD");
 
-        const shell = buildPageShell({
-            title: '勤怠記録編集',
-            currentPath: '/edit-attendance',
-            employee,
-            isAdmin,
-            extraHead: `
+    const shell = buildPageShell({
+      title: "勤怠記録編集",
+      currentPath: "/edit-attendance",
+      employee,
+      isAdmin,
+      extraHead: `
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/ja.min.js"></script>
@@ -669,10 +731,10 @@ ${pageFooter()}`);
   .form-row-2{grid-template-columns:1fr}
   .page-header h2{font-size:18px}
 }
-</style>`
-        });
+</style>`,
+    });
 
-        res.send(`${shell}
+    res.send(`${shell}
 <div class="page-header">
     <a href="/my-monthly-attendance?year=${year}&month=${month}" class="btn btn-ghost btn-sm"><i class="fa-solid fa-arrow-left"></i></a>
     <h2><i class="fa-solid fa-pen-to-square" style="color:#0b5fff"></i> 勤怠記録編集</h2>
@@ -693,33 +755,33 @@ ${pageFooter()}`);
             <div class="form-group">
                 <label for="checkOut">退勤時間</label>
                 <input type="text" id="checkOut" name="checkOut" class="form-control"
-                       value="${attendance.checkOut ? formatDateTimeForInput(attendance.checkOut) : ''}">
+                       value="${attendance.checkOut ? formatDateTimeForInput(attendance.checkOut) : ""}">
             </div>
         </div>
         <div class="form-row-2">
             <div class="form-group">
                 <label for="lunchStart">昼休み開始</label>
                 <input type="text" id="lunchStart" name="lunchStart" class="form-control"
-                       value="${attendance.lunchStart ? formatDateTimeForInput(attendance.lunchStart) : ''}">
+                       value="${attendance.lunchStart ? formatDateTimeForInput(attendance.lunchStart) : ""}">
             </div>
             <div class="form-group">
                 <label for="lunchEnd">昼休み終了</label>
                 <input type="text" id="lunchEnd" name="lunchEnd" class="form-control"
-                       value="${attendance.lunchEnd ? formatDateTimeForInput(attendance.lunchEnd) : ''}">
+                       value="${attendance.lunchEnd ? formatDateTimeForInput(attendance.lunchEnd) : ""}">
             </div>
         </div>
         <div class="form-group">
             <label for="status">状態</label>
             <select id="status" name="status" class="form-control">
-                <option value="正常" ${attendance.status === '正常' ? 'selected' : ''}>正常</option>
-                <option value="遅刻" ${attendance.status === '遅刻' ? 'selected' : ''}>遅刻</option>
-                <option value="早退" ${attendance.status === '早退' ? 'selected' : ''}>早退</option>
-                <option value="欠勤" ${attendance.status === '欠勤' ? 'selected' : ''}>欠勤</option>
+                <option value="正常" ${attendance.status === "正常" ? "selected" : ""}>正常</option>
+                <option value="遅刻" ${attendance.status === "遅刻" ? "selected" : ""}>遅刻</option>
+                <option value="早退" ${attendance.status === "早退" ? "selected" : ""}>早退</option>
+                <option value="欠勤" ${attendance.status === "欠勤" ? "selected" : ""}>欠勤</option>
             </select>
         </div>
         <div class="form-group">
             <label for="notes">備考</label>
-            <textarea id="notes" name="notes" rows="3" class="form-control">${attendance.notes || ''}</textarea>
+            <textarea id="notes" name="notes" rows="3" class="form-control">${attendance.notes || ""}</textarea>
         </div>
         <div class="form-btn-row">
             <button type="submit" class="btn btn-primary"><i class="fa-solid fa-save"></i> 更新</button>
@@ -752,96 +814,113 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 ${pageFooter()}`);
-    } catch (error) {
-        console.error(error);
-        res.redirect('/attendance-main');
-    }
+  } catch (error) {
+    console.error(error);
+    res.redirect("/attendance-main");
+  }
 });
 
 // 勤怠更新処理 - 修正版
-router.post('/update-attendance/:id', requireLogin, async (req, res) => {
-    try {
-        const attendance = await Attendance.findById(req.params.id);
-        if (!attendance) return res.redirect('/attendance-main');
-        
-        // 확정된 근태는 수정 불가
-        if (attendance.isConfirmed) {
-            return res.status(403).send('承認済みの勤怠記録は編集できません');
-        }
-        
-        function parseTimeAsJST(dateStr, timeStr) {
-            if (!dateStr || !timeStr) return null;
-            return moment.tz(`${dateStr} ${timeStr}`, 'YYYY-MM-DD HH:mm', 'Asia/Tokyo').toDate();
-        }
+router.post("/update-attendance/:id", requireLogin, async (req, res) => {
+  try {
+    const attendance = await Attendance.findById(req.params.id);
+    if (!attendance) return res.redirect("/attendance-main");
 
-        // 日付と時間を正しく結合
-        const dateParts = req.body.date.split('-');
-        const newDate = new Date(Date.UTC(dateParts[0], dateParts[1] - 1, dateParts[2]));
-        const checkInTime = req.body.checkIn.split(':');
-        const checkOutTime = req.body.checkOut ? req.body.checkOut.split(':') : null;
-        const lunchStartTime = req.body.lunchStart ? req.body.lunchStart.split(':') : null;
-        const lunchEndTime = req.body.lunchEnd ? req.body.lunchEnd.split(':') : null;
-
-        // 日付を更新 (時間部分は保持)
-        newDate.setHours(0, 0, 0, 0);
-
-        // 各時刻を新しい日付に設定
-        attendance.date = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
-        attendance.checkIn = parseTimeAsJST(req.body.date, req.body.checkIn);
-        attendance.checkOut = parseTimeAsJST(req.body.date, req.body.checkOut);
-        attendance.lunchStart = parseTimeAsJST(req.body.date, req.body.lunchStart);
-        attendance.lunchEnd = parseTimeAsJST(req.body.date, req.body.lunchEnd);
-        attendance.status = req.body.status;
-        attendance.notes = req.body.notes || null;
-      
-        // 勤務時間再計算（欠勤の場合は0にリセット）
-        if (attendance.status === '欠勤') {
-            attendance.workingHours = 0;
-            attendance.totalHours = 0;
-        } else if (attendance.checkOut) {
-            const totalMs = attendance.checkOut - attendance.checkIn;
-            let lunchMs = 0;
-            
-            if (attendance.lunchStart && attendance.lunchEnd) {
-                lunchMs = attendance.lunchEnd - attendance.lunchStart;
-            }
-            
-            const workingMs = totalMs - lunchMs;
-            
-            attendance.workingHours = parseFloat((workingMs / (1000 * 60 * 60)).toFixed(1));
-            attendance.totalHours = parseFloat((totalMs / (1000 * 60 * 60)).toFixed(1));
-        }
-        
-        await attendance.save();
-        
-        // 更新後のデータを確認
-        console.log('更新後の勤怠データ:', {
-            date: attendance.date,
-            checkIn: attendance.checkIn,
-            checkOut: attendance.checkOut,
-            lunchStart: attendance.lunchStart,
-            lunchEnd: attendance.lunchEnd,
-            workingHours: attendance.workingHours,
-            status: attendance.status
-        });
-        
-        res.redirect('/attendance-main');
-    } catch (error) {
-        console.error('勤怠更新エラー:', error);
-        res.redirect('/attendance-main');
+    // 확정된 근태는 수정 불가
+    if (attendance.isConfirmed) {
+      return res.status(403).send("承認済みの勤怠記録は編集できません");
     }
+
+    function parseTimeAsJST(dateStr, timeStr) {
+      if (!dateStr || !timeStr) return null;
+      return moment
+        .tz(`${dateStr} ${timeStr}`, "YYYY-MM-DD HH:mm", "Asia/Tokyo")
+        .toDate();
+    }
+
+    // 日付と時間を正しく結合
+    const dateParts = req.body.date.split("-");
+    const newDate = new Date(
+      Date.UTC(dateParts[0], dateParts[1] - 1, dateParts[2]),
+    );
+    const checkInTime = req.body.checkIn.split(":");
+    const checkOutTime = req.body.checkOut
+      ? req.body.checkOut.split(":")
+      : null;
+    const lunchStartTime = req.body.lunchStart
+      ? req.body.lunchStart.split(":")
+      : null;
+    const lunchEndTime = req.body.lunchEnd
+      ? req.body.lunchEnd.split(":")
+      : null;
+
+    // 日付を更新 (時間部分は保持)
+    newDate.setHours(0, 0, 0, 0);
+
+    // 各時刻を新しい日付に設定（JST 基準で save-attendance と統一）
+    attendance.date = moment
+      .tz(req.body.date, "YYYY-MM-DD", "Asia/Tokyo")
+      .startOf("day")
+      .toDate();
+    attendance.checkIn = parseTimeAsJST(req.body.date, req.body.checkIn);
+    attendance.checkOut = parseTimeAsJST(req.body.date, req.body.checkOut);
+    attendance.lunchStart = parseTimeAsJST(req.body.date, req.body.lunchStart);
+    attendance.lunchEnd = parseTimeAsJST(req.body.date, req.body.lunchEnd);
+    attendance.status = req.body.status;
+    attendance.notes = req.body.notes || null;
+
+    // 勤務時間再計算（欠勤の場合は0にリセット）
+    if (attendance.status === "欠勤") {
+      attendance.workingHours = 0;
+      attendance.totalHours = 0;
+    } else if (attendance.checkOut) {
+      const totalMs = attendance.checkOut - attendance.checkIn;
+      let lunchMs = 0;
+
+      if (attendance.lunchStart && attendance.lunchEnd) {
+        lunchMs = attendance.lunchEnd - attendance.lunchStart;
+      }
+
+      const workingMs = totalMs - lunchMs;
+
+      attendance.workingHours = parseFloat(
+        (workingMs / (1000 * 60 * 60)).toFixed(1),
+      );
+      attendance.totalHours = parseFloat(
+        (totalMs / (1000 * 60 * 60)).toFixed(1),
+      );
+    }
+
+    await attendance.save();
+
+    // 更新後のデータを確認
+    console.log("更新後の勤怠データ:", {
+      date: attendance.date,
+      checkIn: attendance.checkIn,
+      checkOut: attendance.checkOut,
+      lunchStart: attendance.lunchStart,
+      lunchEnd: attendance.lunchEnd,
+      workingHours: attendance.workingHours,
+      status: attendance.status,
+    });
+
+    res.redirect("/attendance-main");
+  } catch (error) {
+    console.error("勤怠更新エラー:", error);
+    res.redirect("/attendance-main");
+  }
 });
 
 // 打刻追加 페이지
-router.get('/add-attendance', requireLogin, (req, res) => {
-    const employee = req.session.employee;
-    const isAdmin  = !!req.session.isAdmin;
-    const shell = buildPageShell({
-        title: '打刻追加',
-        currentPath: '/add-attendance',
-        employee,
-        isAdmin,
-        extraHead: `
+router.get("/add-attendance", requireLogin, (req, res) => {
+  const employee = req.session.employee;
+  const isAdmin = !!req.session.isAdmin;
+  const shell = buildPageShell({
+    title: "打刻追加",
+    currentPath: "/add-attendance",
+    employee,
+    isAdmin,
+    extraHead: `
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/ja.min.js"></script>
@@ -855,9 +934,9 @@ router.get('/add-attendance', requireLogin, (req, res) => {
   .form-row-2{grid-template-columns:1fr}
   .page-header h2{font-size:18px}
 }
-</style>`
-    });
-    res.send(`${shell}
+</style>`,
+  });
+  res.send(`${shell}
 <div class="page-header">
     <a href="/attendance-main" class="btn btn-ghost btn-sm"><i class="fa-solid fa-arrow-left"></i></a>
     <h2><i class="fa-solid fa-plus" style="color:#0b5fff"></i> 打刻追加</h2>
@@ -936,62 +1015,75 @@ ${pageFooter()}`);
 });
 
 // 勤怠記録削除
-router.post('/delete-attendance/:id', requireLogin, async (req, res) => {
-    try {
-        const attendance = await Attendance.findById(req.params.id);
-        // 承認済みは削除不可
-        if (!attendance || attendance.isConfirmed) {
-            return res.status(403).send('この勤怠記録は削除できません');
-        }
-        await Attendance.deleteOne({ _id: req.params.id });
-        res.redirect('/my-monthly-attendance?year=' + attendance.date.getFullYear() + '&month=' + (attendance.date.getMonth() + 1));
-    } catch (error) {
-        console.error('勤怠削除エラー:', error);
-        res.status(500).send('削除中にエラーが発生しました');
+router.post("/delete-attendance/:id", requireLogin, async (req, res) => {
+  try {
+    const attendance = await Attendance.findById(req.params.id);
+    // 承認済みは削除不可
+    if (!attendance || attendance.isConfirmed) {
+      return res.status(403).send("この勤怠記録は削除できません");
     }
+    await Attendance.deleteOne({ _id: req.params.id });
+    res.redirect(
+      "/my-monthly-attendance?year=" +
+        attendance.date.getFullYear() +
+        "&month=" +
+        (attendance.date.getMonth() + 1),
+    );
+  } catch (error) {
+    console.error("勤怠削除エラー:", error);
+    res.status(500).send("削除中にエラーが発生しました");
+  }
 });
 
 // ========== 勤怠一括登録 ==========
 // 一括登録ページ（GET）
-router.get('/attendance/bulk-register', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        if (!employee) return res.status(400).send('社員情報がありません');
+router.get("/attendance/bulk-register", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
+    const employee = await Employee.findOne({ userId: user._id });
+    if (!employee) return res.status(400).send("社員情報がありません");
 
-        const now = moment().tz('Asia/Tokyo');
-        const year  = parseInt(req.query.year)  || now.year();
-        const month = parseInt(req.query.month) || now.month() + 1;
+    const now = moment().tz("Asia/Tokyo");
+    const year = parseInt(req.query.year) || now.year();
+    const month = parseInt(req.query.month) || now.month() + 1;
 
-        // 対象月の日数
-        const monthStr = `${year}-${String(month).padStart(2,'0')}-01`;
-        const daysInMonth = moment.tz(monthStr, 'YYYY-MM-DD', 'Asia/Tokyo').daysInMonth();
+    // 対象月の日数
+    const monthStr = `${year}-${String(month).padStart(2, "0")}-01`;
+    const daysInMonth = moment
+      .tz(monthStr, "YYYY-MM-DD", "Asia/Tokyo")
+      .daysInMonth();
 
-        // 既存の勤怠データを取得
-        const startDate = moment.tz(monthStr, 'YYYY-MM-DD', 'Asia/Tokyo').startOf('month').toDate();
-        const endDate   = moment.tz(monthStr, 'YYYY-MM-DD', 'Asia/Tokyo').endOf('month').toDate();
-        const existingAttendances = await Attendance.find({
-            userId: user._id,
-            date: { $gte: startDate, $lte: endDate }
-        });
+    // 既存の勤怠データを取得
+    const startDate = moment
+      .tz(monthStr, "YYYY-MM-DD", "Asia/Tokyo")
+      .startOf("month")
+      .toDate();
+    const endDate = moment
+      .tz(monthStr, "YYYY-MM-DD", "Asia/Tokyo")
+      .endOf("month")
+      .toDate();
+    const existingAttendances = await Attendance.find({
+      userId: user._id,
+      date: { $gte: startDate, $lte: endDate },
+    });
 
-        // 既存データをdateキーのMapに変換
-        const existingMap = {};
-        existingAttendances.forEach(a => {
-            const key = moment(a.date).tz('Asia/Tokyo').format('YYYY-MM-DD');
-            existingMap[key] = a;
-        });
+    // 既存データをdateキーのMapに変換
+    const existingMap = {};
+    existingAttendances.forEach((a) => {
+      const key = moment(a.date).tz("Asia/Tokyo").format("YYYY-MM-DD");
+      existingMap[key] = a;
+    });
 
-        // 承認リクエスト中チェック
-        const approvalRequest = await ApprovalRequest.findOne({
-            userId: user._id,
-            year,
-            month,
-            status: 'pending'
-        });
+    // 承認リクエスト中チェック
+    const approvalRequest = await ApprovalRequest.findOne({
+      userId: user._id,
+      year,
+      month,
+      status: "pending",
+    });
 
-        if (approvalRequest) {
-            return res.send(`
+    if (approvalRequest) {
+      return res.send(`
 <!DOCTYPE html>
 <html lang="ja">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1007,40 +1099,60 @@ router.get('/attendance/bulk-register', requireLogin, async (req, res) => {
 </div>
 </body></html>
             `);
-        }
+    }
 
-        // 日別行データ生成
-        const rows = [];
-        for (let d = 1; d <= daysInMonth; d++) {
-            const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-            const dm = moment.tz(dateStr, 'Asia/Tokyo');
-            const weekday = dm.day();
-            const isWeekend = weekday === 0 || weekday === 6;
-            const weekdayLabel = ['日','月','火','水','木','金','土'][weekday];
-            const existing = existingMap[dateStr];
+    // 日別行データ生成
+    const rows = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      const dm = moment.tz(dateStr, "Asia/Tokyo");
+      const weekday = dm.day();
+      const isWeekend = weekday === 0 || weekday === 6;
+      const weekdayLabel = ["日", "月", "火", "水", "木", "金", "土"][weekday];
+      const existing = existingMap[dateStr];
 
-            rows.push({
-                dateStr,
-                day: d,
-                weekdayLabel,
-                isWeekend,
-                isConfirmed: existing ? existing.isConfirmed : false,
-                existingId: existing ? existing._id.toString() : '',
-                checkIn:    existing && existing.checkIn    ? moment(existing.checkIn).tz('Asia/Tokyo').format('HH:mm')    : '',
-                checkOut:   existing && existing.checkOut   ? moment(existing.checkOut).tz('Asia/Tokyo').format('HH:mm')   : '',
-                lunchStart: existing && existing.lunchStart ? moment(existing.lunchStart).tz('Asia/Tokyo').format('HH:mm') : '',
-                lunchEnd:   existing && existing.lunchEnd   ? moment(existing.lunchEnd).tz('Asia/Tokyo').format('HH:mm')   : '',
-                status: existing ? existing.status : (isWeekend ? '欠勤' : '正常'),
-                notes:  existing ? (existing.notes || '') : ''
-            });
-        }
+      rows.push({
+        dateStr,
+        day: d,
+        weekdayLabel,
+        isWeekend,
+        isConfirmed: existing ? existing.isConfirmed : false,
+        existingId: existing ? existing._id.toString() : "",
+        checkIn:
+          existing && existing.checkIn
+            ? moment(existing.checkIn).tz("Asia/Tokyo").format("HH:mm")
+            : "",
+        checkOut:
+          existing && existing.checkOut
+            ? moment(existing.checkOut).tz("Asia/Tokyo").format("HH:mm")
+            : "",
+        lunchStart:
+          existing && existing.lunchStart
+            ? moment(existing.lunchStart).tz("Asia/Tokyo").format("HH:mm")
+            : "",
+        lunchEnd:
+          existing && existing.lunchEnd
+            ? moment(existing.lunchEnd).tz("Asia/Tokyo").format("HH:mm")
+            : "",
+        status: existing ? existing.status : isWeekend ? "欠勤" : "正常",
+        notes: existing ? existing.notes || "" : "",
+      });
+    }
 
-        const yearOptions = [now.year()-1, now.year(), now.year()+1]
-            .map(y => `<option value="${y}" ${y === year ? 'selected' : ''}>${y}年</option>`).join('');
-        const monthOptions = Array.from({length:12}, (_,i) => i+1)
-            .map(m => `<option value="${m}" ${m === month ? 'selected' : ''}>${m}月</option>`).join('');
+    const yearOptions = [now.year() - 1, now.year(), now.year() + 1]
+      .map(
+        (y) =>
+          `<option value="${y}" ${y === year ? "selected" : ""}>${y}年</option>`,
+      )
+      .join("");
+    const monthOptions = Array.from({ length: 12 }, (_, i) => i + 1)
+      .map(
+        (m) =>
+          `<option value="${m}" ${m === month ? "selected" : ""}>${m}月</option>`,
+      )
+      .join("");
 
-        res.send(`<!DOCTYPE html>
+    res.send(`<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -1167,37 +1279,43 @@ body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:
                 </tr>
             </thead>
             <tbody>
-                ${rows.map((row, idx) => `
-                <tr class="${row.isWeekend ? 'weekend' : ''}${row.isConfirmed ? ' confirmed' : ''}"
-                    data-date="${row.dateStr}" data-weekend="${row.isWeekend ? '1' : '0'}">
-                    <td><span class="day-label ${row.weekdayLabel==='日'?'sun':row.weekdayLabel==='土'?'sat':''}">${row.day}</span></td>
-                    <td><span class="${row.weekdayLabel==='日'?'sun':row.weekdayLabel==='土'?'sat':''}">${row.weekdayLabel}</span></td>
+                ${rows
+                  .map(
+                    (row, idx) => `
+                <tr class="${row.isWeekend ? "weekend" : ""}${row.isConfirmed ? " confirmed" : ""}"
+                    data-date="${row.dateStr}" data-weekend="${row.isWeekend ? "1" : "0"}">
+                    <td><span class="day-label ${row.weekdayLabel === "日" ? "sun" : row.weekdayLabel === "土" ? "sat" : ""}">${row.day}</span></td>
+                    <td><span class="${row.weekdayLabel === "日" ? "sun" : row.weekdayLabel === "土" ? "sat" : ""}">${row.weekdayLabel}</span></td>
                     <td><input type="text" class="time-input ci-input" name="rows[${idx}][checkIn]"
-                        value="${escapeHtml(row.checkIn)}" placeholder="09:00" ${row.isConfirmed?'disabled':''}></td>
+                        value="${escapeHtml(row.checkIn)}" placeholder="09:00" ${row.isConfirmed ? "disabled" : ""}></td>
                     <td><input type="text" class="time-input co-input" name="rows[${idx}][checkOut]"
-                        value="${escapeHtml(row.checkOut)}" placeholder="18:00" ${row.isConfirmed?'disabled':''}></td>
+                        value="${escapeHtml(row.checkOut)}" placeholder="18:00" ${row.isConfirmed ? "disabled" : ""}></td>
                     <td><input type="text" class="time-input ls-input" name="rows[${idx}][lunchStart]"
-                        value="${escapeHtml(row.lunchStart)}" placeholder="12:00" ${row.isConfirmed?'disabled':''}></td>
+                        value="${escapeHtml(row.lunchStart)}" placeholder="12:00" ${row.isConfirmed ? "disabled" : ""}></td>
                     <td><input type="text" class="time-input le-input" name="rows[${idx}][lunchEnd]"
-                        value="${escapeHtml(row.lunchEnd)}" placeholder="13:00" ${row.isConfirmed?'disabled':''}></td>
+                        value="${escapeHtml(row.lunchEnd)}" placeholder="13:00" ${row.isConfirmed ? "disabled" : ""}></td>
                     <td>
-                        <select class="status-select st-select" name="rows[${idx}][status]" ${row.isConfirmed?'disabled':''}>
-                            <option value="正常"  ${row.status==='正常' ?'selected':''}>正常</option>
-                            <option value="遅刻"  ${row.status==='遅刻' ?'selected':''}>遅刻</option>
-                            <option value="早退"  ${row.status==='早退' ?'selected':''}>早退</option>
-                            <option value="欠勤"  ${row.status==='欠勤' ?'selected':''}>欠勤</option>
+                        <select class="status-select st-select" name="rows[${idx}][status]" ${row.isConfirmed ? "disabled" : ""}>
+                            <option value="正常"  ${row.status === "正常" ? "selected" : ""}>正常</option>
+                            <option value="遅刻"  ${row.status === "遅刻" ? "selected" : ""}>遅刻</option>
+                            <option value="早退"  ${row.status === "早退" ? "selected" : ""}>早退</option>
+                            <option value="欠勤"  ${row.status === "欠勤" ? "selected" : ""}>欠勤</option>
                         </select>
                     </td>
                     <td><input type="text" class="notes-input" name="rows[${idx}][notes]"
-                        value="${escapeHtml(row.notes)}" placeholder="備考" ${row.isConfirmed?'disabled':''}></td>
+                        value="${escapeHtml(row.notes)}" placeholder="備考" ${row.isConfirmed ? "disabled" : ""}></td>
                     <td>
                         <input type="hidden" name="rows[${idx}][date]"       value="${row.dateStr}">
                         <input type="hidden" name="rows[${idx}][existingId]" value="${row.existingId}">
-                        ${row.isConfirmed
+                        ${
+                          row.isConfirmed
                             ? '<span class="confirmed-badge">確定済</span>'
-                            : '<span style="color:#94a3b8;font-size:12px">未確定</span>'}
+                            : '<span style="color:#94a3b8;font-size:12px">未確定</span>'
+                        }
                     </td>
-                </tr>`).join('')}
+                </tr>`,
+                  )
+                  .join("")}
             </tbody>
         </table>
         </div>
@@ -1287,139 +1405,172 @@ updateSummary();
 </script>
 </body>
 </html>`);
-    } catch (error) {
-        console.error('一括登録ページエラー:', error);
-        res.status(500).send('サーバーエラーが発生しました');
-    }
+  } catch (error) {
+    console.error("一括登録ページエラー:", error);
+    res.status(500).send("サーバーエラーが発生しました");
+  }
 });
 
 // 一括登録処理（POST）
-router.post('/attendance/bulk-register', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
-        const { year, month, rows } = req.body;
+router.post("/attendance/bulk-register", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
+    const { year, month, rows } = req.body;
 
-        if (!rows || !Array.isArray(rows)) {
-            return res.redirect(`/attendance/bulk-register?year=${year}&month=${month}`);
-        }
-
-        // 承認リクエスト中チェック
-        const approvalRequest = await ApprovalRequest.findOne({
-            userId: user._id,
-            year: parseInt(year),
-            month: parseInt(month),
-            status: 'pending'
-        });
-        if (approvalRequest) {
-            return res.status(403).send('この月は承認リクエスト中のため編集できません');
-        }
-
-        let savedCount = 0;
-        let skippedCount = 0;
-
-        for (const row of rows) {
-            const { date, checkIn, checkOut, lunchStart, lunchEnd, status, notes, existingId } = row;
-            if (!date) continue;
-
-            // 確定済みはスキップ
-            if (existingId) {
-                const existing = await Attendance.findById(existingId);
-                if (existing && existing.isConfirmed) { skippedCount++; continue; }
-            }
-
-            // 出勤時間が空の場合はスキップ
-            if (!checkIn || !checkIn.trim()) {
-                skippedCount++;
-                continue;
-            }
-
-            const parseTimeAsJST = (dateStr, timeStr) => {
-                if (!dateStr || !timeStr || !timeStr.trim()) return null;
-                return moment.tz(`${dateStr} ${timeStr.trim()}`, 'YYYY-MM-DD HH:mm', 'Asia/Tokyo').toDate();
-            };
-
-            const checkInDate    = parseTimeAsJST(date, checkIn);
-            const checkOutDate   = parseTimeAsJST(date, checkOut);
-            const lunchStartDate = parseTimeAsJST(date, lunchStart);
-            const lunchEndDate   = parseTimeAsJST(date, lunchEnd);
-
-            // 勤務時間計算（欠勤の場合は0）
-            let workingHours = null;
-            let totalHours   = null;
-            if (status === '欠勤') {
-                workingHours = 0;
-                totalHours   = 0;
-            } else if (checkInDate && checkOutDate) {
-                const totalMs = checkOutDate - checkInDate;
-                const lunchMs = (lunchStartDate && lunchEndDate) ? (lunchEndDate - lunchStartDate) : 0;
-                workingHours = parseFloat(((totalMs - lunchMs) / 3600000).toFixed(1));
-                totalHours   = parseFloat((totalMs / 3600000).toFixed(1));
-            }
-
-            const dateObj = moment.tz(date, 'Asia/Tokyo').startOf('day').toDate();
-            const attData = {
-                userId: user._id,
-                date: dateObj,
-                checkIn: checkInDate,
-                checkOut: checkOutDate   || null,
-                lunchStart: lunchStartDate || null,
-                lunchEnd: lunchEndDate   || null,
-                workingHours,
-                totalHours,
-                status: status || '正常',
-                notes: notes   || null
-            };
-
-            if (existingId) {
-                // 既存レコードを更新
-                await Attendance.findByIdAndUpdate(existingId, { $set: attData });
-            } else {
-                // 同日重複チェック → 上書き or 新規作成
-                const dayStart = moment.tz(date, 'Asia/Tokyo').startOf('day').toDate();
-                const dayEnd   = moment.tz(date, 'Asia/Tokyo').endOf('day').toDate();
-                const dup = await Attendance.findOne({ userId: user._id, date: { $gte: dayStart, $lte: dayEnd } });
-                if (dup) {
-                    await Attendance.findByIdAndUpdate(dup._id, { $set: attData });
-                } else {
-                    await new Attendance(attData).save();
-                }
-            }
-            savedCount++;
-        }
-
-        console.log(`一括登録完了: userId=${user._id} year=${year} month=${month} saved=${savedCount} skipped=${skippedCount}`);
-        res.redirect(`/my-monthly-attendance?year=${year}&month=${month}`);
-    } catch (error) {
-        console.error('一括登録処理エラー:', error);
-        res.status(500).send('一括登録中にエラーが発生しました: ' + error.message);
+    if (!rows || !Array.isArray(rows)) {
+      return res.redirect(
+        `/attendance/bulk-register?year=${year}&month=${month}`,
+      );
     }
+
+    // 承認リクエスト中チェック
+    const approvalRequest = await ApprovalRequest.findOne({
+      userId: user._id,
+      year: parseInt(year),
+      month: parseInt(month),
+      status: "pending",
+    });
+    if (approvalRequest) {
+      return res
+        .status(403)
+        .send("この月は承認リクエスト中のため編集できません");
+    }
+
+    let savedCount = 0;
+    let skippedCount = 0;
+
+    for (const row of rows) {
+      const {
+        date,
+        checkIn,
+        checkOut,
+        lunchStart,
+        lunchEnd,
+        status,
+        notes,
+        existingId,
+      } = row;
+      if (!date) continue;
+
+      // 確定済みはスキップ
+      if (existingId) {
+        const existing = await Attendance.findById(existingId);
+        if (existing && existing.isConfirmed) {
+          skippedCount++;
+          continue;
+        }
+      }
+
+      // 出勤時間が空の場合はスキップ
+      if (!checkIn || !checkIn.trim()) {
+        skippedCount++;
+        continue;
+      }
+
+      const parseTimeAsJST = (dateStr, timeStr) => {
+        if (!dateStr || !timeStr || !timeStr.trim()) return null;
+        return moment
+          .tz(`${dateStr} ${timeStr.trim()}`, "YYYY-MM-DD HH:mm", "Asia/Tokyo")
+          .toDate();
+      };
+
+      const checkInDate = parseTimeAsJST(date, checkIn);
+      const checkOutDate = parseTimeAsJST(date, checkOut);
+      const lunchStartDate = parseTimeAsJST(date, lunchStart);
+      const lunchEndDate = parseTimeAsJST(date, lunchEnd);
+
+      // 勤務時間計算（欠勤の場合は0）
+      let workingHours = null;
+      let totalHours = null;
+      if (status === "欠勤") {
+        workingHours = 0;
+        totalHours = 0;
+      } else if (checkInDate && checkOutDate) {
+        const totalMs = checkOutDate - checkInDate;
+        const lunchMs =
+          lunchStartDate && lunchEndDate ? lunchEndDate - lunchStartDate : 0;
+        workingHours = parseFloat(((totalMs - lunchMs) / 3600000).toFixed(1));
+        totalHours = parseFloat((totalMs / 3600000).toFixed(1));
+      }
+
+      const dateObj = moment.tz(date, "Asia/Tokyo").startOf("day").toDate();
+      const attData = {
+        userId: user._id,
+        date: dateObj,
+        checkIn: checkInDate,
+        checkOut: checkOutDate || null,
+        lunchStart: lunchStartDate || null,
+        lunchEnd: lunchEndDate || null,
+        workingHours,
+        totalHours,
+        status: status || "正常",
+        notes: notes || null,
+      };
+
+      if (existingId) {
+        // 既存レコードを更新
+        await Attendance.findByIdAndUpdate(existingId, { $set: attData });
+      } else {
+        // 同日重複チェック → 上書き or 新規作成
+        const dayStart = moment.tz(date, "Asia/Tokyo").startOf("day").toDate();
+        const dayEnd = moment.tz(date, "Asia/Tokyo").endOf("day").toDate();
+        const dup = await Attendance.findOne({
+          userId: user._id,
+          date: { $gte: dayStart, $lte: dayEnd },
+        });
+        if (dup) {
+          await Attendance.findByIdAndUpdate(dup._id, { $set: attData });
+        } else {
+          await new Attendance(attData).save();
+        }
+      }
+      savedCount++;
+    }
+
+    console.log(
+      `一括登録完了: userId=${user._id} year=${year} month=${month} saved=${savedCount} skipped=${skippedCount}`,
+    );
+    res.redirect(`/my-monthly-attendance?year=${year}&month=${month}`);
+  } catch (error) {
+    console.error("一括登録処理エラー:", error);
+    res.status(500).send("一括登録中にエラーが発生しました: " + error.message);
+  }
 });
 
-router.post('/save-attendance', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
-        const [year, month, day] = req.body.date.split('-').map(Number);
+router.post("/save-attendance", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
+    const [year, month, day] = req.body.date.split("-").map(Number);
 
-        // KST 기준 자정으로 날짜 고정
-        const dateObj = moment.tz(`${year}-${month}-${day}`, 'Asia/Tokyo').toDate();
+    // KST 기준 자정으로 날짜 고정
+    const dateObj = moment.tz(`${year}-${month}-${day}`, "Asia/Tokyo").toDate();
 
-        // 해당 날짜에 이미 기록이 있는지 확인
-        const existingAttendance = await Attendance.findOne({
-            userId: user._id,
-            date: {
-                $gte: moment.tz(`${year}-${month}-${day}`, 'Asia/Tokyo').startOf('day').toDate(),
-                $lt: moment.tz(`${year}-${month}-${day}`, 'Asia/Tokyo').endOf('day').toDate()
-            }
-        });
+    // 해당 날짜에 이미 기록이 있는지 확인
+    const existingAttendance = await Attendance.findOne({
+      userId: user._id,
+      date: {
+        $gte: moment
+          .tz(`${year}-${month}-${day}`, "Asia/Tokyo")
+          .startOf("day")
+          .toDate(),
+        $lt: moment
+          .tz(`${year}-${month}-${day}`, "Asia/Tokyo")
+          .endOf("day")
+          .toDate(),
+      },
+    });
 
-        const parseTime = (timeStr) => {
-            if (!timeStr) return null;
-            const [hours, minutes] = timeStr.split(':').map(Number);
-            return moment.tz(dateObj, 'Asia/Tokyo').set({hours, minutes, seconds: 0}).toDate();
-        };
+    const parseTime = (timeStr) => {
+      if (!timeStr) return null;
+      const [hours, minutes] = timeStr.split(":").map(Number);
+      return moment
+        .tz(dateObj, "Asia/Tokyo")
+        .set({ hours, minutes, seconds: 0 })
+        .toDate();
+    };
 
-        if (existingAttendance) {
-            return res.send(`
+    if (existingAttendance) {
+      return res.send(`
                 <div class="container">
                     <h2>エラー</h2>
                     <p>選択した日付には既に勤怠記録が存在します</p>
@@ -1427,325 +1578,417 @@ router.post('/save-attendance', requireLogin, async (req, res) => {
                     <a href="/attendance-main" class="btn">ダッシュボードに戻る</a>
                 </div>
             `);
-        }
-
-        const attendance = new Attendance({
-            userId: user._id,
-            date: moment.tz(dateObj, 'Asia/Tokyo').startOf('day').toDate(),
-            checkIn: parseTime(req.body.checkIn),
-            checkOut: parseTime(req.body.checkOut),
-            lunchStart: parseTime(req.body.lunchStart),
-            lunchEnd: parseTime(req.body.lunchEnd),
-            status: req.body.status,
-            notes: req.body.notes || null
-        });
-
-        // 근무 시간 계산 (일본 시간대 기준)
-        if (attendance.status === '欠勤') {
-            attendance.workingHours = 0;
-            attendance.totalHours = 0;
-        } else if (attendance.checkOut) {
-            const totalMs = attendance.checkOut - attendance.checkIn;
-            let lunchMs = 0;
-            
-            if (attendance.lunchStart && attendance.lunchEnd) {
-                lunchMs = attendance.lunchEnd - attendance.lunchStart;
-            }
-            
-            const workingMs = totalMs - lunchMs;
-            attendance.workingHours = parseFloat((workingMs / (1000 * 60 * 60)).toFixed(1));
-            attendance.totalHours = parseFloat((totalMs / (1000 * 60 * 60)).toFixed(1));
-        }
-
-        await attendance.save();
-        res.redirect('/attendance-main');
-    } catch (error) {
-        console.error('打刻保存エラー:', error);
-        res.status(500).send('打刻保存中にエラーが発生しました');
     }
+
+    const attendance = new Attendance({
+      userId: user._id,
+      date: moment.tz(dateObj, "Asia/Tokyo").startOf("day").toDate(),
+      checkIn: parseTime(req.body.checkIn),
+      checkOut: parseTime(req.body.checkOut),
+      lunchStart: parseTime(req.body.lunchStart),
+      lunchEnd: parseTime(req.body.lunchEnd),
+      status: req.body.status,
+      notes: req.body.notes || null,
+    });
+
+    // 근무 시간 계산 (일본 시간대 기준)
+    if (attendance.status === "欠勤") {
+      attendance.workingHours = 0;
+      attendance.totalHours = 0;
+    } else if (attendance.checkOut) {
+      const totalMs = attendance.checkOut - attendance.checkIn;
+      let lunchMs = 0;
+
+      if (attendance.lunchStart && attendance.lunchEnd) {
+        lunchMs = attendance.lunchEnd - attendance.lunchStart;
+      }
+
+      const workingMs = totalMs - lunchMs;
+      attendance.workingHours = parseFloat(
+        (workingMs / (1000 * 60 * 60)).toFixed(1),
+      );
+      attendance.totalHours = parseFloat(
+        (totalMs / (1000 * 60 * 60)).toFixed(1),
+      );
+    }
+
+    await attendance.save();
+    res.redirect("/attendance-main");
+  } catch (error) {
+    console.error("打刻保存エラー:", error);
+    res.status(500).send("打刻保存中にエラーが発生しました");
+  }
 });
 
 // 出勤処理
-router.post('/checkin', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
+router.post("/checkin", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
 
-        // ── サーバー側GPS検証 ──────────────────────────
-        const { ApprovedLocation } = require('../models');
-        const allLocations = await ApprovedLocation.find({ isActive: true });
+    // ── サーバー側GPS検証 ──────────────────────────
+    const { ApprovedLocation } = require("../models");
+    const allLocations = await ApprovedLocation.find({ isActive: true });
 
-        console.log('[GPS検証] 承認済み場所数:', allLocations.length);
-        console.log('[GPS検証] 受信GPS:', req.body.gpsLat, req.body.gpsLng);
+    console.log("[GPS検証] 承認済み場所数:", allLocations.length);
+    console.log("[GPS検証] 受信GPS:", req.body.gpsLat, req.body.gpsLng);
 
-        if (allLocations.length > 0) {
-            const gpsLat = parseFloat(req.body.gpsLat);
-            const gpsLng = parseFloat(req.body.gpsLng);
+    if (allLocations.length > 0) {
+      const gpsLat = parseFloat(req.body.gpsLat);
+      const gpsLng = parseFloat(req.body.gpsLng);
 
-            if (isNaN(gpsLat) || isNaN(gpsLng)) {
-                console.log('[GPS検証] ❌ GPS座標なし → 拒否');
-                return res.status(403).send('GPS位置情報が必要です。承認済み場所からのみ打刻できます。');
-            }
+      if (isNaN(gpsLat) || isNaN(gpsLng)) {
+        console.log("[GPS検証] ❌ GPS座標なし → 拒否");
+        return res
+          .status(403)
+          .send("GPS位置情報が必要です。承認済み場所からのみ打刻できます。");
+      }
 
-            const toRad = d => d * Math.PI / 180;
-            const haversine = (lat1, lng1, lat2, lng2) => {
-                const R = 6371000;
-                const dLat = toRad(lat2 - lat1);
-                const dLng = toRad(lng2 - lng1);
-                const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
-                return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            };
+      const toRad = (d) => (d * Math.PI) / 180;
+      const haversine = (lat1, lng1, lat2, lng2) => {
+        const R = 6371000;
+        const dLat = toRad(lat2 - lat1);
+        const dLng = toRad(lng2 - lng1);
+        const a =
+          Math.sin(dLat / 2) ** 2 +
+          Math.cos(toRad(lat1)) *
+            Math.cos(toRad(lat2)) *
+            Math.sin(dLng / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      };
 
-            const userId = req.session.userId.toString();
-            const applicableLocations = allLocations.filter(loc =>
-                loc.allowedUsers.length === 0 ||
-                loc.allowedUsers.map(id => id.toString()).includes(userId)
-            );
+      const userId = req.session.userId.toString();
+      const applicableLocations = allLocations.filter(
+        (loc) =>
+          loc.allowedUsers.length === 0 ||
+          loc.allowedUsers.map((id) => id.toString()).includes(userId),
+      );
 
-            console.log('[GPS検証] 適用場所数:', applicableLocations.length);
+      console.log("[GPS検証] 適用場所数:", applicableLocations.length);
 
-            if (applicableLocations.length === 0) {
-                console.log('[GPS検証] ❌ 対象場所なし → 拒否');
-                return res.status(403).send('あなたに割り当てられた承認済み打刻場所がありません。管理者にお問い合わせください。');
-            }
+      if (applicableLocations.length === 0) {
+        console.log("[GPS検証] ❌ 対象場所なし → 拒否");
+        return res
+          .status(403)
+          .send(
+            "あなたに割り当てられた承認済み打刻場所がありません。管理者にお問い合わせください。",
+          );
+      }
 
-            for (const loc of applicableLocations) {
-                const dist = Math.round(haversine(gpsLat, gpsLng, loc.latitude, loc.longitude));
-                console.log(`[GPS検証] 場所:${loc.name} 距離:${dist}m 許容:${loc.radius}m`);
-            }
+      for (const loc of applicableLocations) {
+        const dist = Math.round(
+          haversine(gpsLat, gpsLng, loc.latitude, loc.longitude),
+        );
+        console.log(
+          `[GPS検証] 場所:${loc.name} 距離:${dist}m 許容:${loc.radius}m`,
+        );
+      }
 
-            const matched = applicableLocations.find(loc =>
-                haversine(gpsLat, gpsLng, loc.latitude, loc.longitude) <= loc.radius
-            );
+      const matched = applicableLocations.find(
+        (loc) =>
+          haversine(gpsLat, gpsLng, loc.latitude, loc.longitude) <= loc.radius,
+      );
 
-            if (!matched) {
-                console.log('[GPS検証] ❌ 範囲外 → 拒否');
-                return res.status(403).send('承認済み場所の範囲外からの打刻は許可されていません。管理者にお問い合わせください。');
-            }
-            console.log('[GPS検証] ✅ 認証OK:', matched.name);
-        }
-        // ─────────────────────────────────────────────
-
-        // 「日本時間の今」をUTCで保存
-        const now = new Date();
-        const todayJST = moment.tz(now, "Asia/Tokyo").startOf('day').toDate();
-        const tomorrowJST = moment.tz(now, "Asia/Tokyo").add(1, 'day').startOf('day').toDate();
-
-        const existingRecord = await Attendance.findOne({
-            userId: user._id,
-            date: { $gte: todayJST, $lt: tomorrowJST },
-            checkOut: { $exists: false }
-        });
-        if (existingRecord) return res.redirect('/attendance-main');
-
-        const attendance = new Attendance({
-            userId: user._id,
-            date: todayJST,
-            checkIn: now,
-            status: now.getHours() >= 9 ? '遅刻' : '正常',
-            notes: req.body.gpsLocation ? `GPS打刻: ${req.body.gpsLocation}` : undefined,
-            isGpsVerified: true
-        });
-
-        await attendance.save();
-        res.redirect('/attendance-main');
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('出勤処理中にエラーが発生しました');
+      if (!matched) {
+        console.log("[GPS検証] ❌ 範囲外 → 拒否");
+        return res
+          .status(403)
+          .send(
+            "承認済み場所の範囲外からの打刻は許可されていません。管理者にお問い合わせください。",
+          );
+      }
+      console.log("[GPS検証] ✅ 認証OK:", matched.name);
     }
+    // ─────────────────────────────────────────────
+
+    // 「日本時間の今」をUTCで保存
+    const now = new Date();
+    const todayJST = moment.tz(now, "Asia/Tokyo").startOf("day").toDate();
+    const tomorrowJST = moment
+      .tz(now, "Asia/Tokyo")
+      .add(1, "day")
+      .startOf("day")
+      .toDate();
+
+    const existingRecord = await Attendance.findOne({
+      userId: user._id,
+      date: { $gte: todayJST, $lt: tomorrowJST },
+      checkOut: { $exists: false },
+    });
+    if (existingRecord) return res.redirect("/attendance-main");
+
+    const attendance = new Attendance({
+      userId: user._id,
+      date: todayJST,
+      checkIn: now,
+      status: now.getHours() >= 9 ? "遅刻" : "正常",
+      notes: req.body.gpsLocation
+        ? `GPS打刻: ${req.body.gpsLocation}`
+        : undefined,
+      isGpsVerified: true,
+    });
+
+    await attendance.save();
+    res.redirect("/attendance-main");
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("出勤処理中にエラーが発生しました");
+  }
 });
 
 // 昼休み開始処理
-router.post('/start-lunch', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
+router.post("/start-lunch", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
 
-        const now = new Date();
-        const todayJST = moment.tz(now, "Asia/Tokyo").startOf('day').toDate();
-        const tomorrowJST = moment.tz(now, "Asia/Tokyo").add(1, 'day').startOf('day').toDate();
+    const now = new Date();
+    const todayJST = moment.tz(now, "Asia/Tokyo").startOf("day").toDate();
+    const tomorrowJST = moment
+      .tz(now, "Asia/Tokyo")
+      .add(1, "day")
+      .startOf("day")
+      .toDate();
 
-        const attendance = await Attendance.findOne({
-            userId: user._id,
-            date: { $gte: todayJST, $lt: tomorrowJST }
-        });
+    const attendance = await Attendance.findOne({
+      userId: user._id,
+      date: { $gte: todayJST, $lt: tomorrowJST },
+    });
 
-        if (!attendance) return res.redirect('/attendance-main');
+    if (!attendance) return res.redirect("/attendance-main");
 
-        attendance.lunchStart = now;
-        await attendance.save();
-        res.redirect('/attendance-main');
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('昼休み開始処理中にエラーが発生しました');
-    }
+    attendance.lunchStart = now;
+    await attendance.save();
+    res.redirect("/attendance-main");
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("昼休み開始処理中にエラーが発生しました");
+  }
 });
 
 // 昼休み終了処理
-router.post('/end-lunch', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
+router.post("/end-lunch", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
 
-        const now = new Date();
-        const todayJST = moment.tz(now, "Asia/Tokyo").startOf('day').toDate();
-        const tomorrowJST = moment.tz(now, "Asia/Tokyo").add(1, 'day').startOf('day').toDate();
+    const now = new Date();
+    const todayJST = moment.tz(now, "Asia/Tokyo").startOf("day").toDate();
+    const tomorrowJST = moment
+      .tz(now, "Asia/Tokyo")
+      .add(1, "day")
+      .startOf("day")
+      .toDate();
 
-        const attendance = await Attendance.findOne({
-            userId: user._id,
-            date: { $gte: todayJST, $lt: tomorrowJST }
-        });
+    const attendance = await Attendance.findOne({
+      userId: user._id,
+      date: { $gte: todayJST, $lt: tomorrowJST },
+    });
 
-        if (!attendance || !attendance.lunchStart) return res.redirect('/attendance-main');
+    if (!attendance || !attendance.lunchStart)
+      return res.redirect("/attendance-main");
 
-        attendance.lunchEnd = now;
-        await attendance.save();
-        res.redirect('/attendance-main');
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('昼休み終了処理中にエラーが発生しました');
-    }
+    attendance.lunchEnd = now;
+    await attendance.save();
+    res.redirect("/attendance-main");
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("昼休み終了処理中にエラーが発生しました");
+  }
 });
 
 // 退勤処理
-router.post('/checkout', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
+router.post("/checkout", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
 
-        // ── サーバー側GPS検証 ──────────────────────────
-        const { ApprovedLocation } = require('../models');
-        const allLocations = await ApprovedLocation.find({ isActive: true });
+    // ── サーバー側GPS検証 ──────────────────────────
+    const { ApprovedLocation } = require("../models");
+    const allLocations = await ApprovedLocation.find({ isActive: true });
 
-        if (allLocations.length > 0) {
-            const gpsLat = parseFloat(req.body.gpsLat);
-            const gpsLng = parseFloat(req.body.gpsLng);
+    if (allLocations.length > 0) {
+      const gpsLat = parseFloat(req.body.gpsLat);
+      const gpsLng = parseFloat(req.body.gpsLng);
 
-            if (isNaN(gpsLat) || isNaN(gpsLng)) {
-                return res.status(403).send('GPS位置情報が必要です。承認済み場所からのみ退勤打刻できます。');
-            }
+      if (isNaN(gpsLat) || isNaN(gpsLng)) {
+        return res
+          .status(403)
+          .send(
+            "GPS位置情報が必要です。承認済み場所からのみ退勤打刻できます。",
+          );
+      }
 
-            const toRad = d => d * Math.PI / 180;
-            function haversine(lat1, lng1, lat2, lng2) {
-                const R = 6371000;
-                const dLat = toRad(lat2 - lat1);
-                const dLng = toRad(lng2 - lng1);
-                const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
-                return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            }
+      const toRad = (d) => (d * Math.PI) / 180;
+      function haversine(lat1, lng1, lat2, lng2) {
+        const R = 6371000;
+        const dLat = toRad(lat2 - lat1);
+        const dLng = toRad(lng2 - lng1);
+        const a =
+          Math.sin(dLat / 2) ** 2 +
+          Math.cos(toRad(lat1)) *
+            Math.cos(toRad(lat2)) *
+            Math.sin(dLng / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      }
 
-            const userId = req.session.userId.toString();
-            const applicableLocations = allLocations.filter(loc =>
-                loc.allowedUsers.length === 0 ||
-                loc.allowedUsers.map(id => id.toString()).includes(userId)
-            );
+      const userId = req.session.userId.toString();
+      const applicableLocations = allLocations.filter(
+        (loc) =>
+          loc.allowedUsers.length === 0 ||
+          loc.allowedUsers.map((id) => id.toString()).includes(userId),
+      );
 
-            if (applicableLocations.length === 0) {
-                return res.status(403).send('あなたに割り当てられた承認済み打刻場所がありません。管理者にお問い合わせください。');
-            }
+      if (applicableLocations.length === 0) {
+        return res
+          .status(403)
+          .send(
+            "あなたに割り当てられた承認済み打刻場所がありません。管理者にお問い合わせください。",
+          );
+      }
 
-            const matched = applicableLocations.find(loc =>
-                haversine(gpsLat, gpsLng, loc.latitude, loc.longitude) <= loc.radius
-            );
+      const matched = applicableLocations.find(
+        (loc) =>
+          haversine(gpsLat, gpsLng, loc.latitude, loc.longitude) <= loc.radius,
+      );
 
-            if (!matched) {
-                return res.status(403).send('承認済み場所の範囲外からの退勤打刻は許可されていません。管理者にお問い合わせください。');
-            }
-        }
-        // ─────────────────────────────────────────────
-
-        const now = new Date();
-        const todayJST = moment.tz(now, "Asia/Tokyo").startOf('day').toDate();
-        const tomorrowJST = moment.tz(now, "Asia/Tokyo").add(1, 'day').startOf('day').toDate();
-
-        const attendance = await Attendance.findOne({
-            userId: user._id,
-            date: { $gte: todayJST, $lt: tomorrowJST }
-        });
-
-        if (!attendance) return res.redirect('/attendance-main');
-
-        attendance.checkOut = now;
-
-        // 昼休み時間がある場合の計算
-        if (attendance.lunchStart && attendance.lunchEnd) {
-            const lunchDuration = (attendance.lunchEnd - attendance.lunchStart) / (1000 * 60 * 60);
-            const totalDuration = (now - attendance.checkIn) / (1000 * 60 * 60);
-            attendance.workingHours = Math.round((totalDuration - lunchDuration) * 10) / 10;
-            attendance.totalHours = Math.round(totalDuration * 10) / 10;
-        } else {
-            const totalDuration = (now - attendance.checkIn) / (1000 * 60 * 60);
-            attendance.workingHours = Math.round(totalDuration * 10) / 10;
-            attendance.totalHours = attendance.workingHours;
-        }
-
-        if (attendance.workingHours < 8) attendance.status = '早退';
-
-        await attendance.save();
-        res.redirect('/attendance-main');
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('退勤処理中にエラーが発生しました');
+      if (!matched) {
+        return res
+          .status(403)
+          .send(
+            "承認済み場所の範囲外からの退勤打刻は許可されていません。管理者にお問い合わせください。",
+          );
+      }
     }
+    // ─────────────────────────────────────────────
+
+    const now = new Date();
+    const todayJST = moment.tz(now, "Asia/Tokyo").startOf("day").toDate();
+    const tomorrowJST = moment
+      .tz(now, "Asia/Tokyo")
+      .add(1, "day")
+      .startOf("day")
+      .toDate();
+
+    const attendance = await Attendance.findOne({
+      userId: user._id,
+      date: { $gte: todayJST, $lt: tomorrowJST },
+    });
+
+    if (!attendance) return res.redirect("/attendance-main");
+
+    attendance.checkOut = now;
+
+    // 昼休み時間がある場合の計算
+    if (attendance.lunchStart && attendance.lunchEnd) {
+      const lunchDuration =
+        (attendance.lunchEnd - attendance.lunchStart) / (1000 * 60 * 60);
+      const totalDuration = (now - attendance.checkIn) / (1000 * 60 * 60);
+      attendance.workingHours =
+        Math.round((totalDuration - lunchDuration) * 10) / 10;
+      attendance.totalHours = Math.round(totalDuration * 10) / 10;
+    } else {
+      const totalDuration = (now - attendance.checkIn) / (1000 * 60 * 60);
+      attendance.workingHours = Math.round(totalDuration * 10) / 10;
+      attendance.totalHours = attendance.workingHours;
+    }
+
+    if (attendance.workingHours < 8) attendance.status = "早退";
+
+    await attendance.save();
+    res.redirect("/attendance-main");
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("退勤処理中にエラーが発生しました");
+  }
 });
 
 // 管理者従業員登録ページ
-router.get('/my-monthly-attendance', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        
-        if (!employee) {
-            return res.status(400).send('社員情報がありません');
-        }
+router.get("/my-monthly-attendance", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
+    const employee = await Employee.findOne({ userId: user._id });
 
-        const year  = parseInt(req.query.year)  || new Date().getFullYear();
-        const month = parseInt(req.query.month) || new Date().getMonth() + 1;
-        
-        const startDate = new Date(year, month - 1, 1);
-        const endDate   = new Date(year, month, 0);
-        
-        const attendances = await Attendance.find({
-            userId: user._id,
-            date: { $gte: startDate, $lte: endDate }
-        }).sort({ date: 1 });
+    if (!employee) {
+      return res.status(400).send("社員情報がありません");
+    }
 
-        const approvalRequest = await ApprovalRequest.findOne({
-            userId: user._id,
-            year: year,
-            month: month
-        });
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+    const month = parseInt(req.query.month) || new Date().getMonth() + 1;
 
-        const isJoinMonth = employee.joinDate.getFullYear() === year &&
-                          (employee.joinDate.getMonth() + 1) === month;
+    const startDate = moment
+      .tz(`${year}-${month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+      .startOf("day")
+      .toDate();
+    const endDate = moment
+      .tz(`${year}-${month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+      .endOf("month")
+      .toDate();
 
-        // 승인 상태 배지
-        let approvalBadge = '';
-        if (approvalRequest) {
-            const statusMap = { pending: ['badge-warning','承認待ち'], approved: ['badge-success','承認済み'], returned: ['badge-danger','差し戻し'] };
-            const [cls, label] = statusMap[approvalRequest.status] || ['badge-muted', approvalRequest.status];
-            approvalBadge = `<span class="badge ${cls}" style="font-size:13px;padding:5px 12px">${label}</span>`;
-        }
+    const attendances = await Attendance.find({
+      userId: user._id,
+      date: { $gte: startDate, $lte: endDate },
+    }).sort({ date: 1 });
 
-        // 統計計算
-        const NON_WORK_STATUSES = ['欠勤', '休暇'];
-        const totalWork   = attendances.reduce((s, a) => s + (a.workingHours || 0), 0);
-        const countWork   = attendances.filter(a => !NON_WORK_STATUSES.includes(a.status)).length;
-        const countAbsent = attendances.filter(a => a.status === '欠勤').length;
-        const countLate   = attendances.filter(a => a.status === '遅刻').length;
-        const countLeave  = attendances.filter(a => ['有休','午前休','午後休','休暇'].includes(a.status)).length;
+    const approvalRequest = await ApprovalRequest.findOne({
+      userId: user._id,
+      year: year,
+      month: month,
+    });
 
-        const canEdit = !approvalRequest || approvalRequest.status === 'returned';
+    const isJoinMonth =
+      employee.joinDate.getFullYear() === year &&
+      employee.joinDate.getMonth() + 1 === month;
 
-        // 年/月の選択肢
-        const now = moment().tz('Asia/Tokyo');
-        const yearOptions = [now.year()-1, now.year(), now.year()+1]
-            .map(y => `<option value="${y}" ${y===year?'selected':''}>${y}年</option>`).join('');
-        const monthOptions = Array.from({length:12},(_,i)=>i+1)
-            .map(m => `<option value="${m}" ${m===month?'selected':''}>${m}月</option>`).join('');
+    // 승인 상태 배지
+    let approvalBadge = "";
+    if (approvalRequest) {
+      const statusMap = {
+        pending: ["badge-warning", "承認待ち"],
+        approved: ["badge-success", "承認済み"],
+        returned: ["badge-danger", "差し戻し"],
+      };
+      const [cls, label] = statusMap[approvalRequest.status] || [
+        "badge-muted",
+        approvalRequest.status,
+      ];
+      approvalBadge = `<span class="badge ${cls}" style="font-size:13px;padding:5px 12px">${label}</span>`;
+    }
 
-        const shell = buildPageShell({
-            title: `${year}年${month}月 勤怠記録`,
-            currentPath: '/my-monthly-attendance',
-            employee: req.session.employee,
-            isAdmin: !!req.session.isAdmin,
-            extraHead: `<style>
+    // 統計計算
+    const NON_WORK_STATUSES = ["欠勤", "休暇"];
+    const totalWork = attendances.reduce(
+      (s, a) => s + (a.workingHours || 0),
+      0,
+    );
+    const countWork = attendances.filter(
+      (a) => !NON_WORK_STATUSES.includes(a.status),
+    ).length;
+    const countAbsent = attendances.filter((a) => a.status === "欠勤").length;
+    const countLate = attendances.filter((a) => a.status === "遅刻").length;
+    const countLeave = attendances.filter((a) =>
+      ["有休", "午前休", "午後休", "休暇"].includes(a.status),
+    ).length;
+
+    const canEdit = !approvalRequest || approvalRequest.status === "returned";
+
+    // 年/月の選択肢
+    const now = moment().tz("Asia/Tokyo");
+    const yearOptions = [now.year() - 1, now.year(), now.year() + 1]
+      .map(
+        (y) =>
+          `<option value="${y}" ${y === year ? "selected" : ""}>${y}年</option>`,
+      )
+      .join("");
+    const monthOptions = Array.from({ length: 12 }, (_, i) => i + 1)
+      .map(
+        (m) =>
+          `<option value="${m}" ${m === month ? "selected" : ""}>${m}月</option>`,
+      )
+      .join("");
+
+    const shell = buildPageShell({
+      title: `${year}年${month}月 勤怠記録`,
+      currentPath: "/my-monthly-attendance",
+      employee: req.session.employee,
+      isAdmin: !!req.session.isAdmin,
+      extraHead: `<style>
 /* ===== Monthly Attendance Page ===== */
 .mma-wrapper { max-width: 900px; margin: 0 auto; padding: 0 0 32px; }
 
@@ -1955,16 +2198,24 @@ router.get('/my-monthly-attendance', requireLogin, async (req, res) => {
 }
 .mma-empty i { font-size: 40px; margin-bottom: 12px; display: block; opacity: .4; }
 .mma-empty p { margin: 0; font-size: 15px; }
-</style>`
-        });
+</style>`,
+    });
 
-        const statusBadge = (status) => {
-            const map = { '遅刻':'warning','早退':'warning','欠勤':'danger','有休':'info','午前休':'info','午後休':'info','休暇':'info' };
-            const cls = map[status] || 'success';
-            return `<span class="mma-badge ${cls}">${status}</span>`;
-        };
+    const statusBadge = (status) => {
+      const map = {
+        遅刻: "warning",
+        早退: "warning",
+        欠勤: "danger",
+        有休: "info",
+        午前休: "info",
+        午後休: "info",
+        休暇: "info",
+      };
+      const cls = map[status] || "success";
+      return `<span class="mma-badge ${cls}">${status}</span>`;
+    };
 
-        res.send(`${shell}
+    res.send(`${shell}
 <div class="mma-wrapper">
 
 <!-- ヘッダー -->
@@ -2019,32 +2270,46 @@ router.get('/my-monthly-attendance', requireLogin, async (req, res) => {
 </div>
 
 <!-- アラート -->
-${isJoinMonth ? `<div class="mma-alert info"><span class="mma-alert-icon"><i class="fa-solid fa-circle-info"></i></span><div><strong>入社月</strong> — 入社日: ${employee.joinDate.toLocaleDateString('ja-JP')}</div></div>` : ''}
+${isJoinMonth ? `<div class="mma-alert info"><span class="mma-alert-icon"><i class="fa-solid fa-circle-info"></i></span><div><strong>入社月</strong> — 入社日: ${employee.joinDate.toLocaleDateString("ja-JP")}</div></div>` : ""}
 
-${approvalRequest && approvalRequest.status === 'returned' && approvalRequest.returnReason ? `
+${
+  approvalRequest &&
+  approvalRequest.status === "returned" &&
+  approvalRequest.returnReason
+    ? `
 <div class="mma-alert danger">
   <span class="mma-alert-icon"><i class="fa-solid fa-rotate-left"></i></span>
   <div>
     <strong>差し戻し理由:</strong> ${escapeHtml(approvalRequest.returnReason)}
-    ${approvalRequest.processedAt ? `<div style="font-size:12px;margin-top:3px;opacity:.8">処理日: ${approvalRequest.processedAt.toLocaleDateString('ja-JP')}</div>` : ''}
+    ${approvalRequest.processedAt ? `<div style="font-size:12px;margin-top:3px;opacity:.8">処理日: ${approvalRequest.processedAt.toLocaleDateString("ja-JP")}</div>` : ""}
   </div>
-</div>` : ''}
+</div>`
+    : ""
+}
 
-${approvalRequest && approvalRequest.status === 'pending' ? `
+${
+  approvalRequest && approvalRequest.status === "pending"
+    ? `
 <div class="mma-alert warning">
   <span class="mma-alert-icon"><i class="fa-solid fa-hourglass-half"></i></span>
   <div><strong>承認待ち</strong> — 管理者の処理をお待ちください。この期間の記録は編集できません。</div>
-</div>` : ''}
+</div>`
+    : ""
+}
 
-${approvalRequest && approvalRequest.status === 'approved' ? `
+${
+  approvalRequest && approvalRequest.status === "approved"
+    ? `
 <div class="mma-alert success">
   <span class="mma-alert-icon"><i class="fa-solid fa-circle-check"></i></span>
-  <div><strong>承認済み</strong>${approvalRequest.processedAt ? ` — ${approvalRequest.processedAt.toLocaleDateString('ja-JP')}` : ''}</div>
-</div>` : ''}
+  <div><strong>承認済み</strong>${approvalRequest.processedAt ? ` — ${approvalRequest.processedAt.toLocaleDateString("ja-JP")}` : ""}</div>
+</div>`
+    : ""
+}
 
 <!-- アクションボタン -->
 <div class="mma-actions">
-  ${canEdit ? `<button onclick="requestApproval(${year},${month})" class="mma-btn primary" style="font-size:12px;padding:9px 14px"><i class="fa-solid fa-paper-plane"></i> 承認リクエスト</button>` : ''}
+  ${canEdit ? `<button onclick="requestApproval(${year},${month})" class="mma-btn primary" style="font-size:12px;padding:9px 14px"><i class="fa-solid fa-paper-plane"></i> 承認リクエスト</button>` : ""}
   <a href="/attendance/bulk-register?year=${year}&month=${month}" class="mma-btn ghost"><i class="fa-solid fa-table-list"></i> 一括入力</a>
   <button onclick="window.open('/print-attendance?year=${year}&month=${month}','_blank')" class="mma-btn ghost"><i class="fa-solid fa-print"></i> 印刷</button>
 </div>
@@ -2064,73 +2329,81 @@ ${approvalRequest && approvalRequest.status === 'approved' ? `
       </tr>
     </thead>
     <tbody>
-      ${attendances.length === 0 ? `<tr><td colspan="7"><div class="mma-empty"><i class="fa-regular fa-calendar-xmark"></i><p>この月の勤怠記録はありません</p></div></td></tr>` : ''}
-      ${attendances.map(att => {
-          const locked = att.isConfirmed || (approvalRequest && approvalRequest.status === 'pending');
+      ${attendances.length === 0 ? `<tr><td colspan="7"><div class="mma-empty"><i class="fa-regular fa-calendar-xmark"></i><p>この月の勤怠記録はありません</p></div></td></tr>` : ""}
+      ${attendances
+        .map((att) => {
+          const locked =
+            att.isConfirmed ||
+            (approvalRequest && approvalRequest.status === "pending");
           return `<tr>
-            <td style="white-space:nowrap">${moment(att.date).tz('Asia/Tokyo').format('MM/DD (ddd)')}</td>
-            <td class="td-time">${att.checkIn  ? moment(att.checkIn).tz('Asia/Tokyo').format('HH:mm')  : '<span class="td-muted">—</span>'}</td>
-            <td class="td-time">${att.checkOut ? moment(att.checkOut).tz('Asia/Tokyo').format('HH:mm') : '<span class="td-muted">—</span>'}</td>
+            <td style="white-space:nowrap">${moment(att.date).tz("Asia/Tokyo").format("MM/DD (ddd)")}</td>
+            <td class="td-time">${att.checkIn ? moment(att.checkIn).tz("Asia/Tokyo").format("HH:mm") : '<span class="td-muted">—</span>'}</td>
+            <td class="td-time">${att.checkOut ? moment(att.checkOut).tz("Asia/Tokyo").format("HH:mm") : '<span class="td-muted">—</span>'}</td>
             <td style="font-size:13px;color:#64748b">
-              ${att.lunchStart ? moment(att.lunchStart).tz('Asia/Tokyo').format('HH:mm') : '—'} 〜 ${att.lunchEnd ? moment(att.lunchEnd).tz('Asia/Tokyo').format('HH:mm') : '—'}
+              ${att.lunchStart ? moment(att.lunchStart).tz("Asia/Tokyo").format("HH:mm") : "—"} 〜 ${att.lunchEnd ? moment(att.lunchEnd).tz("Asia/Tokyo").format("HH:mm") : "—"}
             </td>
             <td class="td-time">${att.workingHours != null ? `<strong>${att.workingHours}h</strong>` : '<span class="td-muted">—</span>'}</td>
             <td>
               ${statusBadge(att.status)}
-              ${att.isConfirmed ? '<span class="mma-badge info" style="margin-left:4px">確定</span>' : ''}
+              ${att.isConfirmed ? '<span class="mma-badge info" style="margin-left:4px">確定</span>' : ""}
             </td>
             <td class="td-actions">
-              <a href="/edit-attendance/${att._id}" class="mma-icon-btn edit ${locked?'disabled':''}" title="編集"><i class="fa-solid fa-pen"></i></a>
+              <a href="/edit-attendance/${att._id}" class="mma-icon-btn edit ${locked ? "disabled" : ""}" title="編集"><i class="fa-solid fa-pen"></i></a>
               <form action="/delete-attendance/${att._id}" method="POST" style="display:inline" onsubmit="return confirm('この打刻記録を削除しますか？');">
-                <button type="submit" class="mma-icon-btn del" title="削除" ${locked?'disabled':''}><i class="fa-solid fa-trash"></i></button>
+                <button type="submit" class="mma-icon-btn del" title="削除" ${locked ? "disabled" : ""}><i class="fa-solid fa-trash"></i></button>
               </form>
             </td>
           </tr>`;
-      }).join('')}
+        })
+        .join("")}
     </tbody>
   </table>
 
   <!-- モバイルカードビュー -->
   <div class="mma-cards">
-    ${attendances.length === 0 ? `<div class="mma-empty"><i class="fa-regular fa-calendar-xmark"></i><p>この月の勤怠記録はありません</p></div>` : ''}
-    ${attendances.map(att => {
-        const locked = att.isConfirmed || (approvalRequest && approvalRequest.status === 'pending');
+    ${attendances.length === 0 ? `<div class="mma-empty"><i class="fa-regular fa-calendar-xmark"></i><p>この月の勤怠記録はありません</p></div>` : ""}
+    ${attendances
+      .map((att) => {
+        const locked =
+          att.isConfirmed ||
+          (approvalRequest && approvalRequest.status === "pending");
         return `<div class="mma-card">
           <div class="mma-card-top">
-            <div class="mma-card-date">${moment(att.date).tz('Asia/Tokyo').format('M月D日（ddd）')}</div>
+            <div class="mma-card-date">${moment(att.date).tz("Asia/Tokyo").format("M月D日（ddd）")}</div>
             <div style="display:flex;gap:5px;align-items:center">
               ${statusBadge(att.status)}
-              ${att.isConfirmed ? '<span class="mma-badge info">確定</span>' : ''}
+              ${att.isConfirmed ? '<span class="mma-badge info">確定</span>' : ""}
             </div>
           </div>
           <div class="mma-card-body">
             <div class="mma-card-grid">
               <div class="mma-card-item">
                 <div class="ci-label">出勤</div>
-                <div class="ci-val ${att.checkIn?'':'muted'}">${att.checkIn ? moment(att.checkIn).tz('Asia/Tokyo').format('HH:mm') : '—'}</div>
+                <div class="ci-val ${att.checkIn ? "" : "muted"}">${att.checkIn ? moment(att.checkIn).tz("Asia/Tokyo").format("HH:mm") : "—"}</div>
               </div>
               <div class="mma-card-item">
                 <div class="ci-label">退勤</div>
-                <div class="ci-val ${att.checkOut?'':'muted'}">${att.checkOut ? moment(att.checkOut).tz('Asia/Tokyo').format('HH:mm') : '—'}</div>
+                <div class="ci-val ${att.checkOut ? "" : "muted"}">${att.checkOut ? moment(att.checkOut).tz("Asia/Tokyo").format("HH:mm") : "—"}</div>
               </div>
               <div class="mma-card-item">
                 <div class="ci-label">勤務時間</div>
-                <div class="ci-val ${att.workingHours!=null?'':'muted'}">${att.workingHours != null ? att.workingHours + 'h' : '—'}</div>
+                <div class="ci-val ${att.workingHours != null ? "" : "muted"}">${att.workingHours != null ? att.workingHours + "h" : "—"}</div>
               </div>
               <div class="mma-card-item">
                 <div class="ci-label">昼休憩</div>
-                <div class="ci-val" style="font-size:13px;font-weight:500">${att.lunchStart ? moment(att.lunchStart).tz('Asia/Tokyo').format('HH:mm') + '〜' + (att.lunchEnd ? moment(att.lunchEnd).tz('Asia/Tokyo').format('HH:mm') : '—') : '—'}</div>
+                <div class="ci-val" style="font-size:13px;font-weight:500">${att.lunchStart ? moment(att.lunchStart).tz("Asia/Tokyo").format("HH:mm") + "〜" + (att.lunchEnd ? moment(att.lunchEnd).tz("Asia/Tokyo").format("HH:mm") : "—") : "—"}</div>
               </div>
             </div>
           </div>
           <div class="mma-card-footer">
-            <a href="/edit-attendance/${att._id}" class="mma-btn ghost ${locked?'disabled':''}" ${locked?'style="opacity:.35;pointer-events:none"':''}><i class="fa-solid fa-pen"></i> 編集</a>
+            <a href="/edit-attendance/${att._id}" class="mma-btn ghost ${locked ? "disabled" : ""}" ${locked ? 'style="opacity:.35;pointer-events:none"' : ""}><i class="fa-solid fa-pen"></i> 編集</a>
             <form action="/delete-attendance/${att._id}" method="POST" style="flex:1;display:flex" onsubmit="return confirm('この打刻記録を削除しますか？');">
-              <button type="submit" class="mma-btn" style="flex:1;background:#fee2e2;color:#dc2626;border:1px solid #fecaca" ${locked?'disabled style="opacity:.35"':''}><i class="fa-solid fa-trash"></i> 削除</button>
+              <button type="submit" class="mma-btn" style="flex:1;background:#fee2e2;color:#dc2626;border:1px solid #fecaca" ${locked ? 'disabled style="opacity:.35"' : ""}><i class="fa-solid fa-trash"></i> 削除</button>
             </form>
           </div>
         </div>`;
-    }).join('')}
+      })
+      .join("")}
   </div>
 </div>
 
@@ -2150,109 +2423,126 @@ function requestApproval(year, month) {
 }
 </script>
 ${pageFooter()}`);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('月別勤怠照会中にエラーが発生しました');
-    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("月別勤怠照会中にエラーが発生しました");
+  }
 });
 // 一般ユーザー承認リクエスト処理
-router.post('/request-approval', requireLogin, async (req, res) => {
-    try {
-        const { year, month } = req.body;
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        
-        if (!employee) {
-            return res.json({ success: false, message: '社員情報が見つかりません' });
-        }
+router.post("/request-approval", requireLogin, async (req, res) => {
+  try {
+    const { year, month } = req.body;
+    const user = await User.findById(req.session.userId);
+    const employee = await Employee.findOne({ userId: user._id });
 
-        // 이미 확정된 월인지 확인
-        const startDate = new Date(year, month - 1, 1);
-        const endDate = new Date(year, month, 0);
-        
-        const existingConfirmed = await Attendance.findOne({
-            userId: user._id,
-            date: { $gte: startDate, $lte: endDate },
-            isConfirmed: true
-        });
-        
-        if (existingConfirmed) {
-            return res.json({ 
-                success: false, 
-                message: 'この月の勤怠は既に承認済みです' 
-            });
-        }
-
-        // 이미 요청이 있는지 확인
-        const existingRequest = await ApprovalRequest.findOne({
-            userId: user._id,
-            year: year,
-            month: month,
-            status: 'pending'
-        });
-        
-        if (existingRequest) {
-            return res.json({ 
-                success: false, 
-                message: 'この月の承認リクエストは既に送信されています' 
-            });
-        }
-
-        // 既存のリクエスト（pendingまたはreturned）を削除
-        await ApprovalRequest.deleteMany({
-            userId: user._id,
-            year: year,
-            month: month,
-            status: { $in: ['pending', 'returned'] }
-        });
-
-        // 새 요청 생성
-        const request = new ApprovalRequest({
-            employeeId: employee.employeeId,
-            userId: user._id,
-            year: year,
-            month: month,
-            status: 'pending'
-        });
-        
-        await request.save();
-        
-        res.json({ 
-            success: true, 
-            message: '承認リクエストが完了しました',
-            employee: employee.name,
-            year: year,
-            month: month
-        });
-    } catch (error) {
-        console.error(error);
-        res.json({ success: false, message: '承認リクエスト中にエラーが発生しました' });
+    if (!employee) {
+      return res.json({ success: false, message: "社員情報が見つかりません" });
     }
+
+    // 이미 확정된 월인지 확인
+    const startDate = moment
+      .tz(`${year}-${month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+      .startOf("day")
+      .toDate();
+    const endDate = moment
+      .tz(`${year}-${month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+      .endOf("month")
+      .toDate();
+
+    const existingConfirmed = await Attendance.findOne({
+      userId: user._id,
+      date: { $gte: startDate, $lte: endDate },
+      isConfirmed: true,
+    });
+
+    if (existingConfirmed) {
+      return res.json({
+        success: false,
+        message: "この月の勤怠は既に承認済みです",
+      });
+    }
+
+    // 이미 요청이 있는지 확인
+    const existingRequest = await ApprovalRequest.findOne({
+      userId: user._id,
+      year: year,
+      month: month,
+      status: "pending",
+    });
+
+    if (existingRequest) {
+      return res.json({
+        success: false,
+        message: "この月の承認リクエストは既に送信されています",
+      });
+    }
+
+    // 既存のリクエスト（pendingまたはreturned）を削除
+    await ApprovalRequest.deleteMany({
+      userId: user._id,
+      year: year,
+      month: month,
+      status: { $in: ["pending", "returned"] },
+    });
+
+    // 새 요청 생성
+    const request = new ApprovalRequest({
+      employeeId: employee.employeeId,
+      userId: user._id,
+      year: year,
+      month: month,
+      status: "pending",
+    });
+
+    await request.save();
+
+    res.json({
+      success: true,
+      message: "承認リクエストが完了しました",
+      employee: employee.name,
+      year: year,
+      month: month,
+    });
+  } catch (error) {
+    console.error(error);
+    res.json({
+      success: false,
+      message: "承認リクエスト中にエラーが発生しました",
+    });
+  }
 });
 
 // 관리자 승인 요청 목록
-router.get('/print-attendance', requireLogin, async (req, res) => {
-    try {
-        const { year, month } = req.query;
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        
-        if (!employee) {
-            return res.status(404).send('社員情報が見つかりません');
-        }
+router.get("/print-attendance", requireLogin, async (req, res) => {
+  try {
+    const { year, month } = req.query;
+    const user = await User.findById(req.session.userId);
+    const employee = await Employee.findOne({ userId: user._id });
 
-        const startDate = new Date(year, month - 1, 1);
-        const endDate = new Date(year, month, 0);
-        
-        const attendances = await Attendance.find({
-            userId: user._id,
-            date: { $gte: startDate, $lte: endDate }
-        }).sort({ date: 1 });
-        
-        // 総勤務時間計算
-        const totalWorkingHours = attendances.filter(a => a.status !== '欠勤').reduce((sum, att) => sum + (att.workingHours || 0), 0);
-        
-        res.send(`
+    if (!employee) {
+      return res.status(404).send("社員情報が見つかりません");
+    }
+
+    const startDate = moment
+      .tz(`${year}-${month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+      .startOf("day")
+      .toDate();
+    const endDate = moment
+      .tz(`${year}-${month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+      .endOf("month")
+      .toDate();
+
+    const attendances = await Attendance.find({
+      userId: user._id,
+      date: { $gte: startDate, $lte: endDate },
+    }).sort({ date: 1 });
+
+    // 総勤務時間計算
+    const totalWorkingHours = attendances
+      .filter((a) => a.status !== "欠勤")
+      .reduce((sum, att) => sum + (att.workingHours || 0), 0);
+
+    res.send(`
             <!DOCTYPE html>
             <html>
             <head>
@@ -2315,7 +2605,7 @@ router.get('/print-attendance', requireLogin, async (req, res) => {
                         <div><strong>社員番号:</strong> ${employee.employeeId}</div>
                         <div><strong>部署:</strong> ${employee.department}</div>
                         <div><strong>職位:</strong> ${employee.position}</div>
-                        <div><strong>入社日:</strong> ${employee.joinDate.toLocaleDateString('ja-JP')}</div>
+                        <div><strong>入社日:</strong> ${employee.joinDate.toLocaleDateString("ja-JP")}</div>
                     </div>
                     
                     <table>
@@ -2331,20 +2621,24 @@ router.get('/print-attendance', requireLogin, async (req, res) => {
                             </tr>
                         </thead>
                         <tbody>
-                            ${attendances.map(att => `
+                            ${attendances
+                              .map(
+                                (att) => `
                                 <tr>
-                                    <td>${moment(att.date).tz('Asia/Tokyo').format('YYYY/MM/DD')}</td>
-                                    <td>${att.checkIn ? moment(att.checkIn).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}</td>
-                                    <td>${att.checkOut ? moment(att.checkOut).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}</td>
+                                    <td>${moment(att.date).tz("Asia/Tokyo").format("YYYY/MM/DD")}</td>
+                                    <td>${att.checkIn ? moment(att.checkIn).tz("Asia/Tokyo").format("HH:mm:ss") : "-"}</td>
+                                    <td>${att.checkOut ? moment(att.checkOut).tz("Asia/Tokyo").format("HH:mm:ss") : "-"}</td>
                                     <td>
-                                        ${att.lunchStart ? moment(att.lunchStart).tz('Asia/Tokyo').format('HH:mm:ss') : '-'} ～
-                                        ${att.lunchEnd ? moment(att.lunchEnd).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}
+                                        ${att.lunchStart ? moment(att.lunchStart).tz("Asia/Tokyo").format("HH:mm:ss") : "-"} ～
+                                        ${att.lunchEnd ? moment(att.lunchEnd).tz("Asia/Tokyo").format("HH:mm:ss") : "-"}
                                     </td>
-                                    <td>${att.workingHours || '-'}時間</td>
+                                    <td>${att.workingHours || "-"}時間</td>
                                     <td>${att.status}</td>
-                                    <td class="note-cell">${att.notes || '-'}</td>
+                                    <td class="note-cell">${att.notes || "-"}</td>
                                 </tr>
-                            `).join('')}
+                            `,
+                              )
+                              .join("")}
                         </tbody>
                     </table>
                     
@@ -2353,7 +2647,7 @@ router.get('/print-attendance', requireLogin, async (req, res) => {
                     </div>
                     
                     <div class="print-footer">
-                        <div>作成日: ${new Date().toLocaleDateString('ja-JP')}</div>
+                        <div>作成日: ${new Date().toLocaleDateString("ja-JP")}</div>
                         <div class="signature-line">署名</div>
                     </div>
                     
@@ -2365,10 +2659,10 @@ router.get('/print-attendance', requireLogin, async (req, res) => {
             </body>
             </html>
         `);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('勤怠表印刷中にエラーが発生しました');
-    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("勤怠表印刷中にエラーが発生しました");
+  }
 });
 
 module.exports = router;
