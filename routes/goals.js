@@ -1,38 +1,43 @@
 // ==============================
 // routes/goals.js - 目標管理
 // ==============================
-const router = require('express').Router();
-const mongoose = require('mongoose');
-const moment = require('moment-timezone');
-const { Employee, Goal } = require('../models');
-const { requireLogin, isAdmin } = require('../middleware/auth');
-const { escapeHtml, stripHtmlTags, renderMarkdownToHtml } = require('../lib/helpers');
-const { renderPage } = require('../lib/renderPage');
-const { createNotification } = require('./notifications');
+const router = require("express").Router();
+const mongoose = require("mongoose");
+const moment = require("moment-timezone");
+const { Employee, Goal } = require("../models");
+const { requireLogin, isAdmin } = require("../middleware/auth");
+const {
+  escapeHtml,
+  stripHtmlTags,
+  renderMarkdownToHtml,
+} = require("../lib/helpers");
+const { renderPage } = require("../lib/renderPage");
+const { createNotification } = require("./notifications");
+const { t } = require("../lib/i18n");
 
 // ─── 共通ヘルパー ─────────────────────────────────────────
 // ownerName / createdByName を最新の Employee 情報に同期する
 async function ensureOwnerName(goal) {
-    if (goal.currentApprover) {
-        try {
-            const approverEmp = await Employee.findById(goal.currentApprover);
-            if (approverEmp) {
-                goal.ownerName = approverEmp.name;
-                if (!goal.ownerId) goal.ownerId = approverEmp._id;
-            }
-        } catch (_) {}
-    }
-    if (goal.createdBy && !goal.createdByName) {
-        try {
-            const creatorEmp = await Employee.findById(goal.createdBy);
-            if (creatorEmp) goal.createdByName = creatorEmp.name;
-        } catch (_) {}
-    }
+  if (goal.currentApprover) {
+    try {
+      const approverEmp = await Employee.findById(goal.currentApprover);
+      if (approverEmp) {
+        goal.ownerName = approverEmp.name;
+        if (!goal.ownerId) goal.ownerId = approverEmp._id;
+      }
+    } catch (_) {}
+  }
+  if (goal.createdBy && !goal.createdByName) {
+    try {
+      const creatorEmp = await Employee.findById(goal.createdBy);
+      if (creatorEmp) goal.createdByName = creatorEmp.name;
+    } catch (_) {}
+  }
 }
 
 // パレットタレント風の共通CSS（全ページ共通）
 function goalCss() {
-    return `
+  return `
 <style>
 :root {
     --g-bg: #f4f6f9;
@@ -168,140 +173,208 @@ body { margin: 0; font-family: 'Inter','Noto Sans JP',system-ui,sans-serif; back
 }
 
 // ステータスラベル・バッジクラスのマッピング
-const STATUS_LABELS = {
-    draft: '下書き',
-    pending1: '承認依頼中（一次）',
-    approved1: '一次承認済み',
-    pending2: '承認依頼中（二次）',
-    completed: '完了',
-    rejected: '差し戻し'
-};
-const ACTION_LABELS = {
-    create: '作成', edit: '編集', submit1: '一次依頼', approve1: '一次承認',
-    reject1: '一次差し戻し', submit2: '二次依頼', approve2: '二次承認', reject2: '二次差し戻し', evaluate: '評価入力'
-};
-function statusBadge(status) {
-    const cls = status === 'draft' ? 'g-badge-draft'
-        : status.startsWith('pending') ? 'g-badge-pending'
-        : status === 'approved1' ? 'g-badge-approved'
-        : status === 'completed' ? 'g-badge-completed'
-        : status === 'rejected' ? 'g-badge-rejected' : 'g-badge-draft';
-    return `<span class="g-badge ${cls}">${STATUS_LABELS[status] || status}</span>`;
+function getStatusLabel(status, lang) {
+  const key = {
+    draft: "goals.status_draft",
+    pending1: "goals.status_pending1",
+    approved1: "goals.status_approved1",
+    pending2: "goals.status_pending2",
+    completed: "goals.status_completed",
+    rejected: "goals.status_rejected",
+  }[status];
+  return key ? t(key, lang) : status;
+}
+function getActionLabel(action, lang) {
+  const key = {
+    create: "goals.action_create",
+    edit: "goals.action_edit",
+    submit1: "goals.action_submit1",
+    approve1: "goals.action_approve1",
+    reject1: "goals.action_reject1",
+    submit2: "goals.action_submit2",
+    approve2: "goals.action_approve2",
+    reject2: "goals.action_reject2",
+    evaluate: "goals.action_evaluate",
+  }[action];
+  return key ? t(key, lang) : action;
+}
+function statusBadge(status, lang) {
+  const cls =
+    status === "draft"
+      ? "g-badge-draft"
+      : status.startsWith("pending")
+        ? "g-badge-pending"
+        : status === "approved1"
+          ? "g-badge-approved"
+          : status === "completed"
+            ? "g-badge-completed"
+            : status === "rejected"
+              ? "g-badge-rejected"
+              : "g-badge-draft";
+  return `<span class="g-badge ${cls}">${getStatusLabel(status, lang)}</span>`;
 }
 function initials(name) {
-    return (name||'?').split(/\s+/).map(s=>s[0]||'').slice(0,2).join('').toUpperCase() || '?';
+  return (
+    (name || "?")
+      .split(/\s+/)
+      .map((s) => s[0] || "")
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "?"
+  );
 }
 
 // ─── 目標一覧 ─────────────────────────────────────────────
-router.get('/goals', requireLogin, async (req, res) => {
-    const employee = await Employee.findOne({ userId: req.session.userId });
-    if (!employee) return res.send('社員情報が見つかりません');
+router.get("/goals", requireLogin, async (req, res) => {
+  const lang = req.lang || req.session?.lang || "ja";
+  const employee = await Employee.findOne({ userId: req.session.userId });
+  if (!employee) return res.send("社員情報が見つかりません");
 
-    const isAdminUser = req.session.isAdmin || req.session.user?.isAdmin;
-    const goals = await Goal.find({ createdBy: employee._id }).populate('currentApprover').populate('createdBy');
-    const approverQuery = isAdminUser
-        ? { status: { $in: ['pending1','pending2'] } }
-        : { currentApprover: employee._id, status: { $in: ['pending1','pending2'] } };
-    const approverPendingCount = await Goal.countDocuments(approverQuery);
-    const approverTasks = await Goal.find(approverQuery).populate('ownerId').populate('createdBy');
+  const isAdminUser = req.session.isAdmin || req.session.user?.isAdmin;
+  const goals = await Goal.find({ createdBy: employee._id })
+    .populate("currentApprover")
+    .populate("createdBy");
+  const approverQuery = isAdminUser
+    ? { status: { $in: ["pending1", "pending2"] } }
+    : {
+        currentApprover: employee._id,
+        status: { $in: ["pending1", "pending2"] },
+      };
+  const approverPendingCount = await Goal.countDocuments(approverQuery);
+  const approverTasks = await Goal.find(approverQuery)
+    .populate("ownerId")
+    .populate("createdBy");
 
-    const summary = {
-        all: goals.length,
-        inProgress: goals.filter(g => g.status !== 'completed').length,
-        completed: goals.filter(g => g.status === 'completed').length,
-        pending: goals.filter(g => g.status.startsWith('pending')).length
-    };
+  const summary = {
+    all: goals.length,
+    inProgress: goals.filter((g) => g.status !== "completed").length,
+    completed: goals.filter((g) => g.status === "completed").length,
+    pending: goals.filter((g) => g.status.startsWith("pending")).length,
+  };
 
-    const html = goalCss() + `
+  const statusOptions = [
+    "draft",
+    "pending1",
+    "approved1",
+    "pending2",
+    "completed",
+    "rejected",
+  ]
+    .map((k) => `<option value="${k}">${getStatusLabel(k, lang)}</option>`)
+    .join("");
+
+  const html =
+    goalCss() +
+    `
 <div class="g-wrap">
     <div class="g-page-header">
         <div class="left">
-            <div class="breadcrumb">ホーム / 目標管理</div>
-            <div class="page-title">目標管理</div>
+            <div class="breadcrumb">${t("nav.home", lang)} / ${t("goals.breadcrumb_slash_goals", lang)}</div>
+            <div class="page-title">${t("goals.title", lang)}</div>
         </div>
         <div class="right">
-            <a href="/goals/report" class="g-btn g-btn-ghost g-btn-sm"><i class="fa-solid fa-download"></i> CSV出力</a>
-            <a href="/goals/approval" class="g-btn g-btn-ghost g-btn-sm"><i class="fa-solid fa-check-circle"></i> 承認一覧 <span style="background:var(--g-warn);color:#fff;border-radius:999px;padding:1px 7px;font-size:11px;margin-left:2px;">${approverPendingCount}</span></a>
-            <a href="/goals/add" class="g-btn g-btn-primary"><i class="fa-solid fa-plus"></i> 新規目標</a>
+            <a href="/goals/report" class="g-btn g-btn-ghost g-btn-sm"><i class="fa-solid fa-download"></i> ${t("goals.btn_csv", lang)}</a>
+            <a href="/goals/approval" class="g-btn g-btn-ghost g-btn-sm"><i class="fa-solid fa-check-circle"></i> ${t("goals.btn_approval_list", lang)} <span style="background:var(--g-warn);color:#fff;border-radius:999px;padding:1px 7px;font-size:11px;margin-left:2px;">${approverPendingCount}</span></a>
+            <a href="/goals/add" class="g-btn g-btn-primary"><i class="fa-solid fa-plus"></i> ${t("goals.btn_new_goal", lang)}</a>
         </div>
     </div>
 
     <div class="g-kpi-grid">
-        <div class="g-kpi"><div class="num">${summary.all}</div><div class="lbl">総目標数</div></div>
-        <div class="g-kpi"><div class="num">${summary.inProgress}</div><div class="lbl">進行中</div></div>
-        <div class="g-kpi"><div class="num">${summary.completed}</div><div class="lbl">完了</div></div>
-        <div class="g-kpi"><div class="num">${summary.pending}</div><div class="lbl">承認待ち</div></div>
+        <div class="g-kpi"><div class="num">${summary.all}</div><div class="lbl">${t("goals.kpi_total", lang)}</div></div>
+        <div class="g-kpi"><div class="num">${summary.inProgress}</div><div class="lbl">${t("goals.kpi_in_progress", lang)}</div></div>
+        <div class="g-kpi"><div class="num">${summary.completed}</div><div class="lbl">${t("goals.kpi_completed", lang)}</div></div>
+        <div class="g-kpi"><div class="num">${summary.pending}</div><div class="lbl">${t("goals.kpi_pending", lang)}</div></div>
     </div>
 
     <div class="g-card">
-        <div class="g-card-title">自分の目標一覧</div>
+        <div class="g-card-title">${t("goals.my_goals", lang)}</div>
         <div class="g-search-row">
-            <input id="js-search" class="g-search-input" placeholder="🔍 タイトル / キーワード検索">
+            <input id="js-search" class="g-search-input" placeholder="${t("goals.search_placeholder", lang)}">
             <select id="js-status" class="g-search-select">
-                <option value="">すべての状態</option>
-                ${Object.entries(STATUS_LABELS).map(([k,v]) => `<option value="${k}">${v}</option>`).join('')}
+                <option value="">${t("goals.all_statuses", lang)}</option>
+                ${statusOptions}
             </select>
         </div>
         <div class="g-table-wrap">
             <table class="g-table">
                 <thead>
                     <tr>
-                        <th>タイトル</th>
-                        <th>承認者</th>
-                        <th>進捗</th>
-                        <th>状態</th>
-                        <th>期限</th>
-                        <th>操作</th>
+                        <th>${t("goals.col_title", lang)}</th>
+                        <th>${t("goals.col_approver", lang)}</th>
+                        <th>${t("goals.col_progress", lang)}</th>
+                        <th>${t("goals.col_status", lang)}</th>
+                        <th>${t("goals.col_deadline", lang)}</th>
+                        <th>${t("goals.col_actions", lang)}</th>
                     </tr>
                 </thead>
                 <tbody id="goal-rows">
-                ${goals.map(g => {
-                    const approverName = g.ownerName || (g.currentApprover && g.currentApprover.name) || '-';
-                    const deadlineStr = g.deadline ? moment.tz(g.deadline,'Asia/Tokyo').format('YYYY-MM-DD') : '-';
-                    const isApprover = isAdminUser || (g.currentApprover && (g.currentApprover._id||g.currentApprover).toString() === employee._id.toString());
-                    return `<tr data-status="${g.status||''}">
-                        <td><strong>${escapeHtml(g.title||'')}</strong></td>
+                ${goals
+                  .map((g) => {
+                    const approverName =
+                      g.ownerName ||
+                      (g.currentApprover && g.currentApprover.name) ||
+                      "-";
+                    const deadlineStr = g.deadline
+                      ? moment.tz(g.deadline, "Asia/Tokyo").format("YYYY-MM-DD")
+                      : "-";
+                    const isApprover =
+                      isAdminUser ||
+                      (g.currentApprover &&
+                        (
+                          g.currentApprover._id || g.currentApprover
+                        ).toString() === employee._id.toString());
+                    return `<tr data-status="${g.status || ""}">
+                        <td><strong>${escapeHtml(g.title || "")}</strong></td>
                         <td><div class="g-person"><span class="g-avatar">${initials(approverName)}</span>${escapeHtml(approverName)}</div></td>
-                        <td><div class="g-progress-wrap"><div class="g-progress-bg"><div class="g-progress-bar" style="width:${g.progress||0}%"></div></div><div class="g-progress-text">${g.progress||0}%</div></div></td>
-                        <td>${statusBadge(g.status||'draft')}</td>
+                        <td><div class="g-progress-wrap"><div class="g-progress-bg"><div class="g-progress-bar" style="width:${g.progress || 0}%"></div></div><div class="g-progress-text">${g.progress || 0}%</div></div></td>
+                        <td>${statusBadge(g.status || "draft", lang)}</td>
                         <td style="color:var(--g-muted)">${escapeHtml(deadlineStr)}</td>
                         <td>
                             <div style="display:flex;gap:5px;flex-wrap:wrap">
-                                <a href="/goals/detail/${g._id}" class="g-btn g-btn-ghost g-btn-sm">詳細</a>
-                                ${g.status !== 'completed' ? `<a href="/goals/edit/${g._id}" class="g-btn g-btn-ghost g-btn-sm">編集</a>` : ''}
-                                ${g.status === 'approved1' ? `<a href="/goals/evaluate/${g._id}" class="g-btn g-btn-primary g-btn-sm">評価入力</a>` : ''}
-                                ${isApprover && g.status === 'pending1' ? `<a href="/goals/approve1/${g._id}" class="g-btn g-btn-success g-btn-sm">承認</a>` : ''}
-                                ${isApprover && g.status === 'pending2' ? `<a href="/goals/approve2/${g._id}" class="g-btn g-btn-success g-btn-sm">承認</a>` : ''}
+                                <a href="/goals/detail/${g._id}" class="g-btn g-btn-ghost g-btn-sm">${t("goals.btn_detail", lang)}</a>
+                                ${g.status !== "completed" ? `<a href="/goals/edit/${g._id}" class="g-btn g-btn-ghost g-btn-sm">${t("goals.btn_edit", lang)}</a>` : ""}
+                                ${g.status === "approved1" ? `<a href="/goals/evaluate/${g._id}" class="g-btn g-btn-primary g-btn-sm">${t("goals.btn_evaluate", lang)}</a>` : ""}
+                                ${isApprover && g.status === "pending1" ? `<a href="/goals/approve1/${g._id}" class="g-btn g-btn-success g-btn-sm">${t("goals.btn_approve", lang)}</a>` : ""}
+                                ${isApprover && g.status === "pending2" ? `<a href="/goals/approve2/${g._id}" class="g-btn g-btn-success g-btn-sm">${t("goals.btn_approve", lang)}</a>` : ""}
                             </div>
                         </td>
                     </tr>`;
-                }).join('')}
+                  })
+                  .join("")}
                 </tbody>
             </table>
         </div>
     </div>
 
-    ${approverTasks.length > 0 ? `
+    ${
+      approverTasks.length > 0
+        ? `
     <div class="g-card" style="margin-top:16px">
-        <div class="g-card-title"><i class="fa-solid fa-clock" style="color:var(--g-warn)"></i> 承認が必要な目標 (${approverPendingCount}件)</div>
+        <div class="g-card-title"><i class="fa-solid fa-clock" style="color:var(--g-warn)"></i> ${t("goals.pending_approval_header", lang, { n: approverPendingCount })}</div>
         <div class="g-table-wrap">
             <table class="g-table">
-                <thead><tr><th>タイトル</th><th>作成者</th><th>状態</th><th>操作</th></tr></thead>
+                <thead><tr><th>${t("goals.col_title", lang)}</th><th>${t("goals.col_creator", lang)}</th><th>${t("goals.col_status", lang)}</th><th>${t("goals.col_actions", lang)}</th></tr></thead>
                 <tbody>
-                ${approverTasks.map(t => `<tr>
-                    <td><strong>${escapeHtml(t.title||'')}</strong></td>
-                    <td>${escapeHtml(t.createdBy && t.createdBy.name ? t.createdBy.name : (t.createdByName||'-'))}</td>
-                    <td>${statusBadge(t.status||'draft')}</td>
+                ${approverTasks
+                  .map(
+                    (task) => `<tr>
+                    <td><strong>${escapeHtml(task.title || "")}</strong></td>
+                    <td>${escapeHtml(task.createdBy && task.createdBy.name ? task.createdBy.name : task.createdByName || "-")}</td>
+                    <td>${statusBadge(task.status || "draft", lang)}</td>
                     <td><div style="display:flex;gap:5px;flex-wrap:wrap">
-                        <a href="/goals/detail/${t._id}" class="g-btn g-btn-ghost g-btn-sm">詳細</a>
-                        ${t.status==='pending1' ? `<a href="/goals/approve1/${t._id}" class="g-btn g-btn-success g-btn-sm">承認</a><a href="/goals/reject1/${t._id}" class="g-btn g-btn-danger g-btn-sm">差し戻し</a>` : ''}
-                        ${t.status==='pending2' ? `<a href="/goals/approve2/${t._id}" class="g-btn g-btn-success g-btn-sm">承認</a><a href="/goals/reject2/${t._id}" class="g-btn g-btn-danger g-btn-sm">差し戻し</a>` : ''}
+                        <a href="/goals/detail/${task._id}" class="g-btn g-btn-ghost g-btn-sm">${t("goals.btn_detail", lang)}</a>
+                        ${task.status === "pending1" ? `<a href="/goals/approve1/${task._id}" class="g-btn g-btn-success g-btn-sm">${t("goals.btn_approve", lang)}</a><a href="/goals/reject1/${task._id}" class="g-btn g-btn-danger g-btn-sm">${t("goals.btn_reject", lang)}</a>` : ""}
+                        ${task.status === "pending2" ? `<a href="/goals/approve2/${task._id}" class="g-btn g-btn-success g-btn-sm">${t("goals.btn_approve", lang)}</a><a href="/goals/reject2/${task._id}" class="g-btn g-btn-danger g-btn-sm">${t("goals.btn_reject", lang)}</a>` : ""}
                     </div></td>
-                </tr>`).join('')}
+                </tr>`,
+                  )
+                  .join("")}
                 </tbody>
             </table>
         </div>
-    </div>` : ''}
+    </div>`
+        : ""
+    }
 </div>
 <script>
 (function(){
@@ -321,638 +394,1067 @@ router.get('/goals', requireLogin, async (req, res) => {
 })();
 </script>`;
 
-    renderPage(req, res, '目標設定管理', '目標管理', html);
+  renderPage(req, res, t("goals.title", lang), t("goals.title", lang), html);
 });
 // 疑似AIレスポンス
-router.get('/api/ai/goal-suggestions', (req, res) => {
+router.get("/api/ai/goal-suggestions", (req, res) => {
   res.json({
     recommended: [
       "売上レポートの自動化を優先",
       "顧客満足度アンケートを月末までに実施",
-      "社内勉強会の資料作成"
+      "社内勉強会の資料作成",
     ],
     strategy: [
       "短期的に達成できる小目標を設定",
       "関連部署と早めに連携",
-      "毎週進捗を可視化"
+      "毎週進捗を可視化",
     ],
-    priority: [
-      "売上関連タスク → 高",
-      "顧客体験改善 → 中",
-      "社内活動 → 低"
-    ]
+    priority: ["売上関連タスク → 高", "顧客体験改善 → 中", "社内活動 → 低"],
   });
 });
 
 // 目標作成フォーム
-router.get('/goals/add', requireLogin, async (req, res) => {
-    const employees = await Employee.find();
-    const empOptions = employees.map(e =>
-        '<option value="' + e._id + '">' + escapeHtml(e.name) + (e.position ? ' - ' + escapeHtml(e.position) : '') + '</option>'
-    ).join('');
+router.get("/goals/add", requireLogin, async (req, res) => {
+  const lang = req.lang || req.session?.lang || "ja";
+  const employees = await Employee.find();
+  const empOptions = employees
+    .map(
+      (e) =>
+        '<option value="' +
+        e._id +
+        '">' +
+        escapeHtml(e.name) +
+        (e.position ? " - " + escapeHtml(e.position) : "") +
+        "</option>",
+    )
+    .join("");
 
-    const html = goalCss()
-        + '<div class="g-wrap">'
-        + '<div class="g-page-header"><div class="left"><div class="breadcrumb">目標管理 / 新規作成</div><div class="page-title">新しい目標を作成</div></div>'
-        + '<div class="right"><a href="/goals" class="g-btn g-btn-ghost"><i class="fa-solid fa-arrow-left"></i> 一覧に戻る</a></div></div>'
-        + '<div class="g-card"><div class="g-card-title">目標情報の入力</div>'
-        + '<form method="POST" action="/goals/add" class="g-form">'
-        + '<div class="g-field"><label>目標名 <span style="color:var(--g-danger)">*</span></label><input name="title" type="text" placeholder="例: 月次売上レポートの自動化" required></div>'
-        + '<div class="g-field"><label>概要 / 達成基準</label><textarea name="description" placeholder="背景・数値目標を明記してください"></textarea></div>'
-        + '<div class="g-row">'
-        + '<div class="g-col g-field"><label>目標レベル</label><select name="goalLevel"><option value="低">低</option><option value="中" selected>中</option><option value="高">高</option></select></div>'
-        + '<div class="g-col g-field"><label>期限</label><input name="deadline" type="date"></div>'
-        + '</div>'
-        + '<div class="g-field"><label>アクションプラン</label><textarea name="actionPlan" placeholder="主要タスク・担当・期日"></textarea></div>'
-        + '<div class="g-field"><label>承認者（一次）</label><select name="approverId"><option value="">--- 選択してください ---</option>' + empOptions + '</select></div>'
-        + '<div class="g-form-actions"><a href="/goals" class="g-btn g-btn-ghost">キャンセル</a><button type="submit" class="g-btn g-btn-primary"><i class="fa-solid fa-floppy-disk"></i> 下書きとして保存</button></div>'
-        + '</form>'
-        + '<p style="margin-top:12px;color:var(--g-muted);font-size:12px;">下書き保存後、編集・一次承認依頼が可能です。</p>'
-        + '</div></div>';
+  const html =
+    goalCss() +
+    '<div class="g-wrap">' +
+    `<div class="g-page-header"><div class="left"><div class="breadcrumb">${t("goals.breadcrumb_slash_goals", lang)} / ${t("goals.breadcrumb_new", lang)}</div><div class="page-title">${t("goals.new_page_title", lang)}</div></div>` +
+    `<div class="right"><a href="/goals" class="g-btn g-btn-ghost"><i class="fa-solid fa-arrow-left"></i> ${t("goals.btn_back_list", lang)}</a></div></div>` +
+    `<div class="g-card"><div class="g-card-title">${t("goals.form_info_title", lang)}</div>` +
+    '<form method="POST" action="/goals/add" class="g-form">' +
+    `<div class="g-field"><label>${t("goals.field_title", lang)} <span style="color:var(--g-danger)">*</span></label><input name="title" type="text" placeholder="${t("goals.field_title_placeholder", lang)}" required></div>` +
+    `<div class="g-field"><label>${t("goals.field_description", lang)}</label><textarea name="description" placeholder="${t("goals.field_description_placeholder", lang)}"></textarea></div>` +
+    '<div class="g-row">' +
+    `<div class="g-col g-field"><label>${t("goals.field_level", lang)}</label><select name="goalLevel"><option value="低">${t("goals.level_low", lang)}</option><option value="中" selected>${t("goals.level_mid", lang)}</option><option value="高">${t("goals.level_high", lang)}</option></select></div>` +
+    `<div class="g-col g-field"><label>${t("goals.field_deadline", lang)}</label><input name="deadline" type="date"></div>` +
+    "</div>" +
+    `<div class="g-field"><label>${t("goals.field_action_plan", lang)}</label><textarea name="actionPlan" placeholder="${t("goals.field_action_plan_placeholder", lang)}"></textarea></div>` +
+    `<div class="g-field"><label>${t("goals.field_approver1", lang)}</label><select name="approverId"><option value="">${t("goals.select_placeholder", lang)}</option>` +
+    empOptions +
+    "</select></div>" +
+    `<div class="g-form-actions"><a href="/goals" class="g-btn g-btn-ghost">${t("goals.btn_cancel", lang)}</a><button type="submit" class="g-btn g-btn-primary"><i class="fa-solid fa-floppy-disk"></i> ${t("goals.btn_save_draft", lang)}</button></div>` +
+    "</form>" +
+    `<p style="margin-top:12px;color:var(--g-muted);font-size:12px;">${t("goals.draft_note", lang)}</p>` +
+    "</div></div>";
 
-    renderPage(req, res, '目標作成', '新規目標作成', html);
+  renderPage(
+    req,
+    res,
+    t("goals.new_page_title", lang),
+    t("goals.new_page_title", lang),
+    html,
+  );
 });
 
 // 目標作成（POST）
-router.post('/goals/add', requireLogin, async (req, res) => {
-    try {
-        const userId = req.session && req.session.userId;
-        if (!userId) return res.status(401).send('Unauthorized');
-        const employee = await Employee.findOne({ userId });
-        if (!employee) return res.status(400).send('Employee not found');
+router.post("/goals/add", requireLogin, async (req, res) => {
+  try {
+    const userId = req.session && req.session.userId;
+    if (!userId) return res.status(401).send("Unauthorized");
+    const employee = await Employee.findOne({ userId });
+    if (!employee) return res.status(400).send("Employee not found");
 
-        const { title, description, goalLevel, deadline, actionPlan, approverId } = req.body || {};
-        if (!title) return res.status(400).send('Title required');
+    const { title, description, goalLevel, deadline, actionPlan, approverId } =
+      req.body || {};
+    if (!title) return res.status(400).send("Title required");
 
-        const doc = new Goal({
-            title,
-            description,
-            ownerId: employee._id,
-            ownerName: employee.name || '（未設定）',
-            createdBy: employee._id,
-            createdByName: employee.name || '',
-            progress: 0,
-            deadline: deadline ? new Date(deadline) : undefined,
-            status: 'draft',
-            currentApprover: approverId || undefined,
-            goalLevel: ['低','中','高'].includes(goalLevel) ? goalLevel : '中',
-            actionPlan: actionPlan || ''
-        });
+    const doc = new Goal({
+      title,
+      description,
+      ownerId: employee._id,
+      ownerName: employee.name || "（未設定）",
+      createdBy: employee._id,
+      createdByName: employee.name || "",
+      progress: 0,
+      deadline: deadline ? new Date(deadline) : undefined,
+      status: "draft",
+      currentApprover: approverId || undefined,
+      goalLevel: ["低", "中", "高"].includes(goalLevel) ? goalLevel : "中",
+      actionPlan: actionPlan || "",
+    });
 
-        // 初期履歴
-        doc.history = doc.history || [];
-        doc.history.push({ action: 'create', by: employee._id, date: new Date(), comment: '作成' });
+    // 初期履歴
+    doc.history = doc.history || [];
+    doc.history.push({
+      action: "create",
+      by: employee._id,
+      date: new Date(),
+      comment: "作成",
+    });
 
-        const saved = await doc.save();
-        const isJson = String(req.headers['content-type'] || '').includes('application/json');
-        if (isJson) return res.json({ ok: true, id: saved._id.toString() });
-        return res.redirect('/goals');
-    } catch (e) {
-        console.error('POST /goals/add error', e && (e.stack || e));
-        const isJson = String(req.headers['content-type'] || '').includes('application/json');
-        if (isJson) return res.status(500).json({ ok: false, error: 'save_failed' });
-        return res.status(500).send('Error');
-    }
+    const saved = await doc.save();
+    const isJson = String(req.headers["content-type"] || "").includes(
+      "application/json",
+    );
+    if (isJson) return res.json({ ok: true, id: saved._id.toString() });
+    return res.redirect("/goals");
+  } catch (e) {
+    console.error("POST /goals/add error", e && (e.stack || e));
+    const isJson = String(req.headers["content-type"] || "").includes(
+      "application/json",
+    );
+    if (isJson)
+      return res.status(500).json({ ok: false, error: "save_failed" });
+    return res.status(500).send("Error");
+  }
 });
 
 // Helper: determine if given employee is the creator of a goal
 function isCreatorOfGoal(goal, employee) {
-    if (!employee || !goal) return false;
-    // direct createdBy match
-    if (goal.createdBy && employee && goal.createdBy.toString() === employee._id.toString()) return true;
-    // fallback: check history first submit entry; handle legacy string userId or ObjectId or populated document
-    if (Array.isArray(goal.history)) {
-        const firstSubmit = goal.history.find(h => h.action === 'submit1' && h.by);
-        if (firstSubmit && firstSubmit.by) {
-            // populated document with name/_id
-            if (typeof firstSubmit.by === 'object') {
-                if (firstSubmit.by._id && firstSubmit.by._id.toString && firstSubmit.by._id.toString() === employee._id.toString()) return true;
-                if (firstSubmit.by.toString && firstSubmit.by.toString() === employee._id.toString()) return true;
-            }
-            // string stored in older records could be userId
-            if (typeof firstSubmit.by === 'string') {
-                if (firstSubmit.by === employee.userId) return true;
-                // maybe stored as ObjectId string
-                if (firstSubmit.by === employee._id.toString()) return true;
-            }
-        }
+  if (!employee || !goal) return false;
+  // direct createdBy match
+  if (
+    goal.createdBy &&
+    employee &&
+    goal.createdBy.toString() === employee._id.toString()
+  )
+    return true;
+  // fallback: check history first submit entry; handle legacy string userId or ObjectId or populated document
+  if (Array.isArray(goal.history)) {
+    const firstSubmit = goal.history.find(
+      (h) => h.action === "submit1" && h.by,
+    );
+    if (firstSubmit && firstSubmit.by) {
+      // populated document with name/_id
+      if (typeof firstSubmit.by === "object") {
+        if (
+          firstSubmit.by._id &&
+          firstSubmit.by._id.toString &&
+          firstSubmit.by._id.toString() === employee._id.toString()
+        )
+          return true;
+        if (
+          firstSubmit.by.toString &&
+          firstSubmit.by.toString() === employee._id.toString()
+        )
+          return true;
+      }
+      // string stored in older records could be userId
+      if (typeof firstSubmit.by === "string") {
+        if (firstSubmit.by === employee.userId) return true;
+        // maybe stored as ObjectId string
+        if (firstSubmit.by === employee._id.toString()) return true;
+      }
     }
-    return false;
+  }
+  return false;
 }
 
 // 1次承認依頼
-router.get('/goals/submit1/:id', requireLogin, async (req, res) => {
-    const employee = await Employee.findOne({ userId: req.session.userId });
-    if (!employee) return res.status(404).send('社員情報が見つかりません');
-    const goal = await Goal.findById(req.params.id);
-    if (!goal) return res.status(404).send('目標が見つかりません');
+router.get("/goals/submit1/:id", requireLogin, async (req, res) => {
+  const employee = await Employee.findOne({ userId: req.session.userId });
+  if (!employee) return res.status(404).send("社員情報が見つかりません");
+  const goal = await Goal.findById(req.params.id);
+  if (!goal) return res.status(404).send("目標が見つかりません");
 
-    const isAdmin = req.session.isAdmin || req.session.user?.isAdmin;
-    // 作成者判定 using helper to support legacy history formats
-    if (!isAdmin && !isCreatorOfGoal(goal, employee)) return res.status(403).send('権限なし');
+  const isAdmin = req.session.isAdmin || req.session.user?.isAdmin;
+  // 作成者判定 using helper to support legacy history formats
+  if (!isAdmin && !isCreatorOfGoal(goal, employee))
+    return res.status(403).send("権限なし");
 
-    goal.status = 'pending1';
-    goal.history.push({ action: 'submit1', by: employee._id, date: new Date() });
-    await ensureOwnerName(goal);
-    await goal.save();
+  goal.status = "pending1";
+  goal.history.push({ action: "submit1", by: employee._id, date: new Date() });
+  await ensureOwnerName(goal);
+  await goal.save();
 
-    // 1次承認者に通知
-    if (goal.currentApprover) {
-        const approverEmp = await Employee.findById(goal.currentApprover);
-        if (approverEmp && approverEmp.userId) {
-            await createNotification({
-                userId: approverEmp.userId,
-                type: 'goal_approval',
-                title: `📋 目標の1次承認依頼が届きました`,
-                body: `${employee.name} さんの目標「${(goal.title||'').substring(0,40)}」`,
-                link: '/goals/approval',
-                fromUserId: req.session.userId,
-                fromName: employee.name
-            });
-        }
+  // 1次承認者に通知
+  if (goal.currentApprover) {
+    const approverEmp = await Employee.findById(goal.currentApprover);
+    if (approverEmp && approverEmp.userId) {
+      await createNotification({
+        userId: approverEmp.userId,
+        type: "goal_approval",
+        title: `📋 目標の1次承認依頼が届きました`,
+        body: `${employee.name} さんの目標「${(goal.title || "").substring(0, 40)}」`,
+        link: "/goals/approval",
+        fromUserId: req.session.userId,
+        fromName: employee.name,
+      });
     }
-    res.redirect('/goals');
+  }
+  res.redirect("/goals");
 });
 
 // 上司承認/差し戻し
-router.get('/goals/approve1/:id', requireLogin, async (req, res) => {
-    const employee = await Employee.findOne({ userId: req.session.userId });
-    const goal = await Goal.findById(req.params.id);
-    const isAdmin = req.session.isAdmin || req.session.user?.isAdmin;
-    if(!isAdmin && goal.currentApprover.toString() !== employee._id.toString()) return res.status(403).send('権限なし');
-    goal.status = 'approved1';
-    goal.history.push({ action:'approve1', by: employee?._id || req.session.userId });
-    await ensureOwnerName(goal);
-    await goal.save();
+router.get("/goals/approve1/:id", requireLogin, async (req, res) => {
+  const employee = await Employee.findOne({ userId: req.session.userId });
+  const goal = await Goal.findById(req.params.id);
+  const isAdmin = req.session.isAdmin || req.session.user?.isAdmin;
+  if (!isAdmin && goal.currentApprover.toString() !== employee._id.toString())
+    return res.status(403).send("権限なし");
+  goal.status = "approved1";
+  goal.history.push({
+    action: "approve1",
+    by: employee?._id || req.session.userId,
+  });
+  await ensureOwnerName(goal);
+  await goal.save();
 
-    // 目標作成者に1次承認完了を通知
-    if (goal.createdBy) {
-        const creatorEmp = await Employee.findById(goal.createdBy);
-        if (creatorEmp && creatorEmp.userId) {
-            await createNotification({
-                userId: creatorEmp.userId,
-                type: 'goal_approval',
-                title: `✅ 目標が1次承認されました`,
-                body: `「${(goal.title||'').substring(0,40)}」が承認されました。評価入力へ進んでください。`,
-                link: '/goals',
-                fromUserId: req.session.userId,
-                fromName: employee ? employee.name : ''
-            });
-        }
+  // 目標作成者に1次承認完了を通知
+  if (goal.createdBy) {
+    const creatorEmp = await Employee.findById(goal.createdBy);
+    if (creatorEmp && creatorEmp.userId) {
+      await createNotification({
+        userId: creatorEmp.userId,
+        type: "goal_approval",
+        title: `✅ 目標が1次承認されました`,
+        body: `「${(goal.title || "").substring(0, 40)}」が承認されました。評価入力へ進んでください。`,
+        link: "/goals",
+        fromUserId: req.session.userId,
+        fromName: employee ? employee.name : "",
+      });
     }
-    res.redirect('/goals');
+  }
+  res.redirect("/goals");
 });
 
 // 一次差し戻し入力フォーム
-router.get('/goals/reject1/:id', requireLogin, async (req, res) => {
-    const goal = await Goal.findById(req.params.id);
-    if (!goal) return res.status(404).send('目標が見つかりません');
-    const hasSubmit1 = Array.isArray(goal.history) && goal.history.find(h => h.action === 'submit1');
-    const html = goalCss()
-        + '<div class="g-wrap">'
-        + '<div class="g-page-header"><div class="left"><div class="breadcrumb">目標管理 / 一次差し戻し</div><div class="page-title">一次差し戻し</div></div></div>'
-        + '<div class="g-card"><div class="g-card-title">差し戻し対象: ' + escapeHtml(goal.title||'') + '</div>'
-        + '<form method="POST" action="/goals/reject1/' + goal._id + '" class="g-form">'
-        + '<div class="g-field"><label>差し戻し理由 <span style="color:var(--g-danger)">*</span></label><textarea name="comment" placeholder="差し戻しの理由を入力してください" required></textarea></div>'
-        + '<div class="g-form-actions"><a href="/goals/approval" class="g-btn g-btn-ghost">キャンセル</a><button type="submit" class="g-btn g-btn-danger"><i class="fa-solid fa-rotate-left"></i> 差し戻し送信</button></div>'
-        + '</form></div></div>';
-    renderPage(req, res, '一次差し戻し', '一次差し戻し理由入力', html);
+router.get("/goals/reject1/:id", requireLogin, async (req, res) => {
+  const lang = req.lang || req.session?.lang || "ja";
+  const goal = await Goal.findById(req.params.id);
+  if (!goal) return res.status(404).send("目標が見つかりません");
+  const hasSubmit1 =
+    Array.isArray(goal.history) &&
+    goal.history.find((h) => h.action === "submit1");
+  const html =
+    goalCss() +
+    '<div class="g-wrap">' +
+    '<div class="g-page-header"><div class="left"><div class="breadcrumb">' +
+    t("goals.breadcrumb_slash_goals", lang) +
+    " / " +
+    t("goals.breadcrumb_reject1", lang) +
+    '</div><div class="page-title">' +
+    t("goals.breadcrumb_reject1", lang) +
+    "</div></div></div>" +
+    '<div class="g-card"><div class="g-card-title">' +
+    t("goals.reject_form_title", lang) +
+    ": " +
+    escapeHtml(goal.title || "") +
+    "</div>" +
+    '<form method="POST" action="/goals/reject1/' +
+    goal._id +
+    '" class="g-form">' +
+    '<div class="g-field"><label>' +
+    t("goals.reject_reason", lang) +
+    ' <span style="color:var(--g-danger)">*</span></label><textarea name="comment" placeholder="' +
+    t("goals.reject_reason_placeholder", lang) +
+    '" required></textarea></div>' +
+    '<div class="g-form-actions"><a href="/goals/approval" class="g-btn g-btn-ghost">' +
+    t("goals.btn_cancel", lang) +
+    '</a><button type="submit" class="g-btn g-btn-danger"><i class="fa-solid fa-rotate-left"></i> ' +
+    t("goals.btn_send_reject", lang) +
+    "</button></div>" +
+    "</form></div></div>";
+  renderPage(
+    req,
+    res,
+    t("goals.breadcrumb_reject1", lang),
+    t("goals.breadcrumb_reject1", lang),
+    html,
+  );
 });
 
 // 一次差し戻し処理
-router.post('/goals/reject1/:id', requireLogin, async (req, res) => {
-    const { comment } = req.body;
-    const employee = await Employee.findOne({ userId: req.session.userId });
-    const goal = await Goal.findById(req.params.id);
+router.post("/goals/reject1/:id", requireLogin, async (req, res) => {
+  const { comment } = req.body;
+  const employee = await Employee.findOne({ userId: req.session.userId });
+  const goal = await Goal.findById(req.params.id);
 
-    if (!goal) return res.status(404).send("目標が見つかりません");
-    const isAdmin_rej1 = req.session.isAdmin || req.session.user?.isAdmin;
-    if (!isAdmin_rej1 && goal.currentApprover.toString() !== employee._id.toString()) 
-        return res.status(403).send("権限なし");
+  if (!goal) return res.status(404).send("目標が見つかりません");
+  const isAdmin_rej1 = req.session.isAdmin || req.session.user?.isAdmin;
+  if (
+    !isAdmin_rej1 &&
+    goal.currentApprover.toString() !== employee._id.toString()
+  )
+    return res.status(403).send("権限なし");
 
-    goal.status = 'rejected';
-    goal.history.push({
-        action: 'reject1',
-        by: employee._id,
-        comment,
-        date: new Date()
-    });
-    await ensureOwnerName(goal);
-    await goal.save();
+  goal.status = "rejected";
+  goal.history.push({
+    action: "reject1",
+    by: employee._id,
+    comment,
+    date: new Date(),
+  });
+  await ensureOwnerName(goal);
+  await goal.save();
 
-    // 目標作成者に1次差し戻しを通知
-    if (goal.createdBy) {
-        const creatorEmp = await Employee.findById(goal.createdBy);
-        if (creatorEmp && creatorEmp.userId) {
-            await createNotification({
-                userId: creatorEmp.userId,
-                type: 'goal_approval',
-                title: `↩ 目標が差し戻されました（1次）`,
-                body: `「${(goal.title||'').substring(0,40)}」${comment ? ' - ' + comment.substring(0,60) : ''}`,
-                link: '/goals',
-                fromUserId: req.session.userId,
-                fromName: employee ? employee.name : ''
-            });
-        }
+  // 目標作成者に1次差し戻しを通知
+  if (goal.createdBy) {
+    const creatorEmp = await Employee.findById(goal.createdBy);
+    if (creatorEmp && creatorEmp.userId) {
+      await createNotification({
+        userId: creatorEmp.userId,
+        type: "goal_approval",
+        title: `↩ 目標が差し戻されました（1次）`,
+        body: `「${(goal.title || "").substring(0, 40)}」${comment ? " - " + comment.substring(0, 60) : ""}`,
+        link: "/goals",
+        fromUserId: req.session.userId,
+        fromName: employee ? employee.name : "",
+      });
     }
-    res.redirect('/goals/approval');
+  }
+  res.redirect("/goals/approval");
 });
 
 // 評価入力
-router.get('/goals/evaluate/:id', requireLogin, async (req,res)=>{
-    const goal = await Goal.findById(req.params.id);
-    if(!goal) return res.status(404).send('目標が見つかりません');
-    if(goal.status!=='approved1') return res.send('評価入力不可');
-    const viewerEmp = await Employee.findOne({ userId: req.session.userId });
-    const isCreator = (goal.createdBy && viewerEmp && goal.createdBy.toString() === viewerEmp._id.toString())
-                   || (!goal.createdBy && viewerEmp && goal.ownerId && goal.ownerId.toString() === viewerEmp._id.toString());
-    const isAdminUser = req.session.isAdmin || (req.session.user && req.session.user.isAdmin);
-    if (!isCreator && !isAdminUser) return res.status(403).send('権限なし');
-    const employees = await Employee.find();
-    const currentApproverId = goal.currentApprover ? goal.currentApprover.toString() : '';
-    const empOptions = employees.map(e =>
-        '<option value="' + e._id + '"' + (currentApproverId === e._id.toString() ? ' selected' : '') + '>' + escapeHtml(e.name) + (e.position ? ' (' + escapeHtml(e.position) + ')' : '') + '</option>'
-    ).join('');
-    const html = goalCss()
-        + '<div class="g-wrap">'
-        + '<div class="g-page-header"><div class="left"><div class="breadcrumb">目標管理 / 評価入力</div><div class="page-title">評価入力</div></div>'
-        + '<div class="right"><a href="/goals" class="g-btn g-btn-ghost"><i class="fa-solid fa-arrow-left"></i> 一覧に戻る</a></div></div>'
-        + '<div class="g-card"><div class="g-card-title">対象目標: ' + escapeHtml(goal.title||'') + '</div>'
-        + '<form method="POST" action="/goals/evaluate/' + goal._id + '" class="g-form">'
-        + '<div class="g-row">'
-        + '<div class="g-col g-field"><label>達成率 (%)</label><input type="number" name="progress" value="' + (goal.progress||0) + '" min="0" max="100" required></div>'
-        + '<div class="g-col g-field"><label>評価グレード</label><input type="text" name="grade" value="' + escapeHtml(goal.grade||'') + '" placeholder="例: A, B+, S"></div>'
-        + '</div>'
-        + '<div class="g-field"><label>二次承認者</label><select name="approverId">' + empOptions + '</select></div>'
-        + '<div class="g-form-actions"><a href="/goals" class="g-btn g-btn-ghost">キャンセル</a><button type="submit" class="g-btn g-btn-primary"><i class="fa-solid fa-paper-plane"></i> 二次承認依頼</button></div>'
-        + '</form></div></div>';
-    renderPage(req,res,'評価入力','評価入力画面',html);
+router.get("/goals/evaluate/:id", requireLogin, async (req, res) => {
+  const goal = await Goal.findById(req.params.id);
+  if (!goal) return res.status(404).send("目標が見つかりません");
+  if (goal.status !== "approved1") return res.send("評価入力不可");
+  const viewerEmp = await Employee.findOne({ userId: req.session.userId });
+  const isCreator =
+    (goal.createdBy &&
+      viewerEmp &&
+      goal.createdBy.toString() === viewerEmp._id.toString()) ||
+    (!goal.createdBy &&
+      viewerEmp &&
+      goal.ownerId &&
+      goal.ownerId.toString() === viewerEmp._id.toString());
+  const isAdminUser =
+    req.session.isAdmin || (req.session.user && req.session.user.isAdmin);
+  if (!isCreator && !isAdminUser) return res.status(403).send("権限なし");
+  const employees = await Employee.find();
+  const currentApproverId = goal.currentApprover
+    ? goal.currentApprover.toString()
+    : "";
+  const empOptions = employees
+    .map(
+      (e) =>
+        '<option value="' +
+        e._id +
+        '"' +
+        (currentApproverId === e._id.toString() ? " selected" : "") +
+        ">" +
+        escapeHtml(e.name) +
+        (e.position ? " (" + escapeHtml(e.position) + ")" : "") +
+        "</option>",
+    )
+    .join("");
+  const lang = req.lang || req.session?.lang || "ja";
+  const html =
+    goalCss() +
+    '<div class="g-wrap">' +
+    '<div class="g-page-header"><div class="left"><div class="breadcrumb">' +
+    t("goals.breadcrumb_slash_goals", lang) +
+    " / " +
+    t("goals.evaluate_page_title", lang) +
+    '</div><div class="page-title">' +
+    t("goals.evaluate_page_title", lang) +
+    "</div></div>" +
+    '<div class="right"><a href="/goals" class="g-btn g-btn-ghost"><i class="fa-solid fa-arrow-left"></i> ' +
+    t("goals.btn_back_list", lang) +
+    "</a></div></div>" +
+    '<div class="g-card"><div class="g-card-title">' +
+    t("goals.evaluate_target", lang) +
+    ": " +
+    escapeHtml(goal.title || "") +
+    "</div>" +
+    '<form method="POST" action="/goals/evaluate/' +
+    goal._id +
+    '" class="g-form">' +
+    '<div class="g-row">' +
+    '<div class="g-col g-field"><label>' +
+    t("goals.field_achievement_rate", lang) +
+    ' (%)</label><input type="number" name="progress" value="' +
+    (goal.progress || 0) +
+    '" min="0" max="100" required></div>' +
+    '<div class="g-col g-field"><label>' +
+    t("goals.field_grade", lang) +
+    '</label><input type="text" name="grade" value="' +
+    escapeHtml(goal.grade || "") +
+    '" placeholder="' +
+    t("goals.field_grade_placeholder", lang) +
+    '"></div>' +
+    "</div>" +
+    '<div class="g-field"><label>' +
+    t("goals.field_approver2", lang) +
+    '</label><select name="approverId">' +
+    empOptions +
+    "</select></div>" +
+    '<div class="g-form-actions"><a href="/goals" class="g-btn g-btn-ghost">' +
+    t("goals.btn_cancel", lang) +
+    '</a><button type="submit" class="g-btn g-btn-primary"><i class="fa-solid fa-paper-plane"></i> ' +
+    t("goals.btn_submit2_approval", lang) +
+    "</button></div>" +
+    "</form></div></div>";
+  renderPage(
+    req,
+    res,
+    t("goals.evaluate_page_title", lang),
+    t("goals.evaluate_page_title", lang),
+    html,
+  );
 });
 
-router.post('/goals/evaluate/:id', requireLogin, async (req,res)=>{
-    const { progress, grade, approverId } = req.body;
-    const goal = await Goal.findById(req.params.id);
-    if (!goal) return res.status(404).send("目標が見つかりません");
-    if (goal.status !== 'approved1') return res.status(403).send('評価入力不可');
-    const viewerEmp = await Employee.findOne({ userId: req.session.userId });
-    const isCreator = (goal.createdBy && viewerEmp && goal.createdBy.toString() === viewerEmp._id.toString())
-                   || (!goal.createdBy && viewerEmp && goal.ownerId && goal.ownerId.toString() === viewerEmp._id.toString());
-    const isAdmin = req.session.isAdmin || req.session.user?.isAdmin;
-    if (!isCreator && !isAdmin) return res.status(403).send('権限なし');
-    const approverEmp = await Employee.findById(approverId);
-    if (!approverEmp) return res.status(400).send('承認者が不正です');
+router.post("/goals/evaluate/:id", requireLogin, async (req, res) => {
+  const { progress, grade, approverId } = req.body;
+  const goal = await Goal.findById(req.params.id);
+  if (!goal) return res.status(404).send("目標が見つかりません");
+  if (goal.status !== "approved1") return res.status(403).send("評価入力不可");
+  const viewerEmp = await Employee.findOne({ userId: req.session.userId });
+  const isCreator =
+    (goal.createdBy &&
+      viewerEmp &&
+      goal.createdBy.toString() === viewerEmp._id.toString()) ||
+    (!goal.createdBy &&
+      viewerEmp &&
+      goal.ownerId &&
+      goal.ownerId.toString() === viewerEmp._id.toString());
+  const isAdmin = req.session.isAdmin || req.session.user?.isAdmin;
+  if (!isCreator && !isAdmin) return res.status(403).send("権限なし");
+  const approverEmp = await Employee.findById(approverId);
+  if (!approverEmp) return res.status(400).send("承認者が不正です");
 
-    goal.progress = progress;
-    goal.grade = grade;
-    goal.status = 'pending2';
-    goal.currentApprover = approverEmp._id; 
-    // 履歴は社員 ObjectId を記録しておく（表示のために populate されることを期待）
-    const employee = viewerEmp || await Employee.findOne({ userId: req.session.userId });
-    goal.history.push({ action:'submit2', by: employee?._id || req.session.userId, date: new Date() });
+  goal.progress = progress;
+  goal.grade = grade;
+  goal.status = "pending2";
+  goal.currentApprover = approverEmp._id;
+  // 履歴は社員 ObjectId を記録しておく（表示のために populate されることを期待）
+  const employee =
+    viewerEmp || (await Employee.findOne({ userId: req.session.userId }));
+  goal.history.push({
+    action: "submit2",
+    by: employee?._id || req.session.userId,
+    date: new Date(),
+  });
 
-    await ensureOwnerName(goal);
-    await goal.save();
+  await ensureOwnerName(goal);
+  await goal.save();
 
-    // 2次承認者に通知
-    if (approverEmp.userId) {
-        await createNotification({
-            userId: approverEmp.userId,
-            type: 'goal_approval',
-            title: `📋 目標の2次承認依頼が届きました`,
-            body: `${employee ? employee.name : '社員'} さんの目標「${(goal.title||'').substring(0,40)}」`,
-            link: '/goals/approval',
-            fromUserId: req.session.userId,
-            fromName: employee ? employee.name : ''
-        });
-    }
-    res.redirect('/goals');
+  // 2次承認者に通知
+  if (approverEmp.userId) {
+    await createNotification({
+      userId: approverEmp.userId,
+      type: "goal_approval",
+      title: `📋 目標の2次承認依頼が届きました`,
+      body: `${employee ? employee.name : "社員"} さんの目標「${(goal.title || "").substring(0, 40)}」`,
+      link: "/goals/approval",
+      fromUserId: req.session.userId,
+      fromName: employee ? employee.name : "",
+    });
+  }
+  res.redirect("/goals");
 });
 
 // 2次承認
 // 二次差し戻し入力フォーム
-router.get('/goals/reject2/:id', requireLogin, async (req, res) => {
-    const goal = await Goal.findById(req.params.id);
-    if (!goal) return res.status(404).send('目標が見つかりません');
-    const employee = await Employee.findOne({ userId: req.session.userId });
-    const isAdminUser = req.session.isAdmin || (req.session.user && req.session.user.isAdmin);
-    if (!employee || (!isAdminUser && goal.currentApprover.toString() !== employee._id.toString())) return res.status(403).send('権限なし');
-    const html = goalCss()
-        + '<div class="g-wrap">'
-        + '<div class="g-page-header"><div class="left"><div class="breadcrumb">目標管理 / 二次差し戻し</div><div class="page-title">二次差し戻し</div></div></div>'
-        + '<div class="g-card"><div class="g-card-title">差し戻し対象: ' + escapeHtml(goal.title||'') + '</div>'
-        + '<form method="POST" action="/goals/reject2/' + goal._id + '" class="g-form">'
-        + '<div class="g-field"><label>差し戻し理由 <span style="color:var(--g-danger)">*</span></label><textarea name="comment" placeholder="差し戻しの理由を入力してください" required></textarea></div>'
-        + '<div class="g-form-actions"><a href="/goals/approval" class="g-btn g-btn-ghost">キャンセル</a><button type="submit" class="g-btn g-btn-danger"><i class="fa-solid fa-rotate-left"></i> 差し戻し送信</button></div>'
-        + '</form></div></div>';
-    renderPage(req, res, '二次差し戻し', '二次差し戻し理由入力', html);
+router.get("/goals/reject2/:id", requireLogin, async (req, res) => {
+  const goal = await Goal.findById(req.params.id);
+  if (!goal) return res.status(404).send("目標が見つかりません");
+  const employee = await Employee.findOne({ userId: req.session.userId });
+  const isAdminUser =
+    req.session.isAdmin || (req.session.user && req.session.user.isAdmin);
+  if (
+    !employee ||
+    (!isAdminUser &&
+      goal.currentApprover.toString() !== employee._id.toString())
+  )
+    return res.status(403).send("権限なし");
+  const lang = req.lang || req.session?.lang || "ja";
+  const html =
+    goalCss() +
+    '<div class="g-wrap">' +
+    '<div class="g-page-header"><div class="left"><div class="breadcrumb">' +
+    t("goals.breadcrumb_slash_goals", lang) +
+    " / " +
+    t("goals.breadcrumb_reject2", lang) +
+    '</div><div class="page-title">' +
+    t("goals.breadcrumb_reject2", lang) +
+    "</div></div></div>" +
+    '<div class="g-card"><div class="g-card-title">' +
+    t("goals.reject_form_title", lang) +
+    ": " +
+    escapeHtml(goal.title || "") +
+    "</div>" +
+    '<form method="POST" action="/goals/reject2/' +
+    goal._id +
+    '" class="g-form">' +
+    '<div class="g-field"><label>' +
+    t("goals.reject_reason", lang) +
+    ' <span style="color:var(--g-danger)">*</span></label><textarea name="comment" placeholder="' +
+    t("goals.reject_reason_placeholder", lang) +
+    '" required></textarea></div>' +
+    '<div class="g-form-actions"><a href="/goals/approval" class="g-btn g-btn-ghost">' +
+    t("goals.btn_cancel", lang) +
+    '</a><button type="submit" class="g-btn g-btn-danger"><i class="fa-solid fa-rotate-left"></i> ' +
+    t("goals.btn_send_reject", lang) +
+    "</button></div>" +
+    "</form></div></div>";
+  renderPage(
+    req,
+    res,
+    t("goals.breadcrumb_reject2", lang),
+    t("goals.breadcrumb_reject2", lang),
+    html,
+  );
 });
 
-router.post('/goals/reject2/:id', requireLogin, async (req, res) => {
-        const { comment } = req.body;
-        const employee = await Employee.findOne({ userId: req.session.userId });
-        const goal = await Goal.findById(req.params.id);
+router.post("/goals/reject2/:id", requireLogin, async (req, res) => {
+  const { comment } = req.body;
+  const employee = await Employee.findOne({ userId: req.session.userId });
+  const goal = await Goal.findById(req.params.id);
 
-        if (!goal) return res.status(404).send("目標が見つかりません");
-        const isAdmin_rej2 = req.session.isAdmin || req.session.user?.isAdmin;
-        if (!isAdmin_rej2 && goal.currentApprover.toString() !== employee._id.toString()) 
-                return res.status(403).send("権限なし");
+  if (!goal) return res.status(404).send("目標が見つかりません");
+  const isAdmin_rej2 = req.session.isAdmin || req.session.user?.isAdmin;
+  if (
+    !isAdmin_rej2 &&
+    goal.currentApprover.toString() !== employee._id.toString()
+  )
+    return res.status(403).send("権限なし");
 
-    // 二次差し戻しは表示上は差し戻しにするが作成者が編集できるように許可する
-    goal.status = 'rejected';
-        goal.history.push({
-                action: 'reject2',
-                by: employee._id,
-                comment,
-                date: new Date()
-        });
-        await ensureOwnerName(goal);
-        await goal.save();
+  // 二次差し戻しは表示上は差し戻しにするが作成者が編集できるように許可する
+  goal.status = "rejected";
+  goal.history.push({
+    action: "reject2",
+    by: employee._id,
+    comment,
+    date: new Date(),
+  });
+  await ensureOwnerName(goal);
+  await goal.save();
 
-        // 目標作成者に2次差し戻しを通知
-        if (goal.createdBy) {
-            const creatorEmp = await Employee.findById(goal.createdBy);
-            if (creatorEmp && creatorEmp.userId) {
-                await createNotification({
-                    userId: creatorEmp.userId,
-                    type: 'goal_approval',
-                    title: `↩ 目標が差し戻されました（2次）`,
-                    body: `「${(goal.title||'').substring(0,40)}」${comment ? ' - ' + comment.substring(0,60) : ''}`,
-                    link: '/goals',
-                    fromUserId: req.session.userId,
-                    fromName: employee ? employee.name : ''
-                });
-            }
-        }
-        res.redirect('/goals/approval');
+  // 目標作成者に2次差し戻しを通知
+  if (goal.createdBy) {
+    const creatorEmp = await Employee.findById(goal.createdBy);
+    if (creatorEmp && creatorEmp.userId) {
+      await createNotification({
+        userId: creatorEmp.userId,
+        type: "goal_approval",
+        title: `↩ 目標が差し戻されました（2次）`,
+        body: `「${(goal.title || "").substring(0, 40)}」${comment ? " - " + comment.substring(0, 60) : ""}`,
+        link: "/goals",
+        fromUserId: req.session.userId,
+        fromName: employee ? employee.name : "",
+      });
+    }
+  }
+  res.redirect("/goals/approval");
 });
 
 // 二次承認
-router.get('/goals/approve2/:id', requireLogin, async (req, res) => {
-    const employee = await Employee.findOne({ userId: req.session.userId });
-    if (!employee) return res.status(404).send('社員情報が見つかりません');
+router.get("/goals/approve2/:id", requireLogin, async (req, res) => {
+  const employee = await Employee.findOne({ userId: req.session.userId });
+  if (!employee) return res.status(404).send("社員情報が見つかりません");
 
-    const goal = await Goal.findById(req.params.id);
-    if (!goal) return res.status(404).send('目標が見つかりません');
+  const goal = await Goal.findById(req.params.id);
+  if (!goal) return res.status(404).send("目標が見つかりません");
 
-    // 承認権限チェック
-    const isAdmin_ap2 = req.session.isAdmin || req.session.user?.isAdmin;
-    if (!isAdmin_ap2 && goal.currentApprover.toString() !== employee._id.toString()) {
-        return res.status(403).send('権限なし');
+  // 承認権限チェック
+  const isAdmin_ap2 = req.session.isAdmin || req.session.user?.isAdmin;
+  if (
+    !isAdmin_ap2 &&
+    goal.currentApprover.toString() !== employee._id.toString()
+  ) {
+    return res.status(403).send("権限なし");
+  }
+
+  // 二次承認
+  goal.status = "completed"; // 二次承認後は完了にする例
+  goal.history.push({
+    action: "approve2",
+    by: employee._id,
+    date: new Date(),
+  });
+  await ensureOwnerName(goal);
+  await goal.save();
+
+  // 目標作成者に2次承認完了を通知
+  if (goal.createdBy) {
+    const creatorEmp = await Employee.findById(goal.createdBy);
+    if (creatorEmp && creatorEmp.userId) {
+      await createNotification({
+        userId: creatorEmp.userId,
+        type: "goal_approval",
+        title: `🎉 目標が最終承認されました`,
+        body: `「${(goal.title || "").substring(0, 40)}」の評価プロセスが完了しました。`,
+        link: "/goals",
+        fromUserId: req.session.userId,
+        fromName: employee.name,
+      });
     }
-
-    // 二次承認
-    goal.status = 'completed';  // 二次承認後は完了にする例
-    goal.history.push({
-        action: 'approve2',
-        by: employee._id,
-        date: new Date()
-    });
-    await ensureOwnerName(goal);
-    await goal.save();
-
-    // 目標作成者に2次承認完了を通知
-    if (goal.createdBy) {
-        const creatorEmp = await Employee.findById(goal.createdBy);
-        if (creatorEmp && creatorEmp.userId) {
-            await createNotification({
-                userId: creatorEmp.userId,
-                type: 'goal_approval',
-                title: `🎉 目標が最終承認されました`,
-                body: `「${(goal.title||'').substring(0,40)}」の評価プロセスが完了しました。`,
-                link: '/goals',
-                fromUserId: req.session.userId,
-                fromName: employee.name
-            });
-        }
-    }
-    res.redirect('/goals/approval');
+  }
+  res.redirect("/goals/approval");
 });
 // 目標編集フォーム
-router.get('/goals/edit/:id', requireLogin, async (req, res) => {
-    const goal = await Goal.findById(req.params.id);
-    if (!goal) return res.status(404).send('目標が見つかりません');
-    const employee = await Employee.findOne({ userId: req.session.userId });
-    if (!employee) return res.status(404).send('社員情報が見つかりません');
-    await ensureOwnerName(goal);
-    await goal.save();
-    if (!isCreatorOfGoal(goal, employee)) return res.status(403).send('権限なし');
-    if (!(goal.status === 'draft' || goal.status === 'approved1' || goal.status === 'rejected'))
-        return res.status(403).send('権限なし');
-    const employees = await Employee.find();
-    const hasSubmit1 = Array.isArray(goal.history) && goal.history.find(h => h.action === 'submit1');
-    const submitLabel = hasSubmit1 ? '再申請' : '一次依頼';
-    const currentApproverId = goal.currentApprover ? goal.currentApprover.toString() : '';
-    const empOptions = employees.map(e =>
-        '<option value="' + e._id + '"' + (currentApproverId === e._id.toString() ? ' selected' : '') + '>' + escapeHtml(e.name) + (e.position ? ' - ' + escapeHtml(e.position) : '') + '</option>'
-    ).join('');
-    const deadlineVal = goal.deadline ? moment.tz(goal.deadline,'Asia/Tokyo').format('YYYY-MM-DD') : '';
-    const badgeCls = goal.status === 'rejected' ? 'g-badge-rejected' : 'g-badge-draft';
-    const html = goalCss()
-        + '<div class="g-wrap">'
-        + '<div class="g-page-header"><div class="left"><div class="breadcrumb">目標管理 / 編集</div><div class="page-title">目標を編集</div></div>'
-        + '<div class="right"><span class="g-badge ' + badgeCls + '">' + (STATUS_LABELS[goal.status]||goal.status) + '</span></div></div>'
-        + '<div class="g-card"><div class="g-card-title">目標情報の編集</div>'
-        + '<form method="POST" action="/goals/edit/' + goal._id + '" class="g-form">'
-        + '<div class="g-field"><label>目標名 <span style="color:var(--g-danger)">*</span></label><input name="title" type="text" value="' + escapeHtml(goal.title||'') + '" required></div>'
-        + '<div class="g-field"><label>概要 / 達成基準</label><textarea name="description">' + escapeHtml(goal.description||'') + '</textarea></div>'
-        + '<div class="g-row">'
-        + '<div class="g-col g-field"><label>目標レベル</label><select name="goalLevel"><option value="低"' + (goal.goalLevel==='低'?' selected':'') + '>低</option><option value="中"' + (goal.goalLevel==='中'?' selected':'') + '>中</option><option value="高"' + (goal.goalLevel==='高'?' selected':'') + '>高</option></select></div>'
-        + '<div class="g-col g-field"><label>期限</label><input name="deadline" type="date" value="' + deadlineVal + '"></div>'
-        + '</div>'
-        + '<div class="g-field"><label>アクションプラン</label><textarea name="actionPlan">' + escapeHtml(goal.actionPlan||'') + '</textarea></div>'
-        + '<div class="g-field"><label>承認者</label><select name="approverId">' + empOptions + '</select></div>'
-        + '<div class="g-form-actions">'
-        + '<a href="/goals" class="g-btn g-btn-ghost">一覧に戻る</a>'
-        + '<button type="submit" name="action" value="save" class="g-btn g-btn-ghost"><i class="fa-solid fa-floppy-disk"></i> 更新</button>'
-        + ((goal.status === 'draft' || goal.status === 'rejected') ? '<button type="submit" name="resubmit" value="1" class="g-btn g-btn-primary"><i class="fa-solid fa-paper-plane"></i> ' + submitLabel + '</button>' : '')
-        + '</div>'
-        + '</form></div></div>';
-    renderPage(req, res, '目標編集', '目標編集', html);
+router.get("/goals/edit/:id", requireLogin, async (req, res) => {
+  const lang = req.lang || req.session?.lang || "ja";
+  const goal = await Goal.findById(req.params.id);
+  if (!goal) return res.status(404).send("目標が見つかりません");
+  const employee = await Employee.findOne({ userId: req.session.userId });
+  if (!employee) return res.status(404).send("社員情報が見つかりません");
+  await ensureOwnerName(goal);
+  await goal.save();
+  if (!isCreatorOfGoal(goal, employee)) return res.status(403).send("権限なし");
+  if (
+    !(
+      goal.status === "draft" ||
+      goal.status === "approved1" ||
+      goal.status === "rejected"
+    )
+  )
+    return res.status(403).send("権限なし");
+  const employees = await Employee.find();
+  const hasSubmit1 =
+    Array.isArray(goal.history) &&
+    goal.history.find((h) => h.action === "submit1");
+  const submitLabel = hasSubmit1
+    ? t("goals.btn_resubmit", lang)
+    : t("goals.btn_submit1", lang);
+  const currentApproverId = goal.currentApprover
+    ? goal.currentApprover.toString()
+    : "";
+  const empOptions = employees
+    .map(
+      (e) =>
+        '<option value="' +
+        e._id +
+        '"' +
+        (currentApproverId === e._id.toString() ? " selected" : "") +
+        ">" +
+        escapeHtml(e.name) +
+        (e.position ? " - " + escapeHtml(e.position) : "") +
+        "</option>",
+    )
+    .join("");
+  const deadlineVal = goal.deadline
+    ? moment.tz(goal.deadline, "Asia/Tokyo").format("YYYY-MM-DD")
+    : "";
+  const badgeCls =
+    goal.status === "rejected" ? "g-badge-rejected" : "g-badge-draft";
+  const html =
+    goalCss() +
+    '<div class="g-wrap">' +
+    '<div class="g-page-header"><div class="left"><div class="breadcrumb">' +
+    t("goals.breadcrumb_slash_goals", lang) +
+    " / " +
+    t("goals.breadcrumb_edit", lang) +
+    '</div><div class="page-title">' +
+    t("goals.edit_page_subtitle", lang) +
+    "</div></div>" +
+    '<div class="right"><span class="g-badge ' +
+    badgeCls +
+    '">' +
+    getStatusLabel(goal.status, lang) +
+    "</span></div></div>" +
+    '<div class="g-card"><div class="g-card-title">' +
+    t("goals.form_info_edit_title", lang) +
+    "</div>" +
+    '<form method="POST" action="/goals/edit/' +
+    goal._id +
+    '" class="g-form">' +
+    '<div class="g-field"><label>' +
+    t("goals.field_title", lang) +
+    ' <span style="color:var(--g-danger)">*</span></label><input name="title" type="text" value="' +
+    escapeHtml(goal.title || "") +
+    '" required></div>' +
+    '<div class="g-field"><label>' +
+    t("goals.field_description", lang) +
+    '</label><textarea name="description">' +
+    escapeHtml(goal.description || "") +
+    "</textarea></div>" +
+    '<div class="g-row">' +
+    '<div class="g-col g-field"><label>' +
+    t("goals.field_level", lang) +
+    '</label><select name="goalLevel"><option value="低"' +
+    (goal.goalLevel === "低" ? " selected" : "") +
+    ">" +
+    t("goals.level_low", lang) +
+    '</option><option value="中"' +
+    (goal.goalLevel === "中" ? " selected" : "") +
+    ">" +
+    t("goals.level_mid", lang) +
+    '</option><option value="高"' +
+    (goal.goalLevel === "高" ? " selected" : "") +
+    ">" +
+    t("goals.level_high", lang) +
+    "</option></select></div>" +
+    '<div class="g-col g-field"><label>' +
+    t("goals.field_deadline", lang) +
+    '</label><input name="deadline" type="date" value="' +
+    deadlineVal +
+    '"></div>' +
+    "</div>" +
+    '<div class="g-field"><label>' +
+    t("goals.field_action_plan", lang) +
+    '</label><textarea name="actionPlan">' +
+    escapeHtml(goal.actionPlan || "") +
+    "</textarea></div>" +
+    '<div class="g-field"><label>' +
+    t("goals.field_approver", lang) +
+    '</label><select name="approverId">' +
+    empOptions +
+    "</select></div>" +
+    '<div class="g-form-actions">' +
+    '<a href="/goals" class="g-btn g-btn-ghost">' +
+    t("goals.btn_back_list", lang) +
+    "</a>" +
+    '<button type="submit" name="action" value="save" class="g-btn g-btn-ghost"><i class="fa-solid fa-floppy-disk"></i> ' +
+    t("goals.btn_update", lang) +
+    "</button>" +
+    (goal.status === "draft" || goal.status === "rejected"
+      ? '<button type="submit" name="resubmit" value="1" class="g-btn g-btn-primary"><i class="fa-solid fa-paper-plane"></i> ' +
+        submitLabel +
+        "</button>"
+      : "") +
+    "</div>" +
+    "</form></div></div>";
+  renderPage(req, res, t("goals.title", lang), t("goals.title", lang), html);
 });
 
-router.get('/goals/detail/:id', requireLogin, async (req, res) => {
-    const goal = await Goal.findById(req.params.id)
-        .populate('ownerId')
-        .populate('currentApprover')
-        .populate('createdBy')
-        .populate('history.by');
-    if (!goal) return res.status(404).send('目標が見つかりません');
-    const viewerEmp = await Employee.findOne({ userId: req.session.userId });
-    const creatorName = (goal.createdBy && goal.createdBy.name) ? goal.createdBy.name : (goal.createdByName || '-');
-    const approverName = (goal.ownerId && goal.ownerId.name) ? goal.ownerId.name : (goal.ownerName || (goal.currentApprover && goal.currentApprover.name) || '-');
-    const deadlineStr = goal.deadline ? moment.tz(goal.deadline,'Asia/Tokyo').format('YYYY-MM-DD') : '-';
-    const canEvaluate = goal.status === 'approved1' && viewerEmp
-        && ((goal.createdBy && goal.createdBy._id && goal.createdBy._id.toString() === viewerEmp._id.toString())
-         || (goal.ownerId && goal.ownerId._id && goal.ownerId._id.toString() === viewerEmp._id.toString()));
-    const hasSubmit1Detail = Array.isArray(goal.history) && goal.history.find(h => h.action === 'submit1');
-    const submitLabelDetail = hasSubmit1Detail ? '再申請' : '一次依頼';
-    const canResubmit = (goal.status === 'draft' || goal.status === 'rejected') && viewerEmp
-        && ((goal.createdBy && goal.createdBy._id && goal.createdBy._id.toString() === viewerEmp._id.toString())
-         || (Array.isArray(goal.history) && goal.history.find(h => h.action === 'submit1' && h.by && h.by.toString() === viewerEmp._id.toString())));
-    const historyRows = (goal.history || []).map(h => {
-        const dateStr = h.date ? moment.tz(h.date,'Asia/Tokyo').format('YYYY-MM-DD HH:mm') : '-';
-        const byName = (h.by && h.by.name) ? h.by.name : (h.by ? h.by.toString() : '-');
-        return '<tr><td>' + escapeHtml(dateStr) + '</td><td>' + escapeHtml(ACTION_LABELS[h.action]||h.action) + '</td><td>' + escapeHtml(byName) + '</td><td>' + escapeHtml(h.comment||'') + '</td></tr>';
-    }).join('');
-    const html = goalCss()
-        + '<div class="g-wrap">'
-        + '<div class="g-page-header"><div class="left"><div class="breadcrumb">目標管理 / 詳細</div><div class="page-title">' + escapeHtml(goal.title||'目標') + '</div></div>'
-        + '<div class="right">' + statusBadge(goal.status||'draft')
-        + ' <a href="/goals" class="g-btn g-btn-ghost g-btn-sm"><i class="fa-solid fa-arrow-left"></i> 一覧</a>'
-        + (canEvaluate ? ' <a href="/goals/evaluate/' + goal._id + '" class="g-btn g-btn-primary g-btn-sm"><i class="fa-solid fa-star"></i> 評価入力</a>' : '')
-        + (canResubmit ? ' <a href="/goals/submit1/' + goal._id + '" class="g-btn g-btn-success g-btn-sm"><i class="fa-solid fa-paper-plane"></i> ' + submitLabelDetail + '</a>' : '')
-        + '</div></div>'
-        + '<div class="g-card"><div class="g-card-title">基本情報</div>'
-        + '<dl class="g-dl">'
-        + '<dt>作成者</dt><dd>' + escapeHtml(creatorName) + '</dd>'
-        + '<dt>承認者</dt><dd>' + escapeHtml(approverName) + '</dd>'
-        + '<dt>目標レベル</dt><dd>' + escapeHtml(goal.goalLevel||'-') + '</dd>'
-        + '<dt>期限</dt><dd>' + escapeHtml(deadlineStr) + '</dd>'
-        + '<dt>進捗</dt><dd><div class="g-progress-wrap"><div class="g-progress-bg"><div class="g-progress-bar" style="width:' + (goal.progress||0) + '%"></div></div><div class="g-progress-text">' + (goal.progress||0) + '%</div></div></dd>'
-        + '<dt>評価グレード</dt><dd>' + escapeHtml(goal.grade||'-') + '</dd>'
-        + '<dt>アクションプラン</dt><dd style="white-space:pre-wrap">' + escapeHtml(goal.actionPlan||'-') + '</dd>'
-        + '<dt>説明</dt><dd style="white-space:pre-wrap">' + escapeHtml(goal.description||'-') + '</dd>'
-        + '</dl></div>'
-        + '<div class="g-card"><div class="g-card-title">承認履歴</div>'
-        + '<table class="g-history-table"><thead><tr><th>日時</th><th>操作</th><th>担当者</th><th>コメント</th></tr></thead><tbody>'
-        + historyRows
-        + '</tbody></table></div>'
-        + '</div>';
-    renderPage(req, res, '目標詳細', '目標詳細', html);
+router.get("/goals/detail/:id", requireLogin, async (req, res) => {
+  const lang = req.lang || req.session?.lang || "ja";
+  const goal = await Goal.findById(req.params.id)
+    .populate("ownerId")
+    .populate("currentApprover")
+    .populate("createdBy")
+    .populate("history.by");
+  if (!goal) return res.status(404).send("目標が見つかりません");
+  const viewerEmp = await Employee.findOne({ userId: req.session.userId });
+  const creatorName =
+    goal.createdBy && goal.createdBy.name
+      ? goal.createdBy.name
+      : goal.createdByName || "-";
+  const approverName =
+    goal.ownerId && goal.ownerId.name
+      ? goal.ownerId.name
+      : goal.ownerName ||
+        (goal.currentApprover && goal.currentApprover.name) ||
+        "-";
+  const deadlineStr = goal.deadline
+    ? moment.tz(goal.deadline, "Asia/Tokyo").format("YYYY-MM-DD")
+    : "-";
+  const canEvaluate =
+    goal.status === "approved1" &&
+    viewerEmp &&
+    ((goal.createdBy &&
+      goal.createdBy._id &&
+      goal.createdBy._id.toString() === viewerEmp._id.toString()) ||
+      (goal.ownerId &&
+        goal.ownerId._id &&
+        goal.ownerId._id.toString() === viewerEmp._id.toString()));
+  const hasSubmit1Detail =
+    Array.isArray(goal.history) &&
+    goal.history.find((h) => h.action === "submit1");
+  const submitLabelDetail = hasSubmit1Detail
+    ? t("goals.btn_resubmit", lang)
+    : t("goals.btn_submit1", lang);
+  const canResubmit =
+    (goal.status === "draft" || goal.status === "rejected") &&
+    viewerEmp &&
+    ((goal.createdBy &&
+      goal.createdBy._id &&
+      goal.createdBy._id.toString() === viewerEmp._id.toString()) ||
+      (Array.isArray(goal.history) &&
+        goal.history.find(
+          (h) =>
+            h.action === "submit1" &&
+            h.by &&
+            h.by.toString() === viewerEmp._id.toString(),
+        )));
+  const historyRows = (goal.history || [])
+    .map((h) => {
+      const dateStr = h.date
+        ? moment.tz(h.date, "Asia/Tokyo").format("YYYY-MM-DD HH:mm")
+        : "-";
+      const byName =
+        h.by && h.by.name ? h.by.name : h.by ? h.by.toString() : "-";
+      return (
+        "<tr><td>" +
+        escapeHtml(dateStr) +
+        "</td><td>" +
+        escapeHtml(getActionLabel(h.action, lang)) +
+        "</td><td>" +
+        escapeHtml(byName) +
+        "</td><td>" +
+        escapeHtml(h.comment || "") +
+        "</td></tr>"
+      );
+    })
+    .join("");
+  const html =
+    goalCss() +
+    '<div class="g-wrap">' +
+    '<div class="g-page-header"><div class="left"><div class="breadcrumb">' +
+    t("goals.breadcrumb_slash_goals", lang) +
+    " / " +
+    t("goals.breadcrumb_detail", lang) +
+    '</div><div class="page-title">' +
+    escapeHtml(goal.title || t("goals.title", lang)) +
+    "</div></div>" +
+    '<div class="right">' +
+    statusBadge(goal.status || "draft", lang) +
+    ' <a href="/goals" class="g-btn g-btn-ghost g-btn-sm"><i class="fa-solid fa-arrow-left"></i> ' +
+    t("goals.btn_list", lang) +
+    "</a>" +
+    (canEvaluate
+      ? ' <a href="/goals/evaluate/' +
+        goal._id +
+        '" class="g-btn g-btn-primary g-btn-sm"><i class="fa-solid fa-star"></i> ' +
+        t("goals.btn_evaluate", lang) +
+        "</a>"
+      : "") +
+    (canResubmit
+      ? ' <a href="/goals/submit1/' +
+        goal._id +
+        '" class="g-btn g-btn-success g-btn-sm"><i class="fa-solid fa-paper-plane"></i> ' +
+        submitLabelDetail +
+        "</a>"
+      : "") +
+    "</div></div>" +
+    '<div class="g-card"><div class="g-card-title">' +
+    t("goals.detail_basic_info", lang) +
+    "</div>" +
+    '<dl class="g-dl">' +
+    "<dt>" +
+    t("goals.detail_creator", lang) +
+    "</dt><dd>" +
+    escapeHtml(creatorName) +
+    "</dd>" +
+    "<dt>" +
+    t("goals.detail_approver", lang) +
+    "</dt><dd>" +
+    escapeHtml(approverName) +
+    "</dd>" +
+    "<dt>" +
+    t("goals.detail_level", lang) +
+    "</dt><dd>" +
+    escapeHtml(goal.goalLevel || "-") +
+    "</dd>" +
+    "<dt>" +
+    t("goals.detail_deadline", lang) +
+    "</dt><dd>" +
+    escapeHtml(deadlineStr) +
+    "</dd>" +
+    "<dt>" +
+    t("goals.detail_progress", lang) +
+    '</dt><dd><div class="g-progress-wrap"><div class="g-progress-bg"><div class="g-progress-bar" style="width:' +
+    (goal.progress || 0) +
+    '%"></div></div><div class="g-progress-text">' +
+    (goal.progress || 0) +
+    "%</div></div></dd>" +
+    "<dt>" +
+    t("goals.detail_grade", lang) +
+    "</dt><dd>" +
+    escapeHtml(goal.grade || "-") +
+    "</dd>" +
+    "<dt>" +
+    t("goals.detail_action_plan", lang) +
+    '</dt><dd style="white-space:pre-wrap">' +
+    escapeHtml(goal.actionPlan || "-") +
+    "</dd>" +
+    "<dt>" +
+    t("goals.detail_description", lang) +
+    '</dt><dd style="white-space:pre-wrap">' +
+    escapeHtml(goal.description || "-") +
+    "</dd>" +
+    "</dl></div>" +
+    '<div class="g-card"><div class="g-card-title">' +
+    t("goals.detail_history", lang) +
+    "</div>" +
+    '<table class="g-history-table"><thead><tr><th>' +
+    t("goals.history_col_date", lang) +
+    "</th><th>" +
+    t("goals.history_col_action", lang) +
+    "</th><th>" +
+    t("goals.history_col_person", lang) +
+    "</th><th>" +
+    t("goals.history_col_comment", lang) +
+    "</th></tr></thead><tbody>" +
+    historyRows +
+    "</tbody></table></div>" +
+    "</div>";
+  renderPage(req, res, t("goals.title", lang), t("goals.title", lang), html);
 });
 
 // 目標編集 POST
-router.post('/goals/edit/:id', requireLogin, async (req, res) => {
-    const goal = await Goal.findById(req.params.id);
-    if (!goal) return res.status(404).send('目標が見つかりません');
+router.post("/goals/edit/:id", requireLogin, async (req, res) => {
+  const goal = await Goal.findById(req.params.id);
+  if (!goal) return res.status(404).send("目標が見つかりません");
 
-    // セッションの User から Employee を取得
-    const employee = await Employee.findOne({ userId: req.session.userId });
-    if (!employee) return res.status(404).send('社員情報が見つかりません');
+  // セッションの User から Employee を取得
+  const employee = await Employee.findOne({ userId: req.session.userId });
+  if (!employee) return res.status(404).send("社員情報が見つかりません");
 
-    // POST（保存）でも同様に作成者であることを確認
-    let postCreatorId = null;
-    if (goal.createdBy) postCreatorId = goal.createdBy.toString();
-    else if (Array.isArray(goal.history)) {
-        const firstSubmit = goal.history.find(h => h.action === 'submit1' && h.by);
-        if (firstSubmit) postCreatorId = firstSubmit.by.toString();
-    }
-    if (!(postCreatorId && postCreatorId === employee._id.toString())) {
-        return res.status(403).send('権限なし');
-    }
+  // POST（保存）でも同様に作成者であることを確認
+  let postCreatorId = null;
+  if (goal.createdBy) postCreatorId = goal.createdBy.toString();
+  else if (Array.isArray(goal.history)) {
+    const firstSubmit = goal.history.find(
+      (h) => h.action === "submit1" && h.by,
+    );
+    if (firstSubmit) postCreatorId = firstSubmit.by.toString();
+  }
+  if (!(postCreatorId && postCreatorId === employee._id.toString())) {
+    return res.status(403).send("権限なし");
+  }
 
-    if (!(goal.status === 'draft' || goal.status === 'approved1' || goal.status === 'rejected')) {
-        return res.status(403).send('権限なし');
-    }
-    const { title, description, deadline, approverId, goalLevel, actionPlan } = req.body;
-    goal.title = title;
-    goal.description = description;
-    goal.deadline = deadline;
-    goal.goalLevel = goalLevel;
-    goal.actionPlan = actionPlan;
-    if (approverId) {
-        const approverEmp = await Employee.findById(approverId);
-        if (!approverEmp) return res.status(400).send('承認者が不正です');
-        goal.currentApprover = approverEmp._id;
+  if (
+    !(
+      goal.status === "draft" ||
+      goal.status === "approved1" ||
+      goal.status === "rejected"
+    )
+  ) {
+    return res.status(403).send("権限なし");
+  }
+  const { title, description, deadline, approverId, goalLevel, actionPlan } =
+    req.body;
+  goal.title = title;
+  goal.description = description;
+  goal.deadline = deadline;
+  goal.goalLevel = goalLevel;
+  goal.actionPlan = actionPlan;
+  if (approverId) {
+    const approverEmp = await Employee.findById(approverId);
+    if (!approverEmp) return res.status(400).send("承認者が不正です");
+    goal.currentApprover = approverEmp._id;
+  }
+  await ensureOwnerName(goal);
+  await goal.save();
+
+  // If the user clicked the resubmit button, move to pending1 and record history
+  if (req.body.resubmit) {
+    // Determine if this is a resubmit after a second-level reject
+    const lastAction =
+      Array.isArray(goal.history) && goal.history.length
+        ? goal.history[goal.history.length - 1].action
+        : null;
+    if (lastAction === "reject2") {
+      // Re-submit to 2次承認者
+      goal.status = "pending2";
+      // keep goal.currentApprover as-is (should point to 2次承認者)
+      goal.history.push({
+        action: "submit2",
+        by: employee._id,
+        date: new Date(),
+      });
+    } else {
+      // Normal first-level submission
+      goal.status = "pending1";
+      // Ensure currentApprover is set to ownerId (the primary approver)
+      if (goal.ownerId) goal.currentApprover = goal.ownerId;
+      goal.history.push({
+        action: "submit1",
+        by: employee._id,
+        date: new Date(),
+      });
     }
     await ensureOwnerName(goal);
     await goal.save();
+  }
 
-    // If the user clicked the resubmit button, move to pending1 and record history
-    if (req.body.resubmit) {
-        // Determine if this is a resubmit after a second-level reject
-        const lastAction = Array.isArray(goal.history) && goal.history.length ? goal.history[goal.history.length-1].action : null;
-        if (lastAction === 'reject2') {
-            // Re-submit to 2次承認者
-            goal.status = 'pending2';
-            // keep goal.currentApprover as-is (should point to 2次承認者)
-            goal.history.push({ action: 'submit2', by: employee._id, date: new Date() });
-        } else {
-            // Normal first-level submission
-            goal.status = 'pending1';
-            // Ensure currentApprover is set to ownerId (the primary approver)
-            if (goal.ownerId) goal.currentApprover = goal.ownerId;
-            goal.history.push({ action: 'submit1', by: employee._id, date: new Date() });
-        }
-        await ensureOwnerName(goal);
-        await goal.save();
-    }
-
-    res.redirect('/goals');
-    });
+  res.redirect("/goals");
+});
 
 // 目標削除
-router.get('/goals/delete/:id', requireLogin, async (req, res) => {
-    try {
-        const goal = await Goal.findById(req.params.id);
-        if (!goal) return res.status(404).send('目標が見つかりません');
+router.get("/goals/delete/:id", requireLogin, async (req, res) => {
+  try {
+    const goal = await Goal.findById(req.params.id);
+    if (!goal) return res.status(404).send("目標が見つかりません");
 
-        // ログインユーザーがオーナーであることを確認
+    // ログインユーザーがオーナーであることを確認
     const employee = await Employee.findOne({ userId: req.session.userId });
-        if (!employee) return res.status(404).send('社員情報が見つかりません');
+    if (!employee) return res.status(404).send("社員情報が見つかりません");
 
     // 削除も作成者判定を用いる
     let delCreatorId = null;
     if (goal.createdBy) delCreatorId = goal.createdBy.toString();
     else if (Array.isArray(goal.history)) {
-        const firstSubmit = goal.history.find(h => h.action === 'submit1' && h.by);
-        if (firstSubmit) delCreatorId = firstSubmit.by.toString();
+      const firstSubmit = goal.history.find(
+        (h) => h.action === "submit1" && h.by,
+      );
+      if (firstSubmit) delCreatorId = firstSubmit.by.toString();
     }
     if (!(delCreatorId && delCreatorId === employee._id.toString())) {
-            return res.status(403).send('権限なし');
-        }
-
-        await Goal.deleteOne({ _id: goal._id });
-
-        res.redirect('/goals'); // 削除後に目標一覧へ戻る
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('削除に失敗しました');
+      return res.status(403).send("権限なし");
     }
+
+    await Goal.deleteOne({ _id: goal._id });
+
+    res.redirect("/goals"); // 削除後に目標一覧へ戻る
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("削除に失敗しました");
+  }
 });
 
 // 管理者向け: 既存データの整合性修正（ownerId/ownerName を承認者に揃え、draft を pending1 へ）
-router.get('/goals/admin-fix/:id', requireLogin, isAdmin, async (req, res) => {
-    try {
-        const goal = await Goal.findById(req.params.id);
-        if (!goal) return res.status(404).send('目標が見つかりません');
-        if (!goal.currentApprover) return res.status(400).send('currentApprover が未設定です');
-        const approverEmp = await Employee.findById(goal.currentApprover);
-        if (!approverEmp) return res.status(400).send('承認者(Employee)が見つかりません');
+router.get("/goals/admin-fix/:id", requireLogin, isAdmin, async (req, res) => {
+  try {
+    const goal = await Goal.findById(req.params.id);
+    if (!goal) return res.status(404).send("目標が見つかりません");
+    if (!goal.currentApprover)
+      return res.status(400).send("currentApprover が未設定です");
+    const approverEmp = await Employee.findById(goal.currentApprover);
+    if (!approverEmp)
+      return res.status(400).send("承認者(Employee)が見つかりません");
 
-        const originalOwner = goal.ownerId;
-        // owner を承認者へ
-        goal.ownerId = approverEmp._id;
-        goal.ownerName = approverEmp.name;
+    const originalOwner = goal.ownerId;
+    // owner を承認者へ
+    goal.ownerId = approverEmp._id;
+    goal.ownerName = approverEmp.name;
 
-        if (goal.status === 'draft') {
-            goal.status = 'pending1';
-            goal.history.push({ action: 'submit1', by: originalOwner || req.session.userId, date: new Date(), comment: 'admin-fix' });
-        }
-
-        await goal.save();
-        console.log('[admin-fix] fixed goal', goal._id.toString());
-        res.send('fixed');
-    } catch (e) {
-        console.error('[admin-fix] error', e);
-        res.status(500).send('Internal server error');
+    if (goal.status === "draft") {
+      goal.status = "pending1";
+      goal.history.push({
+        action: "submit1",
+        by: originalOwner || req.session.userId,
+        date: new Date(),
+        comment: "admin-fix",
+      });
     }
+
+    await goal.save();
+    console.log("[admin-fix] fixed goal", goal._id.toString());
+    res.send("fixed");
+  } catch (e) {
+    console.error("[admin-fix] error", e);
+    res.status(500).send("Internal server error");
+  }
 });
 
 // 管理者向け: draft 一括修正 — プレビュー（確認画面）
-router.get('/goals/admin-fix-drafts/preview', requireLogin, isAdmin, async (req, res) => {
+router.get(
+  "/goals/admin-fix-drafts/preview",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const drafts = await Goal.find({ status: 'draft', currentApprover: { $ne: null } })
-            .populate('ownerId', 'name')
-            .populate('currentApprover', 'name')
-            .lean();
+      const drafts = await Goal.find({
+        status: "draft",
+        currentApprover: { $ne: null },
+      })
+        .populate("ownerId", "name")
+        .populate("currentApprover", "name")
+        .lean();
 
-        const rows = drafts.map(g => {
-            const ownerName   = g.ownerName || (g.ownerId && g.ownerId.name) || '（不明）';
-            const approver    = g.currentApprover && g.currentApprover.name ? g.currentApprover.name : '（不明）';
-            const title       = escapeHtml(g.title || '（タイトルなし）');
-            const createdDate = g.createdAt ? new Date(g.createdAt).toLocaleDateString('ja-JP') : '―';
-            return `
+      const rows = drafts
+        .map((g) => {
+          const ownerName =
+            g.ownerName || (g.ownerId && g.ownerId.name) || "（不明）";
+          const approver =
+            g.currentApprover && g.currentApprover.name
+              ? g.currentApprover.name
+              : "（不明）";
+          const title = escapeHtml(g.title || "（タイトルなし）");
+          const createdDate = g.createdAt
+            ? new Date(g.createdAt).toLocaleDateString("ja-JP")
+            : "―";
+          return `
             <tr>
                 <td>${escapeHtml(ownerName)}</td>
                 <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${title}</td>
@@ -961,9 +1463,10 @@ router.get('/goals/admin-fix-drafts/preview', requireLogin, isAdmin, async (req,
                 <td>${escapeHtml(approver)}</td>
                 <td style="color:#64748b;font-size:12px;">${createdDate}</td>
             </tr>`;
-        }).join('');
+        })
+        .join("");
 
-        const html = `
+      const html = `
         <div style="max-width:900px">
 
             <!-- ページタイトル説明 -->
@@ -1031,13 +1534,16 @@ router.get('/goals/admin-fix-drafts/preview', requireLogin, isAdmin, async (req,
                     ${drafts.length === 0 ? '<span class="badge badge-success">修正対象なし</span>' : `<span class="badge badge-warning">${drafts.length} 件が変更されます</span>`}
                 </div>
                 <p style="color:#64748b;font-size:13px;margin:0 0 14px;">以下の目標が修正の対象です。内容に見覚えがない場合は<strong>実行せず</strong>、担当者に確認してください。</p>
-                ${drafts.length === 0 ? `
+                ${
+                  drafts.length === 0
+                    ? `
                 <div style="text-align:center;padding:36px;color:#64748b;">
                     <i class="fa-solid fa-circle-check" style="font-size:36px;color:#22c55e;margin-bottom:10px;display:block;"></i>
                     <div style="font-weight:600;font-size:15px;margin-bottom:4px;">修正が必要なデータはありません</div>
                     <div style="font-size:13px;">全員の目標は正しく提出済みの状態になっています。このツールを実行する必要はありません。</div>
                 </div>
-                ` : `
+                `
+                    : `
                 <div style="overflow-x:auto;">
                     <table class="data-table">
                         <thead>
@@ -1053,11 +1559,14 @@ router.get('/goals/admin-fix-drafts/preview', requireLogin, isAdmin, async (req,
                         <tbody>${rows}</tbody>
                     </table>
                 </div>
-                `}
+                `
+                }
             </div>
 
             <!-- 実行フォーム -->
-            ${drafts.length > 0 ? `
+            ${
+              drafts.length > 0
+                ? `
             <div class="card" style="border:1.5px solid #fde68a;background:#fffbeb;">
                 <div class="card-title" style="color:#92400e;border-color:#fde68a;">
                     <i class="fa-solid fa-triangle-exclamation" style="margin-right:6px;"></i>実行前の最終確認
@@ -1097,41 +1606,62 @@ router.get('/goals/admin-fix-drafts/preview', requireLogin, isAdmin, async (req,
                 checkboxes.forEach(c => c.addEventListener('change', update));
             })();
             </script>
-            ` : `
+            `
+                : `
             <div style="display:flex;gap:10px;">
                 <a href="/admin" class="btn btn-ghost"><i class="fa-solid fa-arrow-left"></i> 管理者メニューに戻る</a>
             </div>
-            `}
+            `
+            }
         </div>
         `;
-        renderPage(req, res, '目標データ修正 — 確認', '目標データ修正 — 実行前確認', html);
+      renderPage(
+        req,
+        res,
+        "目標データ修正 — 確認",
+        "目標データ修正 — 実行前確認",
+        html,
+      );
     } catch (e) {
-        console.error('[admin-fix-drafts/preview] error', e);
-        res.status(500).send('Internal server error');
+      console.error("[admin-fix-drafts/preview] error", e);
+      res.status(500).send("Internal server error");
     }
-});
+  },
+);
 
 // 管理者向け: draft の一括修正（POST — チェック済みの場合のみ実行）
-router.post('/goals/admin-fix-drafts', requireLogin, isAdmin, async (req, res) => {
+router.post(
+  "/goals/admin-fix-drafts",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     // 全チェックボックスが送信されていなければ弾く
     if (!req.body.confirm1 || !req.body.confirm2 || !req.body.confirm3) {
-        return res.redirect('/goals/admin-fix-drafts/preview?error=confirm');
+      return res.redirect("/goals/admin-fix-drafts/preview?error=confirm");
     }
     try {
-        const drafts = await Goal.find({ status: 'draft', currentApprover: { $ne: null } });
-        let count = 0;
-        for (const g of drafts) {
-            const approverEmp = await Employee.findById(g.currentApprover);
-            if (!approverEmp) continue;
-            const originalOwner = g.ownerId;
-            g.ownerId = approverEmp._id;
-            g.ownerName = approverEmp.name;
-            g.status = 'pending1';
-            g.history.push({ action: 'submit1', by: originalOwner, date: new Date(), comment: 'admin-fix-batch' });
-            await g.save();
-            count++;
-        }
-        const html = `
+      const drafts = await Goal.find({
+        status: "draft",
+        currentApprover: { $ne: null },
+      });
+      let count = 0;
+      for (const g of drafts) {
+        const approverEmp = await Employee.findById(g.currentApprover);
+        if (!approverEmp) continue;
+        const originalOwner = g.ownerId;
+        g.ownerId = approverEmp._id;
+        g.ownerName = approverEmp.name;
+        g.status = "pending1";
+        g.history.push({
+          action: "submit1",
+          by: originalOwner,
+          date: new Date(),
+          comment: "admin-fix-batch",
+        });
+        await g.save();
+        count++;
+      }
+      const html = `
         <div style="max-width:480px">
             <div class="card" style="border:1.5px solid #bbf7d0;background:#f0fdf4;text-align:center;">
                 <div style="font-size:48px;margin-bottom:12px;">✅</div>
@@ -1142,122 +1672,238 @@ router.post('/goals/admin-fix-drafts', requireLogin, isAdmin, async (req, res) =
                     <div style="font-size:14px;color:#15803d;margin-top:4px;">件 修正しました</div>
                 </div>
                 <p style="font-size:12px;color:#94a3b8;margin-bottom:20px;">
-                    実行日時: ${new Date().toLocaleString('ja-JP')}<br>
-                    操作者: ${escapeHtml(req.session.username || '不明')}<br>
+                    実行日時: ${new Date().toLocaleString("ja-JP")}<br>
+                    操作者: ${escapeHtml(req.session.username || "不明")}<br>
                     記録: historyフィールドに admin-fix-batch として記録済み
                 </p>
                 <a href="/admin" class="btn btn-ghost"><i class="fa-solid fa-arrow-left"></i> 管理者メニューに戻る</a>
             </div>
         </div>
         `;
-        renderPage(req, res, '目標データ修正 — 完了', '目標データ修正 — 完了', html);
+      renderPage(
+        req,
+        res,
+        "目標データ修正 — 完了",
+        "目標データ修正 — 完了",
+        html,
+      );
     } catch (e) {
-        console.error('[admin-fix-drafts] error', e);
-        res.status(500).send('Internal server error');
+      console.error("[admin-fix-drafts] error", e);
+      res.status(500).send("Internal server error");
     }
-});
+  },
+);
 
 // 管理者向け: draft の一括修正（GET — 直接アクセスはプレビューにリダイレクト）
-router.get('/goals/admin-fix-drafts', requireLogin, isAdmin, async (req, res) => {
-    res.redirect('/goals/admin-fix-drafts/preview');
-});
+router.get(
+  "/goals/admin-fix-drafts",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
+    res.redirect("/goals/admin-fix-drafts/preview");
+  },
+);
 
 // 管理者向け: createdBy が欠落しているデータの補完
-router.get('/goals/admin-backfill-createdBy', requireLogin, isAdmin, async (req, res) => {
+router.get(
+  "/goals/admin-backfill-createdBy",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const targets = await Goal.find({ $or: [ { createdBy: { $exists: false } }, { createdBy: null } ] });
-        let fixed = 0;
-        for (const g of targets) {
-            let creatorEmpId = null;
-            // 履歴から submit1 の by を優先
-            if (Array.isArray(g.history)) {
-                const firstSubmit = g.history.find(h => h.action === 'submit1' && h.by);
-                if (firstSubmit) creatorEmpId = firstSubmit.by;
-            }
-            // なければ、オーナーが作成者だった時代のデータを仮定
-            if (!creatorEmpId && g.ownerId) creatorEmpId = g.ownerId;
-            if (creatorEmpId) {
-                const emp = await Employee.findById(creatorEmpId);
-                g.createdBy = creatorEmpId;
-                g.createdByName = emp ? emp.name : (g.createdByName || '');
-                await g.save();
-                fixed++;
-            }
+      const targets = await Goal.find({
+        $or: [{ createdBy: { $exists: false } }, { createdBy: null }],
+      });
+      let fixed = 0;
+      for (const g of targets) {
+        let creatorEmpId = null;
+        // 履歴から submit1 の by を優先
+        if (Array.isArray(g.history)) {
+          const firstSubmit = g.history.find(
+            (h) => h.action === "submit1" && h.by,
+          );
+          if (firstSubmit) creatorEmpId = firstSubmit.by;
         }
-        res.send(`backfilled ${fixed}`);
+        // なければ、オーナーが作成者だった時代のデータを仮定
+        if (!creatorEmpId && g.ownerId) creatorEmpId = g.ownerId;
+        if (creatorEmpId) {
+          const emp = await Employee.findById(creatorEmpId);
+          g.createdBy = creatorEmpId;
+          g.createdByName = emp ? emp.name : g.createdByName || "";
+          await g.save();
+          fixed++;
+        }
+      }
+      res.send(`backfilled ${fixed}`);
     } catch (e) {
-        console.error('[admin-backfill-createdBy] error', e);
-        res.status(500).send('Internal server error');
+      console.error("[admin-backfill-createdBy] error", e);
+      res.status(500).send("Internal server error");
     }
-});
+  },
+);
 
 // 承認者向け目標一覧
-router.get('/goals/approval', requireLogin, async (req, res) => {
-    const employee = await Employee.findOne({ userId: req.session.userId });
-    if (!employee) return res.status(404).send('承認者の社員情報が見つかりません');
-    const isAdminUser = req.session.isAdmin || (req.session.user && req.session.user.isAdmin);
-    const query = isAdminUser
-        ? { status: { $in: ['pending1','pending2'] } }
-        : { currentApprover: employee._id, status: { $in: ['pending1','pending2'] } };
-    const goals = await Goal.find(query).populate('ownerId').populate('createdBy');
-    console.log('[goals/approval] approver', employee._id.toString(), 'isAdmin', !!isAdminUser, 'pending count', goals.length);
+router.get("/goals/approval", requireLogin, async (req, res) => {
+  const lang = req.lang || req.session?.lang || "ja";
+  const employee = await Employee.findOne({ userId: req.session.userId });
+  if (!employee)
+    return res.status(404).send("承認者の社員情報が見つかりません");
+  const isAdminUser =
+    req.session.isAdmin || (req.session.user && req.session.user.isAdmin);
+  const query = isAdminUser
+    ? { status: { $in: ["pending1", "pending2"] } }
+    : {
+        currentApprover: employee._id,
+        status: { $in: ["pending1", "pending2"] },
+      };
+  const goals = await Goal.find(query)
+    .populate("ownerId")
+    .populate("createdBy");
+  console.log(
+    "[goals/approval] approver",
+    employee._id.toString(),
+    "isAdmin",
+    !!isAdminUser,
+    "pending count",
+    goals.length,
+  );
 
-    const cards = goals.map(g => {
-        const creatorName = (g.createdBy && g.createdBy.name) ? g.createdBy.name : (g.createdByName || '-');
-        const approverName = (g.ownerId && g.ownerId.name) ? g.ownerId.name : (g.ownerName || '-');
-        const deadlineStr = g.deadline ? moment.tz(g.deadline,'Asia/Tokyo').format('YYYY-MM-DD') : '-';
-        const currentApprId = g.currentApprover ? (g.currentApprover._id ? g.currentApprover._id.toString() : g.currentApprover.toString()) : '';
-        const canAct = isAdminUser || currentApprId === employee._id.toString();
-        let actionBtns = '<a href="/goals/detail/' + g._id + '" class="g-btn g-btn-ghost g-btn-sm">詳細</a>';
-        if (canAct && g.status === 'pending1') {
-            actionBtns += ' <a href="/goals/approve1/' + g._id + '" class="g-btn g-btn-success g-btn-sm"><i class="fa-solid fa-check"></i> 承認</a>'
-                + ' <a href="/goals/reject1/' + g._id + '" class="g-btn g-btn-danger g-btn-sm"><i class="fa-solid fa-rotate-left"></i> 差し戻し</a>';
-        }
-        if (canAct && g.status === 'pending2') {
-            actionBtns += ' <a href="/goals/approve2/' + g._id + '" class="g-btn g-btn-success g-btn-sm"><i class="fa-solid fa-check"></i> 承認</a>'
-                + ' <a href="/goals/reject2/' + g._id + '" class="g-btn g-btn-danger g-btn-sm"><i class="fa-solid fa-rotate-left"></i> 差し戻し</a>';
-        }
-        return '<div class="g-approval-card">'
-            + '<div><p class="card-title">' + escapeHtml(g.title||'') + '</p>' + statusBadge(g.status||'draft') + '</div>'
-            + '<div class="card-meta">'
-            + '<span>作成者: ' + escapeHtml(creatorName) + '</span>'
-            + '<span>承認者: ' + escapeHtml(approverName) + '</span>'
-            + '<span>期限: ' + escapeHtml(deadlineStr) + '</span>'
-            + '</div>'
-            + '<div class="g-progress-wrap"><div class="g-progress-bg"><div class="g-progress-bar" style="width:' + (g.progress||0) + '%"></div></div><div class="g-progress-text">' + (g.progress||0) + '%</div></div>'
-            + '<div class="card-actions">' + actionBtns + '</div>'
-            + '</div>';
-    }).join('');
+  const cards = goals
+    .map((g) => {
+      const creatorName =
+        g.createdBy && g.createdBy.name
+          ? g.createdBy.name
+          : g.createdByName || "-";
+      const approverName =
+        g.ownerId && g.ownerId.name ? g.ownerId.name : g.ownerName || "-";
+      const deadlineStr = g.deadline
+        ? moment.tz(g.deadline, "Asia/Tokyo").format("YYYY-MM-DD")
+        : "-";
+      const currentApprId = g.currentApprover
+        ? g.currentApprover._id
+          ? g.currentApprover._id.toString()
+          : g.currentApprover.toString()
+        : "";
+      const canAct = isAdminUser || currentApprId === employee._id.toString();
+      let actionBtns =
+        '<a href="/goals/detail/' +
+        g._id +
+        '" class="g-btn g-btn-ghost g-btn-sm">' +
+        t("goals.btn_detail", lang) +
+        "</a>";
+      if (canAct && g.status === "pending1") {
+        actionBtns +=
+          ' <a href="/goals/approve1/' +
+          g._id +
+          '" class="g-btn g-btn-success g-btn-sm"><i class="fa-solid fa-check"></i> ' +
+          t("goals.btn_approve", lang) +
+          "</a>" +
+          ' <a href="/goals/reject1/' +
+          g._id +
+          '" class="g-btn g-btn-danger g-btn-sm"><i class="fa-solid fa-rotate-left"></i> ' +
+          t("goals.btn_reject", lang) +
+          "</a>";
+      }
+      if (canAct && g.status === "pending2") {
+        actionBtns +=
+          ' <a href="/goals/approve2/' +
+          g._id +
+          '" class="g-btn g-btn-success g-btn-sm"><i class="fa-solid fa-check"></i> ' +
+          t("goals.btn_approve", lang) +
+          "</a>" +
+          ' <a href="/goals/reject2/' +
+          g._id +
+          '" class="g-btn g-btn-danger g-btn-sm"><i class="fa-solid fa-rotate-left"></i> ' +
+          t("goals.btn_reject", lang) +
+          "</a>";
+      }
+      return (
+        '<div class="g-approval-card">' +
+        '<div><p class="card-title">' +
+        escapeHtml(g.title || "") +
+        "</p>" +
+        statusBadge(g.status || "draft", lang) +
+        "</div>" +
+        '<div class="card-meta">' +
+        "<span>" +
+        t("goals.approval_creator", lang) +
+        ": " +
+        escapeHtml(creatorName) +
+        "</span>" +
+        "<span>" +
+        t("goals.approval_approver", lang) +
+        ": " +
+        escapeHtml(approverName) +
+        "</span>" +
+        "<span>" +
+        t("goals.approval_deadline", lang) +
+        ": " +
+        escapeHtml(deadlineStr) +
+        "</span>" +
+        "</div>" +
+        '<div class="g-progress-wrap"><div class="g-progress-bg"><div class="g-progress-bar" style="width:' +
+        (g.progress || 0) +
+        '%"></div></div><div class="g-progress-text">' +
+        (g.progress || 0) +
+        "%</div></div>" +
+        '<div class="card-actions">' +
+        actionBtns +
+        "</div>" +
+        "</div>"
+      );
+    })
+    .join("");
 
-    const emptyMsg = '<div class="g-card" style="text-align:center;padding:48px;color:var(--g-muted)"><i class="fa-solid fa-check-circle" style="font-size:32px;margin-bottom:12px;display:block"></i>承認待ちの目標はありません</div>';
-    const html = goalCss()
-        + '<div class="g-wrap">'
-        + '<div class="g-page-header"><div class="left"><div class="breadcrumb">目標管理 / 承認一覧</div><div class="page-title">承認待ち目標一覧</div></div>'
-        + '<div class="right"><a href="/goals" class="g-btn g-btn-ghost"><i class="fa-solid fa-arrow-left"></i> 一覧に戻る</a></div></div>'
-        + (goals.length === 0 ? emptyMsg : '<div class="g-approval-grid">' + cards + '</div>')
-        + '</div>';
+  const emptyMsg =
+    '<div class="g-card" style="text-align:center;padding:48px;color:var(--g-muted)"><i class="fa-solid fa-check-circle" style="font-size:32px;margin-bottom:12px;display:block"></i>' +
+    t("goals.approval_empty", lang) +
+    "</div>";
+  const html =
+    goalCss() +
+    '<div class="g-wrap">' +
+    '<div class="g-page-header"><div class="left"><div class="breadcrumb">' +
+    t("goals.approval_breadcrumb", lang) +
+    '</div><div class="page-title">' +
+    t("goals.approval_page_title", lang) +
+    "</div></div>" +
+    '<div class="right"><a href="/goals" class="g-btn g-btn-ghost"><i class="fa-solid fa-arrow-left"></i> ' +
+    t("goals.btn_back_list", lang) +
+    "</a></div></div>" +
+    (goals.length === 0
+      ? emptyMsg
+      : '<div class="g-approval-grid">' + cards + "</div>") +
+    "</div>";
 
-    renderPage(req, res, '承認管理', '承認管理', html);
+  renderPage(
+    req,
+    res,
+    t("goals.approval_page_title", lang),
+    t("goals.approval_page_title", lang),
+    html,
+  );
 });
 
-router.get('/goals/report', requireLogin, async (req, res) => {
-    const employee = await Employee.findOne({ userId: req.session.userId });
+router.get("/goals/report", requireLogin, async (req, res) => {
+  const employee = await Employee.findOne({ userId: req.session.userId });
   if (!employee) return res.status(404).send("社員情報が見つかりません");
 
-    const goals = await Goal.find({ createdBy: employee._id }).populate('currentApprover');
+  const goals = await Goal.find({ createdBy: employee._id }).populate(
+    "currentApprover",
+  );
 
   // CSVヘッダー
-  let csv = '目標名,説明,目標レベル,アクションプラン,期限,承認者,状態,進捗\n';
-  goals.forEach(g => {
-    csv += `"${g.title}","${g.description || ''}","${g.goalLevel || ''}","${g.actionPlan || ''}","${g.deadline ? moment.tz(g.deadline, 'Asia/Tokyo').format('YYYY-MM-DD') : ''}","${g.currentApprover ? g.currentApprover.name : ''}","${g.status}","${g.progress || 0}"\n`;
+  let csv = "目標名,説明,目標レベル,アクションプラン,期限,承認者,状態,進捗\n";
+  goals.forEach((g) => {
+    csv += `"${g.title}","${g.description || ""}","${g.goalLevel || ""}","${g.actionPlan || ""}","${g.deadline ? moment.tz(g.deadline, "Asia/Tokyo").format("YYYY-MM-DD") : ""}","${g.currentApprover ? g.currentApprover.name : ""}","${g.status}","${g.progress || 0}"\n`;
   });
 
-  res.setHeader('Content-Disposition', 'attachment; filename="goal_report.csv"');
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader(
+    "Content-Disposition",
+    'attachment; filename="goal_report.csv"',
+  );
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.send(csv);
 });
-
-
 
 // --- 掲示板新規投稿フォーム ---
 

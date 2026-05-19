@@ -21,6 +21,7 @@ const { requireLogin, isAdmin } = require("../middleware/auth");
 const { escapeHtml, buildAttachmentsAfterEdit } = require("../lib/helpers");
 const { renderPage } = require("../lib/renderPage");
 const { createNotification } = require("./notifications");
+const { t } = require("../lib/i18n");
 
 // ─── 日報スタンプ定義（一覧・詳細・APIで共通使用）────────────────
 const STAMPS = [
@@ -867,8 +868,8 @@ router.get("/hr/add", requireLogin, isAdmin, (req, res) => {
         </div>
     </div>
 
-    ${req.query.success ? `<div class="hradd-alert hradd-alert-success"><i class="fa fa-circle-check"></i> 社員を登録しました。</div>` : ''}
-    ${req.query.error   ? `<div class="hradd-alert hradd-alert-error"><i class="fa fa-triangle-exclamation"></i> エラーが発生しました：${req.query.error}</div>` : ''}
+    ${req.query.success ? `<div class="hradd-alert hradd-alert-success"><i class="fa fa-circle-check"></i> 社員を登録しました。</div>` : ""}
+    ${req.query.error ? `<div class="hradd-alert hradd-alert-error"><i class="fa fa-triangle-exclamation"></i> エラーが発生しました：${req.query.error}</div>` : ""}
 
     <form action="/hr/add" method="POST">
         <div class="hradd-card">
@@ -951,10 +952,25 @@ router.get("/hr/add", requireLogin, isAdmin, (req, res) => {
 
 router.post("/hr/add", requireLogin, isAdmin, async (req, res) => {
   try {
-    const { username, password, employeeId, name, department, position, joinDate, email, role } = req.body;
+    const {
+      username,
+      password,
+      employeeId,
+      name,
+      department,
+      position,
+      joinDate,
+      email,
+      role,
+    } = req.body;
     const hashedPassword = await bcrypt.hash(password, 10);
-    const isAdminRole = role === 'admin';
-    const user = await User.create({ username, password: hashedPassword, role: role || 'employee', isAdmin: isAdminRole });
+    const isAdminRole = role === "admin";
+    const user = await User.create({
+      username,
+      password: hashedPassword,
+      role: role || "employee",
+      isAdmin: isAdminRole,
+    });
     await Employee.create({
       userId: user._id,
       employeeId,
@@ -963,13 +979,16 @@ router.post("/hr/add", requireLogin, isAdmin, async (req, res) => {
       position,
       joinDate,
       email,
-      orgRole: role || 'employee',
+      orgRole: role || "employee",
       paidLeave: 10,
     });
     res.redirect("/hr/add?success=1");
   } catch (e) {
     console.error(e);
-    const msg = e.code === 11000 ? encodeURIComponent('ユーザー名または社員番号が重複しています') : encodeURIComponent(e.message);
+    const msg =
+      e.code === 11000
+        ? encodeURIComponent("ユーザー名または社員番号が重複しています")
+        : encodeURIComponent(e.message);
     res.redirect("/hr/add?error=" + msg);
   }
 });
@@ -1817,8 +1836,8 @@ router.get("/hr/payroll", requireLogin, async (req, res) => {
 
   // 直近12件の給与明細を取得（発行済み・確定・支払済みのみ社員に表示）
   const visibleStatuses = req.session.isAdmin
-    ? undefined  // 管理者は全ステータス表示
-    : { $in: ['issued', 'locked', 'paid'] };
+    ? undefined // 管理者は全ステータス表示
+    : { $in: ["issued", "locked", "paid"] };
   const slipQuery = { employeeId: employee._id };
   if (visibleStatuses) slipQuery.status = visibleStatuses;
   const slips = await PayrollSlip.find(slipQuery)
@@ -2111,7 +2130,9 @@ router.get("/hr/payroll/:id", requireLogin, async (req, res) => {
   const slips = await PayrollSlip.find({
     employeeId: employee._id,
     ...(payMonth ? { runId: { $in: runIds } } : {}),
-    ...(!req.session.isAdmin ? { status: { $in: ['issued', 'locked', 'paid'] } } : {}),
+    ...(!req.session.isAdmin
+      ? { status: { $in: ["issued", "locked", "paid"] } }
+      : {}),
   })
     .populate("runId")
     .sort({ createdAt: -1 });
@@ -2662,6 +2683,7 @@ router.get("/hr/payroll/:id/export", requireLogin, async (req, res) => {
 // 日報一覧
 router.get("/hr/daily-report", requireLogin, async (req, res) => {
   try {
+    const lang = req.lang || req.session?.lang || "ja";
     const user = await User.findById(req.session.userId);
     const employee = await Employee.findOne({ userId: user._id });
     req.session.employee = employee;
@@ -2697,8 +2719,8 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
     renderPage(
       req,
       res,
-      "日報",
-      "日報一覧",
+      t("hr.daily_report_list", lang),
+      t("hr.daily_report_list", lang),
       `
             <style>
                 .report-card{background:#fff;border-radius:14px;box-shadow:0 4px 14px rgba(11,36,48,.06);margin-bottom:14px;padding:18px 22px}
@@ -2736,29 +2758,29 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
             </style>
             <div style="max-width:960px;margin:0 auto">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-                    <h2 style="margin:0;font-size:22px;color:#0b2540">日報一覧</h2>
-                    <a href="/hr/daily-report/new" style="padding:9px 20px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;margin-top:10px">＋ 日報を投稿</a>
+                    <h2 style="margin:0;font-size:22px;color:#0b2540">${t("hr.daily_report_list", lang)}</h2>
+                    <a href="/hr/daily-report/new" style="padding:9px 20px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;margin-top:10px">${t("hr.post_report", lang)}</a>
                 </div>
 
                 <form method="GET" action="/hr/daily-report" class="filters-row">
                     ${
-                      allEmployees.length > 0
+                      req.session.isAdmin
                         ? `
                     <div>
-                        <label>社員で絞り込み</label>
+                        <label>${t("hr.filter_by_employee", lang)}</label>
                         <select name="emp">
-                            <option value="">全員</option>
+                            <option value="">${t("hr.all_employees", lang)}</option>
                             ${allEmployees.map((e) => `<option value="${e._id}" ${req.query.emp === String(e._id) ? "selected" : ""}>${escapeHtml(e.name)}</option>`).join("")}
                         </select>
                     </div>`
                         : ""
                     }
                     <div>
-                        <label>日付</label>
+                        <label>${t("hr.date", lang)}</label>
                         <input type="date" name="date" value="${req.query.date || ""}">
                     </div>
-                    <button type="submit" style="padding:8px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer">絞り込み</button>
-                    <a href="/hr/daily-report" style="padding:8px 14px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-weight:600">クリア</a>
+                    <button type="submit" style="padding:8px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer">${t("hr.filter_btn", lang)}</button>
+                    <a href="/hr/daily-report" style="padding:8px 14px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-weight:600">${t("hr.clear_btn", lang)}</a>
                 </form>
 
                 ${
@@ -2766,8 +2788,8 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
                     ? `
                     <div style="background:#f8fafc;border-radius:14px;padding:40px;text-align:center;color:#6b7280">
                         <div style="font-size:32px;margin-bottom:10px">📋</div>
-                        <div style="font-weight:600">日報がまだありません</div>
-                        <a href="/hr/daily-report/new" style="display:inline-block;margin-top:14px;padding:9px 22px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">日報を投稿する</a>
+                        <div style="font-weight:600">${t("hr.no_reports", lang)}</div>
+                        <a href="/hr/daily-report/new" style="display:inline-block;margin-top:14px;padding:9px 22px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">${t("hr.post_btn", lang)}</a>
                     </div>
                 `
                     : ""
@@ -2825,9 +2847,9 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
                             <span class="report-name">${escapeHtml(emp.name || "不明")}</span>
                             <span class="report-dept">${escapeHtml(emp.department || "")}</span>
                             <span style="background:#f1f5f9;border-radius:999px;padding:2px 10px;font-size:12px;color:#374151;font-weight:600">💬 ${r.comments ? r.comments.length : 0}</span>
-                            <a href="/hr/daily-report/${r._id}" style="margin-left:auto;padding:5px 14px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600">詳細 →</a>
+                            <a href="/hr/daily-report/${r._id}" style="margin-left:auto;padding:5px 14px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600">${t("hr.detail_link", lang)}</a>
                         </div>
-                        <div class="section-label">本日の業務内容</div>
+                        <div class="section-label">${t("hr.content_label", lang)}</div>
                         <div class="section-body">${escapeHtml((r.content || "").substring(0, 160))}${(r.content || "").length > 160 ? "…" : ""}</div>
                         <div class="card-reactions" id="cr-${r._id}">
                             ${activeStamps}
@@ -2836,7 +2858,7 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
                                     😀 <span style="font-size:13px;font-weight:700">+</span>
                                 </button>
                                 <div class="cr-picker" id="crp-${r._id}">
-                                    <div style="font-size:10.5px;color:#94a3b8;margin-bottom:6px;font-weight:600">リアクションを選択</div>
+                                    <div style="font-size:10.5px;color:#94a3b8;margin-bottom:6px;font-weight:600">${t("hr.select_reaction", lang)}</div>
                                     <div class="cr-picker-grid">${pickerBtns}</div>
                                 </div>
                             </div>
@@ -2967,6 +2989,7 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
 // 日報投稿フォーム
 router.get("/hr/daily-report/new", requireLogin, async (req, res) => {
   try {
+    const lang = req.lang || req.session?.lang || "ja";
     const today = new Date().toISOString().split("T")[0];
     // メンション候補（全従業員）
     const allEmps = await Employee.find({}, "name userId").lean();
@@ -2977,7 +3000,7 @@ router.get("/hr/daily-report/new", requireLogin, async (req, res) => {
       req,
       res,
       "日報投稿",
-      "日報を投稿",
+      t("hr.new_report_title", lang),
       `
             <style>
                 .form-card{background:#fff;border-radius:14px;padding:28px;box-shadow:0 4px 14px rgba(11,36,48,.06);max-width:860px;margin:0 auto}
@@ -3147,8 +3170,8 @@ router.get("/hr/daily-report/new", requireLogin, async (req, res) => {
                         </div>
 
                         <div style="display:flex;gap:10px">
-                            <button type="submit" style="padding:11px 30px;background:#0b5fff;color:#fff;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:15px">投稿する</button>
-                            <a href="/hr/daily-report" style="padding:11px 22px;background:#f3f4f6;color:#374151;border-radius:9px;text-decoration:none;font-weight:600;font-size:15px">キャンセル</a>
+                            <button type="submit" style="padding:11px 30px;background:#0b5fff;color:#fff;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:15px">${t("hr.submit_btn", lang)}</button>
+                            <a href="/hr/daily-report" style="padding:11px 22px;background:#f3f4f6;color:#374151;border-radius:9px;text-decoration:none;font-weight:600;font-size:15px">${t("hr.cancel_btn", lang)}</a>
                         </div>
                     </form>
                 </div>
@@ -3502,6 +3525,7 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
       return res.redirect("/hr/daily-report/" + req.params.id);
     }
 
+    const lang = req.lang || req.session?.lang || "ja";
     const dateVal = report.reportDate
       ? new Date(report.reportDate).toISOString().split("T")[0]
       : "";
@@ -3536,7 +3560,7 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
       req,
       res,
       "日報編集",
-      "日報を編集",
+      t("hr.edit_report_title", lang),
       `
             <style>
                 .form-card{background:#fff;border-radius:14px;padding:28px;box-shadow:0 4px 14px rgba(11,36,48,.06);max-width:860px;margin:0 auto}
@@ -3567,7 +3591,7 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
                 </div>
                 <div class="form-card">
                     <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
-                        <h3 style="margin:0;font-size:18px;color:#0b2540">日報を編集</h3>
+                        <h3 style="margin:0;font-size:18px;color:#0b2540">${t("hr.edit_report_title", lang)}</h3>
                         <span style="padding:2px 12px;background:#eff6ff;color:#2563eb;border-radius:999px;font-size:13px;font-weight:700">${escapeHtml(emp.name || "")}</span>
                     </div>
                     <form action="/hr/daily-report/${report._id}/edit" method="POST" id="editForm" enctype="multipart/form-data">
@@ -3628,9 +3652,9 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
                         </div>
                         <div style="display:flex;gap:10px">
                             <button type="submit" style="padding:11px 30px;background:#2563eb;color:#fff;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:15px">
-                                <i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>保存する
+                                <i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>${t("hr.update_btn", lang)}
                             </button>
-                            <a href="/hr/daily-report/${report._id}" style="padding:11px 22px;background:#f3f4f6;color:#374151;border-radius:9px;text-decoration:none;font-weight:600;font-size:15px">キャンセル</a>
+                            <a href="/hr/daily-report/${report._id}" style="padding:11px 22px;background:#f3f4f6;color:#374151;border-radius:9px;text-decoration:none;font-weight:600;font-size:15px">${t("hr.cancel_btn", lang)}</a>
                         </div>
                     </form>
                 </div>
@@ -3952,30 +3976,41 @@ router.post("/hr/daily-report/:id/delete", requireLogin, async (req, res) => {
 // 日報 AI要約センター（生成型AIページ）
 // ══════════════════════════════════════════════════════════════════════
 
-router.get('/hr/daily-report/summary', requireLogin, async (req, res) => {
-    if (!req.session.isAdmin) return res.redirect('/');
-    const { buildPageShell, pageFooter } = require('../lib/renderPage');
-    const momentTz = require('moment-timezone');
-    const employee = await Employee.findOne({ userId: req.session.userId }).lean();
+router.get("/hr/daily-report/summary", requireLogin, async (req, res) => {
+  if (!req.session.isAdmin) return res.redirect("/");
+  const { buildPageShell, pageFooter } = require("../lib/renderPage");
+  const momentTz = require("moment-timezone");
+  const employee = await Employee.findOne({
+    userId: req.session.userId,
+  }).lean();
 
-    // 直近7日の統計を事前取得
-    const now = momentTz().tz('Asia/Tokyo');
-    const weekFrom  = now.clone().subtract(7, 'days').startOf('day').toDate();
-    const monthFrom = now.clone().subtract(1, 'month').startOf('month').toDate();
-    const monthTo   = now.clone().subtract(1, 'month').endOf('month').toDate();
+  // 直近7日の統計を事前取得
+  const now = momentTz().tz("Asia/Tokyo");
+  const weekFrom = now.clone().subtract(7, "days").startOf("day").toDate();
+  const monthFrom = now.clone().subtract(1, "month").startOf("month").toDate();
+  const monthTo = now.clone().subtract(1, "month").endOf("month").toDate();
 
-    const [weekReports, monthReports, totalEmployees] = await Promise.all([
-        DailyReport.find({ reportDate: { $gte: weekFrom } }).lean().catch(() => []),
-        DailyReport.find({ reportDate: { $gte: monthFrom, $lte: monthTo } }).lean().catch(() => []),
-        Employee.countDocuments({ isActive: { $ne: false } }).catch(() => 0),
-    ]);
+  const [weekReports, monthReports, totalEmployees] = await Promise.all([
+    DailyReport.find({ reportDate: { $gte: weekFrom } })
+      .lean()
+      .catch(() => []),
+    DailyReport.find({ reportDate: { $gte: monthFrom, $lte: monthTo } })
+      .lean()
+      .catch(() => []),
+    Employee.countDocuments({ isActive: { $ne: false } }).catch(() => 0),
+  ]);
 
-    const weekUniq  = new Set(weekReports.map(r => r.userId?.toString())).size;
-    const monthUniq = new Set(monthReports.map(r => r.userId?.toString())).size;
-    const weekRate  = totalEmployees ? Math.round(weekUniq / totalEmployees * 100) : 0;
-    const hasApiKey = !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_api_key_here');
+  const weekUniq = new Set(weekReports.map((r) => r.userId?.toString())).size;
+  const monthUniq = new Set(monthReports.map((r) => r.userId?.toString())).size;
+  const weekRate = totalEmployees
+    ? Math.round((weekUniq / totalEmployees) * 100)
+    : 0;
+  const hasApiKey = !!(
+    process.env.OPENAI_API_KEY &&
+    process.env.OPENAI_API_KEY !== "your_openai_api_key_here"
+  );
 
-    const content = `
+  const content = `
 <style>
 :root{--indigo:#4338ca;--indigo-light:#6366f1;--green:#059669;--red:#dc2626;--slate:#475569}
 *{box-sizing:border-box}
@@ -4088,7 +4123,7 @@ router.get('/hr/daily-report/summary', requireLogin, async (req, res) => {
 .sch-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:20px;font-size:11px;font-weight:700}
 
 /* ── no-api banner ── */
-.no-api{padding:10px 15px;background:#fefce8;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e;margin-top:14px;display:${hasApiKey ? 'none' : 'block'}}
+.no-api{padding:10px 15px;background:#fefce8;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e;margin-top:14px;display:${hasApiKey ? "none" : "block"}}
 </style>
 
 <div class="g">
@@ -4099,7 +4134,7 @@ router.get('/hr/daily-report/summary', requireLogin, async (req, res) => {
         <h1>🤖 日報 AI要約センター</h1>
         <p>GPT-4o-mini がリアルタイムで日報を分析。チャットで深掘りも可能です。</p>
     </div>
-    <div class="ai-live"><span class="dot"></span> AI ${hasApiKey ? 'ONLINE' : 'OFFLINE（APIキー未設定）'}</div>
+    <div class="ai-live"><span class="dot"></span> AI ${hasApiKey ? "ONLINE" : "OFFLINE（APIキー未設定）"}</div>
 </div>
 
 <!-- KPI -->
@@ -4114,7 +4149,7 @@ router.get('/hr/daily-report/summary', requireLogin, async (req, res) => {
         <div class="kpi-l">先月 日報数</div>
         <div class="kpi-v">${monthReports.length}</div>
         <div class="kpi-s">${monthUniq}名が提出</div>
-        <div class="kpi-bar"><div class="kpi-fill" style="width:${totalEmployees ? Math.round(monthUniq/totalEmployees*100) : 0}%;background:linear-gradient(90deg,#0ea5e9,#38bdf8)"></div></div>
+        <div class="kpi-bar"><div class="kpi-fill" style="width:${totalEmployees ? Math.round((monthUniq / totalEmployees) * 100) : 0}%;background:linear-gradient(90deg,#0ea5e9,#38bdf8)"></div></div>
     </div>
     <div class="kpi">
         <div class="kpi-l">週次 提出率</div>
@@ -4124,9 +4159,9 @@ router.get('/hr/daily-report/summary', requireLogin, async (req, res) => {
     </div>
     <div class="kpi">
         <div class="kpi-l">未提出（今週）</div>
-        <div class="kpi-v" style="color:${(totalEmployees-weekUniq)>0?'#dc2626':'#10b981'}">${totalEmployees - weekUniq}</div>
+        <div class="kpi-v" style="color:${totalEmployees - weekUniq > 0 ? "#dc2626" : "#10b981"}">${totalEmployees - weekUniq}</div>
         <div class="kpi-s">名がまだ未提出</div>
-        <div class="kpi-bar"><div class="kpi-fill" style="width:${totalEmployees ? Math.round((totalEmployees-weekUniq)/totalEmployees*100) : 0}%;background:linear-gradient(90deg,#f43f5e,#fb7185)"></div></div>
+        <div class="kpi-bar"><div class="kpi-fill" style="width:${totalEmployees ? Math.round(((totalEmployees - weekUniq) / totalEmployees) * 100) : 0}%;background:linear-gradient(90deg,#f43f5e,#fb7185)"></div></div>
     </div>
 </div>
 
@@ -4530,287 +4565,409 @@ function renderEmpGrid(employees) {
 })();
 </script>`;
 
-    res.send(buildPageShell({ title: '日報AI要約センター', currentPath: '/hr/daily-report/summary', employee, isAdmin: true }) + content + pageFooter());
+  res.send(
+    buildPageShell({
+      title: "日報AI要約センター",
+      currentPath: "/hr/daily-report/summary",
+      employee,
+      isAdmin: true,
+    }) +
+      content +
+      pageFooter(),
+  );
 });
 
 // ── 個人別週次データ ──
-router.get('/hr/daily-report/api/employees-weekly', requireLogin, async (req, res) => {
-    if (!req.session.isAdmin) return res.status(403).json({ error: '管理者のみ' });
+router.get(
+  "/hr/daily-report/api/employees-weekly",
+  requireLogin,
+  async (req, res) => {
+    if (!req.session.isAdmin)
+      return res.status(403).json({ error: "管理者のみ" });
     try {
-        const momentTz = require('moment-timezone');
-        const now = momentTz().tz('Asia/Tokyo');
-        const from = now.clone().subtract(7, 'days').startOf('day').toDate();
-        const reports = await DailyReport.find({ reportDate: { $gte: from } }).lean();
-        const employees = await Employee.find().lean();
-        const empMap = Object.fromEntries(employees.map(e => [e.userId?.toString(), e]));
-        const byEmp = {};
-        for (const r of reports) {
-            const uid = r.userId?.toString() || 'unknown';
-            if (!byEmp[uid]) byEmp[uid] = { reports: [], emp: empMap[uid] || {} };
-            byEmp[uid].reports.push(r);
-        }
-        const result = Object.values(byEmp).map(({ reports: rpts, emp }) => {
-            const sorted = rpts.sort((a, b) => new Date(b.reportDate) - new Date(a.reportDate));
-            return { name: emp.name||'不明', department: emp.department||'', count: rpts.length,
-                lastDate: sorted[0] ? momentTz(sorted[0].reportDate).format('M/D') : null,
-                excerpt: (sorted[0]?.content||'').slice(0, 80) };
-        }).sort((a, b) => b.count - a.count);
-        res.json({ employees: result });
-    } catch(e) { res.status(500).json({ error: e.message }); }
-});
+      const momentTz = require("moment-timezone");
+      const now = momentTz().tz("Asia/Tokyo");
+      const from = now.clone().subtract(7, "days").startOf("day").toDate();
+      const reports = await DailyReport.find({
+        reportDate: { $gte: from },
+      }).lean();
+      const employees = await Employee.find().lean();
+      const empMap = Object.fromEntries(
+        employees.map((e) => [e.userId?.toString(), e]),
+      );
+      const byEmp = {};
+      for (const r of reports) {
+        const uid = r.userId?.toString() || "unknown";
+        if (!byEmp[uid]) byEmp[uid] = { reports: [], emp: empMap[uid] || {} };
+        byEmp[uid].reports.push(r);
+      }
+      const result = Object.values(byEmp)
+        .map(({ reports: rpts, emp }) => {
+          const sorted = rpts.sort(
+            (a, b) => new Date(b.reportDate) - new Date(a.reportDate),
+          );
+          return {
+            name: emp.name || "不明",
+            department: emp.department || "",
+            count: rpts.length,
+            lastDate: sorted[0]
+              ? momentTz(sorted[0].reportDate).format("M/D")
+              : null,
+            excerpt: (sorted[0]?.content || "").slice(0, 80),
+          };
+        })
+        .sort((a, b) => b.count - a.count);
+      res.json({ employees: result });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
 
 // ── SSEストリーミング要約 ──
-router.get('/hr/daily-report/api/stream', requireLogin, async (req, res) => {
-    if (!req.session.isAdmin) return res.status(403).json({ error: '管理者のみ' });
+router.get("/hr/daily-report/api/stream", requireLogin, async (req, res) => {
+  if (!req.session.isAdmin)
+    return res.status(403).json({ error: "管理者のみ" });
 
-    const { period = 'weekly', style = 'management', question } = req.query;
-    const momentTz = require('moment-timezone');
-    const now = momentTz().tz('Asia/Tokyo');
-    let from, to, periodLabel;
-    if (period === 'monthly') {
-        from = now.clone().subtract(1, 'month').startOf('month').toDate();
-        to   = now.clone().subtract(1, 'month').endOf('month').toDate();
-        periodLabel = now.clone().subtract(1, 'month').format('YYYY年M月') + '月次';
-    } else {
-        from = now.clone().subtract(7, 'days').startOf('day').toDate();
-        to   = now.clone().endOf('day').toDate();
-        periodLabel = now.clone().subtract(7, 'days').format('M/D') + '〜' + now.format('M/D') + ' 週次';
+  const { period = "weekly", style = "management", question } = req.query;
+  const momentTz = require("moment-timezone");
+  const now = momentTz().tz("Asia/Tokyo");
+  let from, to, periodLabel;
+  if (period === "monthly") {
+    from = now.clone().subtract(1, "month").startOf("month").toDate();
+    to = now.clone().subtract(1, "month").endOf("month").toDate();
+    periodLabel = now.clone().subtract(1, "month").format("YYYY年M月") + "月次";
+  } else {
+    from = now.clone().subtract(7, "days").startOf("day").toDate();
+    to = now.clone().endOf("day").toDate();
+    periodLabel =
+      now.clone().subtract(7, "days").format("M/D") +
+      "〜" +
+      now.format("M/D") +
+      " 週次";
+  }
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  const send = (obj) => {
+    res.write("data: " + JSON.stringify(obj) + "\n\n");
+  };
+
+  try {
+    const reports = await DailyReport.find({
+      reportDate: { $gte: from, $lte: to },
+    }).lean();
+    const employees = await Employee.find().lean();
+    const empMap = Object.fromEntries(
+      employees.map((e) => [e.userId?.toString(), e]),
+    );
+    for (const r of reports) r._emp = empMap[r.userId?.toString()] || {};
+
+    const count = reports.length;
+    const empSet = new Set(reports.map((r) => r.userId?.toString()));
+    send({ meta: `${count}件の日報を分析中 · ${empSet.size}名` });
+
+    // コンテキスト文字列（チャット用）
+    const contextTexts = reports
+      .map(
+        (r) =>
+          `【${r._emp.name || "不明"} / ${r._emp.department || ""} / ${momentTz(r.reportDate).format("M/D")}】\n${r.content || ""}`,
+      )
+      .join("\n\n---\n\n");
+    send({ reportContext: contextTexts.slice(0, 12000) });
+
+    if (
+      !process.env.OPENAI_API_KEY ||
+      process.env.OPENAI_API_KEY === "your_openai_api_key_here"
+    ) {
+      // ルールベースフォールバック（ストリーミング風に送信）
+      const lines = [
+        `【${periodLabel} 日報サマリー】（AIキー未設定 / ルールベース）`,
+        ``,
+        `対象: ${count}件 / ${empSet.size}名`,
+        ``,
+        `■ 提出状況`,
+        ...employees
+          .filter((e) => empSet.has(e.userId?.toString()))
+          .slice(0, 10)
+          .map((e) => `  • ${e.name}（${e.department || ""}）`),
+        ``,
+        `■ 最新日報（抜粋）`,
+        ...reports
+          .slice(0, 5)
+          .map(
+            (r) =>
+              `  • ${r._emp.name || "不明"} (${momentTz(r.reportDate).format("M/D")}): ${(r.content || "").slice(0, 80)}…`,
+          ),
+        ``,
+        `※ OPENAI_API_KEY を設定すると GPT-4o によるリアルタイム分析が利用できます。`,
+      ];
+      for (const line of lines) {
+        send({ text: line + "\n" });
+        await new Promise((r) => setTimeout(r, 30));
+      }
+      res.write("data: [DONE]\n\n");
+      return res.end();
     }
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
+    const { default: OpenAI } = require("openai");
+    const ai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      baseURL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+      defaultHeaders: process.env.OPENAI_BASE_URL
+        ? {
+            "HTTP-Referer": "https://dxpro-sol.com",
+            "X-Title": "DXPro Attendance AI",
+          }
+        : {},
+    });
+    const AI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
-    const send = (obj) => { res.write('data: ' + JSON.stringify(obj) + '\n\n'); };
+    const styleInstructions = {
+      management: `マネジメント向けのエグゼクティブサマリー形式で。全体状況・ハイライト・注意点・推奨アクションの4セクション構成。`,
+      detailed: `詳細な分析レポート形式で。各社員・部門の状況を具体的数字と事実ベースで。`,
+      bullet: `箇条書き形式（• 記号使用）で。重要ポイントを端的に20項目以内で列挙。`,
+      action: `アクション重視形式。今すぐやること・今週中にやること・来週の準備に分けて、具体的な行動指針を提示。`,
+    };
 
-    try {
-        const reports = await DailyReport.find({ reportDate: { $gte: from, $lte: to } }).lean();
-        const employees = await Employee.find().lean();
-        const empMap = Object.fromEntries(employees.map(e => [e.userId?.toString(), e]));
-        for (const r of reports) r._emp = empMap[r.userId?.toString()] || {};
+    const baseInstruction =
+      styleInstructions[style] || styleInstructions.management;
+    const userInstruction = question
+      ? `【質問】${question}\n上記の質問に対して、日報データをもとに具体的に答えてください。`
+      : `${baseInstruction}\n以下の${periodLabel}日報データ（${count}件 / ${empSet.size}名）を分析してサマリーを作成してください。`;
 
-        const count = reports.length;
-        const empSet = new Set(reports.map(r => r.userId?.toString()));
-        send({ meta: `${count}件の日報を分析中 · ${empSet.size}名` });
+    const systemPrompt = `あなたは優秀な人事アナリスト・マネージャーです。日本語で丁寧かつ実用的なレポートを作成します。絵文字を適度に使い読みやすくしてください。`;
 
-        // コンテキスト文字列（チャット用）
-        const contextTexts = reports.map(r =>
-            `【${r._emp.name||'不明'} / ${r._emp.department||''} / ${momentTz(r.reportDate).format('M/D')}】\n${r.content||''}`
-        ).join('\n\n---\n\n');
-        send({ reportContext: contextTexts.slice(0, 12000) });
+    const stream = await ai.chat.completions.create({
+      model: AI_MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content:
+            userInstruction +
+            "\n\n日報データ:\n" +
+            contextTexts.slice(0, 10000),
+        },
+      ],
+      max_tokens: 1200,
+      temperature: 0.7,
+      stream: true,
+    });
 
-        if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
-            // ルールベースフォールバック（ストリーミング風に送信）
-            const lines = [
-                `【${periodLabel} 日報サマリー】（AIキー未設定 / ルールベース）`,
-                ``,
-                `対象: ${count}件 / ${empSet.size}名`,
-                ``,
-                `■ 提出状況`,
-                ...employees.filter(e => empSet.has(e.userId?.toString())).slice(0, 10).map(e => `  • ${e.name}（${e.department||''}）`),
-                ``,
-                `■ 最新日報（抜粋）`,
-                ...reports.slice(0, 5).map(r => `  • ${r._emp.name||'不明'} (${momentTz(r.reportDate).format('M/D')}): ${(r.content||'').slice(0,80)}…`),
-                ``,
-                `※ OPENAI_API_KEY を設定すると GPT-4o によるリアルタイム分析が利用できます。`
-            ];
-            for (const line of lines) {
-                send({ text: line + '\n' });
-                await new Promise(r => setTimeout(r, 30));
-            }
-            res.write('data: [DONE]\n\n');
-            return res.end();
-        }
-
-        const { default: OpenAI } = require('openai');
-        const ai = new OpenAI({
-            apiKey:  process.env.OPENAI_API_KEY,
-            baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
-            defaultHeaders: process.env.OPENAI_BASE_URL ? {
-                'HTTP-Referer': 'https://dxpro-sol.com',
-                'X-Title': 'DXPro Attendance AI',
-            } : {},
-        });
-        const AI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-
-        const styleInstructions = {
-            management: `マネジメント向けのエグゼクティブサマリー形式で。全体状況・ハイライト・注意点・推奨アクションの4セクション構成。`,
-            detailed:   `詳細な分析レポート形式で。各社員・部門の状況を具体的数字と事実ベースで。`,
-            bullet:     `箇条書き形式（• 記号使用）で。重要ポイントを端的に20項目以内で列挙。`,
-            action:     `アクション重視形式。今すぐやること・今週中にやること・来週の準備に分けて、具体的な行動指針を提示。`
-        };
-
-        const baseInstruction = styleInstructions[style] || styleInstructions.management;
-        const userInstruction = question
-            ? `【質問】${question}\n上記の質問に対して、日報データをもとに具体的に答えてください。`
-            : `${baseInstruction}\n以下の${periodLabel}日報データ（${count}件 / ${empSet.size}名）を分析してサマリーを作成してください。`;
-
-        const systemPrompt = `あなたは優秀な人事アナリスト・マネージャーです。日本語で丁寧かつ実用的なレポートを作成します。絵文字を適度に使い読みやすくしてください。`;
-
-        const stream = await ai.chat.completions.create({
-            model: AI_MODEL,
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user',   content: userInstruction + '\n\n日報データ:\n' + contextTexts.slice(0, 10000) }
-            ],
-            max_tokens: 1200, temperature: 0.7, stream: true
-        });
-
-        for await (const chunk of stream) {
-            const text = chunk.choices[0]?.delta?.content || '';
-            if (text) send({ text });
-        }
-        res.write('data: [DONE]\n\n');
-        res.end();
-    } catch(e) {
-        console.error('[Stream API]', e.message);
-        send({ text: '\n❌ エラー: ' + e.message });
-        res.write('data: [DONE]\n\n');
-        res.end();
+    for await (const chunk of stream) {
+      const text = chunk.choices[0]?.delta?.content || "";
+      if (text) send({ text });
     }
+    res.write("data: [DONE]\n\n");
+    res.end();
+  } catch (e) {
+    console.error("[Stream API]", e.message);
+    send({ text: "\n❌ エラー: " + e.message });
+    res.write("data: [DONE]\n\n");
+    res.end();
+  }
 });
 
 // ── AIチャット（ストリーミング） ──
-router.post('/hr/daily-report/api/chat', requireLogin, async (req, res) => {
-    if (!req.session.isAdmin) return res.status(403).json({ error: '管理者のみ' });
+router.post("/hr/daily-report/api/chat", requireLogin, async (req, res) => {
+  if (!req.session.isAdmin)
+    return res.status(403).json({ error: "管理者のみ" });
 
-    const { messages = [], reportContext = '', period = 'weekly' } = req.body;
-    if (!messages.length) return res.status(400).json({ error: 'messages は必須です' });
+  const { messages = [], reportContext = "", period = "weekly" } = req.body;
+  if (!messages.length)
+    return res.status(400).json({ error: "messages は必須です" });
 
-    const hasKey = !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_api_key_here');
+  const hasKey = !!(
+    process.env.OPENAI_API_KEY &&
+    process.env.OPENAI_API_KEY !== "your_openai_api_key_here"
+  );
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
 
-    const send = (obj) => { res.write('data: ' + JSON.stringify(obj) + '\n\n'); };
+  const send = (obj) => {
+    res.write("data: " + JSON.stringify(obj) + "\n\n");
+  };
 
-    try {
-        const momentTz = require('moment-timezone');
+  try {
+    const momentTz = require("moment-timezone");
 
-        // コンテキストが空なら直近データを取得
-        let ctx = reportContext;
-        if (!ctx) {
-            const now = momentTz().tz('Asia/Tokyo');
-            const from = period === 'monthly'
-                ? now.clone().subtract(1, 'month').startOf('month').toDate()
-                : now.clone().subtract(7, 'days').startOf('day').toDate();
-            const reports = await DailyReport.find({ reportDate: { $gte: from } }).lean();
-            const emps = await Employee.find().lean();
-            const empMap = Object.fromEntries(emps.map(e => [e.userId?.toString(), e]));
-            ctx = reports.map(r => {
-                const emp = empMap[r.userId?.toString()] || {};
-                return `【${emp.name||'不明'} / ${emp.department||''} / ${momentTz(r.reportDate).format('M/D')}】\n${r.content||''}`;
-            }).join('\n\n---\n\n').slice(0, 10000);
-        }
-
-        // APIキー未設定の場合はルールベースで回答
-        if (!hasKey) {
-            const question = messages[messages.length - 1]?.content || '';
-            const lines = ctx.split('\n').filter(l => l.trim());
-            const nameMatches = [...new Set(lines.filter(l => l.startsWith('【')).map(l => l.match(/【(.+?) \//)?.[1]).filter(Boolean))];
-
-            const reply = [
-                `⚠️ OPENAI_API_KEY が未設定のため、ルールベースで回答します。`,
-                ``,
-                `【質問】${question}`,
-                ``,
-                `【利用可能なデータ】`,
-                `日報提出者: ${nameMatches.slice(0, 10).join('、') || 'データなし'}`,
-                `総データ数: ${lines.filter(l => l.startsWith('【')).length} 件`,
-                ``,
-                `より詳細なAI分析を行うには、サーバーに OPENAI_API_KEY を設定してください。`,
-                `設定後はリアルタイムでチャット形式の分析が可能になります。`,
-            ].join('\n');
-
-            for (const char of reply) {
-                send({ text: char });
-                await new Promise(r => setTimeout(r, 8));
-            }
-            res.write('data: [DONE]\n\n');
-            return res.end();
-        }
-
-        const { default: OpenAI } = require('openai');
-        const ai = new OpenAI({
-            apiKey:  process.env.OPENAI_API_KEY,
-            baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
-            defaultHeaders: process.env.OPENAI_BASE_URL ? {
-                'HTTP-Referer': 'https://dxpro-sol.com',
-                'X-Title': 'DXPro Attendance AI',
-            } : {},
-        });
-        const AI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-
-        const systemMsg = {
-            role: 'system',
-            content: `あなたは企業の人事アナリストです。以下の日報データをもとにユーザーの質問に答えてください。日本語で回答し、具体的・実用的な内容にしてください。絵文字を適度に使い読みやすくしてください。\n\n【日報データ】\n${ctx}`
-        };
-
-        const stream = await ai.chat.completions.create({
-            model: AI_MODEL,
-            messages: [systemMsg, ...messages.slice(-12)],
-            max_tokens: 800, temperature: 0.7, stream: true
-        });
-
-        for await (const chunk of stream) {
-            const text = chunk.choices[0]?.delta?.content || '';
-            if (text) send({ text });
-        }
-        res.write('data: [DONE]\n\n');
-        res.end();
-    } catch(e) {
-        console.error('[Chat API]', e.message);
-        send({ text: '❌ ' + e.message });
-        res.write('data: [DONE]\n\n');
-        res.end();
+    // コンテキストが空なら直近データを取得
+    let ctx = reportContext;
+    if (!ctx) {
+      const now = momentTz().tz("Asia/Tokyo");
+      const from =
+        period === "monthly"
+          ? now.clone().subtract(1, "month").startOf("month").toDate()
+          : now.clone().subtract(7, "days").startOf("day").toDate();
+      const reports = await DailyReport.find({
+        reportDate: { $gte: from },
+      }).lean();
+      const emps = await Employee.find().lean();
+      const empMap = Object.fromEntries(
+        emps.map((e) => [e.userId?.toString(), e]),
+      );
+      ctx = reports
+        .map((r) => {
+          const emp = empMap[r.userId?.toString()] || {};
+          return `【${emp.name || "不明"} / ${emp.department || ""} / ${momentTz(r.reportDate).format("M/D")}】\n${r.content || ""}`;
+        })
+        .join("\n\n---\n\n")
+        .slice(0, 10000);
     }
+
+    // APIキー未設定の場合はルールベースで回答
+    if (!hasKey) {
+      const question = messages[messages.length - 1]?.content || "";
+      const lines = ctx.split("\n").filter((l) => l.trim());
+      const nameMatches = [
+        ...new Set(
+          lines
+            .filter((l) => l.startsWith("【"))
+            .map((l) => l.match(/【(.+?) \//)?.[1])
+            .filter(Boolean),
+        ),
+      ];
+
+      const reply = [
+        `⚠️ OPENAI_API_KEY が未設定のため、ルールベースで回答します。`,
+        ``,
+        `【質問】${question}`,
+        ``,
+        `【利用可能なデータ】`,
+        `日報提出者: ${nameMatches.slice(0, 10).join("、") || "データなし"}`,
+        `総データ数: ${lines.filter((l) => l.startsWith("【")).length} 件`,
+        ``,
+        `より詳細なAI分析を行うには、サーバーに OPENAI_API_KEY を設定してください。`,
+        `設定後はリアルタイムでチャット形式の分析が可能になります。`,
+      ].join("\n");
+
+      for (const char of reply) {
+        send({ text: char });
+        await new Promise((r) => setTimeout(r, 8));
+      }
+      res.write("data: [DONE]\n\n");
+      return res.end();
+    }
+
+    const { default: OpenAI } = require("openai");
+    const ai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      baseURL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+      defaultHeaders: process.env.OPENAI_BASE_URL
+        ? {
+            "HTTP-Referer": "https://dxpro-sol.com",
+            "X-Title": "DXPro Attendance AI",
+          }
+        : {},
+    });
+    const AI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+
+    const systemMsg = {
+      role: "system",
+      content: `あなたは企業の人事アナリストです。以下の日報データをもとにユーザーの質問に答えてください。日本語で回答し、具体的・実用的な内容にしてください。絵文字を適度に使い読みやすくしてください。\n\n【日報データ】\n${ctx}`,
+    };
+
+    const stream = await ai.chat.completions.create({
+      model: AI_MODEL,
+      messages: [systemMsg, ...messages.slice(-12)],
+      max_tokens: 800,
+      temperature: 0.7,
+      stream: true,
+    });
+
+    for await (const chunk of stream) {
+      const text = chunk.choices[0]?.delta?.content || "";
+      if (text) send({ text });
+    }
+    res.write("data: [DONE]\n\n");
+    res.end();
+  } catch (e) {
+    console.error("[Chat API]", e.message);
+    send({ text: "❌ " + e.message });
+    res.write("data: [DONE]\n\n");
+    res.end();
+  }
 });
 
 // ── メール送信専用API ──
-router.post('/hr/daily-report/api/summarize', requireLogin, async (req, res) => {
-    if (!req.session.isAdmin) return res.status(403).json({ error: '管理者のみ' });
+router.post(
+  "/hr/daily-report/api/summarize",
+  requireLogin,
+  async (req, res) => {
+    if (!req.session.isAdmin)
+      return res.status(403).json({ error: "管理者のみ" });
     try {
-        const { period = 'weekly', sendEmail: doSend = false } = req.body;
-        const momentTz = require('moment-timezone');
-        const { User } = require('../models');
-        const now = momentTz().tz('Asia/Tokyo');
-        let from, to, periodLabel;
-        if (period === 'monthly') {
-            from = now.clone().subtract(1, 'month').startOf('month').toDate();
-            to   = now.clone().subtract(1, 'month').endOf('month').toDate();
-            periodLabel = now.clone().subtract(1, 'month').format('YYYY年M月') + ' 月次';
-        } else {
-            from = now.clone().subtract(7, 'days').startOf('day').toDate();
-            to   = now.clone().endOf('day').toDate();
-            periodLabel = now.clone().subtract(7, 'days').format('M/D') + '〜' + now.format('M/D') + ' 週次';
-        }
-        const reports = await DailyReport.find({ reportDate: { $gte: from, $lte: to } }).lean();
-        const employees = await Employee.find().lean();
-        const empMap = Object.fromEntries(employees.map(e => [e.userId?.toString(), e]));
-        for (const r of reports) r._emp = empMap[r.userId?.toString()] || {};
-        if (reports.length === 0) return res.json({ summary: '対象期間に日報がありません。', count: 0, employeeCount: 0 });
+      const { period = "weekly", sendEmail: doSend = false } = req.body;
+      const momentTz = require("moment-timezone");
+      const { User } = require("../models");
+      const now = momentTz().tz("Asia/Tokyo");
+      let from, to, periodLabel;
+      if (period === "monthly") {
+        from = now.clone().subtract(1, "month").startOf("month").toDate();
+        to = now.clone().subtract(1, "month").endOf("month").toDate();
+        periodLabel =
+          now.clone().subtract(1, "month").format("YYYY年M月") + " 月次";
+      } else {
+        from = now.clone().subtract(7, "days").startOf("day").toDate();
+        to = now.clone().endOf("day").toDate();
+        periodLabel =
+          now.clone().subtract(7, "days").format("M/D") +
+          "〜" +
+          now.format("M/D") +
+          " 週次";
+      }
+      const reports = await DailyReport.find({
+        reportDate: { $gte: from, $lte: to },
+      }).lean();
+      const employees = await Employee.find().lean();
+      const empMap = Object.fromEntries(
+        employees.map((e) => [e.userId?.toString(), e]),
+      );
+      for (const r of reports) r._emp = empMap[r.userId?.toString()] || {};
+      if (reports.length === 0)
+        return res.json({
+          summary: "対象期間に日報がありません。",
+          count: 0,
+          employeeCount: 0,
+        });
 
-        if (doSend) {
-            const { sendSummary: _send } = require('../lib/dailyReportSummary');
-            const admins = await User.find({ role: { $in: ['admin', 'manager'] } }).lean();
-            const emails = admins.map(u => u.email).filter(Boolean);
-            await _send(period, emails);
-            return res.json({ ok: true, message: `${periodLabel}サマリーを ${emails.length}名に送信しました`, count: reports.length });
-        }
+      if (doSend) {
+        const { sendSummary: _send } = require("../lib/dailyReportSummary");
+        const admins = await User.find({
+          role: { $in: ["admin", "manager"] },
+        }).lean();
+        const emails = admins.map((u) => u.email).filter(Boolean);
+        await _send(period, emails);
+        return res.json({
+          ok: true,
+          message: `${periodLabel}サマリーを ${emails.length}名に送信しました`,
+          count: reports.length,
+        });
+      }
 
-        res.json({ ok: false, message: '要約生成はストリーミングAPIを使用してください', count: reports.length });
+      res.json({
+        ok: false,
+        message: "要約生成はストリーミングAPIを使用してください",
+        count: reports.length,
+      });
     } catch (e) {
-        console.error('[Summarize API]', e.message);
-        res.status(500).json({ error: e.message });
+      console.error("[Summarize API]", e.message);
+      res.status(500).json({ error: e.message });
     }
-});
+  },
+);
 
 // 日報詳細・コメント
 router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
   try {
+    const lang = req.lang || req.session?.lang || "ja";
     const report = await DailyReport.findById(req.params.id).populate(
       "employeeId",
       "name department",
@@ -4906,7 +5063,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
       req,
       res,
       "日報詳細",
-      `${escapeHtml(emp.name || "")} の日報`,
+      `${escapeHtml(emp.name || "")} ${t("hr.daily_report_list", lang)}`,
       `
 <style>
 .report-detail { background:#fff;border-radius:14px;padding:28px 32px;box-shadow:0 4px 14px rgba(11,36,48,.06);max-width:860px;margin:0 auto }
@@ -5030,7 +5187,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
 <div style="max-width:860px;margin:0 auto">
     <div style="margin-bottom:16px; margin-top:15px">
         <a href="/hr/daily-report" style="color:#3b82f6;text-decoration:none;font-size:14px;display:inline-flex;align-items:center;gap:5px;">
-            <i class="fa-solid fa-arrow-left" style="font-size:12px"></i> 日報一覧に戻る
+            <i class="fa-solid fa-arrow-left" style="font-size:12px"></i> ${t("hr.back_to_list", lang)}
         </a>
     </div>
     <div class="report-detail">
@@ -5114,7 +5271,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                         <span style="font-size:12px">+</span>
                     </button>
                     <div class="stamp-picker" id="picker-${report._id}">
-                        <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;font-weight:600">リアクションを選択</div>
+                        <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;font-weight:600">${t("hr.select_reaction", lang)}</div>
                         <div class="stamp-picker-grid">
                             ${STAMPS.map(
                               (s) => `
@@ -5189,14 +5346,23 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                     ).join("");
 
                     // 編集フォーム用：既存添付ファイルの削除ボタン付きリスト
-                    const ceditAttHtml = (c.attachments || []).map(a => {
-                      const icon = (a.mimetype||'').startsWith('image/') ? '🖼️'
-                        : (a.originalName||'').toLowerCase().endsWith('.pdf') ? '📄' : '📎';
-                      return `<div class="cedit-att-item" id="catt-${a._id}" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:#f1f5f9;border-radius:8px;font-size:12px;color:#374151;border:1px solid #e2e8f0">`
-                        + `${icon} ${escapeHtml(a.originalName||a.filename)}`
-                        + `<button type="button" onclick="removeCEditAttachment('${cid}','${a._id}',this)" style="background:none;border:none;cursor:pointer;color:#ef4444;font-size:16px;line-height:1;padding:0 2px" title="削除">×</button>`
-                        + `</div>`;
-                    }).join('');
+                    const ceditAttHtml = (c.attachments || [])
+                      .map((a) => {
+                        const icon = (a.mimetype || "").startsWith("image/")
+                          ? "🖼️"
+                          : (a.originalName || "")
+                                .toLowerCase()
+                                .endsWith(".pdf")
+                            ? "📄"
+                            : "📎";
+                        return (
+                          `<div class="cedit-att-item" id="catt-${a._id}" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:#f1f5f9;border-radius:8px;font-size:12px;color:#374151;border:1px solid #e2e8f0">` +
+                          `${icon} ${escapeHtml(a.originalName || a.filename)}` +
+                          `<button type="button" onclick="removeCEditAttachment('${cid}','${a._id}',this)" style="background:none;border:none;cursor:pointer;color:#ef4444;font-size:16px;line-height:1;padding:0 2px" title="削除">×</button>` +
+                          `</div>`
+                        );
+                      })
+                      .join("");
 
                     return `<div class="comment-item" id="ci-${cid}">
                         <div class="comment-avatar">${escapeHtml(initial)}</div>
@@ -5239,7 +5405,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                                 <div style="position:relative;display:inline-block">
                                     <button class="c-stamp-add" onclick="toggleCPicker(this)" title="リアクション">😀 <span>+</span></button>
                                     <div class="stamp-picker" id="cpicker-${cid}">
-                                        <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;font-weight:600">リアクションを選択</div>
+                                        <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;font-weight:600">${t("hr.select_reaction", lang)}</div>
                                         <div class="stamp-picker-grid">${cPickerBtns}</div>
                                     </div>
                                 </div>
@@ -5971,23 +6137,43 @@ router.post(
       // 添付ファイル表示HTMLを生成してフロントエンドへ返す
       const updatedComment = report.comments.id(req.params.commentId);
       const atts = updatedComment ? updatedComment.attachments || [] : [];
-      let attachHtml = '';
+      let attachHtml = "";
       if (atts.length) {
-        attachHtml = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">'
-          + atts.map(a => {
-              const isImage = (a.mimetype || '').startsWith('image/');
-              const url = '/uploads/daily/' + a.filename;
+        attachHtml =
+          '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">' +
+          atts
+            .map((a) => {
+              const isImage = (a.mimetype || "").startsWith("image/");
+              const url = "/uploads/daily/" + a.filename;
               if (isImage) {
                 return `<a href="${url}" target="_blank" style="display:block"><img src="${url}" alt="${esc(a.originalName || a.filename)}" style="max-width:160px;max-height:120px;border-radius:8px;border:1px solid #e2e8f0;object-fit:cover"></a>`;
               }
-              const icon = (a.originalName || '').endsWith('.pdf') ? '📄' : '📎';
-              const size = a.size > 1024*1024 ? (a.size/1024/1024).toFixed(1)+'MB' : Math.round((a.size||0)/1024)+'KB';
+              const icon = (a.originalName || "").endsWith(".pdf")
+                ? "📄"
+                : "📎";
+              const size =
+                a.size > 1024 * 1024
+                  ? (a.size / 1024 / 1024).toFixed(1) + "MB"
+                  : Math.round((a.size || 0) / 1024) + "KB";
               return `<a href="${url}" target="_blank" download="${esc(a.originalName || a.filename)}" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#f1f5f9;border-radius:8px;font-size:13px;color:#374151;text-decoration:none;border:1px solid #e2e8f0">${icon} ${esc(a.originalName || a.filename)} <span style="color:#9ca3af;font-size:11px">${size}</span></a>`;
-            }).join('')
-          + '</div>';
+            })
+            .join("") +
+          "</div>";
       }
 
-      res.json({ ok: true, text: comment.text, html, attachHtml, attachments: atts.map(a => ({ _id: String(a._id), originalName: a.originalName || a.filename, filename: a.filename, mimetype: a.mimetype || '', size: a.size || 0 })) });
+      res.json({
+        ok: true,
+        text: comment.text,
+        html,
+        attachHtml,
+        attachments: atts.map((a) => ({
+          _id: String(a._id),
+          originalName: a.originalName || a.filename,
+          filename: a.filename,
+          mimetype: a.mimetype || "",
+          size: a.size || 0,
+        })),
+      });
     } catch (e) {
       console.error(e);
       res.json({ ok: false, error: "サーバーエラー" });
@@ -6028,21 +6214,20 @@ router.post(
 // ─────────────────────────────────────────────────────────────
 // 給与明細「確認しました」ボタン（Issue #20）
 // ─────────────────────────────────────────────────────────────
-router.post('/hr/payroll/:id/confirm', requireLogin, async (req, res) => {
-    try {
-        const employee = await Employee.findOne({ userId: req.session.userId });
-        const slip = await PayrollSlip.findById(req.params.id);
-        if (!slip || String(slip.employeeId) !== String(employee._id)) {
-            return res.status(403).json({ error: '権限がありません' });
-        }
-        slip.confirmedAt = new Date();
-        slip.confirmedBy = req.session.userId;
-        await slip.save();
-        res.json({ ok: true, confirmedAt: slip.confirmedAt });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
+router.post("/hr/payroll/:id/confirm", requireLogin, async (req, res) => {
+  try {
+    const employee = await Employee.findOne({ userId: req.session.userId });
+    const slip = await PayrollSlip.findById(req.params.id);
+    if (!slip || String(slip.employeeId) !== String(employee._id)) {
+      return res.status(403).json({ error: "権限がありません" });
     }
+    slip.confirmedAt = new Date();
+    slip.confirmedBy = req.session.userId;
+    await slip.save();
+    res.json({ ok: true, confirmedAt: slip.confirmedAt });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 module.exports = router;
-

@@ -414,6 +414,10 @@ app.use(
 app.use(express.static("public"));
 app.use("/uploads", express.static("uploads"));
 
+// 言語ミドルウェア（セッション言語を req.lang にセット）
+const { langMiddleware } = require("./lib/i18n");
+app.use(langMiddleware);
+
 // セッション確認用デバッグエンドポイント（一時）
 app.get("/debug-session", (req, res) => {
   res.json({

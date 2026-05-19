@@ -9,6 +9,7 @@ const { UserTaskConfig, TaskDueDate } = require("../models");
 const { requireLogin } = require("../middleware/auth");
 const { encrypt, decrypt } = require("../lib/integrations");
 const { escapeHtml } = require("../lib/helpers");
+const { t } = require("../lib/i18n");
 
 // ─── ユーザー別タスク設定ヘルパー ──────────────────────────────────────────
 const TASK_CFG_FIELDS = [
@@ -326,6 +327,7 @@ async function fetchBacklogTasks(cfg, query) {
 // ─────────────────────────────────────────────────────────────
 router.get("/tasks", requireLogin, async (req, res) => {
   try {
+    const lang = req.lang || req.session?.lang || "ja";
     const { Employee } = require("../models");
     const employee = req.session.userId
       ? await Employee.findOne({ userId: req.session.userId })
@@ -347,7 +349,9 @@ router.get("/tasks", requireLogin, async (req, res) => {
     const cardsHtml = TASK_TOOLS.map((tool) => {
       const isConfigured = configMap[tool.key] === "configured";
       const badgeClass = isConfigured ? "tk-badge--on" : "tk-badge--off";
-      const badgeText = isConfigured ? "設定済" : "未設定";
+      const badgeText = isConfigured
+        ? t("tasks.badge_on", lang)
+        : t("tasks.badge_off", lang);
       const listDisabled = isConfigured ? "" : "tk-btn--disabled";
       const listClick = isConfigured
         ? ""
@@ -360,16 +364,16 @@ router.get("/tasks", requireLogin, async (req, res) => {
             <div class="tk-tool-icon" style="color:${tool.color}">${tool.icon}</div>
             <div class="tk-tool-info">
                 <div class="tk-tool-name">${tool.label}</div>
-                <div class="tk-tool-desc">${tool.desc}</div>
+                <div class="tk-tool-desc">${t("tasks.desc_" + tool.key, lang)}</div>
             </div>
         </div>
         <div class="tk-card-actions">
             <span class="tk-badge ${badgeClass}">${badgeText}</span>
             <a href="/tasks/settings/${tool.key}" class="tk-btn tk-btn--config">
-                <i class="fa-solid fa-gear"></i> 接続設定
+                <i class="fa-solid fa-gear"></i> ${t("tasks.btn_settings", lang)}
             </a>
             <a href="/tasks/${tool.key}" class="tk-btn tk-btn--list ${listDisabled}" ${listClick}>
-                <i class="fa-solid fa-table-list"></i> タスク一覧
+                <i class="fa-solid fa-table-list"></i> ${t("tasks.btn_task_list", lang)}
             </a>
         </div>
     </div>
@@ -514,12 +518,13 @@ router.get("/tasks", requireLogin, async (req, res) => {
 
     const html =
       buildPageShell({
-        title: "タスク管理",
+        title: t("tasks.title", lang),
         currentPath: "/tasks",
         employee,
         isAdmin,
         role,
         extraHead,
+        lang,
       }) +
       `
 <div class="main-content">
@@ -527,8 +532,8 @@ router.get("/tasks", requireLogin, async (req, res) => {
     <div class="tk-header">
         <div class="tk-header-icon"><i class="fa-solid fa-list-check"></i></div>
         <div>
-            <h1>タスク管理</h1>
-            <p>外部ツールと連携してタスクを一元管理します</p>
+            <h1>${t("tasks.title", lang)}</h1>
+            <p>${t("tasks.subtitle", lang)}</p>
         </div>
     </div>
     <div class="tk-cards">
@@ -551,6 +556,7 @@ router.get("/tasks", requireLogin, async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
   try {
+    const lang = req.lang || req.session?.lang || "ja";
     const tool = req.params.tool;
     const validTool = TASK_TOOLS.find((t) => t.key === tool);
     const activeTool = validTool ? tool : "github";
@@ -672,9 +678,9 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
     ).join("");
 
     // 各ツールのフォームパネルHTML
-    const panelsHtml = TASK_TOOLS.map((t) => {
-      const cfg = configs[t.key];
-      const fields = toolFields[t.key] || [];
+    const panelsHtml = TASK_TOOLS.map((tool) => {
+      const cfg = configs[tool.key];
+      const fields = toolFields[tool.key] || [];
       const fieldsHtml = fields
         .map((f) => {
           const isFull =
@@ -695,30 +701,30 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
         })
         .join("");
       return `
-            <div class="tks-panel ${t.key === activeTool ? "tks-panel--active" : ""}" id="panel-${t.key}">
-                <form method="POST" action="/tasks/settings/${t.key}" autocomplete="off">
+            <div class="tks-panel ${tool.key === activeTool ? "tks-panel--active" : ""}" id="panel-${tool.key}">
+                <form method="POST" action="/tasks/settings/${tool.key}" autocomplete="off">
                     <div class="tks-form-body">
                         <div class="tks-tool-header">
-                            <span class="tks-tool-icon" style="color:${t.color}">${t.icon}</span>
+                            <span class="tks-tool-icon" style="color:${tool.color}">${tool.icon}</span>
                             <div>
-                                <div class="tks-tool-title">${t.label} 接続設定</div>
-                                <div class="tks-tool-sub">${t.desc}</div>
+                                <div class="tks-tool-title">${tool.label} ${t("tasks.connection_settings", lang)}</div>
+                                <div class="tks-tool-sub">${t("tasks.desc_" + tool.key, lang)}</div>
                             </div>
                             <label class="tks-toggle-wrap">
                                 <input type="checkbox" name="enabled" class="tks-toggle-cb" ${cfg.enabled ? "checked" : ""}>
-                                <span class="tks-toggle-label">有効化</span>
+                                <span class="tks-toggle-label">${t("tasks.enable", lang)}</span>
                             </label>
                         </div>
                         <div class="tks-fields">${fieldsHtml}</div>
                     </div>
                     <div class="tks-footer">
                         <button type="submit" class="tks-btn tks-btn--save">
-                            <i class="fa-solid fa-floppy-disk"></i> 保存
+                            <i class="fa-solid fa-floppy-disk"></i> ${t("common.save", lang)}
                         </button>
-                        <button type="button" class="tks-btn tks-btn--test" onclick="testConnection('${t.key}')">
-                            <i class="fa-solid fa-plug"></i> 接続テスト
+                        <button type="button" class="tks-btn tks-btn--test" onclick="testConnection('${tool.key}')">
+                            <i class="fa-solid fa-plug"></i> ${t("tasks.connection_test", lang)}
                         </button>
-                        <a href="/tasks" class="tks-btn tks-btn--cancel">キャンセル</a>
+                        <a href="/tasks" class="tks-btn tks-btn--cancel">${t("common.cancel", lang)}</a>
                     </div>
                 </form>
             </div>`;
@@ -728,9 +734,9 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
     const saved = req.query.saved === "1";
     const hasError = req.query.error === "1";
     const alertHtml = saved
-      ? `<div class="tks-alert tks-alert--success"><i class="fa-solid fa-circle-check"></i> 設定を保存しました。</div>`
+      ? `<div class="tks-alert tks-alert--success"><i class="fa-solid fa-circle-check"></i> ${t("tasks.saved_ok", lang)}</div>`
       : hasError
-        ? `<div class="tks-alert tks-alert--error"><i class="fa-solid fa-circle-exclamation"></i> 保存に失敗しました。入力内容を確認してください。</div>`
+        ? `<div class="tks-alert tks-alert--error"><i class="fa-solid fa-circle-exclamation"></i> ${t("tasks.saved_error", lang)}</div>`
         : "";
 
     const extraHead = `
@@ -797,12 +803,13 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
 
     const html =
       buildPageShell({
-        title: "ツール連携設定 | タスク管理",
+        title: t("tasks.settings_title", lang),
         currentPath: "/tasks",
         employee,
         isAdmin,
         role,
         extraHead,
+        lang,
       }) +
       `
 <div class="main-content">
@@ -811,9 +818,9 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
         <div class="tk-header-icon" style="width:40px;height:40px;background:linear-gradient(135deg,#1d4ed8,#7c3aed);border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;">
             <i class="fa-solid fa-gear"></i>
         </div>
-        <h1>接続設定（ツール連携）</h1>
+        <h1>${t("tasks.settings_header", lang)}</h1>
     </div>
-    <a href="/tasks/${tool}" class="tks-back"><i class="fa-solid fa-arrow-left"></i> タスク一覧に戻る</a>
+    <a href="/tasks/${tool}" class="tks-back"><i class="fa-solid fa-arrow-left"></i> ${t("tasks.back_to_list", lang)}</a>
     ${alertHtml}
     <div class="tks-card">
         <div class="tks-tabs">${tabsHtml}</div>
@@ -897,6 +904,7 @@ router.post("/tasks/settings/:tool", requireLogin, async (req, res) => {
 // GET /tasks/:tool - タスク一覧画面
 // ─────────────────────────────────────────────────────────────
 router.get("/tasks/:tool", requireLogin, async (req, res) => {
+  const lang = req.lang || req.session?.lang || "ja";
   try {
     const tool = req.params.tool;
     const validTool = TASK_TOOLS.find((t) => t.key === tool);
@@ -1285,12 +1293,13 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
 
     const html =
       buildPageShell({
-        title: `タスク一覧 ${validTool.label} | タスク管理`,
+        title: `${t("tasks.list_title", lang)} ${validTool.label} | ${t("tasks.title", lang)}`,
         currentPath: "/tasks",
         employee,
         isAdmin,
         role,
         extraHead,
+        lang,
       }) +
       `
 <div class="main-content">
@@ -1298,14 +1307,14 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
     <div class="tkl-topbar">
         <div class="tkl-topbar-left">
             <div class="tkl-title">
-                タスク一覧 <span>${validTool.label}</span>
+                ${t("tasks.list_title", lang)} <span>${validTool.label}</span>
             </div>
             <div class="tkl-btns">
                 <a href="/tasks/settings/${tool}" class="tkl-btn tkl-btn--settings">
-                    <i class="fa-solid fa-gear"></i> 接続設定
+                    <i class="fa-solid fa-gear"></i> ${t("tasks.btn_settings", lang)}
                 </a>
                 <a href="/tasks" class="tkl-btn tkl-btn--back">
-                    <i class="fa-solid fa-arrow-left"></i> タスクメイン画面に戻る
+                    <i class="fa-solid fa-arrow-left"></i> ${t("tasks.back_to_main", lang)}
                 </a>
             </div>
         </div>
@@ -1316,17 +1325,17 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
 
     <div class="tkl-filter-card">
         <div class="tkl-filter-title">
-            <i class="fa-solid fa-filter" style="color:#94a3b8"></i> 一覧検索フィルター
+            <i class="fa-solid fa-filter" style="color:#94a3b8"></i> ${t("tasks.filter_title", lang)}
         </div>
         <form method="GET" action="/tasks/${tool}">
             <div class="tkl-filter-row">
                 ${filtersHtml}
                 <div class="tkl-filter-actions">
                     <button type="submit" class="tkl-filter-btn tkl-filter-btn--search">
-                        <i class="fa-solid fa-magnifying-glass"></i> 検索
+                        <i class="fa-solid fa-magnifying-glass"></i> ${t("tasks.search_btn", lang)}
                     </button>
                     <a href="/tasks/${tool}" class="tkl-filter-btn tkl-filter-btn--clear">
-                        <i class="fa-solid fa-xmark"></i> クリア
+                        <i class="fa-solid fa-xmark"></i> ${t("tasks.clear_btn", lang)}
                     </a>
                 </div>
             </div>
@@ -1907,25 +1916,33 @@ const path = require("path");
 const BASE_DIR = path.join(__dirname, "..");
 
 function readSrc(relPath) {
-  try { return fs.readFileSync(path.join(BASE_DIR, relPath), "utf8"); }
-  catch { return ""; }
+  try {
+    return fs.readFileSync(path.join(BASE_DIR, relPath), "utf8");
+  } catch {
+    return "";
+  }
 }
 
 // ルートファイルから既存エンドポイントを抽出
 function extractRoutes(src) {
-  const re = /router\.(get|post|put|delete|patch)\s*\(\s*['"`]([^'"`\n]+)['"`]/g;
+  const re =
+    /router\.(get|post|put|delete|patch)\s*\(\s*['"`]([^'"`\n]+)['"`]/g;
   const found = [];
   let m;
-  while ((m = re.exec(src)) !== null) found.push(`${m[1].toUpperCase()} ${m[2]}`);
+  while ((m = re.exec(src)) !== null)
+    found.push(`${m[1].toUpperCase()} ${m[2]}`);
   return found;
 }
 
 // モデルファイルから指定スキーマのフィールド名を抽出
 function extractSchemaFields(src, schemaVarName) {
-  const startRe = new RegExp(`(?:const|let|var)\\s+${schemaVarName}\\s*=\\s*new\\s+mongoose\\.Schema\\s*\\(\\s*\\{`);
+  const startRe = new RegExp(
+    `(?:const|let|var)\\s+${schemaVarName}\\s*=\\s*new\\s+mongoose\\.Schema\\s*\\(\\s*\\{`,
+  );
   const startMatch = startRe.exec(src);
   if (!startMatch) return [];
-  let depth = 1, i = startMatch.index + startMatch[0].length;
+  let depth = 1,
+    i = startMatch.index + startMatch[0].length;
   let block = "";
   while (i < src.length && depth > 0) {
     if (src[i] === "{") depth++;
@@ -1934,7 +1951,19 @@ function extractSchemaFields(src, schemaVarName) {
     i++;
   }
   const fieldRe = /^\s{0,4}(\w+)\s*:/gm;
-  const excl = ["type","default","required","ref","enum","min","max","index","unique","trim","sparse"];
+  const excl = [
+    "type",
+    "default",
+    "required",
+    "ref",
+    "enum",
+    "min",
+    "max",
+    "index",
+    "unique",
+    "trim",
+    "sparse",
+  ];
   const fields = [];
   let fm;
   while ((fm = fieldRe.exec(block)) !== null) {
@@ -1945,20 +1974,28 @@ function extractSchemaFields(src, schemaVarName) {
 
 // lib/ ファイルから export されている関数名を抽出
 function extractExportedFunctions(src) {
-  const re = /(?:async\s+)?function\s+(\w+)\s*\(|(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\(|module\.exports\s*=\s*\{([^}]+)\}/g;
+  const re =
+    /(?:async\s+)?function\s+(\w+)\s*\(|(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\(|module\.exports\s*=\s*\{([^}]+)\}/g;
   const fns = [];
   let m;
   while ((m = re.exec(src)) !== null) {
     if (m[1]) fns.push(m[1]);
     else if (m[2]) fns.push(m[2]);
-    else if (m[3]) fns.push(...m[3].split(",").map(s => s.trim().split(":")[0].trim()).filter(Boolean));
+    else if (m[3])
+      fns.push(
+        ...m[3]
+          .split(",")
+          .map((s) => s.trim().split(":")[0].trim())
+          .filter(Boolean),
+      );
   }
   return [...new Set(fns)].slice(0, 6);
 }
 
 // server.js から既にマウントされているルートを抽出
 function extractMountedRoutes(src) {
-  const re = /app\.use\s*\(\s*['"`][^'"`]*['"`]\s*,\s*require\s*\(\s*['"`]\.\/routes\/(\w+)['"`]/g;
+  const re =
+    /app\.use\s*\(\s*['"`][^'"`]*['"`]\s*,\s*require\s*\(\s*['"`]\.\/routes\/(\w+)['"`]/g;
   const found = [];
   let m;
   while ((m = re.exec(src)) !== null) found.push(m[1]);
@@ -1970,13 +2007,18 @@ function extractMountedRoutes(src) {
 // ルートファイルから実在する短いルートハンドラを1件抽出してテンプレート化
 function extractRealRouteTemplate(src, routeFile) {
   // requireLogin を含む短めのルートハンドラを探す
-  const re = /router\.(get|post)\s*\(\s*'([^']+)'\s*,\s*requireLogin\s*,\s*async\s*\(req,\s*res\)\s*=>\s*\{([\s\S]*?)\n\}\);/g;
+  const re =
+    /router\.(get|post)\s*\(\s*'([^']+)'\s*,\s*requireLogin\s*,\s*async\s*\(req,\s*res\)\s*=>\s*\{([\s\S]*?)\n\}\);/g;
   let m;
   while ((m = re.exec(src)) !== null) {
     const body = m[3];
     const lines = body.split("\n");
     if (lines.length <= 12) {
-      return { method: m[1], path: m[2], body: body.split("\n").slice(0, 10).join("\n") };
+      return {
+        method: m[1],
+        path: m[2],
+        body: body.split("\n").slice(0, 10).join("\n"),
+      };
     }
   }
   return null;
@@ -2025,7 +2067,7 @@ router.post('/新しいパス', requireLogin, async (req, res) => {
 
 // 新規ルートファイル作成の修正例スニペットを生成
 function makeNewRouteFileExample(routeFile, modelName) {
-  const varName = routeFile.replace("routes/","").replace(".js","");
+  const varName = routeFile.replace("routes/", "").replace(".js", "");
   return `// ${routeFile} を新規作成
 "use strict";
 const express = require("express");
@@ -2054,12 +2096,17 @@ module.exports = router;
 // DBスキーマ変更の修正例スニペットを生成
 function makeSchemaExample(schemaName, existingFields, modelsSrc) {
   // 実際のスキーマから最初の2フィールドを引用
-  const startRe = new RegExp(`(?:const|let|var)\\s+${schemaName}\\s*=\\s*new\\s+mongoose\\.Schema\\s*\\(\\s*\\{`);
+  const startRe = new RegExp(
+    `(?:const|let|var)\\s+${schemaName}\\s*=\\s*new\\s+mongoose\\.Schema\\s*\\(\\s*\\{`,
+  );
   const startMatch = startRe.exec(modelsSrc);
   let sampleLines = "";
   if (startMatch) {
     const afterBrace = modelsSrc.slice(startMatch.index + startMatch[0].length);
-    const lines = afterBrace.split("\n").filter(l => l.trim()).slice(0, 3);
+    const lines = afterBrace
+      .split("\n")
+      .filter((l) => l.trim())
+      .slice(0, 3);
     sampleLines = lines.join("\n");
   }
   const shownFields = existingFields.slice(0, 3).join(", ");
@@ -2104,7 +2151,9 @@ async function callNewFeature(data) {
 
 // ライブラリ関数追加の修正例スニペットを生成
 function makeLibExample(libFile, existingFns) {
-  const lastFn = existingFns.length ? existingFns[existingFns.length - 1] : "existingFn";
+  const lastFn = existingFns.length
+    ? existingFns[existingFns.length - 1]
+    : "existingFn";
   return `// ${libFile} に関数を追加（末尾の module.exports の前）
 async function newFeatureLogic(params) {
   const { userId, targetDate } = params;
@@ -2299,38 +2348,146 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
   const steps = [];
 
   const DOMAIN_TABLE = [
-    { label: "勤怠",      keys: /勤怠|出退勤|出勤|退勤|打刻|attendance/, route: "routes/attendance.js",   schema: "AttendanceSchema",    modelName: "Attendance" },
-    { label: "チャット",  keys: /チャット|chat(?!bot)/,                   route: "routes/chat.js",          schema: "ChatMessageSchema",   modelName: "ChatMessage",  front: "public/chat-app.js", socketNote: true },
-    { label: "掲示板",    keys: /掲示板|ボード|board/,                    route: "routes/board.js",         schema: "BoardPostSchema",     modelName: "BoardPost" },
-    { label: "目標管理",  keys: /目標|ゴール|goal|okr|kpi/,               route: "routes/goals.js",         schema: "goalSchema",          modelName: "Goal" },
-    { label: "休暇申請",  keys: /休暇|有休|leave|vacation/,               route: "routes/leave.js",         schema: "LeaveRequestSchema",  modelName: "LeaveRequest" },
-    { label: "給与",      keys: /給与|ペイロール|payroll|salary|給料|賃金/, route: "routes/payroll_admin.js", schema: "PayrollSlipSchema",   modelName: "PayrollSlip",  lib: "lib/payrollEngine.js" },
-    { label: "日報",      keys: /日報|daily.?report/,                     route: "routes/hr.js",            schema: "DailyReportSchema",   modelName: "DailyReport",  lib: "lib/dailyReportSummary.js" },
-    { label: "通知",      keys: /通知|notification|アラート/,             route: "routes/notifications.js", schema: "NotificationSchema",  modelName: "Notification", lib: "lib/notificationScheduler.js" },
-    { label: "認証・権限",keys: /認証|auth|ログイン|login|権限|role|permission|セッション/, route: "routes/auth.js", middleware: "middleware/auth.js" },
-    { label: "入社前テスト", keys: /入社前|pretest|事前テスト/,           route: "routes/pretest.js",                                                                  lib: "lib/pretestQuestions.js", front: "public/pretest-ui.js" },
-    { label: "スキルシート", keys: /スキルシート|skillsheet/,             route: "routes/skillsheet.js",    schema: "SkillSheetSchema",    modelName: "SkillSheet" },
-    { label: "会社規定",  keys: /会社規定|規定|規則/,                     route: "routes/rules.js",         schema: "CompanyRuleSchema",   modelName: "CompanyRule" },
-    { label: "残業申請",  keys: /残業|時間外|overtime/,                   route: "routes/overtime.js",      schema: "OvertimeRequestSchema", modelName: "OvertimeRequest" },
-    { label: "チャットボット", keys: /チャットボット|chatbot/,            route: "routes/chatbot.js",                                                                  front: "public/chatbot-widget.js" },
-    { label: "管理者機能",keys: /管理者機能|admin/,                       route: "routes/admin.js" },
-    { label: "ダッシュボード", keys: /ダッシュボード|dashboard/,          route: "routes/dashboard.js" },
-    { label: "多言語",    keys: /多言語|翻訳|i18n|locale|英語|ベトナム語/, locales: true },
+    {
+      label: "勤怠",
+      keys: /勤怠|出退勤|出勤|退勤|打刻|attendance/,
+      route: "routes/attendance.js",
+      schema: "AttendanceSchema",
+      modelName: "Attendance",
+    },
+    {
+      label: "チャット",
+      keys: /チャット|chat(?!bot)/,
+      route: "routes/chat.js",
+      schema: "ChatMessageSchema",
+      modelName: "ChatMessage",
+      front: "public/chat-app.js",
+      socketNote: true,
+    },
+    {
+      label: "掲示板",
+      keys: /掲示板|ボード|board/,
+      route: "routes/board.js",
+      schema: "BoardPostSchema",
+      modelName: "BoardPost",
+    },
+    {
+      label: "目標管理",
+      keys: /目標|ゴール|goal|okr|kpi/,
+      route: "routes/goals.js",
+      schema: "goalSchema",
+      modelName: "Goal",
+    },
+    {
+      label: "休暇申請",
+      keys: /休暇|有休|leave|vacation/,
+      route: "routes/leave.js",
+      schema: "LeaveRequestSchema",
+      modelName: "LeaveRequest",
+    },
+    {
+      label: "給与",
+      keys: /給与|ペイロール|payroll|salary|給料|賃金/,
+      route: "routes/payroll_admin.js",
+      schema: "PayrollSlipSchema",
+      modelName: "PayrollSlip",
+      lib: "lib/payrollEngine.js",
+    },
+    {
+      label: "日報",
+      keys: /日報|daily.?report/,
+      route: "routes/hr.js",
+      schema: "DailyReportSchema",
+      modelName: "DailyReport",
+      lib: "lib/dailyReportSummary.js",
+    },
+    {
+      label: "通知",
+      keys: /通知|notification|アラート/,
+      route: "routes/notifications.js",
+      schema: "NotificationSchema",
+      modelName: "Notification",
+      lib: "lib/notificationScheduler.js",
+    },
+    {
+      label: "認証・権限",
+      keys: /認証|auth|ログイン|login|権限|role|permission|セッション/,
+      route: "routes/auth.js",
+      middleware: "middleware/auth.js",
+    },
+    {
+      label: "入社前テスト",
+      keys: /入社前|pretest|事前テスト/,
+      route: "routes/pretest.js",
+      lib: "lib/pretestQuestions.js",
+      front: "public/pretest-ui.js",
+    },
+    {
+      label: "スキルシート",
+      keys: /スキルシート|skillsheet/,
+      route: "routes/skillsheet.js",
+      schema: "SkillSheetSchema",
+      modelName: "SkillSheet",
+    },
+    {
+      label: "会社規定",
+      keys: /会社規定|規定|規則/,
+      route: "routes/rules.js",
+      schema: "CompanyRuleSchema",
+      modelName: "CompanyRule",
+    },
+    {
+      label: "残業申請",
+      keys: /残業|時間外|overtime/,
+      route: "routes/overtime.js",
+      schema: "OvertimeRequestSchema",
+      modelName: "OvertimeRequest",
+    },
+    {
+      label: "チャットボット",
+      keys: /チャットボット|chatbot/,
+      route: "routes/chatbot.js",
+      front: "public/chatbot-widget.js",
+    },
+    { label: "管理者機能", keys: /管理者機能|admin/, route: "routes/admin.js" },
+    {
+      label: "ダッシュボード",
+      keys: /ダッシュボード|dashboard/,
+      route: "routes/dashboard.js",
+    },
+    {
+      label: "多言語",
+      keys: /多言語|翻訳|i18n|locale|英語|ベトナム語/,
+      locales: true,
+    },
   ];
 
   // アクション種別
-  const isBugFix  = /バグ|bug|修正|fix|不具合|エラー|error|crash|クラッシュ/.test(fullText);
-  const isNewFeat = /新規|追加|実装|機能|feature|add|create|新しい/.test(fullText);
-  const isUiChange= /ui|画面|フォーム|form|ボタン|button|表示|レイアウト|デザイン|css/.test(fullText);
-  const isDbChange= /db|database|データベース|モデル|schema|スキーマ|フィールド|field/.test(fullText);
-  const isTestTask= /テスト追加|test追加|spec|jest/.test(fullText);
-  const isExport  = /csv|excel|export|エクスポート|レポート出力/.test(fullText);
-  const isPerf    = /パフォーマンス|performance|遅い|slow|最適化|optim/.test(fullText);
-  const isSecurity= /セキュリティ|security|xss|csrf|脆弱性|vulnerability/.test(fullText);
-  const isRefactor= /リファクタ|refactor|整理|cleanup/.test(fullText);
+  const isBugFix =
+    /バグ|bug|修正|fix|不具合|エラー|error|crash|クラッシュ/.test(fullText);
+  const isNewFeat = /新規|追加|実装|機能|feature|add|create|新しい/.test(
+    fullText,
+  );
+  const isUiChange =
+    /ui|画面|フォーム|form|ボタン|button|表示|レイアウト|デザイン|css/.test(
+      fullText,
+    );
+  const isDbChange =
+    /db|database|データベース|モデル|schema|スキーマ|フィールド|field/.test(
+      fullText,
+    );
+  const isTestTask = /テスト追加|test追加|spec|jest/.test(fullText);
+  const isExport = /csv|excel|export|エクスポート|レポート出力/.test(fullText);
+  const isPerf = /パフォーマンス|performance|遅い|slow|最適化|optim/.test(
+    fullText,
+  );
+  const isSecurity = /セキュリティ|security|xss|csrf|脆弱性|vulnerability/.test(
+    fullText,
+  );
+  const isRefactor = /リファクタ|refactor|整理|cleanup/.test(fullText);
 
-  const modelsSrc     = readSrc("models/index.js");
-  const serverSrc     = readSrc("server.js");
+  const modelsSrc = readSrc("models/index.js");
+  const serverSrc = readSrc("server.js");
   const middlewareSrc = readSrc("middleware/auth.js");
   const mountedRoutes = extractMountedRoutes(serverSrc);
 
@@ -2344,7 +2501,9 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
     if (domain.route) {
       const src = readSrc(domain.route);
       const routes = src ? extractRoutes(src) : [];
-      const routeList = routes.length ? routes.slice(0, 4).join(" / ") : "（まだエンドポイントなし）";
+      const routeList = routes.length
+        ? routes.slice(0, 4).join(" / ")
+        : "（まだエンドポイントなし）";
       const mName = domain.modelName || "Model";
 
       if (src) {
@@ -2352,15 +2511,19 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
         const desc = isBugFix
           ? `エラー発生箇所のルートハンドラ内の try/catch を確認し原因を特定してください。`
           : isNewFeat
-          ? `既存パターンに倣って末尾に追記してください。`
-          : `対象ルートを特定して変更してください。`;
-        const socketNote = domain.socketNote ? " リアルタイム処理は `server.js` の `io.on('connection', ...)` にも追記が必要です。" : "";
+            ? `既存パターンに倣って末尾に追記してください。`
+            : `対象ルートを特定して変更してください。`;
+        const socketNote = domain.socketNote
+          ? " リアルタイム処理は `server.js` の `io.on('connection', ...)` にも追記が必要です。"
+          : "";
         steps.push({
           text: `【${domain.label}/ルート】\`${domain.route}\` を${verb}してください。現在のエンドポイント: ${routeList}。${desc}${socketNote}`,
           example: makeRouteAddExample(domain.route, mName, isBugFix),
         });
       } else {
-        const mounted = mountedRoutes.includes(domain.route.replace("routes/","").replace(".js",""));
+        const mounted = mountedRoutes.includes(
+          domain.route.replace("routes/", "").replace(".js", ""),
+        );
         steps.push({
           text: `【${domain.label}/新規ルート】\`${domain.route}\` がまだ存在しません。新規作成して実装してください。${!mounted ? `作成後 \`server.js\` の \`app.use\` 群に追加が必要です。` : ""}`,
           example: makeNewRouteFileExample(domain.route, mName),
@@ -2372,9 +2535,9 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
     if (domain.schema && (isDbChange || isNewFeat || isBugFix)) {
       const fields = extractSchemaFields(modelsSrc, domain.schema);
       if (fields.length > 0) {
-        const verb = (isDbChange || isNewFeat) ? "追加・変更" : "確認";
+        const verb = isDbChange || isNewFeat ? "追加・変更" : "確認";
         steps.push({
-          text: `【${domain.label}/DB】\`models/index.js\` の \`${domain.schema}\` を${verb}してください。現在のフィールド: ${fields.slice(0,6).join(", ")} など。新フィールドは既存ドキュメントへのデフォルト値の影響に注意して追記してください。`,
+          text: `【${domain.label}/DB】\`models/index.js\` の \`${domain.schema}\` を${verb}してください。現在のフィールド: ${fields.slice(0, 6).join(", ")} など。新フィールドは既存ドキュメントへのデフォルト値の影響に注意して追記してください。`,
           example: makeSchemaExample(domain.schema, fields, modelsSrc),
         });
       }
@@ -2423,9 +2586,10 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
   // ── アクション種別ごとの横断的ガイダンス ──
 
   if (isUiChange && steps.length < 5) {
-    const routeHint = steps.length > 0 && steps[0].text.includes("routes/")
-      ? steps[0].text.match(/`(routes\/[^`]+)`/)?.[1] || "routes/対象.js"
-      : "routes/対象.js";
+    const routeHint =
+      steps.length > 0 && steps[0].text.includes("routes/")
+        ? steps[0].text.match(/`(routes\/[^`]+)`/)?.[1] || "routes/対象.js"
+        : "routes/対象.js";
     steps.push({
       text: `【UI/ページ構造】新規ページは \`lib/renderPage.js\` の \`buildPageShell()\` + \`pageFooter()\` でレンダリングしてください。`,
       example: makeUiPageExample(routeHint),
@@ -2434,8 +2598,16 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
 
   if (isTestTask && steps.length < 5) {
     const testFiles = (() => {
-      try { return fs.readdirSync(path.join(BASE_DIR, "tests")).filter(f => f.endsWith(".test.js")).join("、") || "（なし）"; }
-      catch { return "（なし）"; }
+      try {
+        return (
+          fs
+            .readdirSync(path.join(BASE_DIR, "tests"))
+            .filter((f) => f.endsWith(".test.js"))
+            .join("、") || "（なし）"
+        );
+      } catch {
+        return "（なし）";
+      }
     })();
     steps.push({
       text: `【テスト】\`tests/\` に \`<機能名>.test.js\` を追加してください。現在のテストファイル: ${testFiles}。\`npm test\` で全件グリーンを確認してください。`,
@@ -2444,9 +2616,9 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
   }
 
   if (isExport && steps.length < 5) {
-    const domain = DOMAIN_TABLE.find(d => d.keys.test(fullText) && d.route);
+    const domain = DOMAIN_TABLE.find((d) => d.keys.test(fullText) && d.route);
     const routeFile = domain ? domain.route : "routes/対象.js";
-    const mName = domain ? (domain.modelName || "Model") : "Model";
+    const mName = domain ? domain.modelName || "Model" : "Model";
     steps.push({
       text: `【CSV出力】\`${routeFile}\` にエクスポートエンドポイントを追加してください。BOM付きCSVにするとExcelで文字化けしません。`,
       example: makeCsvExample(routeFile, mName),
@@ -2454,7 +2626,7 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
   }
 
   if (isPerf && steps.length < 5) {
-    const domain = DOMAIN_TABLE.find(d => d.keys.test(fullText) && d.schema);
+    const domain = DOMAIN_TABLE.find((d) => d.keys.test(fullText) && d.schema);
     const sName = domain ? domain.schema : "対象Schema";
     const fields = domain ? extractSchemaFields(modelsSrc, sName) : [];
     steps.push({
@@ -2618,7 +2790,8 @@ function generateAiAnalysis(task, overrideDueDate) {
     }
   } else if (isCritical) {
     urgencyLevel = "早急に確認推奨";
-    urgencyReason = "期限未設定ですが優先度の高いタスクです。期限日を設定することを推奨します";
+    urgencyReason =
+      "期限未設定ですが優先度の高いタスクです。期限日を設定することを推奨します";
   }
 
   // リスク
@@ -2627,7 +2800,8 @@ function generateAiAnalysis(task, overrideDueDate) {
   if (isCritical) risks.push("リリース遅延の可能性");
   if (type === "bug" || type === "issue") risks.push("同種バグの再発可能性");
   if (!dueDate) risks.push("期限未設定のため進捗管理が困難");
-  if (diffDaysForAction !== null && diffDaysForAction < 0) risks.push("期限超過により関係者への影響が拡大するリスク");
+  if (diffDaysForAction !== null && diffDaysForAction < 0)
+    risks.push("期限超過により関係者への影響が拡大するリスク");
   if (risks.length === 0)
     risks.push("特筆すべきリスクは現時点では検出されていません");
 
@@ -2648,7 +2822,9 @@ function generateAiAnalysis(task, overrideDueDate) {
     : "期限が未設定のため、速やかに設定することを推奨します。";
   const summary =
     `${typeLabel}に関するタスクです。` +
-    (isCritical ? "影響範囲が広く優先対応が求められます。" : "通常の開発タスクです。") +
+    (isCritical
+      ? "影響範囲が広く優先対応が求められます。"
+      : "通常の開発タスクです。") +
     dueSummary +
     (assignee ? `担当者：${assignee}。` : "担当者が未設定です。");
 
@@ -2826,14 +3002,21 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
       <div class="tkd-ai-block">
         <div class="tkd-ai-label">推奨アクション（コードベース実装プラン）</div>
         <ol class="tkd-ai-list tkd-ai-list--ol">
-          ${ai.actions.map((a, idx) => {
-            const item = (typeof a === "object") ? a : { text: a, example: "" };
-            const escaped = escapeHtml(item.text);
-            const withBadge = escaped.replace(/【([^】]+)】/g, '<span class="tkd-ai-badge">$1</span>');
-            const withCode  = withBadge.replace(/`([^`]+)`/g, '<code class="tkd-ai-code">$1</code>');
-            const exampleId = `ai-ex-${idx}`;
-            const exampleHtml = item.example
-              ? `<div class="tkd-ai-example-wrap">
+          ${ai.actions
+            .map((a, idx) => {
+              const item = typeof a === "object" ? a : { text: a, example: "" };
+              const escaped = escapeHtml(item.text);
+              const withBadge = escaped.replace(
+                /【([^】]+)】/g,
+                '<span class="tkd-ai-badge">$1</span>',
+              );
+              const withCode = withBadge.replace(
+                /`([^`]+)`/g,
+                '<code class="tkd-ai-code">$1</code>',
+              );
+              const exampleId = `ai-ex-${idx}`;
+              const exampleHtml = item.example
+                ? `<div class="tkd-ai-example-wrap">
                    <button type="button" class="tkd-ai-ex-toggle" onclick="toggleAiExample('${exampleId}')">
                      <i class="fa-solid fa-code" style="margin-right:4px"></i>修正例を見る
                    </button>
@@ -2844,9 +3027,10 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
                      <pre class="tkd-ai-pre"><code>${escapeHtml(item.example)}</code></pre>
                    </div>
                  </div>`
-              : "";
-            return `<li><div class="tkd-ai-action-text">${withCode}</div>${exampleHtml}</li>`;
-          }).join("")}
+                : "";
+              return `<li><div class="tkd-ai-action-text">${withCode}</div>${exampleHtml}</li>`;
+            })
+            .join("")}
         </ol>
       </div>
       <div class="tkd-ai-block">

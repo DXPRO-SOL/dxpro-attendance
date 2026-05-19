@@ -15,6 +15,7 @@ const {
 } = require("../models");
 const { requireLogin } = require("../middleware/auth");
 const { buildPageShell, pageFooter } = require("../lib/renderPage");
+const { t } = require("../lib/i18n");
 const { sendMail } = require("../config/mailer");
 const { createNotification } = require("./notifications");
 const multer = require("multer");
@@ -206,6 +207,7 @@ router.get("/schedule", requireLogin, async (req, res) => {
     req.session.orgRole || (req.session.isAdmin ? "admin" : "employee");
   const myId = String(req.session.userId);
   const chatStatus = req.session.chatStatus || "online";
+  const lang = req.lang || req.session?.lang || "ja";
 
   // ユーザー一覧（参加者セレクト用）
   const allEmployees = await Employee.find({})
@@ -378,31 +380,32 @@ form label.sch-att-add-btn, .form-group label.sch-att-add-btn { display:inline-f
 </style>`;
 
   const shell = buildPageShell({
-    title: "スケジュール",
+    title: t("nav.schedule", lang),
     currentPath: "/schedule",
     employee,
     isAdmin: req.session.isAdmin,
     role,
     extraHead,
     chatStatus,
+    lang,
   });
 
   const content = `
 <div class="main"><div class="page-content">
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
     <div>
-        <h2 style="font-size:20px;font-weight:700;color:#0f172a;margin:0 0 4px;">📅 スケジュール</h2>
-        <p style="color:#64748b;font-size:13px;margin:0;">会議・予定の管理とアプリ内通話連携</p>
+        <h2 style="font-size:20px;font-weight:700;color:#0f172a;margin:0 0 4px;">📅 ${t("nav.schedule", lang)}</h2>
+        <p style="color:#64748b;font-size:13px;margin:0;">${t("schedule.subtitle", lang)}</p>
     </div>
     <div style="display:flex;gap:8px;align-items:center;">
         <button class="btn" style="background:#fff;border:1.5px solid #e2e8f0;color:#475569;" onclick="openExportModal()">
-            <i class="fa-solid fa-download"></i> CSV出力
+            <i class="fa-solid fa-download"></i> ${t("schedule.csv_export", lang)}
         </button>
         <button class="btn" style="background:#fff;border:1.5px solid #e2e8f0;color:#475569;" onclick="openImportModal()">
-            <i class="fa-solid fa-upload"></i> CSV取込
+            <i class="fa-solid fa-upload"></i> ${t("schedule.csv_import", lang)}
         </button>
         <button class="btn btn-primary" onclick="openNewForm()">
-            <i class="fa-solid fa-plus"></i> 新規スケジュール
+            <i class="fa-solid fa-plus"></i> ${t("schedule.new_schedule", lang)}
         </button>
     </div>
 </div>
@@ -413,10 +416,10 @@ form label.sch-att-add-btn, .form-group label.sch-att-add-btn { display:inline-f
         <div class="card" style="padding:18px 20px;">
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
               <div class="sch-legend" style="margin-bottom:0;">
-                <div class="sch-legend-item"><div class="sch-legend-dot" style="background:#3b82f6;"></div>会議</div>
-                <div class="sch-legend-item"><div class="sch-legend-dot" style="background:#22c55e;"></div>イベント</div>
-                <div class="sch-legend-item"><div class="sch-legend-dot" style="background:#94a3b8;"></div>その他</div>
-                <div class="sch-legend-item"><span style="font-size:12px;">📞</span>&nbsp;通話連携あり</div>
+                <div class="sch-legend-item"><div class="sch-legend-dot" style="background:#3b82f6;"></div>${t("schedule.type_meeting", lang)}</div>
+                <div class="sch-legend-item"><div class="sch-legend-dot" style="background:#22c55e;"></div>${t("schedule.type_event", lang)}</div>
+                <div class="sch-legend-item"><div class="sch-legend-dot" style="background:#94a3b8;"></div>${t("schedule.type_other", lang)}</div>
+                <div class="sch-legend-item"><span style="font-size:12px;">📞</span>&nbsp;${t("schedule.call_linked", lang)}</div>
               </div>
               <button class="sch-select-btn" id="sch-select-btn" onclick="toggleSelectMode()">☑ 複数選択</button>
             </div>
@@ -427,7 +430,7 @@ form label.sch-att-add-btn, .form-group label.sch-att-add-btn { display:inline-f
     <!-- サイド列（直近予定） -->
     <div class="sch-side-col">
         <div class="card" style="padding:16px 18px;">
-            <div class="card-title" style="margin-bottom:10px;">直近の予定</div>
+            <div class="card-title" style="margin-bottom:10px;">${t("schedule.upcoming", lang)}</div>
             <div class="sch-upcoming" id="sch-upcoming-list">
                 <div style="color:#94a3b8;font-size:13px;padding:12px 0;">読み込み中...</div>
             </div>

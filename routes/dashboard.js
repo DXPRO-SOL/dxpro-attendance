@@ -23,9 +23,11 @@ const {
   escapeHtml,
 } = require("../lib/helpers");
 const { renderPage } = require("../lib/renderPage");
+const { t } = require("../lib/i18n");
 
 router.get("/dashboard", requireLogin, async (req, res) => {
   try {
+    const lang = req.lang || "ja";
     const user = await User.findById(req.session.userId);
     const employee = await Employee.findOne({ userId: user._id });
     req.session.user = user;
@@ -674,15 +676,15 @@ router.get("/dashboard", requireLogin, async (req, res) => {
         <!-- ── Header ── -->
         <div class="db-header">
             <div class="db-header-left">
-                <div class="greeting">お疲れ様です、${escapeHtml(employee.name)} さん </div>
+                <div class="greeting">${t("dashboard.greeting_prefix", lang)}${escapeHtml(employee.name)}${t("dashboard.greeting_suffix", lang)}</div>
                 <div class="sub">
-                    <span class="sub-item">${escapeHtml(employee.position || "スタッフ")}</span>
+                    <span class="sub-item">${escapeHtml(employee.position || t("dashboard.default_position", lang))}</span>
                     <span class="sub-item">${escapeHtml(employee.department || "")}</span>
-                    <span class="sub-item">従業員ID: ${escapeHtml(employee.employeeId || "")}</span>
+                    <span class="sub-item">${t("dashboard.employee_id", lang)} ${escapeHtml(employee.employeeId || "")}</span>
                 </div>
             </div>
             <div class="db-header-right">
-                ${req.session.isAdmin ? '<span class="badge-admin"><i class="fa-solid fa-shield-halved"></i> 管理者</span>' : ""}
+                ${req.session.isAdmin ? `<span class="badge-admin"><i class="fa-solid fa-shield-halved"></i> ${t("dashboard.admin_badge", lang)}</span>` : ""}
                 <div class="live-clock" id="liveClk"></div>
             </div>
         </div>
@@ -693,21 +695,21 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             <div class="kpi-card">
                 <div class="kpi-card-top">
                     <div>
-                        <div class="kpi-label">出勤日数（今月）</div>
-                        <div class="kpi-value">${attendanceSummary.workDays}<span style="font-size:15px;font-weight:500;color:var(--c-muted)"> 日</span></div>
-                        <div class="kpi-sub">遅刻 ${attendanceSummary.late} 件 &nbsp;•&nbsp; 早退 ${attendanceSummary.earlyLeave} 件 &nbsp;•&nbsp; 欠勤 ${absentCount} 日</div>
+                        <div class="kpi-label">${t("dashboard.kpi_attendance", lang)}</div>
+                        <div class="kpi-value">${attendanceSummary.workDays}<span style="font-size:15px;font-weight:500;color:var(--c-muted)"> ${t("dashboard.kpi_attendance_unit", lang)}</span></div>
+                        <div class="kpi-sub">${t("dashboard.kpi_late", lang)} ${attendanceSummary.late} ${t("dashboard.kpi_cases", lang)} &nbsp;•&nbsp; ${t("dashboard.kpi_early_leave", lang)} ${attendanceSummary.earlyLeave} ${t("dashboard.kpi_cases", lang)} &nbsp;•&nbsp; ${t("dashboard.kpi_absent", lang)} ${absentCount} ${t("dashboard.kpi_days", lang)}</div>
                     </div>
                     <div class="kpi-icon blue"><i class="fa-solid fa-calendar-check"></i></div>
                 </div>
-                <a href="/attendance-main" style="font-size:12px;color:var(--c-primary);font-weight:600;text-decoration:none;margin-top:6px;display:inline-block;">勤怠を打刻する →</a>
+                <a href="/attendance-main" style="font-size:12px;color:var(--c-primary);font-weight:600;text-decoration:none;margin-top:6px;display:inline-block;">${t("dashboard.btn_attendance", lang)}</a>
             </div>
 
             <div class="kpi-card">
                 <div class="kpi-card-top">
                     <div>
-                        <div class="kpi-label">残業時間（今月）</div>
+                        <div class="kpi-label">${t("dashboard.kpi_overtime", lang)}</div>
                         <div class="kpi-value">${attendanceSummary.overtime}<span style="font-size:15px;font-weight:500;color:var(--c-muted)"> h</span></div>
-                        <div class="kpi-sub">過去6ヶ月推移</div>
+                        <div class="kpi-sub">${t("dashboard.kpi_overtime_sub", lang)}</div>
                     </div>
                     <div class="kpi-icon warn"><i class="fa-solid fa-clock"></i></div>
                 </div>
@@ -717,26 +719,26 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             <div class="kpi-card">
                 <div class="kpi-card-top">
                     <div>
-                        <div class="kpi-label">個人目標達成率</div>
+                        <div class="kpi-label">${t("dashboard.kpi_goals", lang)}</div>
                         <div class="kpi-value">${goalSummary.personal != null ? goalSummary.personal : "—"}<span style="font-size:15px;font-weight:500;color:var(--c-muted)">${goalSummary.personal != null ? " %" : ""}</span></div>
-                        <div class="kpi-sub">完了 ${goalsCompleted} / 進行中 ${goalsInProgress} / 期限超過 ${goalsOverdue}</div>
+                        <div class="kpi-sub">${t("dashboard.kpi_goals_done", lang)} ${goalsCompleted} / ${t("dashboard.kpi_goals_ongoing", lang)} ${goalsInProgress} / ${t("dashboard.kpi_goals_overdue", lang)} ${goalsOverdue}</div>
                     </div>
                     <div class="kpi-icon green"><i class="fa-solid fa-bullseye"></i></div>
                 </div>
-                ${goalSummary.personal != null ? `<div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(100, goalSummary.personal)}%;background:var(--c-success)"></div></div>` : '<div style="font-size:11px;color:var(--c-sub);margin-top:6px">目標を登録しましょう</div>'}
-                <a href="/goals" style="font-size:12px;color:var(--c-success);font-weight:600;text-decoration:none;margin-top:6px;display:inline-block;">目標を確認する →</a>
+                ${goalSummary.personal != null ? `<div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(100, goalSummary.personal)}%;background:var(--c-success)"></div></div>` : `<div style="font-size:11px;color:var(--c-sub);margin-top:6px">${t("dashboard.kpi_goals_register", lang)}</div>`}
+                <a href="/goals" style="font-size:12px;color:var(--c-success);font-weight:600;text-decoration:none;margin-top:6px;display:inline-block;">${t("dashboard.btn_goals", lang)}</a>
             </div>
 
             <div class="kpi-card">
                 <div class="kpi-card-top">
                     <div>
-                        <div class="kpi-label">休暇ステータス</div>
-                        <div class="kpi-value">${leaveSummary.pending}<span style="font-size:15px;font-weight:500;color:var(--c-muted)"> 件</span></div>
-                        <div class="kpi-sub">申請中 &nbsp;•&nbsp; 承認済 ${leaveApprovedCount} &nbsp;•&nbsp; 予定 ${leaveSummary.upcoming}</div>
+                        <div class="kpi-label">${t("dashboard.kpi_leave", lang)}</div>
+                        <div class="kpi-value">${leaveSummary.pending}<span style="font-size:15px;font-weight:500;color:var(--c-muted)"> ${t("dashboard.kpi_leave_unit", lang)}</span></div>
+                        <div class="kpi-sub">${t("dashboard.kpi_leave_pending", lang)} &nbsp;•&nbsp; ${t("dashboard.kpi_leave_approved", lang)} ${leaveApprovedCount} &nbsp;•&nbsp; ${t("dashboard.kpi_leave_upcoming", lang)} ${leaveSummary.upcoming}</div>
                     </div>
                     <div class="kpi-icon ${leaveSummary.pending > 0 ? "warn" : "green"}"><i class="fa-solid fa-umbrella-beach"></i></div>
                 </div>
-                <a href="/leave/my-requests" style="font-size:12px;color:var(--c-primary);font-weight:600;text-decoration:none;margin-top:6px;display:inline-block;">休暇履歴を見る →</a>
+                <a href="/leave/my-requests" style="font-size:12px;color:var(--c-primary);font-weight:600;text-decoration:none;margin-top:6px;display:inline-block;">${t("dashboard.btn_leave", lang)}</a>
             </div>
 
         </div><!-- /kpi-grid -->
@@ -747,36 +749,36 @@ router.get("/dashboard", requireLogin, async (req, res) => {
 
             <!-- Quick Actions -->
             <div class="card">
-                <div class="card-head"><h3><i class="fa-solid fa-bolt" style="color:var(--c-warn);margin-right:7px"></i>クイックアクション</h3></div>
+                <div class="card-head"><h3><i class="fa-solid fa-bolt" style="color:var(--c-warn);margin-right:7px"></i>${t("dashboard.section_quick_actions", lang)}</h3></div>
                 <div class="card-body">
                     <div class="qa-grid">
                         <a href="/attendance-main" class="qa-btn qa-blue">
                             <div class="qa-icon"><i class="fa-solid fa-business-time"></i></div>
-                            <span class="qa-label">勤怠打刻</span>
+                            <span class="qa-label">${t("dashboard.qa_attendance", lang)}</span>
                         </a>
                         <a href="/leave/apply" class="qa-btn qa-orange">
                             <div class="qa-icon"><i class="fa-solid fa-calendar-plus"></i></div>
-                            <span class="qa-label">休暇申請</span>
+                            <span class="qa-label">${t("dashboard.qa_leave", lang)}</span>
                         </a>
                         <a href="/goals" class="qa-btn qa-green">
                             <div class="qa-icon"><i class="fa-solid fa-bullseye"></i></div>
-                            <span class="qa-label">目標管理</span>
+                            <span class="qa-label">${t("dashboard.qa_goals", lang)}</span>
                         </a>
                         <a href="/hr/daily-report" class="qa-btn qa-purple">
                             <div class="qa-icon"><i class="fa-solid fa-pen-to-square"></i></div>
-                            <span class="qa-label">日報入力</span>
+                            <span class="qa-label">${t("dashboard.qa_daily", lang)}</span>
                         </a>
                         <a href="/hr/payroll" class="qa-btn qa-cyan">
                             <div class="qa-icon"><i class="fa-solid fa-yen-sign"></i></div>
-                            <span class="qa-label">給与明細</span>
+                            <span class="qa-label">${t("dashboard.qa_payroll", lang)}</span>
                         </a>
                         <a href="/board/new" class="qa-btn qa-rose">
                             <div class="qa-icon"><i class="fa-solid fa-comments"></i></div>
-                            <span class="qa-label">掲示板投稿</span>
+                            <span class="qa-label">${t("dashboard.qa_board", lang)}</span>
                         </a>
                         <a href="/overtime/new" class="qa-btn qa-amber">
                             <div class="qa-icon"><i class="fa-solid fa-clock"></i></div>
-                            <span class="qa-label">残業申請</span>
+                            <span class="qa-label">${t("dashboard.qa_overtime", lang)}</span>
                         </a>
                     </div>
                 </div>
@@ -785,11 +787,11 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             <!-- AI Recommendations -->
             <div class="card">
                 <div class="card-head">
-                    <h3><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--c-purple);margin-right:7px"></i>AIインサイト＆予測分析</h3>
+                    <h3><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--c-purple);margin-right:7px"></i>${t("dashboard.section_ai", lang)}</h3>
                     <span style="font-size:11px;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;padding:3px 10px;border-radius:999px;font-weight:700;letter-spacing:.3px">✦ AI ENGINE</span>
                 </div>
                 <div style="padding:10px 20px 6px;background:#faf8ff;border-bottom:1px solid #ede9fe">
-                    <div style="font-size:12px;color:#6d28d9;font-weight:600"><i class="fa-solid fa-circle-info" style="margin-right:5px"></i>あなたの勤怠・目標・休暇・給与データをリアルタイム分析し、パターン検知・将来予測・改善提案を行っています</div>
+                    <div style="font-size:12px;color:#6d28d9;font-weight:600"><i class="fa-solid fa-circle-info" style="margin-right:5px"></i>${t("dashboard.ai_desc", lang)}</div>
                 </div>
                 <div>
                     ${
@@ -797,8 +799,8 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                         ? `
                     <div style="padding:28px 20px;text-align:center;color:var(--c-muted)">
                         <i class="fa-solid fa-circle-check" style="font-size:28px;color:var(--c-success);margin-bottom:10px;display:block"></i>
-                        <div style="font-weight:600;font-size:14px">現在の状況は良好です</div>
-                        <div style="font-size:12px;margin-top:4px">AIが検知した改善ポイントはありません。引き続き頑張りましょう！</div>
+                        <div style="font-weight:600;font-size:14px">${t("dashboard.ai_good_title", lang)}</div>
+                        <div style="font-size:12px;margin-top:4px">${t("dashboard.ai_good_sub", lang)}</div>
                     </div>`
                         : aiRecommendations
                             .map((r, i) => {
@@ -809,7 +811,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                                   iconBg: "#fef2f2",
                                   iconColor: "#dc2626",
                                   badgeBg: "#dc2626",
-                                  badgeText: "要対応",
+                                  badgeText: t("dashboard.badge_danger", lang),
                                 },
                                 warn: {
                                   bg: "#fffbeb",
@@ -817,7 +819,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                                   iconBg: "#fffbeb",
                                   iconColor: "#d97706",
                                   badgeBg: "#d97706",
-                                  badgeText: "注意",
+                                  badgeText: t("dashboard.badge_warn", lang),
                                 },
                                 success: {
                                   bg: "#f0fdf4",
@@ -825,7 +827,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                                   iconBg: "#f0fdf4",
                                   iconColor: "#16a34a",
                                   badgeBg: "#16a34a",
-                                  badgeText: "良好",
+                                  badgeText: t("dashboard.badge_success", lang),
                                 },
                                 purple: {
                                   bg: "#faf5ff",
@@ -833,7 +835,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                                   iconBg: "#faf5ff",
                                   iconColor: "#7c3aed",
                                   badgeBg: "#7c3aed",
-                                  badgeText: "AI提案",
+                                  badgeText: t("dashboard.badge_ai", lang),
                                 },
                                 info: {
                                   bg: "#eff6ff",
@@ -841,7 +843,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                                   iconBg: "#eff6ff",
                                   iconColor: "#2563eb",
                                   badgeBg: "#2563eb",
-                                  badgeText: "情報",
+                                  badgeText: t("dashboard.badge_info", lang),
                                 },
                               };
                               const tag = tagStyles[r.tag] || tagStyles.info;
@@ -858,8 +860,8 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                                 </div>
                                 <div class="ai-desc">${escapeHtml(r.description)}</div>
                                 <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
-                                    <a href="${escapeHtml(r.link)}" class="ai-btn" style="background:${tag.badgeBg}">確認する</a>
-                                    <span class="ai-conf"><i class="fa-solid fa-brain" style="font-size:9px;margin-right:3px"></i>AI信頼度 ${r.confidence}%</span>
+                                    <a href="${escapeHtml(r.link)}" class="ai-btn" style="background:${tag.badgeBg}">${t("dashboard.ai_check", lang)}</a>
+                                    <span class="ai-conf"><i class="fa-solid fa-brain" style="font-size:9px;margin-right:3px"></i>${t("dashboard.ai_confidence", lang)} ${r.confidence}%</span>
                                 </div>
                             </div>
                         </div>`;
@@ -868,16 +870,16 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                     }
                 </div>
                 <div style="padding:10px 20px;border-top:1px solid var(--c-border);background:#f9f9ff;display:flex;align-items:center;justify-content:space-between">
-                    <span style="font-size:11px;color:var(--c-muted)"><i class="fa-solid fa-rotate" style="margin-right:4px"></i>リアルタイム分析 — ページ読み込み時に更新</span>
-                    <span style="font-size:11px;color:var(--c-primary);font-weight:600">${aiRecommendations.length} 件のインサイト</span>
+                    <span style="font-size:11px;color:var(--c-muted)"><i class="fa-solid fa-rotate" style="margin-right:4px"></i>${t("dashboard.ai_realtime", lang)}</span>
+                    <span style="font-size:11px;color:var(--c-primary);font-weight:600">${aiRecommendations.length} ${t("dashboard.ai_insights_count", lang)}</span>
                 </div>
             </div>
 
             <!-- Attendance Trend -->
             <div class="card trend-card">
                 <div class="card-head">
-                    <h3><i class="fa-solid fa-chart-area" style="color:var(--c-primary);margin-right:7px"></i>過去6ヶ月の出勤推移 <span style="font-size:10px;font-weight:700;background:#eff6ff;color:#2563eb;padding:2px 7px;border-radius:999px;margin-left:6px">AIトレンド分析</span></h3>
-                    <a href="/attendance-main" class="see-all">詳細を見る →</a>
+                    <h3><i class="fa-solid fa-chart-area" style="color:var(--c-primary);margin-right:7px"></i>${t("dashboard.section_trend", lang)} <span style="font-size:10px;font-weight:700;background:#eff6ff;color:#2563eb;padding:2px 7px;border-radius:999px;margin-left:6px">${t("dashboard.trend_ai_badge", lang)}</span></h3>
+                    <a href="/attendance-main" class="see-all">${t("dashboard.trend_detail", lang)}</a>
                 </div>
                 <div class="card-body">
                     <canvas id="trendChart" height="90"></canvas>
@@ -896,10 +898,10 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                       const min = Math.min(...counts);
                       const trendLabel =
                         diff > 2
-                          ? "📈 上昇傾向"
+                          ? t("dashboard.trend_rise", lang)
                           : diff < -2
-                            ? "📉 下降傾向"
-                            : "→ 横ばい";
+                            ? t("dashboard.trend_fall", lang)
+                            : t("dashboard.trend_flat", lang);
                       const trendColor =
                         diff > 2
                           ? "#16a34a"
@@ -908,10 +910,10 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                             : "#d97706";
                       return `<div style="margin-top:10px;padding:10px 12px;background:#f8faff;border-radius:8px;border:1px solid #e0e8ff">
                             <div style="display:flex;gap:20px;flex-wrap:wrap">
-                                <div style="font-size:12px"><span style="color:var(--c-muted)">AIトレンド判定：</span> <strong style="color:${trendColor}">${trendLabel}</strong></div>
-                                <div style="font-size:12px"><span style="color:var(--c-muted)">6か月平均：</span> <strong>${avg}日/月</strong></div>
-                                <div style="font-size:12px"><span style="color:var(--c-muted)">最高：</span> <strong style="color:#16a34a">${max}日</strong></div>
-                                <div style="font-size:12px"><span style="color:var(--c-muted)">最低：</span> <strong style="color:#dc2626">${min}日</strong></div>
+                                <div style="font-size:12px"><span style="color:var(--c-muted)">${t("dashboard.trend_label", lang)}</span> <strong style="color:${trendColor}">${trendLabel}</strong></div>
+                                <div style="font-size:12px"><span style="color:var(--c-muted)">${t("dashboard.trend_avg", lang)}</span> <strong>${avg}${t("dashboard.trend_days", lang)}</strong></div>
+                                <div style="font-size:12px"><span style="color:var(--c-muted)">${t("dashboard.trend_max", lang)}</span> <strong style="color:#16a34a">${max}${t("dashboard.kpi_days", lang)}</strong></div>
+                                <div style="font-size:12px"><span style="color:var(--c-muted)">${t("dashboard.trend_min", lang)}</span> <strong style="color:#dc2626">${min}${t("dashboard.kpi_days", lang)}</strong></div>
                             </div>
                         </div>`;
                     })()}
@@ -921,7 +923,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             <!-- Semi-Annual Evaluation -->
             <div class="card semi-card">
                 <div class="card-head">
-                    <h3><i class="fa-solid fa-robot" style="color:var(--c-purple);margin-right:7px"></i>AI 半期評価予測</h3>
+                    <h3><i class="fa-solid fa-robot" style="color:var(--c-purple);margin-right:7px"></i>${t("dashboard.section_semi", lang)}</h3>
                 </div>
                 <div class="card-body">
 
@@ -979,20 +981,23 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                                       : "#fecaca";
                       const gradeLabel =
                         sc >= 96
-                          ? "最高評価"
+                          ? t("dashboard.grade_top", lang)
                           : sc >= 88
-                            ? "優秀"
+                            ? t("dashboard.grade_excellent", lang)
                             : sc >= 78
-                              ? "良好"
+                              ? t("dashboard.grade_good", lang)
                               : sc >= 67
-                                ? "標準以上"
+                                ? t("dashboard.grade_above_avg", lang)
                                 : sc >= 55
-                                  ? "標準"
+                                  ? t("dashboard.grade_avg", lang)
                                   : sc >= 43
-                                    ? "要改善"
+                                    ? t(
+                                        "dashboard.grade_needs_improvement",
+                                        lang,
+                                      )
                                     : sc >= 28
-                                      ? "低評価"
-                                      : "要注意";
+                                      ? t("dashboard.grade_low", lang)
+                                      : t("dashboard.grade_warning", lang);
                       const nextGrade =
                         sc >= 96
                           ? null
@@ -1026,7 +1031,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                                 </svg>
                                 <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
                                     <span style="font-size:30px;font-weight:900;color:${scoreColor};line-height:1">${sc}</span>
-                                    <span style="font-size:10px;color:#9ca3af;font-weight:500">/ 100点</span>
+                                    <span style="font-size:10px;color:#9ca3af;font-weight:500">${t("dashboard.score_suffix", lang)}</span>
                                 </div>
                             </div>
                             <!-- グレード＋ラベル -->
@@ -1058,20 +1063,20 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                                       })
                                       .join("")}
                                 </div>
-                                ${nextGrade ? `<div style="font-size:11.5px;color:#6b7280">次のグレード <strong style="color:${scoreColor}">${nextGrade.name}</strong> まで <strong style="font-size:14px;color:${scoreColor}">${nextGrade.need}点</strong></div>` : `<div style="font-size:11.5px;color:#16a34a;font-weight:700">🏆 最高グレード達成中！</div>`}
+                                ${nextGrade ? `<div style="font-size:11.5px;color:#6b7280">${t("dashboard.grade_to_go", lang, { name: nextGrade.name, n: nextGrade.need })}</div>` : `<div style="font-size:11.5px;color:#16a34a;font-weight:700">${t("dashboard.top_grade_achieved", lang)}</div>`}
                             </div>
                         </div>
                     </div>
 
                     <!-- AI分析コメント -->
                     <div style="background:#faf8ff;border:1px solid #ede9fe;border-radius:10px;padding:12px 14px;margin-bottom:16px">
-                        <div style="font-size:11px;font-weight:700;color:#7c3aed;margin-bottom:5px"><i class="fa-solid fa-brain" style="margin-right:4px"></i>AI分析コメント</div>
+                        <div style="font-size:11px;font-weight:700;color:#7c3aed;margin-bottom:5px"><i class="fa-solid fa-brain" style="margin-right:4px"></i>${t("dashboard.ai_analysis_comment", lang)}</div>
                         <div style="font-size:12.5px;color:var(--c-text);line-height:1.7">${escapeHtml(semi.explanation)}</div>
                     </div>`;
                     })()}
 
                     <!-- ── 5カテゴリ 詳細ブレークダウン ── -->
-                    <div style="font-size:12px;font-weight:700;color:var(--c-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">評価カテゴリ詳細</div>
+                    <div style="font-size:12px;font-weight:700;color:var(--c-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">${t("dashboard.category_detail", lang)}</div>
 
                     ${(() => {
                       const sub = semi.breakdown.sub || {};
@@ -1079,7 +1084,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                       const categories = [
                         {
                           key: "attendance",
-                          label: "出勤・時間管理",
+                          label: t("dashboard.cat_attendance", lang),
                           icon: "fa-calendar-check",
                           color: "#2563eb",
                           bg: "#eff6ff",
@@ -1087,28 +1092,35 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                           max: 28,
                           items: [
                             {
-                              label: "時間厳守",
+                              label: t("dashboard.sub_punctuality", lang),
                               val: (sub.attendance || {}).punctuality || 0,
                               max: 12,
-                              tip: `遅刻${raw.lateCount || 0}件・早退${raw.earlyCount || 0}件`,
+                              tip: t("dashboard.tip_late_early", lang, {
+                                late: raw.lateCount || 0,
+                                early: raw.earlyCount || 0,
+                              }),
                             },
                             {
-                              label: "出勤安定性",
+                              label: t("dashboard.sub_stability", lang),
                               val: (sub.attendance || {}).stability || 0,
                               max: 10,
-                              tip: `欠勤${raw.absentCount || 0}日`,
+                              tip: t("dashboard.tip_absent", lang, {
+                                days: raw.absentCount || 0,
+                              }),
                             },
                             {
-                              label: "月次一貫性",
+                              label: t("dashboard.sub_consistency", lang),
                               val: (sub.attendance || {}).consistency || 0,
                               max: 6,
-                              tip: `評価期間${raw.monthCount || 0}ヶ月`,
+                              tip: t("dashboard.tip_months", lang, {
+                                months: raw.monthCount || 0,
+                              }),
                             },
                           ],
                         },
                         {
                           key: "goal",
-                          label: "目標管理",
+                          label: t("dashboard.cat_goals", lang),
                           icon: "fa-bullseye",
                           color: "#16a34a",
                           bg: "#f0fdf4",
@@ -1116,34 +1128,43 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                           max: 32,
                           items: [
                             {
-                              label: "進捗率",
+                              label: t("dashboard.sub_progress", lang),
                               val: (sub.goal || {}).progress || 0,
                               max: 10,
-                              tip: `平均進捗${raw.goalAvg || 0}%`,
+                              tip: t("dashboard.tip_goal_avg", lang, {
+                                pct: raw.goalAvg || 0,
+                              }),
                             },
                             {
-                              label: "完了率",
+                              label: t("dashboard.sub_completion", lang),
                               val: (sub.goal || {}).completion || 0,
                               max: 10,
-                              tip: `${raw.goalsCompleted || 0}/${raw.goalsApproved || 0}件完了`,
+                              tip: t("dashboard.tip_goal_done", lang, {
+                                done: raw.goalsCompleted || 0,
+                                total: raw.goalsApproved || 0,
+                              }),
                             },
                             {
-                              label: "計画性",
+                              label: t("dashboard.sub_planning", lang),
                               val: (sub.goal || {}).planning || 0,
                               max: 6,
-                              tip: `期限超過${raw.goalsOverdue || 0}件`,
+                              tip: t("dashboard.tip_overdue", lang, {
+                                n: raw.goalsOverdue || 0,
+                              }),
                             },
                             {
-                              label: "難易度ボーナス",
+                              label: t("dashboard.sub_difficulty", lang),
                               val: (sub.goal || {}).difficulty || 0,
                               max: 6,
-                              tip: `高レベル目標${raw.goalsHighLevel || 0}件`,
+                              tip: t("dashboard.tip_high_level", lang, {
+                                n: raw.goalsHighLevel || 0,
+                              }),
                             },
                           ],
                         },
                         {
                           key: "quality",
-                          label: "業務品質",
+                          label: t("dashboard.cat_quality", lang),
                           icon: "fa-file-lines",
                           color: "#0891b2",
                           bg: "#ecfeff",
@@ -1154,30 +1175,35 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                           max: 16,
                           items: [
                             {
-                              label: "打刻精度",
+                              label: t("dashboard.sub_punch_accuracy", lang),
                               val:
                                 (sub.quality || sub.payroll || {})
                                   .punchAccuracy ||
                                 (sub.quality || sub.payroll || {}).accuracy ||
                                 0,
                               max: 8,
-                              tip: `正常打刻${raw.normalCount || 0}日`,
+                              tip: t("dashboard.tip_punch", lang, {
+                                n: raw.normalCount || 0,
+                              }),
                             },
                             {
-                              label: "日報提出率",
+                              label: t("dashboard.sub_daily_report", lang),
                               val:
                                 (sub.quality || sub.payroll || {})
                                   .dailyReport ||
                                 (sub.quality || sub.payroll || {}).timeliness ||
                                 0,
                               max: 8,
-                              tip: `提出${raw.reportCount || 0}件（${raw.reportRate || 0}%）`,
+                              tip: t("dashboard.tip_report", lang, {
+                                n: raw.reportCount || 0,
+                                pct: raw.reportRate || 0,
+                              }),
                             },
                           ],
                         },
                         {
                           key: "overtime",
-                          label: "残業管理",
+                          label: t("dashboard.cat_overtime", lang),
                           icon: "fa-moon",
                           color: "#7c3aed",
                           bg: "#faf5ff",
@@ -1185,22 +1211,24 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                           max: 12,
                           items: [
                             {
-                              label: "月間残業制御",
+                              label: t("dashboard.sub_ot_control", lang),
                               val: (sub.overtime || {}).control || 0,
                               max: 7,
-                              tip: `月平均${raw.monthlyOT || 0}h`,
+                              tip: t("dashboard.tip_monthly_ot", lang, {
+                                h: raw.monthlyOT || 0,
+                              }),
                             },
                             {
-                              label: "ワークバランス",
+                              label: t("dashboard.sub_work_balance", lang),
                               val: (sub.overtime || {}).balance || 0,
                               max: 5,
-                              tip: "日次残業のばらつき",
+                              tip: t("dashboard.tip_ot_variance", lang),
                             },
                           ],
                         },
                         {
                           key: "leave",
-                          label: "休暇管理",
+                          label: t("dashboard.cat_leave", lang),
                           icon: "fa-umbrella-beach",
                           color: "#d97706",
                           bg: "#fffbeb",
@@ -1208,22 +1236,26 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                           max: 12,
                           items: [
                             {
-                              label: "計画的申請",
+                              label: t("dashboard.sub_leave_planning", lang),
                               val:
                                 (sub.leave || {}).management ||
                                 (sub.leave || {}).planning ||
                                 0,
                               max: 7,
-                              tip: `承認待ち${raw.leavePending || 0}件`,
+                              tip: t("dashboard.tip_leave_pending", lang, {
+                                n: raw.leavePending || 0,
+                              }),
                             },
                             {
-                              label: "承認率",
+                              label: t("dashboard.sub_approval_rate", lang),
                               val:
                                 (sub.leave || {}).approvalRate ||
                                 (sub.leave || {}).planning ||
                                 0,
                               max: 5,
-                              tip: `承認済${raw.leaveApproved || 0}件`,
+                              tip: t("dashboard.tip_leave_approved", lang, {
+                                n: raw.leaveApproved || 0,
+                              }),
                             },
                           ],
                         },
@@ -1297,7 +1329,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                         ? `
                     <div style="margin-top:16px">
                         <div style="font-size:12px;font-weight:700;color:var(--c-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">
-                            <i class="fa-solid fa-list-check" style="margin-right:5px;color:var(--c-primary)"></i>あなたへのアクションプラン（${semi.actions.length}件）
+                            <i class="fa-solid fa-list-check" style="margin-right:5px;color:var(--c-primary)"></i>${t("dashboard.action_plan", lang, { n: semi.actions.length })}
                         </div>
                         ${semi.actions
                           .map((action, idx) => {
@@ -1307,20 +1339,29 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                                     border: "#fecaca",
                                     bg: "#fef2f2",
                                     badge: "#dc2626",
-                                    label: "優先度：高",
+                                    label: t(
+                                      "dashboard.action_priority_high",
+                                      lang,
+                                    ),
                                   }
                                 : action.priority === "medium"
                                   ? {
                                       border: "#fde68a",
                                       bg: "#fffbeb",
                                       badge: "#d97706",
-                                      label: "優先度：中",
+                                      label: t(
+                                        "dashboard.action_priority_med",
+                                        lang,
+                                      ),
                                     }
                                   : {
                                       border: "#bfdbfe",
                                       bg: "#eff6ff",
                                       badge: "#2563eb",
-                                      label: "優先度：低",
+                                      label: t(
+                                        "dashboard.action_priority_low",
+                                        lang,
+                                      ),
                                     };
                             return `<div style="border:1px solid ${priStyle.border};border-radius:10px;background:${priStyle.bg};padding:12px 14px;margin-bottom:8px">
                                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -1332,7 +1373,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                                 </div>
                                 <div style="font-size:12px;color:var(--c-muted);margin-bottom:5px">${escapeHtml(action.detail)}</div>
                                 <div style="font-size:12px;color:var(--c-text);background:white;border-radius:7px;padding:8px 10px;border:1px solid ${priStyle.border}">
-                                    <strong>💡 具体的な行動：</strong> ${escapeHtml(action.howto)}
+                                    <strong>${t("dashboard.action_howto", lang)}</strong> ${escapeHtml(action.howto)}
                                 </div>
                                 <div style="font-size:11px;color:${priStyle.badge};font-weight:600;margin-top:6px">
                                     <i class="fa-solid fa-arrow-up" style="font-size:9px"></i> ${escapeHtml(action.impact)}
@@ -1344,31 +1385,31 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                         : `
                     <div style="margin-top:16px;padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;text-align:center">
                         <i class="fa-solid fa-trophy" style="color:#16a34a;font-size:20px;margin-bottom:6px;display:block"></i>
-                        <div style="font-size:13px;font-weight:700;color:#15803d">現在の評価は良好です</div>
-                        <div style="font-size:12px;color:#16a34a;margin-top:3px">AIが検知した改善ポイントはありません。この状態を維持しましょう！</div>
+                        <div style="font-size:13px;font-weight:700;color:#15803d">${t("dashboard.action_good", lang)}</div>
+                        <div style="font-size:12px;color:#16a34a;margin-top:3px">${t("dashboard.action_good_sub", lang)}</div>
                     </div>`
                     }
 
                     <!-- ── グレードアップヒント ── -->
                     <div style="margin-top:14px;padding:13px 16px;background:linear-gradient(135deg,#f0f9ff,#faf5ff);border:1.5px solid #c7d2fe;border-radius:12px">
-                        <div style="font-size:11px;font-weight:700;color:#7c3aed;margin-bottom:6px"><i class="fa-solid fa-wand-magic-sparkles" style="margin-right:5px"></i>次のグレードへの道</div>
+                        <div style="font-size:11px;font-weight:700;color:#7c3aed;margin-bottom:6px"><i class="fa-solid fa-wand-magic-sparkles" style="margin-right:5px"></i>${t("dashboard.next_grade_road", lang)}</div>
                         <div style="font-size:13px;color:#1e40af;font-weight:500">
                         ${
                           semi.score >= 96
-                            ? "🏆 最高グレード S+ 達成中！この状態を維持してください。"
+                            ? t("dashboard.grade_top_message", lang)
                             : semi.score >= 88
-                              ? `グレード <strong style="font-size:16px;color:#9333ea">S+</strong> まであと <strong style="font-size:20px;color:#9333ea">${96 - semi.score}</strong><span style="font-size:12px">点</span>`
+                              ? `${t("dashboard.grade_to_go", lang, { name: "S+", n: 96 - semi.score })}`
                               : semi.score >= 78
-                                ? `グレード <strong style="font-size:16px;color:#7c3aed">S</strong> まであと <strong style="font-size:20px;color:#7c3aed">${88 - semi.score}</strong><span style="font-size:12px">点</span>`
+                                ? `${t("dashboard.grade_to_go", lang, { name: "S", n: 88 - semi.score })}`
                                 : semi.score >= 67
-                                  ? `グレード <strong style="font-size:16px;color:#16a34a">A+</strong> まであと <strong style="font-size:20px;color:#16a34a">${78 - semi.score}</strong><span style="font-size:12px">点</span>`
+                                  ? `${t("dashboard.grade_to_go", lang, { name: "A+", n: 78 - semi.score })}`
                                   : semi.score >= 55
-                                    ? `グレード <strong style="font-size:16px;color:#2563eb">A</strong> まであと <strong style="font-size:20px;color:#2563eb">${67 - semi.score}</strong><span style="font-size:12px">点</span>`
+                                    ? `${t("dashboard.grade_to_go", lang, { name: "A", n: 67 - semi.score })}`
                                     : semi.score >= 43
-                                      ? `グレード <strong style="font-size:16px;color:#0891b2">B+</strong> まであと <strong style="font-size:20px;color:#0891b2">${55 - semi.score}</strong><span style="font-size:12px">点</span>`
+                                      ? `${t("dashboard.grade_to_go", lang, { name: "B+", n: 55 - semi.score })}`
                                       : semi.score >= 28
-                                        ? `グレード <strong style="font-size:16px;color:#d97706">B</strong> まであと <strong style="font-size:20px;color:#d97706">${43 - semi.score}</strong><span style="font-size:12px">点</span>`
-                                        : `グレード <strong style="font-size:16px;color:#ea580c">C</strong> まであと <strong style="font-size:20px;color:#ea580c">${28 - semi.score}</strong><span style="font-size:12px">点</span>`
+                                        ? `${t("dashboard.grade_to_go", lang, { name: "B", n: 43 - semi.score })}`
+                                        : `${t("dashboard.grade_to_go", lang, { name: "C", n: 28 - semi.score })}`
                         }
                         </div>
                         <div style="font-size:11.5px;color:#6b7280;margin-top:5px">
@@ -1376,12 +1417,12 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                           semi.score >= 96
                             ? ""
                             : semi.score >= 75
-                              ? "出勤の安定と目標完了が最短ルートです。"
+                              ? t("dashboard.grade_hint_maintain", lang)
                               : semi.score >= 60
-                                ? "遅刻削減と目標進捗更新を優先してください。"
+                                ? t("dashboard.grade_hint_late", lang)
                                 : semi.score >= 45
-                                  ? "目標登録と欠勤削減が最も効果的です。"
-                                  : "まず目標を1件登録するだけで大きく改善できます。"
+                                  ? t("dashboard.grade_hint_goal", lang)
+                                  : t("dashboard.grade_hint_start", lang)
                         }
                         </div>
                     </div>
@@ -1392,9 +1433,9 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                         <div style="background:linear-gradient(135deg,#eff6ff,#f5f3ff);padding:10px 14px;border-bottom:1px solid #e0e8ff;border-radius:14px 14px 0 0">
                             <div style="display:flex;align-items:center;gap:7px">
                                 <i class="fa-solid fa-pen-to-square" style="color:#7c3aed;font-size:13px;flex-shrink:0"></i>
-                                <span style="font-size:13px;font-weight:700;color:#1e1b4b;line-height:1.4">自己評価・コミットメントを記録する</span>
+                                <span style="font-size:13px;font-weight:700;color:#1e1b4b;line-height:1.4">${t("dashboard.semi_self_header", lang)}</span>
                             </div>
-                            <div style="font-size:10px;color:#9ca3af;margin-top:3px;padding-left:20px">管理者に共有されます</div>
+                            <div style="font-size:10px;color:#9ca3af;margin-top:3px;padding-left:20px">${t("dashboard.semi_self_subheader", lang)}</div>
                         </div>
                         <div style="padding:14px">
 
@@ -1404,31 +1445,31 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                                 ${[
                                   [
                                     "attendance",
-                                    "出勤・時間管理",
+                                    t("dashboard.sf_attendance", lang),
                                     "fa-calendar-check",
                                     "#2563eb",
                                   ],
                                   [
                                     "goal",
-                                    "目標管理",
+                                    t("dashboard.sf_goal", lang),
                                     "fa-bullseye",
                                     "#16a34a",
                                   ],
                                   [
                                     "quality",
-                                    "業務品質",
+                                    t("dashboard.sf_quality", lang),
                                     "fa-file-lines",
                                     "#0891b2",
                                   ],
                                   [
                                     "overtime",
-                                    "残業管理",
+                                    t("dashboard.sf_overtime", lang),
                                     "fa-moon",
                                     "#7c3aed",
                                   ],
                                   [
                                     "leave",
-                                    "休暇管理",
+                                    t("dashboard.sf_leave", lang),
                                     "fa-umbrella-beach",
                                     "#d97706",
                                   ],
@@ -1453,24 +1494,24 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                             <!-- 次期コミットメント -->
                             <div style="margin-bottom:12px">
                                 <label style="display:block;font-size:12px;font-weight:700;color:#374151;margin-bottom:5px">
-                                    <i class="fa-solid fa-rocket" style="color:#7c3aed;margin-right:4px"></i>次の半期に向けた取り組み・コミットメント
+                                    <i class="fa-solid fa-rocket" style="color:#7c3aed;margin-right:4px"></i>${t("dashboard.self_commitment_label", lang)}
                                 </label>
-                                <textarea id="sfCommitment" placeholder="例：毎朝 10 分前に席につき、月間遅刻ゼロを目指します。目標は週次で進捗更新します。" style="width:100%;min-height:68px;border:1px solid #e5e7eb;border-radius:8px;padding:9px 11px;font-size:12.5px;resize:vertical;font-family:inherit;color:#111827;background:#fff;outline:none" onfocus="this.style.borderColor='#7c3aed';this.style.boxShadow='0 0 0 3px rgba(124,58,237,.1)'" onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'" maxlength="500"></textarea>
-                                <div style="text-align:right;font-size:10px;color:#9ca3af;margin-top:2px">最大500文字</div>
+                                <textarea id="sfCommitment" placeholder="${t("dashboard.self_commitment_ph", lang)}" style="width:100%;min-height:68px;border:1px solid #e5e7eb;border-radius:8px;padding:9px 11px;font-size:12.5px;resize:vertical;font-family:inherit;color:#111827;background:#fff;outline:none" onfocus="this.style.borderColor='#7c3aed';this.style.boxShadow='0 0 0 3px rgba(124,58,237,.1)'" onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'" maxlength="500"></textarea>
+                                <div style="text-align:right;font-size:10px;color:#9ca3af;margin-top:2px">${t("dashboard.self_max_chars", lang)}</div>
                             </div>
 
                             <!-- 上司へのアピール -->
                             <div style="margin-bottom:14px">
                                 <label style="display:block;font-size:12px;font-weight:700;color:#374151;margin-bottom:5px">
-                                    <i class="fa-solid fa-bullhorn" style="color:#2563eb;margin-right:4px"></i>上司・管理者への補足・アピール <span style="font-size:10px;font-weight:400;color:#9ca3af">（任意）</span>
+                                    <i class="fa-solid fa-bullhorn" style="color:#2563eb;margin-right:4px"></i>${t("dashboard.self_appeal_label", lang)} <span style="font-size:10px;font-weight:400;color:#9ca3af">${t("dashboard.self_optional", lang)}</span>
                                 </label>
-                                <textarea id="sfAppeal" placeholder="例：AIスコアに反映されていない貢献（社内勉強会の企画・後輩のサポートなど）があれば記載してください。" style="width:100%;min-height:60px;border:1px solid #e5e7eb;border-radius:8px;padding:9px 11px;font-size:12.5px;resize:vertical;font-family:inherit;color:#111827;background:#fff;outline:none" onfocus="this.style.borderColor='#2563eb';this.style.boxShadow='0 0 0 3px rgba(37,99,235,.1)'" onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'" maxlength="500"></textarea>
+                                <textarea id="sfAppeal" placeholder="${t("dashboard.self_appeal_ph", lang)}" style="width:100%;min-height:60px;border:1px solid #e5e7eb;border-radius:8px;padding:9px 11px;font-size:12.5px;resize:vertical;font-family:inherit;color:#111827;background:#fff;outline:none" onfocus="this.style.borderColor='#2563eb';this.style.boxShadow='0 0 0 3px rgba(37,99,235,.1)'" onblur="this.style.borderColor='#e5e7eb';this.style.boxShadow='none'" maxlength="500"></textarea>
                             </div>
 
                             <div style="display:flex;flex-direction:column;gap:8px">
-                                <div style="font-size:11px;color:#9ca3af"><i class="fa-solid fa-shield-halved" style="margin-right:3px"></i>送信内容は管理者のみ閲覧できます</div>
+                                <div style="font-size:11px;color:#9ca3af"><i class="fa-solid fa-shield-halved" style="margin-right:3px"></i>${t("dashboard.self_privacy", lang)}</div>
                                 <button type="button" id="sfSubmit" style="background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;border:none;padding:10px 0;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;width:100%;transition:opacity .15s" onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'">
-                                    <i class="fa-solid fa-paper-plane"></i> 送信する
+                                    <i class="fa-solid fa-paper-plane"></i> ${t("dashboard.self_submit", lang)}
                                 </button>
                             </div>
                         </div>
@@ -1481,7 +1522,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                       feedbackHistory.length
                         ? `
                     <div style="margin-top:14px">
-                        <div style="font-size:12px;font-weight:700;color:var(--c-muted);margin-bottom:8px"><i class="fa-solid fa-clock-rotate-left" style="margin-right:5px"></i>過去の自己評価記録</div>
+                        <div style="font-size:12px;font-weight:700;color:var(--c-muted);margin-bottom:8px"><i class="fa-solid fa-clock-rotate-left" style="margin-right:5px"></i>${t("dashboard.self_history_title", lang)}</div>
                         ${feedbackHistory
                           .slice(0, 3)
                           .map((f) => {
@@ -1494,11 +1535,11 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                               "leave",
                             ];
                             const catLabels = [
-                              "出勤",
-                              "目標",
-                              "品質",
-                              "残業",
-                              "休暇",
+                              t("dashboard.sf_attendance", lang),
+                              t("dashboard.sf_goal", lang),
+                              t("dashboard.sf_quality", lang),
+                              t("dashboard.sf_overtime", lang),
+                              t("dashboard.sf_leave", lang),
                             ];
                             const avgRating = catKeys.filter((k) => ratings[k])
                               .length
@@ -1553,8 +1594,8 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             <!-- Activity Feed -->
             <div class="card">
                 <div class="card-head">
-                    <h3><i class="fa-solid fa-bell" style="color:var(--c-primary);margin-right:7px"></i>最近のアクティビティ</h3>
-                    <span style="font-size:11px;color:var(--c-muted)">${activityTotal} 件</span>
+                    <h3><i class="fa-solid fa-bell" style="color:var(--c-primary);margin-right:7px"></i>${t("dashboard.section_activity", lang)}</h3>
+                    <span style="font-size:11px;color:var(--c-muted)">${activityTotal} ${t("dashboard.activity_count", lang)}</span>
                 </div>
                 <div class="activity-feed">
                     ${pagedNotifications
@@ -1577,17 +1618,17 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                       .join("")}
                 </div>
                 <div class="pager">
-                    <span>${activityPage} / ${activityPages} ページ</span>
-                    ${activityPage > 1 ? `<a href="/dashboard?activityPage=${activityPage - 1}">← 前</a>` : ""}
-                    ${activityPage < activityPages ? `<a href="/dashboard?activityPage=${activityPage + 1}">次 →</a>` : ""}
+                    <span>${activityPage} / ${activityPages} ${t("dashboard.activity_page", lang)}</span>
+                    ${activityPage > 1 ? `<a href="/dashboard?activityPage=${activityPage - 1}">${t("dashboard.activity_prev", lang)}</a>` : ""}
+                    ${activityPage < activityPages ? `<a href="/dashboard?activityPage=${activityPage + 1}">${t("dashboard.activity_next", lang)}</a>` : ""}
                 </div>
             </div>
 
             <!-- Board Posts -->
             <div class="card">
                 <div class="card-head">
-                    <h3><i class="fa-solid fa-newspaper" style="color:var(--c-primary);margin-right:7px"></i>社内掲示板</h3>
-                    <a href="/board" class="see-all">すべて見る →</a>
+                    <h3><i class="fa-solid fa-newspaper" style="color:var(--c-primary);margin-right:7px"></i>${t("nav.board", lang)}</h3>
+                    <a href="/board" class="see-all">${t("dashboard.see_all", lang)}</a>
                 </div>
                 <div class="card-body" style="padding-top:8px;padding-bottom:8px">
                     ${
@@ -1601,61 +1642,61 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                             <div class="post-item">
                                 <div class="post-avatar">${escapeHtml(initial)}</div>
                                 <div style="min-width:0;flex:1">
-                                    <div class="post-title">${escapeHtml(p.title || "（タイトルなし）")}</div>
+                                    <div class="post-title">${escapeHtml(p.title || t("dashboard.board_no_title", lang))}</div>
                                     <div class="post-meta">${p.author ? escapeHtml(p.author) + " &nbsp;•&nbsp; " : ""}${moment(p.createdAt).format("MM/DD")}</div>
                                 </div>
                             </div>
                         </a>`;
                             })
                             .join("")
-                        : '<div style="color:var(--c-muted);font-size:13px;padding:8px 0">投稿はまだありません</div>'
+                        : `<div style="color:var(--c-muted);font-size:13px;padding:8px 0">${t("dashboard.board_empty", lang)}</div>`
                     }
                 </div>
                 <div style="padding:10px 20px;border-top:1px solid var(--c-border)">
                     <a href="/board/new" style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--c-primary);text-decoration:none">
-                        <i class="fa-solid fa-plus"></i> 新しい投稿を作成
+                        <i class="fa-solid fa-plus"></i> ${t("dashboard.board_new", lang)}
                     </a>
                 </div>
             </div>
 
             <!-- Summary Stats -->
             <div class="card">
-                <div class="card-head"><h3><i class="fa-solid fa-chart-pie" style="color:var(--c-purple);margin-right:7px"></i>サマリー</h3></div>
+                <div class="card-head"><h3><i class="fa-solid fa-chart-pie" style="color:var(--c-purple);margin-right:7px"></i>${t("dashboard.summary_title", lang)}</h3></div>
                 <div class="card-body" style="padding-top:6px;padding-bottom:6px">
 
                     <div class="sum-row">
                         <div class="sum-icon" style="background:var(--c-primary-light);color:var(--c-primary)"><i class="fa-solid fa-calendar-days"></i></div>
                         <div class="sum-text">
-                            <div class="sum-label">勤怠（今月）</div>
-                            <div class="sum-val">${attendanceSummary.workDays}日出勤 / 残業${attendanceSummary.overtime}h</div>
-                            <div class="sum-sub">遅刻${attendanceSummary.late} &nbsp;早退${attendanceSummary.earlyLeave} &nbsp;欠勤${absentCount}</div>
+                            <div class="sum-label">${t("dashboard.sum_attendance", lang)}</div>
+                            <div class="sum-val">${t("dashboard.sum_att_val", lang, { days: attendanceSummary.workDays, ot: attendanceSummary.overtime })}</div>
+                            <div class="sum-sub">${t("dashboard.sum_att_sub", lang, { late: attendanceSummary.late, early: attendanceSummary.earlyLeave, absent: absentCount })}</div>
                         </div>
                     </div>
 
                     <div class="sum-row">
                         <div class="sum-icon" style="background:var(--c-success-light);color:var(--c-success)"><i class="fa-solid fa-bullseye"></i></div>
                         <div class="sum-text">
-                            <div class="sum-label">目標</div>
-                            <div class="sum-val">${goalSummary.personal != null ? goalSummary.personal + "% 達成" : "目標なし"}</div>
-                            <div class="sum-sub">完了${goalsCompleted} &nbsp;進行中${goalsInProgress} &nbsp;期限切${goalsOverdue}</div>
+                            <div class="sum-label">${t("dashboard.sum_goals", lang)}</div>
+                            <div class="sum-val">${goalSummary.personal != null ? t("dashboard.sum_goals_achieved", lang, { pct: goalSummary.personal }) : t("dashboard.sum_goals_none", lang)}</div>
+                            <div class="sum-sub">${t("dashboard.sum_goals_sub", lang, { done: goalsCompleted, ongoing: goalsInProgress, overdue: goalsOverdue })}</div>
                         </div>
                     </div>
 
                     <div class="sum-row">
                         <div class="sum-icon" style="background:var(--c-warn-light);color:var(--c-warn)"><i class="fa-solid fa-umbrella-beach"></i></div>
                         <div class="sum-text">
-                            <div class="sum-label">休暇</div>
-                            <div class="sum-val">申請中 ${leaveSummary.pending}件</div>
-                            <div class="sum-sub">承認済${leaveApprovedCount} &nbsp;予定${leaveSummary.upcoming} &nbsp;却下${leaveRejectedCount}</div>
+                            <div class="sum-label">${t("dashboard.sum_leave", lang)}</div>
+                            <div class="sum-val">${t("dashboard.sum_leave_val", lang, { pending: leaveSummary.pending })}</div>
+                            <div class="sum-sub">${t("dashboard.sum_leave_sub", lang, { approved: leaveApprovedCount, upcoming: leaveSummary.upcoming, rejected: leaveRejectedCount })}</div>
                         </div>
                     </div>
 
                     <div class="sum-row">
                         <div class="sum-icon" style="background:var(--c-success-light);color:var(--c-success)"><i class="fa-solid fa-yen-sign"></i></div>
                         <div class="sum-text">
-                            <div class="sum-label">給与</div>
-                            <div class="sum-val">未処理 ${payrollSummary.pending}件</div>
-                            <div class="sum-sub">未払合計 ¥${Math.round(unpaidTotalNet).toLocaleString()}</div>
+                            <div class="sum-label">${t("dashboard.sum_payroll", lang)}</div>
+                            <div class="sum-val">${t("dashboard.sum_payroll_val", lang, { pending: payrollSummary.pending })}</div>
+                            <div class="sum-sub">${t("dashboard.sum_payroll_sub", lang, { total: Math.round(unpaidTotalNet).toLocaleString() })}</div>
                         </div>
                     </div>
 
@@ -1664,15 +1705,15 @@ router.get("/dashboard", requireLogin, async (req, res) => {
 
             <!-- Donut charts row -->
             <div class="card">
-                <div class="card-head"><h3><i class="fa-solid fa-circle-half-stroke" style="color:var(--c-primary);margin-right:7px"></i>構成チャート</h3></div>
+                <div class="card-head"><h3><i class="fa-solid fa-circle-half-stroke" style="color:var(--c-primary);margin-right:7px"></i>${t("dashboard.chart_title", lang)}</h3></div>
                 <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
                     <div style="text-align:center">
                         <canvas id="goalsDonut" width="110" height="110"></canvas>
-                        <div style="font-size:11px;color:var(--c-muted);margin-top:4px">目標</div>
+                        <div style="font-size:11px;color:var(--c-muted);margin-top:4px">${t("dashboard.chart_goals", lang)}</div>
                     </div>
                     <div style="text-align:center">
                         <canvas id="leaveDonut" width="110" height="110"></canvas>
-                        <div style="font-size:11px;color:var(--c-muted);margin-top:4px">休暇</div>
+                        <div style="font-size:11px;color:var(--c-muted);margin-top:4px">${t("dashboard.chart_leave", lang)}</div>
                     </div>
                 </div>
             </div>
@@ -1684,13 +1725,13 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             <div class="admin-block">
                 <div class="admin-block-head">
                     <i class="fa-solid fa-shield-halved" style="color:#dc2626"></i>
-                    <span>管理者メニュー</span>
+                    <span>${t("dashboard.admin_block_title", lang)}</span>
                 </div>
                 <div class="admin-qa-grid">
-                    <a href="/admin/leave-requests" class="admin-qa-btn"><i class="fa-solid fa-file-circle-check"></i> 休暇承認</a>
-                    <a href="/admin/leave-balance" class="admin-qa-btn"><i class="fa-solid fa-piggy-bank"></i> 有給付与</a>
-                    <a href="/hr/payroll/admin" class="admin-qa-btn"><i class="fa-solid fa-money-check-dollar"></i> 給与管理</a>
-                    <a href="/hr/add" class="admin-qa-btn"><i class="fa-solid fa-user-plus"></i> 社員追加</a>
+                    <a href="/admin/leave-requests" class="admin-qa-btn"><i class="fa-solid fa-file-circle-check"></i> ${t("dashboard.admin_leave_approval", lang)}</a>
+                    <a href="/admin/leave-balance" class="admin-qa-btn"><i class="fa-solid fa-piggy-bank"></i> ${t("dashboard.admin_leave_alloc", lang)}</a>
+                    <a href="/hr/payroll/admin" class="admin-qa-btn"><i class="fa-solid fa-money-check-dollar"></i> ${t("dashboard.admin_payroll_mgmt", lang)}</a>
+                    <a href="/hr/add" class="admin-qa-btn"><i class="fa-solid fa-user-plus"></i> ${t("dashboard.admin_add_emp", lang)}</a>
                 </div>
             </div>`
                 : ""
@@ -1732,13 +1773,13 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             new Chart(ctx,{
                 type:'bar',
                 data:{ labels, datasets:[{
-                    label:'出勤日数', data,
+                    label:'${t("dashboard.chart_days", lang)}', data,
                     backgroundColor:'rgba(37,99,235,.12)',
                     borderColor:'#2563eb', borderWidth:2, borderRadius:6
                 }] },
                 options:{
                     responsive:true,
-                    plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:function(c){ return c.raw+'日'; } } } },
+                    plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:function(c){ return c.raw+'${t("dashboard.chart_day_unit", lang)}'; } } } },
                     scales:{ y:{ beginAtZero:true, grid:{color:'#f0f0f0'}, ticks:{color:'#9ca3af',font:{size:11}} }, x:{ticks:{color:'#9ca3af',font:{size:11}},grid:{display:false}} }
                 }
             });
@@ -1751,7 +1792,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             new Chart(ctx,{
                 type:'doughnut',
                 data:{
-                    labels:['完了','進行中','期限切れ'],
+                    labels:['${t("dashboard.chart_goals_done", lang)}','${t("dashboard.chart_goals_ongoing", lang)}','${t("dashboard.chart_goals_overdue", lang)}'],
                     datasets:[{ data:[${goalsCompleted},${goalsInProgress},${goalsOverdue}], backgroundColor:['#16a34a','#2563eb','#d97706'], borderWidth:0, hoverOffset:4 }]
                 },
                 options:{ cutout:'70%', plugins:{ legend:{display:false} }, responsive:false }
@@ -1765,7 +1806,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             new Chart(ctx,{
                 type:'doughnut',
                 data:{
-                    labels:['承認済','申請中','却下'],
+                    labels:['${t("dashboard.chart_leave_approved", lang)}','${t("dashboard.chart_leave_pending", lang)}','${t("dashboard.chart_leave_rejected", lang)}'],
                     datasets:[{ data:[${leaveApprovedCount},${leaveSummary.pending},${leaveRejectedCount}], backgroundColor:['#16a34a','#d97706','#dc2626'], borderWidth:0, hoverOffset:4 }]
                 },
                 options:{ cutout:'70%', plugins:{ legend:{display:false} }, responsive:false }
@@ -1802,11 +1843,11 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                 const commitment = (document.getElementById('sfCommitment')||{}).value || '';
                 const appeal     = (document.getElementById('sfAppeal')||{}).value || '';
                 if(!Object.keys(selfRatings).length && !commitment.trim()) {
-                    alert('カテゴリ評価またはコミットメントを入力してください。');
+                    alert('${t("dashboard.alert_submit_required", lang)}');
                     return;
                 }
                 btn.disabled = true;
-                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 送信中...';
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ...';
                 try {
                     const r = await fetch('/feedback/semi',{
                         method:'POST',
@@ -1819,17 +1860,17 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                     });
                     const j = await r.json();
                     if(j.ok){
-                        btn.innerHTML = '<i class="fa-solid fa-check"></i> 送信しました';
+                        btn.innerHTML = '<i class="fa-solid fa-check"></i> ${t("dashboard.action_shared_with_admin", lang)}';
                         btn.style.background = 'linear-gradient(135deg,#16a34a,#15803d)';
                     } else {
                         btn.disabled = false;
-                        btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> 送信する';
-                        alert('送信に失敗しました');
+                        btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> ${t("dashboard.self_submit", lang)}';
+                        alert('${t("dashboard.alert_send_failed", lang)}');
                     }
                 } catch(e){
                     btn.disabled = false;
-                    btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> 送信する';
-                    alert('送信エラー');
+                    btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> ${t("dashboard.self_submit", lang)}';
+                    alert('${t("dashboard.alert_send_error", lang)}');
                 }
             });
         })();
