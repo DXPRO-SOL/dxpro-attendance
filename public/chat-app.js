@@ -2515,7 +2515,17 @@
   socket.on("call_missed", () => {
     clearTimeout(callTimeoutTimer);
     callTimeoutTimer = null;
+    // doHangup より先に退避（doHangup 内で callTargetId = null になるため）
+    const _missedTarget = callTargetId || TARGET_ID;
     doHangup();
+    // 不在着信をDBに保存（受信側タイムアウトによる不在着信）
+    if (_missedTarget) {
+      fetch("/api/chat/missed-call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toUserId: _missedTarget }),
+      }).catch(() => {});
+    }
     const bar = document.getElementById("sc-typing");
     if (bar) {
       bar.textContent = TARGET_NAME + " は応答しませんでした";
