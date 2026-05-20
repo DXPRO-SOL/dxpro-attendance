@@ -25,6 +25,18 @@ const {
 const { renderPage } = require("../lib/renderPage");
 const { t } = require("../lib/i18n");
 
+// 勤怠ステータス（日本語DB値 → i18nスラグ）マッピング
+const ATTENDANCE_STATUS_KEY = {
+  正常: "normal",
+  遅刻: "late",
+  早退: "early_leave",
+  欠勤: "absent",
+  有休: "paid_leave",
+  午前休: "morning_off",
+  午後休: "afternoon_off",
+  休暇: "day_off",
+};
+
 router.get("/dashboard", requireLogin, async (req, res) => {
   try {
     const lang = req.lang || "ja";
@@ -218,25 +230,37 @@ router.get("/dashboard", requireLogin, async (req, res) => {
     let notifications = [];
     notifications.push(
       ...recentPosts.map((p) => ({
-        message: `掲示板: ${p.title}`,
+        message: t("dashboard.activity_board", lang, { title: p.title }),
         date: p.createdAt || p.updatedAt || new Date(),
       })),
     );
     notifications.push(
       ...recentLeaves.map((l) => ({
-        message: `休暇申請: ${l.name} (${l.leaveType}) - ${l.status}`,
+        message: t("dashboard.activity_leave", lang, {
+          name: l.name,
+          leaveType: l.leaveType,
+          status: l.status,
+        }),
         date: l.createdAt,
       })),
     );
     notifications.push(
       ...recentGoals.map((g) => ({
-        message: `目標: ${g.title} の更新`,
+        message: t("dashboard.activity_goal", lang, { title: g.title }),
         date: g.createdAt,
       })),
     );
     notifications.push(
       ...recentAttendances.map((a) => ({
-        message: `勤怠: ${moment(a.date).format("YYYY-MM-DD")} - ${a.status || "出勤"}`,
+        message: t("dashboard.activity_attendance", lang, {
+          date: moment(a.date).format("YYYY-MM-DD"),
+          status: a.status
+            ? t(
+                `attendance_status.${ATTENDANCE_STATUS_KEY[a.status] || "normal"}`,
+                lang,
+              )
+            : t("dashboard.activity_attendance_default", lang),
+        }),
         date: a.date,
       })),
     );
@@ -319,10 +343,11 @@ router.get("/dashboard", requireLogin, async (req, res) => {
       attendanceTrend,
       goalsDetail: goals,
       now: now.toDate(),
+      lang,
     });
 
     // 半期評価（予測）を計算
-    const semi = await computeSemiAnnualGrade(user._id, employee);
+    const semi = await computeSemiAnnualGrade(user._id, employee, lang);
 
     // ユーザーの過去フィードバック履歴（表示用）
     const feedbackHistory = await SemiAnnualFeedback.find({ userId: user._id })
@@ -1440,7 +1465,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                         <div style="padding:14px">
 
                             <!-- カテゴリ別 自己評価（星） -->
-                            <div style="font-size:11.5px;font-weight:700;color:#6b7280;margin-bottom:10px;text-transform:uppercase;letter-spacing:.4px">カテゴリ別 自己評価（1〜5）</div>
+                            <div style="font-size:11.5px;font-weight:700;color:#6b7280;margin-bottom:10px;text-transform:uppercase;letter-spacing:.4px">${t("dashboard.self_category_title", lang)}</div>
                             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
                                 ${[
                                   [

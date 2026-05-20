@@ -2680,6 +2680,16 @@ router.get("/hr/payroll/:id/export", requireLogin, async (req, res) => {
 // 日報ルート
 // ==============================
 
+// Flatpickr locale map (shared across daily-report routes)
+const FP_LOCALE_MAP = { ja: "ja", vi: "vn", ko: "ko", zh: "zh" }; // en = default
+const DATE_LOCALE_MAP = {
+  ja: "ja-JP",
+  en: "en-US",
+  vi: "vi-VN",
+  ko: "ko-KR",
+  zh: "zh-CN",
+};
+
 // 日報一覧
 router.get("/hr/daily-report", requireLogin, async (req, res) => {
   try {
@@ -2756,6 +2766,9 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
                 .rx-tooltip{position:fixed;z-index:9999;background:#1e293b;color:#f1f5f9;font-size:12px;line-height:1.5;padding:6px 10px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.22);pointer-events:none;max-width:220px;word-break:break-all;opacity:0;transition:opacity .1s}
                 .rx-tooltip.show{opacity:1}
             </style>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"><\/script>
+            ${FP_LOCALE_MAP[lang] ? `<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/${FP_LOCALE_MAP[lang]}.min.js"><\/script>` : ""}
             <div style="max-width:960px;margin:0 auto">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
                     <h2 style="margin:0;font-size:22px;color:#0b2540">${t("hr.daily_report_list", lang)}</h2>
@@ -2777,7 +2790,10 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
                     }
                     <div>
                         <label>${t("hr.date", lang)}</label>
-                        <input type="date" name="date" value="${req.query.date || ""}">
+                        <div style="position:relative;display:inline-flex;align-items:center">
+                            <i class="fa-regular fa-calendar" style="position:absolute;left:9px;color:#94a3b8;font-size:13px;pointer-events:none"></i>
+                            <input type="text" id="dr-date-filter" name="date" value="${req.query.date || ""}" autocomplete="off" placeholder="${t("hr.date_placeholder", lang)}" style="padding:8px 8px 8px 30px;border-radius:8px;border:1px solid #e2e8f0;font-size:13px;cursor:pointer;min-width:150px">
+                        </div>
                     </div>
                     <button type="submit" style="padding:8px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer">${t("hr.filter_btn", lang)}</button>
                     <a href="/hr/daily-report" style="padding:8px 14px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-weight:600">${t("hr.clear_btn", lang)}</a>
@@ -2799,7 +2815,9 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
                   .map((r) => {
                     const emp = r.employeeId || {};
                     const dateStr = r.reportDate
-                      ? new Date(r.reportDate).toLocaleDateString("ja-JP")
+                      ? new Date(r.reportDate).toLocaleDateString(
+                          DATE_LOCALE_MAP[lang] || "ja-JP",
+                        )
                       : "-";
                     const myUid = String(req.session.userId);
 
@@ -2938,6 +2956,13 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
                 document.querySelectorAll('.cr-picker.open').forEach(p=>p.classList.remove('open'));
                 sendCardStamp(key,reportId);
             }
+            // Flatpickr date filter
+            flatpickr('#dr-date-filter', {
+                dateFormat: 'Y-m-d',
+                ${FP_LOCALE_MAP[lang] ? `locale: '${FP_LOCALE_MAP[lang]}',` : ""}
+                allowInput: true,
+                disableMobile: false,
+            });
             function toggleCardStamp(btn){
                 sendCardStamp(btn.dataset.key, btn.dataset.report);
             }
@@ -3032,6 +3057,9 @@ router.get("/hr/daily-report/new", requireLogin, async (req, res) => {
                 .attach-chip .rm{background:none;border:none;cursor:pointer;color:#9ca3af;padding:0;font-size:14px;line-height:1}
                 .attach-chip .rm:hover{color:#ef4444}
             </style>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"><\/script>
+            ${FP_LOCALE_MAP[lang] ? `<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/${FP_LOCALE_MAP[lang]}.min.js"><\/script>` : ""}
 
             <div style="max-width:860px;margin:0 auto">
 
@@ -3112,7 +3140,11 @@ router.get("/hr/daily-report/new", requireLogin, async (req, res) => {
                     <form action="/hr/daily-report/new" method="POST" id="reportForm" enctype="multipart/form-data">
                         <div style="margin-bottom:18px">
                             <label class="field-label">日付</label>
-                            <input type="date" name="reportDate" value="${today}" required style="padding:10px;border-radius:8px;border:1px solid #e2e8f0;font-size:14px">
+                            <div style="position:relative;display:inline-flex;align-items:center">
+                                <i class="fa-regular fa-calendar" style="position:absolute;left:10px;color:#94a3b8;font-size:13px;pointer-events:none"></i>
+                                <input type="text" id="dr-date-new" name="reportDate" value="${today}" required autocomplete="off" placeholder="${t("hr.date_placeholder", lang)}" style="padding:10px 10px 10px 34px;border-radius:8px;border:1px solid #e2e8f0;font-size:14px;cursor:pointer">
+                            </div>
+                        </div>
                         </div>
 
                         <div style="margin-bottom:18px">
@@ -3436,7 +3468,14 @@ router.get("/hr/daily-report/new", requireLogin, async (req, res) => {
                     if(el && cnt) cnt.textContent = el.value.length;
                 });
             }
-            </script>
+            // Flatpickr date picker
+            flatpickr('#dr-date-new', {
+                dateFormat: 'Y-m-d',
+                ${FP_LOCALE_MAP[lang] ? `locale: '${FP_LOCALE_MAP[lang]}',` : ""}
+                allowInput: true,
+                disableMobile: false,
+            });
+            <\/script>
         `,
     );
   } catch (error) {
@@ -3583,6 +3622,9 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
                 .attach-chip .rm:hover{color:#ef4444;border-color:#ef4444;background:#fff5f5}
                 .attach-chip .rm-float{position:absolute;top:-6px;right:-6px}
             </style>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"><\/script>
+            ${FP_LOCALE_MAP[lang] ? `<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/${FP_LOCALE_MAP[lang]}.min.js"><\/script>` : ""}
             <div style="max-width:860px;margin:0 auto">
                 <div style="margin-bottom:16px">
                     <a href="/hr/daily-report/${report._id}" style="color:#3b82f6;text-decoration:none;font-size:14px;display:inline-flex;align-items:center;gap:5px">
@@ -3597,7 +3639,11 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
                     <form action="/hr/daily-report/${report._id}/edit" method="POST" id="editForm" enctype="multipart/form-data">
                         <div style="margin-bottom:18px">
                             <label class="field-label">日付</label>
-                            <input type="date" name="reportDate" value="${dateVal}" required style="padding:10px;border-radius:8px;border:1px solid #e2e8f0;font-size:14px">
+                            <div style="position:relative;display:inline-flex;align-items:center">
+                                <i class="fa-regular fa-calendar" style="position:absolute;left:10px;color:#94a3b8;font-size:13px;pointer-events:none"></i>
+                                <input type="text" id="dr-date-edit" name="reportDate" value="${dateVal}" required autocomplete="off" placeholder="${t("hr.date_placeholder", lang)}" style="padding:10px 10px 10px 34px;border-radius:8px;border:1px solid #e2e8f0;font-size:14px;cursor:pointer">
+                            </div>
+                        </div>
                         </div>
                         <div style="margin-bottom:18px">
                             <label class="field-label">本日の業務内容 <span style="color:#ef4444">*</span></label>
@@ -3880,7 +3926,14 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
                     });
                 });
             }
-            </script>
+            // Flatpickr date picker
+            flatpickr('#dr-date-edit', {
+                dateFormat: 'Y-m-d',
+                ${FP_LOCALE_MAP[lang] ? `locale: '${FP_LOCALE_MAP[lang]}',` : ""}
+                allowInput: true,
+                disableMobile: false,
+            });
+            <\/script>
         `,
     );
   } catch (error) {
@@ -4977,7 +5030,9 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
 
     const emp = report.employeeId || {};
     const dateStr = report.reportDate
-      ? new Date(report.reportDate).toLocaleDateString("ja-JP")
+      ? new Date(report.reportDate).toLocaleDateString(
+          DATE_LOCALE_MAP[lang] || "ja-JP",
+        )
       : "-";
 
     // メンションハイライト付きnl2br
