@@ -20,6 +20,12 @@ const UserSchema = new mongoose.Schema({
   },
   lastSeenAt: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now },
+  // 多言語対応: ユーザー優先言語 (ja / en / vi / ko / zh)
+  preferredLang: {
+    type: String,
+    enum: ["ja", "en", "vi", "ko", "zh"],
+    default: "ja",
+  },
 });
 
 // グループチャットルームスキーマ

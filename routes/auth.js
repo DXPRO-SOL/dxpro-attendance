@@ -1,4 +1,4 @@
-// ==============================
+﻿// ==============================
 // routes/auth.js - 認証・ログイン
 // ==============================
 const router = require("express").Router();
@@ -10,6 +10,7 @@ const {
   getPasswordErrorMessage,
 } = require("../lib/helpers");
 const { buildPageShell } = require("../lib/renderPage");
+const { t } = require("../lib/i18n");
 
 router.get("/", requireLogin, (req, res) => {
   res.redirect("/attendance-main");
@@ -17,12 +18,32 @@ router.get("/", requireLogin, (req, res) => {
 
 // ログインページ
 router.get("/login", (req, res) => {
+  const lang = req.session.lang || "ja";
+  const LANGS = [
+    { code: "ja", flag: "🇯🇵", label: "日本語" },
+    { code: "en", flag: "🇺🇸", label: "English" },
+    { code: "vi", flag: "🇻🇳", label: "Tiếng Việt" },
+    { code: "ko", flag: "🇰🇷", label: "한국어" },
+    { code: "zh", flag: "🇨🇳", label: "中文" },
+  ];
+  const localeMap = {
+    ja: "ja-JP",
+    en: "en-US",
+    vi: "vi-VN",
+    ko: "ko-KR",
+    zh: "zh-CN",
+  };
+  const errorKey = req.query.error ? `login.error_${req.query.error}` : null;
+  const errorMsg = errorKey
+    ? t(errorKey, lang) || getErrorMessageJP(req.query.error)
+    : null;
+
   res.send(`
         <!DOCTYPE html>
-        <html lang="ja">
+        <html lang="${lang}">
         <head>
             <meta charset="UTF-8">
-            <title>クラウド業務支援システム</title>
+            <title>${t("login.title", lang)}</title>
             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
             <style>
@@ -39,18 +60,8 @@ router.get("/login", (req, res) => {
                     --error-color: #dc3545;
                     --success-color: #28a745;
                 }
-                
-                * {
-                    margin: 0;
-                    padding: 0;
-                    box-sizing: border-box;
-                }
-                
-                html, body {
-                    height: 100%;
-                    overflow: hidden;
-                }
-                
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                html, body { height: 100%; overflow: hidden; }
                 body {
                     font-family: 'Noto Sans JP', 'Roboto', sans-serif;
                     background-color: var(--light-gray);
@@ -62,7 +73,6 @@ router.get("/login", (req, res) => {
                     height: 100vh;
                     background-image: linear-gradient(135deg, var(--dxpro-light-blue) 0%, var(--white) 100%);
                 }
-                
                 .login-container {
                     width: 100%;
                     max-width: 520px;
@@ -73,242 +83,158 @@ router.get("/login", (req, res) => {
                     position: relative;
                     overflow: hidden;
                 }
-                
                 .login-container::before {
                     content: '';
                     position: absolute;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 6px;
+                    top: 0; left: 0;
+                    width: 100%; height: 6px;
                     background: linear-gradient(90deg, var(--dxpro-blue) 0%, var(--dxpro-accent) 100%);
                 }
-                
-                .logo {
-                    text-align: center;
-                }
-                
-                .logo img {
-                    width: 200px;
-                    height: auto;
-                    margin-bottom: 0.4rem;
-                }
-                
-                .logo h1 {
-                    color: var(--dxpro-blue);
-                    font-size: 1rem;
-                    font-weight: 700;
-                    letter-spacing: -0.5px;
-                    margin-bottom: 1rem;
-                }
-                
-                .logo .subtitle {
-                    color: var(--dark-gray);
-                    font-size: 1rem;
-                    font-weight: 400;
-                    margin-bottom: 0.8rem;
-                }
-                
-                .login-form {
-                    margin-top: 0.2rem;
-                }
-                
-                .form-group {
-                    margin-bottom: 0.8rem;
-                }
-                
-                .form-group label {
-                    display: block;
-                    margin-bottom: 0.5rem;
-                    font-weight: 500;
-                    color: var(--dxpro-dark-blue);
-                    font-size: 0.95rem;
-                }
-                
-                .form-control {
-                    width: 100%;
-                    padding: 0.6rem 1rem;
-                    border: 1px solid var(--medium-gray);
-                    border-radius: 6px;
-                    font-size: 0.95rem;
-                    transition: all 0.3s ease;
-                    background-color: var(--light-gray);
-                }
-                
-                .form-control:focus {
-                    outline: none;
-                    border-color: var(--dxpro-blue);
-                    box-shadow: 0 0 0 3px rgba(0, 86, 179, 0.1);
-                    background-color: var(--white);
-                }
-                
-                .password-wrapper {
-                    position: relative;
-                }
-                
-                .password-wrapper .form-control {
-                    padding-right: 3rem;
-                }
-                
-                .toggle-password {
+                /* ── 言語スイッチャー ── */
+                .lang-dropdown {
                     position: absolute;
-                    right: 0.85rem;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    background: none;
-                    border: none;
-                    cursor: pointer;
-                    padding: 0;
-                    color: var(--dark-gray);
-                    display: flex;
+                    top: 16px; right: 16px;
+                    z-index: 100;
+                }
+                .lang-trigger {
+                    display: inline-flex;
                     align-items: center;
-                    transition: color 0.2s;
-                }
-                
-                .toggle-password:hover {
-                    color: var(--dxpro-blue);
-                }
-                
-                .btn {
-                    width: 100%;
-                    padding: 0.7rem;
-                    border: none;
+                    gap: 5px;
+                    padding: 5px 12px;
                     border-radius: 6px;
-                    font-size: 0.95rem;
+                    border: 1.5px solid #e2e8f0;
+                    background: #f8fafc;
+                    font-size: 12px;
                     font-weight: 600;
                     cursor: pointer;
-                    transition: all 0.3s ease;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
+                    color: #475569;
+                    font-family: inherit;
+                    transition: all 0.15s;
+                    white-space: nowrap;
                 }
-                
-                .btn-login {
-                    background-color: var(--dxpro-blue);
-                    color: var(--white);
-                    margin-top: 0.2rem;
+                .lang-trigger:hover { background: #eff6ff; border-color: #bfdbfe; color: #2563eb; }
+                .lang-menu {
+                    display: none;
+                    position: absolute;
+                    top: calc(100% + 6px);
+                    right: 0;
+                    background: #fff;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+                    min-width: 150px;
+                    overflow: hidden;
                 }
-                
-                .btn-login:hover {
-                    background-color: var(--dxpro-dark-blue);
-                    transform: translateY(-2px);
-                    box-shadow: 0 5px 15px rgba(0, 86, 179, 0.2);
-                }
-                
-                .btn-login:active {
-                    transform: translateY(0);
-                }
-                
-                .links {
-                    margin-top: 0.8rem;
-                    text-align: center;
-                    font-size: 0.9rem;
-                }
-                
-                .links a {
-                    color: var(--dxpro-blue);
-                    text-decoration: none;
-                    font-weight: 500;
-                    transition: color 0.2s;
-                }
-                
-                .links a:hover {
-                    color: var(--dxpro-dark-blue);
-                    text-decoration: underline;
-                }
-                
-                .divider {
+                .lang-menu.open { display: block; }
+                .lang-menu-item {
                     display: flex;
                     align-items: center;
-                    margin: 0.8rem 0;
-                    color: var(--dark-gray);
-                    font-size: 0.8rem;
+                    gap: 8px;
+                    padding: 9px 14px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    color: #334155;
+                    border: none;
+                    background: none;
+                    width: 100%;
+                    text-align: left;
+                    font-family: inherit;
+                    transition: background 0.1s;
                 }
-                
-                .divider::before, .divider::after {
-                    content: "";
-                    flex: 1;
-                    border-bottom: 1px solid var(--medium-gray);
+                .lang-menu-item:hover { background: #f1f5f9; }
+                .lang-menu-item.active { background: #eff6ff; color: #2563eb; font-weight: 600; }
+                /* ── 既存スタイル ── */
+                .logo { text-align: center; margin-top: 0.6rem; }
+                .logo img { width: 200px; height: auto; margin-bottom: 0.4rem; }
+                .logo h1 { color: var(--dxpro-blue); font-size: 1rem; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 1rem; }
+                .logo .subtitle { color: var(--dark-gray); font-size: 1rem; font-weight: 400; margin-bottom: 0.8rem; }
+                .login-form { margin-top: 0.2rem; }
+                .form-group { margin-bottom: 0.8rem; }
+                .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--dxpro-dark-blue); font-size: 0.95rem; }
+                .form-control {
+                    width: 100%; padding: 0.6rem 1rem;
+                    border: 1px solid var(--medium-gray); border-radius: 6px;
+                    font-size: 0.95rem; transition: all 0.3s ease;
+                    background-color: var(--light-gray);
                 }
-                
-                .divider::before {
-                    margin-right: 1rem;
+                .form-control:focus { outline: none; border-color: var(--dxpro-blue); box-shadow: 0 0 0 3px rgba(0,86,179,0.1); background-color: var(--white); }
+                .password-wrapper { position: relative; }
+                .password-wrapper .form-control { padding-right: 3rem; }
+                .toggle-password {
+                    position: absolute; right: 0.85rem; top: 50%; transform: translateY(-50%);
+                    background: none; border: none; cursor: pointer; padding: 0;
+                    color: var(--dark-gray); display: flex; align-items: center; transition: color 0.2s;
                 }
-                
-                .divider::after {
-                    margin-left: 1rem;
+                .toggle-password:hover { color: var(--dxpro-blue); }
+                .btn {
+                    width: 100%; padding: 0.7rem; border: none; border-radius: 6px;
+                    font-size: 0.95rem; font-weight: 600; cursor: pointer;
+                    transition: all 0.3s ease; display: flex; justify-content: center; align-items: center;
                 }
-                
+                .btn-login { background-color: var(--dxpro-blue); color: var(--white); margin-top: 0.2rem; }
+                .btn-login:hover { background-color: var(--dxpro-dark-blue); transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,86,179,0.2); }
+                .btn-login:active { transform: translateY(0); }
+                .links { margin-top: 0.8rem; text-align: center; font-size: 0.9rem; }
+                .links a { color: var(--dxpro-blue); text-decoration: none; font-weight: 500; transition: color 0.2s; }
+                .links a:hover { color: var(--dxpro-dark-blue); text-decoration: underline; }
+                .divider { display: flex; align-items: center; margin: 0.8rem 0; color: var(--dark-gray); font-size: 0.8rem; }
+                .divider::before, .divider::after { content: ""; flex: 1; border-bottom: 1px solid var(--medium-gray); }
+                .divider::before { margin-right: 1rem; }
+                .divider::after { margin-left: 1rem; }
                 .error-message {
-                    color: var(--error-color);
-                    background-color: rgba(220, 53, 69, 0.1);
-                    padding: 0.8rem;
-                    border-radius: 6px;
-                    margin-bottom: 1.5rem;
-                    font-size: 0.9rem;
-                    text-align: center;
-                    border-left: 4px solid var(--error-color);
+                    color: var(--error-color); background-color: rgba(220,53,69,0.1);
+                    padding: 0.8rem; border-radius: 6px; margin-bottom: 1.5rem;
+                    font-size: 0.9rem; text-align: center; border-left: 4px solid var(--error-color);
                 }
-                
-                .current-time {
-                    text-align: center;
-                    margin-bottom: 20px;
-                    font-size: 0.85rem;
-                    color: var(--dark-gray);
-                    font-weight: 500;
-                }
-                
-                .footer {
-                    margin-top: 0.8rem;
-                    text-align: center;
-                    font-size: 0.8rem;
-                    color: var(--dark-gray);
-                }
-                
+                .current-time { text-align: center; margin-bottom: 20px; font-size: 0.85rem; color: var(--dark-gray); font-weight: 500; }
+                .footer { margin-top: 0.8rem; text-align: center; font-size: 0.8rem; color: var(--dark-gray); }
                 @media (max-width: 480px) {
-                    .login-container {
-                        padding: 1.5rem;
-                        margin: 1rem;
-                        padding-top: 50px;
-                        padding-bottom: 50px;
-                    }
-                    
-                    .logo h1 {
-                        font-size: 1.5rem;
-                    }
+                    .login-container { padding: 1.5rem; margin: 1rem; }
+                    .logo h1 { font-size: 1.5rem; }
                 }
             </style>
         </head>
         <body>
             <div class="login-container">
-                <div class="logo">
-                <img src="/nokori-logo.png" alt="Nokori" style="width: 250px;">
-                    <div class="subtitle">クラウド業務支援システム</div>
-                </div>
-                
-                <div class="current-time" id="current-time"></div>
-                
-                ${
-                  req.query.error
-                    ? `
-                    <div class="error-message">
-                        ${getErrorMessageJP(req.query.error)}
+
+                <!-- 言語スイッチャー -->
+                ${(() => {
+                  const CODE_MAP = {
+                    ja: "JP",
+                    en: "EN",
+                    vi: "VN",
+                    ko: "KR",
+                    zh: "CN",
+                  };
+                  const code = CODE_MAP[lang] || lang.toUpperCase();
+                  return `<div class="lang-dropdown" id="langDropdown">
+                    <button class="lang-trigger" onclick="toggleLangMenu()" type="button">🌐 language(${code})</button>
+                    <div class="lang-menu" id="langMenu">
+                        ${LANGS.map((l) => `<button class="lang-menu-item${lang === l.code ? " active" : ""}" onclick="setLang('${l.code}')" type="button">${l.flag} ${l.label}</button>`).join("")}
                     </div>
-                `
-                    : ""
-                }
-                
+                </div>`;
+                })()}
+
+                <div class="logo">
+                    <img src="/nokori-logo.png" alt="Nokori" style="width: 250px;">
+                    <div class="subtitle">${t("login.title", lang)}</div>
+                </div>
+
+                <div class="current-time" id="current-time"></div>
+
+                ${errorMsg ? `<div class="error-message">${errorMsg}</div>` : ""}
+
                 <form class="login-form" action="/login" method="POST">
                     <div class="form-group">
-                        <label for="username">ユーザー名</label>
-                        <input type="text" id="username" name="username" class="form-control" placeholder="ユーザー名を入力" required>
+                        <label for="username">${t("login.username", lang)}</label>
+                        <input type="text" id="username" name="username" class="form-control" placeholder="${t("login.username_placeholder", lang)}" required>
                     </div>
-                    
+
                     <div class="form-group">
-                        <label for="password">パスワード</label>
+                        <label for="password">${t("login.password", lang)}</label>
                         <div class="password-wrapper">
-                            <input type="password" id="password" name="password" class="form-control" placeholder="パスワードを入力" required>
-                            <button type="button" class="toggle-password" id="togglePassword" aria-label="パスワードを表示/非表示">
+                            <input type="password" id="password" name="password" class="form-control" placeholder="${t("login.password_placeholder", lang)}" required>
+                            <button type="button" class="toggle-password" id="togglePassword" aria-label="toggle password">
                                 <svg id="eye-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                                     <circle cx="12" cy="12" r="3"></circle>
@@ -320,51 +246,65 @@ router.get("/login", (req, res) => {
                             </button>
                         </div>
                     </div>
-                    
+
                     <button type="submit" class="btn btn-login">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;">
                             <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
                             <polyline points="10 17 15 12 10 7"></polyline>
                             <line x1="15" y1="12" x2="3" y2="12"></line>
                         </svg>
-                        ログイン
+                        ${t("login.submit", lang)}
                     </button>
                 </form>
-                
-                <div class="divider">または</div>
-                
+
+                <div class="divider">${t("login.or", lang)}</div>
+
                 <div class="links">
-                <a href="https://dxpro-sol.com" target="_blank">ポータルサイトへ</a>
+                    <a href="https://dxpro-sol.com" target="_blank">${t("login.portal", lang)}</a>
                 </div>
-                
+
                 <div class="footer">
                     &copy; ${new Date().getFullYear()} DXPRO SOLUTIONS. All rights reserved.
                 </div>
             </div>
-            
+
             <script>
+                // 時計（選択言語のロケールで表示）
+                var _locale = '${localeMap[lang] || "ja-JP"}';
                 function updateClock() {
-                    const now = new Date();
-                    const options = { 
-                        year: 'numeric', 
-                        month: 'long', 
-                        day: 'numeric', 
-                        weekday: 'long',
-                        hour: '2-digit', 
-                        minute: '2-digit', 
-                        second: '2-digit',
-                        hour12: false
-                    };
-                    document.getElementById('current-time').textContent = 
-                        now.toLocaleDateString('ja-JP', options);
+                    var now = new Date();
+                    var options = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+                    document.getElementById('current-time').textContent = now.toLocaleDateString(_locale, options);
                 }
                 setInterval(updateClock, 1000);
                 window.onload = updateClock;
 
+                // 言語切り替え
+                function toggleLangMenu() {
+                    document.getElementById('langMenu').classList.toggle('open');
+                }
+                document.addEventListener('click', function(e) {
+                    var dd = document.getElementById('langDropdown');
+                    if (dd && !dd.contains(e.target)) {
+                        document.getElementById('langMenu').classList.remove('open');
+                    }
+                });
+                function setLang(code) {
+                    fetch('/api/lang', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ lang: code })
+                    }).then(function() {
+                        var url = new URL(location.href);
+                        location.replace(url.pathname + (url.search || ''));
+                    });
+                }
+
+                // パスワード表示切替
                 document.getElementById('togglePassword').addEventListener('click', function () {
-                    const input = document.getElementById('password');
-                    const eyeIcon = document.getElementById('eye-icon');
-                    const eyeOffIcon = document.getElementById('eye-off-icon');
+                    var input = document.getElementById('password');
+                    var eyeIcon = document.getElementById('eye-icon');
+                    var eyeOffIcon = document.getElementById('eye-off-icon');
                     if (input.type === 'password') {
                         input.type = 'text';
                         eyeIcon.style.display = 'none';
@@ -405,6 +345,8 @@ router.post("/login", async (req, res) => {
     // Issue #19: orgRoleをセッションに保存
     req.session.orgRole = user.role || (user.isAdmin ? "admin" : "employee");
     req.session.isTestUser = user.role === "test_user";
+    // 多言語対応: DBの優先言語 → ログイン前に選択した言語 → デフォルト日本語
+    req.session.lang = user.preferredLang || req.session.lang || "ja";
 
     console.log("ログイン成功:", user.username, "管理者:", user.isAdmin);
     return res.redirect("/dashboard");
@@ -416,17 +358,19 @@ router.post("/login", async (req, res) => {
 
 router.get("/change-password", requireLogin, (req, res) => {
   const employee = req.session.employee;
-  const isAdmin  = !!req.session.isAdmin;
-  const role     = req.session.orgRole || (isAdmin ? "admin" : "employee");
-  const shell    = buildPageShell({
-    title:       "パスワード変更",
+  const isAdmin = !!req.session.isAdmin;
+  const role = req.session.orgRole || (isAdmin ? "admin" : "employee");
+  const shell = buildPageShell({
+    title: "パスワード変更",
     currentPath: "/change-password",
     employee,
     isAdmin,
     role,
   });
 
-  res.send(shell + `
+  res.send(
+    shell +
+      `
 <style>
   .chpw-wrap {
     display: flex;
@@ -509,7 +453,8 @@ router.get("/change-password", requireLogin, (req, res) => {
     </a>
   </div>
 </div>
-</div></div></body></html>`);
+</div></div></body></html>`,
+  );
 });
 
 router.post("/change-password", requireLogin, async (req, res) => {

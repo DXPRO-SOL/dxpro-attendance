@@ -6,6 +6,7 @@ const ExcelJS = require("exceljs");
 const { requireLogin } = require("../middleware/auth");
 const { Employee, SkillSheet } = require("../models");
 const { renderPage } = require("../lib/renderPage");
+const { t } = require("../lib/i18n");
 
 // ─── 共通ヘルパー ────────────────────────────────
 const LEVEL_LABELS = ["", "★", "★★", "★★★", "★★★★", "★★★★★"];
@@ -55,7 +56,8 @@ router.get("/skillsheet", requireLogin, async (req, res) => {
       // 各従業員のスキルシート有無を確認
       const sheets = await SkillSheet.find({}, { employeeId: 1 });
       const sheetSet = new Set(sheets.map((s) => String(s.employeeId)));
-      const html = buildAdminListPage(employees, sheetSet);
+      const lang = req.lang || req.session?.lang || "ja";
+      const html = buildAdminListPage(employees, sheetSet, lang);
       return renderPage(req, res, "スキルシート管理", "スキルシート管理", html);
     }
 
@@ -64,7 +66,8 @@ router.get("/skillsheet", requireLogin, async (req, res) => {
     if (!emp) return res.redirect("/dashboard");
 
     const sheet = await getOrCreate(emp._id, req.session.userId);
-    const html = buildEditPage(emp, sheet, req);
+    const lang = req.lang || req.session?.lang || "ja";
+    const html = buildEditPage(emp, sheet, req, false, lang);
     renderPage(req, res, "スキルシート", "スキルシート管理", html);
   } catch (e) {
     console.error(e);
@@ -79,8 +82,15 @@ router.get("/skillsheet/admin/:employeeId", requireLogin, async (req, res) => {
     const emp = await Employee.findById(req.params.employeeId);
     if (!emp) return res.redirect("/skillsheet");
     const sheet = await getOrCreate(emp._id, emp.userId);
-    const html = buildEditPage(emp, sheet, req, true);
-    renderPage(req, res, "スキルシート編集", "スキルシート管理", html);
+    const lang = req.lang || req.session?.lang || "ja";
+    const html = buildEditPage(emp, sheet, req, true, lang);
+    renderPage(
+      req,
+      res,
+      t("skillsheet.edit_title", lang),
+      t("skillsheet.admin_title", lang),
+      html,
+    );
   } catch (e) {
     console.error(e);
     res.status(500).send("エラーが発生しました");
@@ -702,7 +712,7 @@ async function exportExcel(res, emp, sheet) {
 }
 
 // ─── 管理者：従業員一覧ページ ─────────────────────
-function buildAdminListPage(employees, sheetSet) {
+function buildAdminListPage(employees, sheetSet, lang = "ja") {
   const rows = employees
     .map((emp) => {
       const hasSheet = sheetSet.has(String(emp._id));
@@ -715,14 +725,14 @@ function buildAdminListPage(employees, sheetSet) {
             <td class="ss-adm-td ss-adm-status">
                 ${
                   hasSheet
-                    ? `<span class="ss-badge ss-badge-ok">✅ 作成済み</span>`
-                    : `<span class="ss-badge ss-badge-none">未作成</span>`
+                    ? `<span class="ss-badge ss-badge-ok">✅ ${t("skillsheet.status_created", lang)}</span>`
+                    : `<span class="ss-badge ss-badge-none">${t("skillsheet.status_not_created", lang)}</span>`
                 }
             </td>
             <td class="ss-adm-td ss-adm-action">
                 <div style="display:flex;gap:6px;justify-content:center">
                     <a href="/skillsheet/admin/${emp._id}" class="ss-adm-btn ss-adm-btn-edit">
-                        <i class="fa-solid fa-pen-to-square"></i> 編集
+                        <i class="fa-solid fa-pen-to-square"></i> ${t("common.edit", lang)}
                     </a>
                     ${
                       hasSheet
@@ -773,23 +783,23 @@ function buildAdminListPage(employees, sheetSet) {
 
 <div class="ss-adm-page">
     <div class="ss-adm-header">
-        <div class="ss-adm-title">📋 スキルシート管理</div>
-        <div class="ss-adm-sub">全 <strong>${employees.length}</strong> 名の従業員スキルシートを管理します</div>
+        <div class="ss-adm-title">📋 ${t("skillsheet.admin_title", lang)}</div>
+        <div class="ss-adm-sub">${t("skillsheet.admin_subtitle", lang, { n: employees.length })}</div>
     </div>
     <div class="ss-adm-wrap tbl-scroll">
         <table class="ss-adm-table">
             <thead>
                 <tr>
-                    <th>社員番号</th>
-                    <th>氏名</th>
-                    <th>部署</th>
-                    <th>職位</th>
-                    <th style="text-align:center">ステータス</th>
-                    <th style="text-align:center">操作</th>
+                    <th>${t("skillsheet.col_emp_id", lang)}</th>
+                    <th>${t("skillsheet.col_name", lang)}</th>
+                    <th>${t("skillsheet.col_dept", lang)}</th>
+                    <th>${t("skillsheet.col_position", lang)}</th>
+                    <th style="text-align:center">${t("skillsheet.col_status", lang)}</th>
+                    <th style="text-align:center">${t("skillsheet.col_action", lang)}</th>
                 </tr>
             </thead>
             <tbody>
-                ${rows || '<tr><td colspan="6" style="text-align:center;padding:32px;color:#94a3b8;font-size:14px">従業員が登録されていません</td></tr>'}
+                ${rows || `<tr><td colspan="6" style="text-align:center;padding:32px;color:#94a3b8;font-size:14px">${t("skillsheet.no_employees", lang)}</td></tr>`}
             </tbody>
         </table>
     </div>
@@ -797,7 +807,7 @@ function buildAdminListPage(employees, sheetSet) {
 }
 
 // ─── ページHTML構築 ──────────────────────────────
-function buildEditPage(emp, sheet, req, isAdminView = false) {
+function buildEditPage(emp, sheet, req, isAdminView = false, lang = "ja") {
   const saved = req && req.query && req.query.saved;
   const saveAction = isAdminView
     ? `/skillsheet/admin/${emp._id}/save`
@@ -834,61 +844,61 @@ function buildEditPage(emp, sheet, req, isAdminView = false) {
   const renderProject = (p, idx) => `
     <div class="ss-proj-card" data-idx="${idx}">
         <div class="ss-proj-header">
-            <span class="ss-proj-num">案件 ${idx + 1}</span>
-            <button type="button" class="ss-del-proj" onclick="delProj(this)">削除</button>
+            <span class="ss-proj-num">${t("skillsheet.project_num", lang)} ${idx + 1}</span>
+            <button type="button" class="ss-del-proj" onclick="delProj(this)">${t("common.delete", lang)}</button>
         </div>
         <div class="ss-grid4">
             <div>
-                <label class="ss-label">開始年月</label>
+                <label class="ss-label">${t("skillsheet.proj_from", lang)}</label>
                 <input type="month" name="pFrom" value="${p.periodFrom || ""}" class="ss-input">
             </div>
             <div>
-                <label class="ss-label">終了年月</label>
+                <label class="ss-label">${t("skillsheet.proj_to", lang)}</label>
                 <div style="display:flex;align-items:flex-start;gap:6px;">
                   <input type="month" name="pTo" value="${p.periodTo && p.periodTo !== "現在" ? p.periodTo : ""}" class="ss-input" style="flex:1;">
                   <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap;cursor:pointer;padding-top:9px;">
-                      <input type="checkbox" onchange="setCurrentProj(this)" ${p.periodTo === "現在" ? "checked" : ""} style="margin:0;cursor:pointer;"> 現在
+                      <input type="checkbox" onchange="setCurrentProj(this)" ${p.periodTo === "現在" ? "checked" : ""} style="margin:0;cursor:pointer;"> ${t("skillsheet.proj_current", lang)}
                   </label>
                 </div>
             </div>
             <div style="grid-column:3/5;">
-                <label class="ss-label">案件名</label>
-                <input type="text" name="pName" value="${p.projectName || ""}" placeholder="案件名" class="ss-input">
+                <label class="ss-label">${t("skillsheet.proj_name", lang)}</label>
+                <input type="text" name="pName" value="${p.projectName || ""}" placeholder="${t("skillsheet.proj_name", lang)}" class="ss-input">
             </div>
             <div>
-                <label class="ss-label">顧客名</label>
-                <input type="text" name="pClient" value="${p.client || ""}" placeholder="顧客名" class="ss-input">
+                <label class="ss-label">${t("skillsheet.proj_client", lang)}</label>
+                <input type="text" name="pClient" value="${p.client || ""}" placeholder="${t("skillsheet.proj_client", lang)}" class="ss-input">
             </div>
             <div>
-                <label class="ss-label">業種</label>
+                <label class="ss-label">${t("skillsheet.proj_industry", lang)}</label>
                 <input type="text" name="pIndust" value="${p.industry || ""}" placeholder="IT / 金融 等" class="ss-input">
             </div>
             <div>
-                <label class="ss-label">チーム規模</label>
-                <input type="number" name="pTeam" value="${p.team || ""}" placeholder="人数" class="ss-input" min="1">
+                <label class="ss-label">${t("skillsheet.proj_team", lang)}</label>
+                <input type="number" name="pTeam" value="${p.team || ""}" placeholder="${t("skillsheet.proj_team_placeholder", lang)}" class="ss-input" min="1">
             </div>
             <div>
-                <label class="ss-label">役割</label>
+                <label class="ss-label">${t("skillsheet.proj_role", lang)}</label>
                 <input type="text" name="pRole" value="${p.role || ""}" placeholder="PL / 開発 等" class="ss-input">
             </div>
         </div>
         <div style="margin-top:12px;">
-            <label class="ss-label">担当工程</label>
+            <label class="ss-label">${t("skillsheet.proj_tasks", lang)}</label>
             <div class="ss-tasks">
                 ${TASK_LABELS.map(
-                  (t) => `
+                  (tl) => `
                 <label class="ss-task-chk">
-                    <span>${t.label}</span><input type="checkbox" name="pTask_${t.key}" ${p.tasks && p.tasks[t.key] ? "checked" : ""}>
+                    <span>${t("skillsheet.task_" + tl.key, lang)}</span><input type="checkbox" name="pTask_${tl.key}" ${p.tasks && p.tasks[tl.key] ? "checked" : ""}>
                 </label>`,
                 ).join("")}
             </div>
         </div>
         <div style="margin-top:12px;">
-            <label class="ss-label">案件概要</label>
-            <textarea name="pDesc" rows="3" class="ss-textarea" placeholder="システム概要・担当業務など">${p.description || ""}</textarea>
+            <label class="ss-label">${t("skillsheet.proj_desc", lang)}</label>
+            <textarea name="pDesc" rows="3" class="ss-textarea" placeholder="${t("skillsheet.proj_desc_placeholder", lang)}">${p.description || ""}</textarea>
         </div>
         <div style="margin-top:10px;">
-            <label class="ss-label">使用技術・環境</label>
+            <label class="ss-label">${t("skillsheet.proj_tech", lang)}</label>
             <textarea name="pTech" rows="2" class="ss-textarea" placeholder="Java, Spring Boot, MySQL, AWS 等">${p.techStack || ""}</textarea>
         </div>
     </div>`;
@@ -955,7 +965,7 @@ function buildEditPage(emp, sheet, req, isAdminView = false) {
     <div class="ss-page-header-left">
         ${backHref ? `<a href="${backHref}" class="ss-back-btn"><i class="fa-solid fa-arrow-left"></i> 一覧に戻る</a>` : ""}
         <div>
-            <p class="ss-page-title">📄 スキルシート編集</p>
+            <p class="ss-page-title">📄 ${t("skillsheet.edit_title", lang)}</p>
             <p class="ss-page-meta">
                 <span><i class="fa-solid fa-user" style="color:#3b82f6"></i><strong>${emp.name}</strong></span>
                 <span><i class="fa-solid fa-building" style="color:#6b7280"></i>${emp.department || "—"}</span>
@@ -964,39 +974,39 @@ function buildEditPage(emp, sheet, req, isAdminView = false) {
         </div>
     </div>
     <a href="${exportHref}" class="ss-export-btn">
-        <i class="fa-solid fa-file-excel"></i> Excelで出力
+        <i class="fa-solid fa-file-excel"></i> ${t("skillsheet.export_excel", lang)}
     </a>
 </div>
 
-${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保存しました。</div>` : ""}
+${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> ${t("skillsheet.saved_ok", lang)}</div>` : ""}
 
 <form method="POST" action="${saveAction}" id="ssForm">
 
 <!-- 基本情報 -->
 <div class="ss-card">
-    <div class="ss-sec"><i class="fa-solid fa-id-card"></i>基本情報</div>
+    <div class="ss-sec"><i class="fa-solid fa-id-card"></i>${t("skillsheet.basic_info", lang)}</div>
     <div class="ss-grid3" style="margin-bottom:14px;">
         <div>
-            <label class="ss-label">氏名（カナ）</label>
+            <label class="ss-label">${t("skillsheet.field_name_kana", lang)}</label>
             <input type="text" name="nameKana" value="${sheet.nameKana || ""}" placeholder="ヤマダ タロウ" class="ss-input">
         </div>
         <div>
-            <label class="ss-label">生年月日</label>
+            <label class="ss-label">${t("skillsheet.field_birth_date", lang)}</label>
             <input type="date" name="birthDate" value="${sheet.birthDate || ""}" class="ss-input">
         </div>
         <div>
-            <label class="ss-label">性別</label>
+            <label class="ss-label">${t("skillsheet.field_gender", lang)}</label>
             <select name="gender" class="ss-select">
                 <option value="">—</option>
                 ${["男性", "女性", "その他"].map((g) => `<option value="${g}" ${sheet.gender === g ? "selected" : ""}>${g}</option>`).join("")}
             </select>
         </div>
         <div>
-            <label class="ss-label">最寄り駅</label>
+            <label class="ss-label">${t("skillsheet.field_nearest_station", lang)}</label>
             <input type="text" name="nearestStation" value="${sheet.nearestStation || ""}" placeholder="渋谷駅" class="ss-input">
         </div>
         <div>
-            <label class="ss-label">IT経験年数</label>
+            <label class="ss-label">${t("skillsheet.field_experience", lang)}</label>
             <input type="number" name="experience" value="${sheet.experience || 0}" min="0" max="50" class="ss-input">
         </div>
     </div>
@@ -1004,9 +1014,9 @@ ${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保
 
 <!-- 資格・免許 -->
 <div class="ss-card">
-    <div class="ss-sec"><i class="fa-solid fa-certificate"></i>資格・免許</div>
+    <div class="ss-sec"><i class="fa-solid fa-certificate"></i>${t("skillsheet.certifications", lang)}</div>
     <div class="ss-skill-tbl-wrap"><table class="ss-skill-table" id="certTable">
-        <thead><tr><th style="width:60%">資格名</th><th>取得年月</th><th style="width:36px;"></th></tr></thead>
+        <thead><tr><th style="width:60%">${t("skillsheet.cert_name", lang)}</th><th>${t("skillsheet.cert_date", lang)}</th><th style="width:36px;"></th></tr></thead>
         <tbody>
             ${certs
               .map(
@@ -1021,13 +1031,13 @@ ${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保
         </tbody>
     </table></div>
     <button type="button" class="ss-add-btn" style="margin-top:10px;" onclick="addCertRow()">
-        <i class="fa-solid fa-plus"></i> 追加
+        <i class="fa-solid fa-plus"></i> ${t("common.add", lang)}
     </button>
 </div>
 
 <!-- スキルマップ -->
 <div class="ss-card">
-    <div class="ss-sec"><i class="fa-solid fa-code"></i>スキルマップ</div>
+    <div class="ss-sec"><i class="fa-solid fa-code"></i>${t("skillsheet.skill_map", lang)}</div>
     ${SKILL_CATS.map((cat) => {
       const nameBase =
         {
@@ -1048,16 +1058,16 @@ ${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保
       const [nameKey, levelKey] = nameBase.split("/");
       return `
     <div style="margin-bottom:18px;">
-        <div style="font-size:12px;font-weight:700;color:#2563eb;margin-bottom:6px;">${cat.label}</div>
+        <div style="font-size:12px;font-weight:700;color:#2563eb;margin-bottom:6px;">${t("skillsheet.cat_" + cat.key, lang)}</div>
         <table class="ss-skill-table" data-cat="${cat.key}">
-            <thead><tr><th>名称</th><th style="width:160px;">レベル</th><th style="width:36px;"></th></tr></thead>
+            <thead><tr><th>${t("skillsheet.skill_name", lang)}</th><th style="width:160px;">${t("skillsheet.skill_level", lang)}</th><th style="width:36px;"></th></tr></thead>
             <tbody>
                 ${renderSkillCat(cat.key, nameKey.replace("Name", ""), skills[cat.key])}
             </tbody>
         </table>
         <button type="button" class="ss-add-btn" style="margin-top:8px;"
             onclick="addSkillRow(this,'${nameKey}','${levelKey}')">
-            <i class="fa-solid fa-plus"></i> 追加
+            <i class="fa-solid fa-plus"></i> ${t("common.add", lang)}
         </button>
     </div>`;
     }).join("")}
@@ -1065,18 +1075,18 @@ ${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保
 
 <!-- 自己PR -->
 <div class="ss-card">
-    <div class="ss-sec"><i class="fa-solid fa-star"></i>自己PR・強み</div>
-    <textarea name="selfPR" rows="5" class="ss-textarea" placeholder="自己PRや強みを自由に記述してください">${sheet.selfPR || ""}</textarea>
+    <div class="ss-sec"><i class="fa-solid fa-star"></i>${t("skillsheet.self_pr", lang)}</div>
+    <textarea name="selfPR" rows="5" class="ss-textarea" placeholder="${t("skillsheet.self_pr_placeholder", lang)}">${sheet.selfPR || ""}</textarea>
 </div>
 
 <!-- 職務経歴 -->
 <div class="ss-card">
-    <div class="ss-sec"><i class="fa-solid fa-briefcase"></i>職務経歴</div>
+    <div class="ss-sec"><i class="fa-solid fa-briefcase"></i>${t("skillsheet.career", lang)}</div>
     <div id="projContainer">
         ${(sheet.projects || []).map((p, i) => renderProject(p, i)).join("")}
     </div>
     <button type="button" class="ss-add-btn" onclick="addProject()">
-        <i class="fa-solid fa-plus"></i> 案件を追加
+        <i class="fa-solid fa-plus"></i> ${t("skillsheet.add_project", lang)}
     </button>
 </div>
 
@@ -1085,12 +1095,12 @@ ${saved ? `<div class="ss-alert-ok"><i class="fa-solid fa-circle-check"></i> 保
     <button type="submit" form="ssForm"
         style="background:#3b82f6;color:#fff;border:none;padding:10px 28px;border-radius:7px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(59,130,246,.3);"
         onmouseover="this.style.background='#2563eb'" onmouseout="this.style.background='#3b82f6'">
-        <i class="fa-solid fa-floppy-disk" style="margin-right:6px;"></i>保存する
+        <i class="fa-solid fa-floppy-disk" style="margin-right:6px;"></i>${t("skillsheet.save_btn", lang)}
     </button>
     <a href="/skillsheet/export"
         style="background:#16a34a;color:#fff;padding:10px 22px;border-radius:7px;font-size:14px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:7px;"
         onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
-        <i class="fa-solid fa-file-excel"></i>Excelで出力
+        <i class="fa-solid fa-file-excel"></i>${t("skillsheet.export_excel", lang)}
     </a>
 </div>
 </form>
@@ -1201,114 +1211,149 @@ function addProject() {
 // GET /skillsheet/api/map?employeeId=xxx  個人レーダー用データ
 // GET /skillsheet/api/map/team            チーム全体バブルチャート用データ
 
-router.get('/skillsheet/api/map', requireLogin, async (req, res) => {
-    try {
-        const { employeeId } = req.query;
-        const targetId = employeeId || req.session.employeeId;
-        const sheet = await SkillSheet.findOne({ employeeId: targetId }).lean();
-        if (!sheet) return res.json({ labels: [], datasets: [] });
+router.get("/skillsheet/api/map", requireLogin, async (req, res) => {
+  try {
+    const { employeeId } = req.query;
+    const targetId = employeeId || req.session.employeeId;
+    const sheet = await SkillSheet.findOne({ employeeId: targetId }).lean();
+    if (!sheet) return res.json({ labels: [], datasets: [] });
 
-        // カテゴリ別の平均レベルをレーダーチャート用に整形
-        const catAverages = SKILL_CATS.map(cat => {
-            const items = (sheet.skills && sheet.skills[cat.key]) || [];
-            if (items.length === 0) return { cat: cat.label, avg: 0, items };
-            const avg = items.reduce((s, i) => s + (i.level || 0), 0) / items.length;
-            return { cat: cat.label, avg: Math.round(avg * 10) / 10, items };
-        });
+    // カテゴリ別の平均レベルをレーダーチャート用に整形
+    const catAverages = SKILL_CATS.map((cat) => {
+      const items = (sheet.skills && sheet.skills[cat.key]) || [];
+      if (items.length === 0) return { cat: cat.label, avg: 0, items };
+      const avg = items.reduce((s, i) => s + (i.level || 0), 0) / items.length;
+      return { cat: cat.label, avg: Math.round(avg * 10) / 10, items };
+    });
 
-        // 工程スキル（task実績カウント）
-        const taskCounts = TASK_LABELS.map(t => {
-            const count = (sheet.projects || []).filter(p => p.tasks && p.tasks[t.key]).length;
-            return { label: t.label, count };
-        });
+    // 工程スキル（task実績カウント）
+    const taskCounts = TASK_LABELS.map((t) => {
+      const count = (sheet.projects || []).filter(
+        (p) => p.tasks && p.tasks[t.key],
+      ).length;
+      return { label: t.label, count };
+    });
 
-        res.json({
-            name: sheet.nameKana || '',
-            experience: sheet.experience || 0,
-            radar: {
-                labels: catAverages.map(c => c.cat),
-                data:   catAverages.map(c => c.avg),
-                max: 5
-            },
-            tasks: taskCounts,
-            topSkills: SKILL_CATS.flatMap(cat =>
-                ((sheet.skills && sheet.skills[cat.key]) || []).map(s => ({ ...s, cat: cat.label }))
-            ).sort((a, b) => b.level - a.level).slice(0, 10),
-            certifications: sheet.certifications || [],
-            projectCount: (sheet.projects || []).length
-        });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    res.json({
+      name: sheet.nameKana || "",
+      experience: sheet.experience || 0,
+      radar: {
+        labels: catAverages.map((c) => c.cat),
+        data: catAverages.map((c) => c.avg),
+        max: 5,
+      },
+      tasks: taskCounts,
+      topSkills: SKILL_CATS.flatMap((cat) =>
+        ((sheet.skills && sheet.skills[cat.key]) || []).map((s) => ({
+          ...s,
+          cat: cat.label,
+        })),
+      )
+        .sort((a, b) => b.level - a.level)
+        .slice(0, 10),
+      certifications: sheet.certifications || [],
+      projectCount: (sheet.projects || []).length,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-router.get('/skillsheet/api/map/team', requireLogin, async (req, res) => {
-    try {
-        const sheets = await SkillSheet.find().lean();
-        const { Employee: Emp } = require('../models');
-        const employees = await Emp.find().lean();
-        const empMap = Object.fromEntries(employees.map(e => [e._id.toString(), e]));
+router.get("/skillsheet/api/map/team", requireLogin, async (req, res) => {
+  try {
+    const sheets = await SkillSheet.find().lean();
+    const { Employee: Emp } = require("../models");
+    const employees = await Emp.find().lean();
+    const empMap = Object.fromEntries(
+      employees.map((e) => [e._id.toString(), e]),
+    );
 
-        const bubbleData = sheets.map(sheet => {
-            const emp = empMap[sheet.employeeId.toString()] || {};
-            // 全スキルの平均レベル
-            const allItems = SKILL_CATS.flatMap(cat => (sheet.skills && sheet.skills[cat.key]) || []);
-            const avgLevel = allItems.length > 0
-                ? Math.round(allItems.reduce((s, i) => s + (i.level || 0), 0) / allItems.length * 10) / 10
-                : 0;
-            const skillCount = allItems.length;
+    const bubbleData = sheets.map((sheet) => {
+      const emp = empMap[sheet.employeeId.toString()] || {};
+      // 全スキルの平均レベル
+      const allItems = SKILL_CATS.flatMap(
+        (cat) => (sheet.skills && sheet.skills[cat.key]) || [],
+      );
+      const avgLevel =
+        allItems.length > 0
+          ? Math.round(
+              (allItems.reduce((s, i) => s + (i.level || 0), 0) /
+                allItems.length) *
+                10,
+            ) / 10
+          : 0;
+      const skillCount = allItems.length;
 
-            // 担当工程の幅（バブルサイズ）
-            const taskScore = TASK_LABELS.filter(t =>
-                (sheet.projects || []).some(p => p.tasks && p.tasks[t.key])
-            ).length;
+      // 担当工程の幅（バブルサイズ）
+      const taskScore = TASK_LABELS.filter((t) =>
+        (sheet.projects || []).some((p) => p.tasks && p.tasks[t.key]),
+      ).length;
 
-            return {
-                name: emp.name || sheet.nameKana || '不明',
-                department: emp.department || '-',
-                experience: sheet.experience || 0,
-                avgLevel,
-                skillCount,
-                taskScore,
-                projectCount: (sheet.projects || []).length
-            };
-        });
+      return {
+        name: emp.name || sheet.nameKana || "不明",
+        department: emp.department || "-",
+        experience: sheet.experience || 0,
+        avgLevel,
+        skillCount,
+        taskScore,
+        projectCount: (sheet.projects || []).length,
+      };
+    });
 
-        // カテゴリ別スキル保有者数（棒グラフ用）
-        const catStats = SKILL_CATS.map(cat => {
-            const holders = sheets.filter(s => (s.skills && s.skills[cat.key] || []).length > 0).length;
-            const avgLv = (() => {
-                const all = sheets.flatMap(s => (s.skills && s.skills[cat.key]) || []);
-                return all.length > 0 ? Math.round(all.reduce((a, i) => a + (i.level || 0), 0) / all.length * 10) / 10 : 0;
-            })();
-            return { cat: cat.label, holders, avgLv };
-        });
+    // カテゴリ別スキル保有者数（棒グラフ用）
+    const catStats = SKILL_CATS.map((cat) => {
+      const holders = sheets.filter(
+        (s) => ((s.skills && s.skills[cat.key]) || []).length > 0,
+      ).length;
+      const avgLv = (() => {
+        const all = sheets.flatMap(
+          (s) => (s.skills && s.skills[cat.key]) || [],
+        );
+        return all.length > 0
+          ? Math.round(
+              (all.reduce((a, i) => a + (i.level || 0), 0) / all.length) * 10,
+            ) / 10
+          : 0;
+      })();
+      return { cat: cat.label, holders, avgLv };
+    });
 
-        // スキル別ランキング（全員のスキルを集計）
-        const skillRank = {};
-        for (const sheet of sheets) {
-            for (const cat of SKILL_CATS) {
-                for (const item of (sheet.skills && sheet.skills[cat.key]) || []) {
-                    if (!skillRank[item.name]) skillRank[item.name] = { count: 0, totalLevel: 0, cat: cat.label };
-                    skillRank[item.name].count++;
-                    skillRank[item.name].totalLevel += (item.level || 0);
-                }
-            }
+    // スキル別ランキング（全員のスキルを集計）
+    const skillRank = {};
+    for (const sheet of sheets) {
+      for (const cat of SKILL_CATS) {
+        for (const item of (sheet.skills && sheet.skills[cat.key]) || []) {
+          if (!skillRank[item.name])
+            skillRank[item.name] = { count: 0, totalLevel: 0, cat: cat.label };
+          skillRank[item.name].count++;
+          skillRank[item.name].totalLevel += item.level || 0;
         }
-        const topSkills = Object.entries(skillRank)
-            .map(([name, d]) => ({ name, count: d.count, avgLevel: Math.round(d.totalLevel / d.count * 10) / 10, cat: d.cat }))
-            .sort((a, b) => b.count - a.count)
-            .slice(0, 20);
+      }
+    }
+    const topSkills = Object.entries(skillRank)
+      .map(([name, d]) => ({
+        name,
+        count: d.count,
+        avgLevel: Math.round((d.totalLevel / d.count) * 10) / 10,
+        cat: d.cat,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 20);
 
-        res.json({ bubbleData, catStats, topSkills, total: sheets.length });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    res.json({ bubbleData, catStats, topSkills, total: sheets.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── スキルマップ表示ページ ──────────────────────────────────────────────────
-router.get('/skillsheet/map', requireLogin, async (req, res) => {
-    try {
-        const isAdmin = !!req.session.isAdmin;
-        const employee = req.session.employee;
+router.get("/skillsheet/map", requireLogin, async (req, res) => {
+  try {
+    const isAdmin = !!req.session.isAdmin;
+    const employee = req.session.employee;
+    const lang = req.lang || req.session?.lang || "ja";
 
-        const content = `
+    const content = `
 <div style="max-width:100%;margin:0 auto">
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
     <h2 style="margin:0;font-size:22px;font-weight:800">
@@ -1316,21 +1361,25 @@ router.get('/skillsheet/map', requireLogin, async (req, res) => {
     </h2>
     <div style="display:flex;gap:8px">
         <button id="btnPersonal" class="tab-btn active" onclick="switchTab('personal')">個人レーダー</button>
-        ${isAdmin ? '<button id="btnTeam" class="tab-btn" onclick="switchTab(\'team\')">チーム全体</button>' : ''}
-        <a href="/skillsheet" class="tab-btn" style="text-decoration:none">スキルシート編集</a>
+        ${isAdmin ? '<button id="btnTeam" class="tab-btn" onclick="switchTab(\'team\')">チーム全体</button>' : ""}
+        <a href="/skillsheet" class="tab-btn" style="text-decoration:none">${t("skillsheet.edit_title", lang)}</a>
     </div>
 </div>
 
 <!-- 個人レーダーチャートタブ -->
 <div id="tabPersonal">
-    ${isAdmin ? `
+    ${
+      isAdmin
+        ? `
     <div style="margin-bottom:16px">
         <label style="font-weight:600;margin-right:8px">社員を選択：</label>
         <select id="empSelect" onchange="loadPersonal(this.value)"
                 style="padding:8px 12px;border:1px solid #e5e7eb;border-radius:8px">
             <option value="">-- 選択してください --</option>
         </select>
-    </div>` : ''}
+    </div>`
+        : ""
+    }
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px 60px" id="personalGrid">
         <div class="sk-card">
             <h4>カテゴリ別スキルレベル（レーダー）</h4>
@@ -1351,7 +1400,9 @@ router.get('/skillsheet/map', requireLogin, async (req, res) => {
 </div>
 
 <!-- チーム全体タブ（管理者のみ） -->
-${isAdmin ? `
+${
+  isAdmin
+    ? `
 <div id="tabTeam" style="display:none">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
         <div class="sk-card" style="grid-column:1/-1">
@@ -1367,7 +1418,9 @@ ${isAdmin ? `
             <div id="memberTable"></div>
         </div>
     </div>
-</div>` : ''}
+</div>`
+    : ""
+}
 </div>
 
 <style>
@@ -1511,7 +1564,9 @@ async function loadTeam() {
 }
 
 // ── 管理者：社員一覧を取得してセレクト生成 ──
-${isAdmin ? `
+${
+  isAdmin
+    ? `
 (async () => {
     const sel = document.getElementById('empSelect');
     if (!sel) return;
@@ -1523,16 +1578,27 @@ ${isAdmin ? `
     });
     // デフォルトで最初の社員を表示
     if (emps.length > 0) { sel.value = emps[0]._id; loadPersonal(emps[0]._id); }
-})();` : `loadPersonal();`}
+})();`
+    : `loadPersonal();`
+}
 </script>
 `;
-        const { buildPageShell, pageFooter } = require('../lib/renderPage');
-        res.send(buildPageShell({ title: 'スキルマップ', currentPath: '/skillsheet/map', employee, isAdmin }) + content + pageFooter());
-    } catch (e) {
-        console.error(e);
-        res.status(500).send('エラー: ' + e.message);
-    }
+    const { buildPageShell, pageFooter } = require("../lib/renderPage");
+    res.send(
+      buildPageShell({
+        title: "スキルマップ",
+        currentPath: "/skillsheet/map",
+        employee,
+        isAdmin,
+        lang,
+      }) +
+        content +
+        pageFooter(),
+    );
+  } catch (e) {
+    console.error(e);
+    res.status(500).send("エラー: " + e.message);
+  }
 });
 
 module.exports = router;
-
