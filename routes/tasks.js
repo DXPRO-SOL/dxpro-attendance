@@ -584,86 +584,86 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
       github: [
         {
           id: "accessToken",
-          label: "APIトークン（Personal Access Token）",
+          label: t("tasks.gh_token_label", lang),
           type: "password",
           placeholder: "ghp_xxxxxxxxxxxxxxxxxxxx",
-          hint: "GitHub → Settings → Developer settings → Personal access tokensで発行",
+          hint: t("tasks.gh_token_hint", lang),
           required: true,
         },
         {
           id: "clientId",
-          label: "GitHubユーザー名 または 組織名",
+          label: t("tasks.gh_owner_label", lang),
           type: "text",
           placeholder: "DXPRO-SOL",
-          hint: "github.com/▶ここ◀/リポジトリ名 の部分のみ。'/' は入れないでください。",
+          hint: t("tasks.gh_owner_hint", lang),
           required: true,
         },
         {
           id: "channel",
-          label: "リポジトリ名",
+          label: t("tasks.gh_repo_label", lang),
           type: "text",
           placeholder: "dxpro-attendance",
-          hint: "github.com/ユーザー名/▶ここ◀ の部分のみ。'/' は入れないでください。",
+          hint: t("tasks.gh_repo_hint", lang),
           required: true,
         },
       ],
       jira: [
         {
           id: "webhookUrl",
-          label: "JIRAサイトURL",
+          label: t("tasks.jira_url_label", lang),
           type: "text",
           placeholder: "https://yoursite.atlassian.net",
-          hint: "JIRAにログイン後、ブラウザのURLに表示される「https://〇〇.atlassian.net」の部分",
+          hint: t("tasks.jira_url_hint", lang),
           required: true,
         },
         {
           id: "clientId",
-          label: "メールアドレス",
+          label: t("tasks.jira_email_label", lang),
           type: "email",
           placeholder: "you@example.com",
-          hint: "JIRAへのログインに使っているメールアドレス",
+          hint: t("tasks.jira_email_hint", lang),
           required: true,
         },
         {
           id: "apiKey",
-          label: "APIトークン",
+          label: t("tasks.jira_token_label", lang),
           type: "password",
           placeholder: "ATATxxxxxxxxxxxxxxxx",
-          hint: "Atlassian → アカウント設定 → セキュリティ → APIトークンで発行",
+          hint: t("tasks.jira_token_hint", lang),
           required: true,
         },
         {
           id: "channel",
-          label: "プロジェクトキー",
+          label: t("tasks.jira_proj_label", lang),
           type: "text",
           placeholder: "PROJ",
-          hint: "JIRAプロジェクト一覧の「キー」列に表示される英字コード（例: PROJ, DEV）",
+          hint: t("tasks.jira_proj_hint", lang),
           required: true,
         },
       ],
       backlog: [
         {
           id: "clientId",
-          label: "スペースキー",
+          label: t("tasks.bl_space_label", lang),
           type: "text",
           placeholder: "yourspace",
-          hint: "BacklogのURL「https://▶yourspace◀.backlog.com」の部分",
+          hint: t("tasks.bl_space_hint", lang),
           required: true,
         },
         {
           id: "apiKey",
-          label: "APIキー",
+          label: t("tasks.bl_apikey_label", lang),
           type: "password",
           placeholder: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-          hint: "Backlog → 個人設定 → API → APIキーを発行",
+          hint: t("tasks.bl_apikey_hint", lang),
           required: true,
         },
         {
           id: "channel",
-          label: "プロジェクトキー",
+          label: t("tasks.bl_proj_label", lang),
           type: "text",
           placeholder: "PROJECT",
-          hint: "Backlogプロジェクトの設定画面に表示される英字コード（例: PROJECT, DEV）",
+          hint: t("tasks.bl_proj_hint", lang),
           required: true,
         },
       ],
@@ -831,11 +831,19 @@ router.get("/tasks/settings/:tool", requireLogin, async (req, res) => {
 </div>
 <div class="tks-toast" id="tks-toast"></div>
 <script>
+var _tksI18n = {
+  testConnecting: ${JSON.stringify(t("tasks.test_connecting", lang))},
+  testDebugTitle: ${JSON.stringify(t("tasks.test_debug_title", lang))},
+  testSuccess: ${JSON.stringify(t("tasks.test_success", lang))},
+  testFailed: ${JSON.stringify(t("tasks.test_failed", lang))},
+  testReqError: ${JSON.stringify(t("tasks.test_req_error", lang))},
+  testUnknownError: ${JSON.stringify(t("tasks.test_unknown_error", lang))},
+};
 async function testConnection(tool) {
     const resultBox = document.getElementById('tks-test-result');
     resultBox.className = 'tks-test-result';
     resultBox.style.display = 'block';
-    resultBox.textContent = '接続テスト中...';
+    resultBox.textContent = _tksI18n.testConnecting;
     try {
         const r = await fetch('/tasks/settings/' + tool + '/test', { method: 'POST' });
         const d = await r.json();
@@ -845,18 +853,18 @@ async function testConnection(tool) {
                 var color = v===true ? '#166534' : v===false ? '#dc2626' : '#374151';
                 return '<tr><td style="padding:2px 8px;color:#64748b;">'+k+'</td><td style="padding:2px 8px;font-weight:600;color:'+color+'">'+String(v)+'</td></tr>';
             }).join('');
-            return '<details style="margin-top:10px;font-size:12px;"><summary style="cursor:pointer;color:#64748b;">▶ 保存済みフィールド確認（デバッグ）</summary><table style="margin-top:6px;border-collapse:collapse;width:100%;">'+rows+'</table></details>';
+            return '<details style="margin-top:10px;font-size:12px;"><summary style="cursor:pointer;color:#64748b;">▶ ' + _tksI18n.testDebugTitle + '</summary><table style="margin-top:6px;border-collapse:collapse;width:100%;">'+rows+'</table></details>';
         })() : '';
         if (d.ok) {
             resultBox.className = 'tks-test-result tks-test-result--ok';
-            resultBox.innerHTML = '✅ 接続成功！' + (d.detail ? ' ' + d.detail : '') + debugHtml;
+            resultBox.innerHTML = '✅ ' + _tksI18n.testSuccess + (d.detail ? ' ' + d.detail : '') + debugHtml;
         } else {
             resultBox.className = 'tks-test-result tks-test-result--err';
-            resultBox.innerHTML = '❌ 接続失敗: ' + (d.error || '不明なエラー') + debugHtml;
+            resultBox.innerHTML = '❌ ' + _tksI18n.testFailed + ': ' + (d.error || _tksI18n.testUnknownError) + debugHtml;
         }
     } catch(e) {
         resultBox.className = 'tks-test-result tks-test-result--err';
-        resultBox.innerHTML = '❌ リクエストエラー: ' + e.message;
+        resultBox.innerHTML = '❌ ' + _tksI18n.testReqError + ': ' + e.message;
     }
 }
 </script>
@@ -981,111 +989,111 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
       github: [
         {
           id: "q",
-          label: "タイトル検索",
+          label: t("tasks.filter_q_label", lang),
           type: "text",
-          placeholder: "キーワード",
+          placeholder: t("tasks.filter_q_placeholder", lang),
         },
         {
           id: "state",
-          label: "ステータス",
+          label: t("tasks.filter_status_label", lang),
           type: "select",
           options: [
-            ["", "全て"],
+            ["", t("tasks.filter_all", lang)],
             ["open", "Open"],
             ["closed", "Closed"],
           ],
         },
         {
           id: "assignee",
-          label: "担当者",
+          label: t("tasks.filter_assignee_label", lang),
           type: "text",
-          placeholder: "ユーザー名",
+          placeholder: t("tasks.filter_github_assignee_placeholder", lang),
         },
         {
           id: "label",
-          label: "ラベル",
+          label: t("tasks.filter_label_label", lang),
           type: "text",
-          placeholder: "bug, enhancement...",
+          placeholder: t("tasks.filter_label_placeholder", lang),
         },
       ],
       jira: [
         {
           id: "q",
-          label: "タイトル検索",
+          label: t("tasks.filter_q_label", lang),
           type: "text",
-          placeholder: "キーワード",
+          placeholder: t("tasks.filter_q_placeholder", lang),
         },
         {
           id: "status",
-          label: "ステータス",
+          label: t("tasks.filter_status_label", lang),
           type: "select",
           options: [
-            ["", "全て"],
+            ["", t("tasks.filter_all", lang)],
             ["To Do", "To Do"],
-            ["In Progress", "進行中"],
-            ["Done", "完了"],
+            ["In Progress", t("tasks.filter_jira_status_inprogress", lang)],
+            ["Done", t("tasks.filter_jira_status_done", lang)],
           ],
         },
         {
           id: "priority",
-          label: "優先度",
+          label: t("tasks.filter_priority_label", lang),
           type: "select",
           options: [
-            ["", "全て"],
-            ["Highest", "最高"],
-            ["High", "高"],
-            ["Medium", "中"],
-            ["Low", "低"],
+            ["", t("tasks.filter_all", lang)],
+            ["Highest", t("tasks.filter_priority_highest", lang)],
+            ["High", t("tasks.filter_priority_high", lang)],
+            ["Medium", t("tasks.filter_priority_mid", lang)],
+            ["Low", t("tasks.filter_priority_low", lang)],
           ],
         },
         {
           id: "assignee",
-          label: "担当者",
+          label: t("tasks.filter_assignee_label", lang),
           type: "text",
-          placeholder: "メールアドレス",
+          placeholder: t("tasks.filter_jira_assignee_placeholder", lang),
         },
       ],
       backlog: [
         {
           id: "q",
-          label: "タイトル検索",
+          label: t("tasks.filter_q_label", lang),
           type: "text",
-          placeholder: "キーワード",
+          placeholder: t("tasks.filter_q_placeholder", lang),
         },
         {
           id: "statusId",
-          label: "ステータス",
+          label: t("tasks.filter_status_label", lang),
           type: "select",
           options: [
-            ["", "全て"],
-            ["1", "未対応"],
-            ["2", "処理中"],
-            ["3", "処理済み"],
-            ["4", "完了"],
+            ["", t("tasks.filter_all", lang)],
+            ["1", t("tasks.filter_backlog_status_new", lang)],
+            ["2", t("tasks.filter_backlog_status_doing", lang)],
+            ["3", t("tasks.filter_backlog_status_done_proc", lang)],
+            ["4", t("tasks.filter_backlog_status_done", lang)],
           ],
         },
         {
           id: "priorityId",
-          label: "優先度",
+          label: t("tasks.filter_priority_label", lang),
           type: "select",
           options: [
-            ["", "全て"],
-            ["2", "高"],
-            ["3", "中"],
-            ["4", "低"],
+            ["", t("tasks.filter_all", lang)],
+            ["2", t("tasks.filter_priority_high", lang)],
+            ["3", t("tasks.filter_priority_mid", lang)],
+            ["4", t("tasks.filter_priority_low", lang)],
           ],
         },
         {
           id: "assigneeId",
-          label: "担当者",
+          label: t("tasks.filter_assignee_label", lang),
           type: "text",
-          placeholder: "担当者名",
+          placeholder: t("tasks.filter_backlog_assignee_placeholder", lang),
         },
         {
           id: "milestoneId",
-          label: "マイルストーン",
+          label: t("tasks.filter_milestone_label", lang),
           type: "text",
-          placeholder: "マイルストーン名",
+          placeholder: t("tasks.filter_milestone_placeholder", lang),
         },
       ],
     };
@@ -1110,17 +1118,17 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
 
     // テーブルヘッダー（全ツール共通11列）
     const UNIFIED_HEADERS = [
-      "タスクNo",
-      "種別",
-      "ステータス",
-      "タイトル",
-      "プロジェクト/リポジトリ",
-      "ラベル",
-      "優先度",
-      "担当者",
-      "期限日",
-      "更新日",
-      "備考",
+      t("tasks.col_task_no", lang),
+      t("tasks.col_type", lang),
+      t("tasks.col_status", lang),
+      t("tasks.col_title", lang),
+      t("tasks.col_project", lang),
+      t("tasks.col_labels", lang),
+      t("tasks.col_priority", lang),
+      t("tasks.col_assignee", lang),
+      t("tasks.col_due_date", lang),
+      t("tasks.col_updated_at", lang),
+      t("tasks.col_notes", lang),
     ];
     const COL_WIDTHS = [
       "7%",
@@ -1160,19 +1168,19 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
     if (!isConfigured) {
       bodyContent = `<tr><td colspan="${COLS}" class="tkl-empty">
             <i class="fa-solid fa-plug" style="font-size:28px;color:#cbd5e1;display:block;margin-bottom:10px"></i>
-            接続設定が完了していません。
-            <a href="/tasks/settings/${tool}" style="color:#1d4ed8;margin-left:6px;">接続設定を行う</a>
+            ${escapeHtml(t("tasks.no_config_msg", lang))}
+            <a href="/tasks/settings/${tool}" style="color:#1d4ed8;margin-left:6px;">${escapeHtml(t("tasks.no_config_link", lang))}</a>
         </td></tr>`;
     } else if (apiError) {
       bodyContent = `<tr><td colspan="${COLS}" class="tkl-empty">
             <i class="fa-solid fa-circle-exclamation" style="font-size:28px;color:#fca5a5;display:block;margin-bottom:10px"></i>
-            <span style="color:#dc2626">API接続エラー: ${escapeHtml(String(apiError))}</span><br>
-            <a href="/tasks/settings/${tool}" style="color:#1d4ed8;margin-top:8px;display:inline-block;">接続設定を確認する</a>
+            <span style="color:#dc2626">${escapeHtml(t("tasks.api_error_prefix", lang))}: ${escapeHtml(String(apiError))}</span><br>
+            <a href="/tasks/settings/${tool}" style="color:#1d4ed8;margin-top:8px;display:inline-block;">${escapeHtml(t("tasks.api_error_link", lang))}</a>
         </td></tr>`;
     } else if (taskRows.length === 0) {
       bodyContent = `<tr><td colspan="${COLS}" class="tkl-empty">
             <i class="fa-solid fa-inbox" style="font-size:28px;color:#cbd5e1;display:block;margin-bottom:10px"></i>
-            条件に一致するタスクが見つかりませんでした。
+            ${escapeHtml(t("tasks.no_tasks", lang))}
         </td></tr>`;
     } else {
       bodyContent = taskRows
@@ -1184,11 +1192,11 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
           const rawId = escapeHtml(String(r.rawId || r.no));
           const dueDateDisplay = r.dueDate
             ? escapeHtml(r.dueDate)
-            : '<span class="tkl-due-unset">未設定</span>';
+            : `<span class="tkl-due-unset">${escapeHtml(t("tasks.due_unset", lang))}</span>`;
           const dueDateCell = canEdit
             ? `<span class="tkl-due-cell" data-taskid="${rawId}" data-tool="${escapeHtml(tool)}">
                  <span class="tkl-due-val">${dueDateDisplay}</span>
-                 <button type="button" class="tkl-due-btn" title="期限日を変更" onclick="openDueEdit(this)">
+                 <button type="button" class="tkl-due-btn" title="${escapeHtml(t("tasks.due_edit_title", lang))}" onclick="openDueEdit(this)">
                    <i class="fa-solid fa-pen-to-square"></i>
                  </button>
                </span>`
@@ -1464,24 +1472,34 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
 
 // ―― 期限日インライン編集 ――――――――――――――――――――――――――――――――――――――――――――――――
 var _duePopup = null;
-
+var _i18n = {
+  duePopupTitle: ${JSON.stringify(t("tasks.due_popup_title", lang))},
+  duePopupSave: ${JSON.stringify(t("tasks.due_popup_save", lang))},
+  duePopupClear: ${JSON.stringify(t("tasks.due_popup_clear", lang))},
+  duePopupClearTitle: ${JSON.stringify(t("tasks.due_popup_clear_title", lang))},
+  duePopupCancel: ${JSON.stringify(t("tasks.due_popup_cancel", lang))},
+  dueSaveFailed: ${JSON.stringify(t("tasks.due_save_failed", lang))},
+  dueUnknownError: ${JSON.stringify(t("tasks.due_unknown_error", lang))},
+  dueNetworkError: ${JSON.stringify(t("tasks.due_network_error", lang))},
+  dueUnset: ${JSON.stringify(t("tasks.due_unset", lang))},
+};
 function openDueEdit(btn) {
   closeDuePopup();
   var cell = btn.closest('.tkl-due-cell');
   var taskId = cell.dataset.taskid;
   var toolKey = cell.dataset.tool;
   var currentVal = (cell.querySelector('.tkl-due-val') || {}).innerText || '';
-  if (currentVal === '未設定') currentVal = '';
+  if (currentVal === _i18n.dueUnset) currentVal = '';
 
   var popup = document.createElement('div');
   popup.className = 'tkl-due-popup';
   popup.innerHTML =
-    '<h4><i class="fa-solid fa-calendar-days" style="margin-right:6px;color:#1d4ed8"></i>期限日を設定</h4>' +
+    '<h4><i class="fa-solid fa-calendar-days" style="margin-right:6px;color:#1d4ed8"></i>' + _i18n.duePopupTitle + '</h4>' +
     '<input type="date" id="duePopupDate">' +
     '<div class="tkl-due-popup-actions">' +
-      '<button class="tkl-due-popup-save">保存</button>' +
-      '<button class="tkl-due-popup-clear" title="期限日をクリア">クリア</button>' +
-      '<button class="tkl-due-popup-cancel">キャンセル</button>' +
+      '<button class="tkl-due-popup-save">' + _i18n.duePopupSave + '</button>' +
+      '<button class="tkl-due-popup-clear" title="' + _i18n.duePopupClearTitle + '">' + _i18n.duePopupClear + '</button>' +
+      '<button class="tkl-due-popup-cancel">' + _i18n.duePopupCancel + '</button>' +
     '</div>';
 
   var rect = btn.getBoundingClientRect();
@@ -1529,16 +1547,16 @@ async function saveDue(taskId, toolKey, clear) {
       body: JSON.stringify({ dueDate: dateVal })
     });
     var d = await r.json();
-    if (!d.ok) { alert('保存失敗: ' + (d.error || '不明なエラー')); return; }
+    if (!d.ok) { alert(_i18n.dueSaveFailed + ': ' + (d.error || _i18n.dueUnknownError)); return; }
     if (_duePopup) {
       var valEl = _duePopup.cell.querySelector('.tkl-due-val');
       var td = _duePopup.cell.closest('td');
-      if (valEl) valEl.innerHTML = dateVal ? dateVal : '<span class="tkl-due-unset">未設定</span>';
+      if (valEl) valEl.innerHTML = dateVal ? dateVal : '<span class="tkl-due-unset">' + _i18n.dueUnset + '</span>';
       if (td) td.setAttribute('data-sort', dateVal);
     }
     closeDuePopup();
   } catch(e) {
-    alert('通信エラー: ' + e.message);
+    alert(_i18n.dueNetworkError + ': ' + e.message);
   }
 }
 </script>
@@ -2342,21 +2360,21 @@ function makeI18nExample() {
 }
 
 // ── buildCodeActionPlan：{text, example}[] を返す ──
-function buildCodeActionPlan(titleOrig, bodyOrig) {
+function buildCodeActionPlan(titleOrig, bodyOrig, lang = "ja") {
   const fullText = (titleOrig + " " + bodyOrig).toLowerCase();
   // {text: string, example: string} の配列
   const steps = [];
 
   const DOMAIN_TABLE = [
     {
-      label: "勤怠",
+      labelKey: "ai_plan_d_attendance",
       keys: /勤怠|出退勤|出勤|退勤|打刻|attendance/,
       route: "routes/attendance.js",
       schema: "AttendanceSchema",
       modelName: "Attendance",
     },
     {
-      label: "チャット",
+      labelKey: "ai_plan_d_chat",
       keys: /チャット|chat(?!bot)/,
       route: "routes/chat.js",
       schema: "ChatMessageSchema",
@@ -2365,28 +2383,28 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
       socketNote: true,
     },
     {
-      label: "掲示板",
+      labelKey: "ai_plan_d_board",
       keys: /掲示板|ボード|board/,
       route: "routes/board.js",
       schema: "BoardPostSchema",
       modelName: "BoardPost",
     },
     {
-      label: "目標管理",
+      labelKey: "ai_plan_d_goals",
       keys: /目標|ゴール|goal|okr|kpi/,
       route: "routes/goals.js",
       schema: "goalSchema",
       modelName: "Goal",
     },
     {
-      label: "休暇申請",
+      labelKey: "ai_plan_d_leave",
       keys: /休暇|有休|leave|vacation/,
       route: "routes/leave.js",
       schema: "LeaveRequestSchema",
       modelName: "LeaveRequest",
     },
     {
-      label: "給与",
+      labelKey: "ai_plan_d_payroll",
       keys: /給与|ペイロール|payroll|salary|給料|賃金/,
       route: "routes/payroll_admin.js",
       schema: "PayrollSlipSchema",
@@ -2394,7 +2412,7 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
       lib: "lib/payrollEngine.js",
     },
     {
-      label: "日報",
+      labelKey: "ai_plan_d_daily",
       keys: /日報|daily.?report/,
       route: "routes/hr.js",
       schema: "DailyReportSchema",
@@ -2402,7 +2420,7 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
       lib: "lib/dailyReportSummary.js",
     },
     {
-      label: "通知",
+      labelKey: "ai_plan_d_notif",
       keys: /通知|notification|アラート/,
       route: "routes/notifications.js",
       schema: "NotificationSchema",
@@ -2410,53 +2428,57 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
       lib: "lib/notificationScheduler.js",
     },
     {
-      label: "認証・権限",
+      labelKey: "ai_plan_d_auth",
       keys: /認証|auth|ログイン|login|権限|role|permission|セッション/,
       route: "routes/auth.js",
       middleware: "middleware/auth.js",
     },
     {
-      label: "入社前テスト",
+      labelKey: "ai_plan_d_pretest",
       keys: /入社前|pretest|事前テスト/,
       route: "routes/pretest.js",
       lib: "lib/pretestQuestions.js",
       front: "public/pretest-ui.js",
     },
     {
-      label: "スキルシート",
+      labelKey: "ai_plan_d_skill",
       keys: /スキルシート|skillsheet/,
       route: "routes/skillsheet.js",
       schema: "SkillSheetSchema",
       modelName: "SkillSheet",
     },
     {
-      label: "会社規定",
+      labelKey: "ai_plan_d_rules",
       keys: /会社規定|規定|規則/,
       route: "routes/rules.js",
       schema: "CompanyRuleSchema",
       modelName: "CompanyRule",
     },
     {
-      label: "残業申請",
+      labelKey: "ai_plan_d_overtime",
       keys: /残業|時間外|overtime/,
       route: "routes/overtime.js",
       schema: "OvertimeRequestSchema",
       modelName: "OvertimeRequest",
     },
     {
-      label: "チャットボット",
+      labelKey: "ai_plan_d_chatbot",
       keys: /チャットボット|chatbot/,
       route: "routes/chatbot.js",
       front: "public/chatbot-widget.js",
     },
-    { label: "管理者機能", keys: /管理者機能|admin/, route: "routes/admin.js" },
     {
-      label: "ダッシュボード",
+      labelKey: "ai_plan_d_admin",
+      keys: /管理者機能|admin/,
+      route: "routes/admin.js",
+    },
+    {
+      labelKey: "ai_plan_d_dashboard",
       keys: /ダッシュボード|dashboard/,
       route: "routes/dashboard.js",
     },
     {
-      label: "多言語",
+      labelKey: "ai_plan_d_i18n",
       keys: /多言語|翻訳|i18n|locale|英語|ベトナム語/,
       locales: true,
     },
@@ -2496,6 +2518,7 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
   for (const domain of DOMAIN_TABLE) {
     if (!domain.keys.test(fullText)) continue;
     domainMatched = true;
+    const domainLabel = t("tasks." + domain.labelKey, lang);
 
     // ── ルートファイル ──
     if (domain.route) {
@@ -2503,21 +2526,32 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
       const routes = src ? extractRoutes(src) : [];
       const routeList = routes.length
         ? routes.slice(0, 4).join(" / ")
-        : "（まだエンドポイントなし）";
+        : t("tasks.ai_plan_no_endpoint", lang);
       const mName = domain.modelName || "Model";
 
       if (src) {
-        const verb = isNewFeat ? "追加" : isBugFix ? "修正" : "変更";
+        const verb = isNewFeat
+          ? t("tasks.ai_plan_v_add", lang)
+          : isBugFix
+            ? t("tasks.ai_plan_v_fix", lang)
+            : t("tasks.ai_plan_v_change", lang);
         const desc = isBugFix
-          ? `エラー発生箇所のルートハンドラ内の try/catch を確認し原因を特定してください。`
+          ? t("tasks.ai_plan_route_desc_bug", lang)
           : isNewFeat
-            ? `既存パターンに倣って末尾に追記してください。`
-            : `対象ルートを特定して変更してください。`;
+            ? t("tasks.ai_plan_route_desc_new", lang)
+            : t("tasks.ai_plan_route_desc_generic", lang);
         const socketNote = domain.socketNote
-          ? " リアルタイム処理は `server.js` の `io.on('connection', ...)` にも追記が必要です。"
+          ? t("tasks.ai_plan_socket_note", lang)
           : "";
         steps.push({
-          text: `【${domain.label}/ルート】\`${domain.route}\` を${verb}してください。現在のエンドポイント: ${routeList}。${desc}${socketNote}`,
+          text: t("tasks.ai_plan_route_step", lang, {
+            header: domainLabel + "/" + t("tasks.ai_plan_s_route", lang),
+            file: domain.route,
+            verb,
+            endpoints: routeList,
+            desc,
+            extra: socketNote,
+          }),
           example: makeRouteAddExample(domain.route, mName, isBugFix),
         });
       } else {
@@ -2525,7 +2559,13 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
           domain.route.replace("routes/", "").replace(".js", ""),
         );
         steps.push({
-          text: `【${domain.label}/新規ルート】\`${domain.route}\` がまだ存在しません。新規作成して実装してください。${!mounted ? `作成後 \`server.js\` の \`app.use\` 群に追加が必要です。` : ""}`,
+          text: t("tasks.ai_plan_route_new_step", lang, {
+            header: domainLabel + "/" + t("tasks.ai_plan_s_new_route", lang),
+            file: domain.route,
+            mount_note: !mounted
+              ? t("tasks.ai_plan_route_mount_note", lang)
+              : "",
+          }),
           example: makeNewRouteFileExample(domain.route, mName),
         });
       }
@@ -2535,9 +2575,17 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
     if (domain.schema && (isDbChange || isNewFeat || isBugFix)) {
       const fields = extractSchemaFields(modelsSrc, domain.schema);
       if (fields.length > 0) {
-        const verb = isDbChange || isNewFeat ? "追加・変更" : "確認";
+        const verb =
+          isDbChange || isNewFeat
+            ? t("tasks.ai_plan_v_add_change", lang)
+            : t("tasks.ai_plan_v_check", lang);
         steps.push({
-          text: `【${domain.label}/DB】\`models/index.js\` の \`${domain.schema}\` を${verb}してください。現在のフィールド: ${fields.slice(0, 6).join(", ")} など。新フィールドは既存ドキュメントへのデフォルト値の影響に注意して追記してください。`,
+          text: t("tasks.ai_plan_db_step", lang, {
+            header: domainLabel + "/" + t("tasks.ai_plan_s_db", lang),
+            schema: domain.schema,
+            verb,
+            fields: fields.slice(0, 6).join(", "),
+          }),
           example: makeSchemaExample(domain.schema, fields, modelsSrc),
         });
       }
@@ -2549,7 +2597,11 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
       if (libSrc) {
         const fns = extractExportedFunctions(libSrc);
         steps.push({
-          text: `【${domain.label}/ライブラリ】\`${domain.lib}\` にロジックを実装してください。既存の関数: ${fns.join(", ")}。同パターンで追記し \`module.exports\` に追加してください。`,
+          text: t("tasks.ai_plan_lib_step", lang, {
+            header: domainLabel + "/" + t("tasks.ai_plan_s_lib", lang),
+            file: domain.lib,
+            fns: fns.join(", "),
+          }),
           example: makeLibExample(domain.lib, fns),
         });
       }
@@ -2558,7 +2610,10 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
     // ── フロントエンド ──
     if (domain.front && isUiChange) {
       steps.push({
-        text: `【${domain.label}/フロントエンド】\`${domain.front}\` にクライアント側処理を追加してください。`,
+        text: t("tasks.ai_plan_front_step", lang, {
+          header: domainLabel + "/" + t("tasks.ai_plan_s_front", lang),
+          file: domain.front,
+        }),
         example: makeFrontExample(domain.front, "/api/新しいパス"),
       });
     }
@@ -2567,7 +2622,7 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
     if (domain.middleware) {
       const mwFns = extractExportedFunctions(middlewareSrc);
       steps.push({
-        text: `【認証・権限】\`middleware/auth.js\` の利用可能なミドルウェア: ${mwFns.join(", ")}。新規ロール制限が必要な場合は同ファイルに追加して対象ルートに適用してください。`,
+        text: t("tasks.ai_plan_auth_step", lang, { fns: mwFns.join(", ") }),
         example: makeAuthExample(mwFns),
       });
     }
@@ -2575,7 +2630,7 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
     // ── 多言語 ──
     if (domain.locales) {
       steps.push({
-        text: `【多言語】\`locales/ja.json\`・\`locales/en.json\`・\`locales/vi.json\` の3ファイルに同じキーで翻訳文字列を追加してください。`,
+        text: t("tasks.ai_plan_i18n_step", lang),
         example: makeI18nExample(),
       });
     }
@@ -2591,7 +2646,7 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
         ? steps[0].text.match(/`(routes\/[^`]+)`/)?.[1] || "routes/対象.js"
         : "routes/対象.js";
     steps.push({
-      text: `【UI/ページ構造】新規ページは \`lib/renderPage.js\` の \`buildPageShell()\` + \`pageFooter()\` でレンダリングしてください。`,
+      text: t("tasks.ai_plan_ui_step", lang),
       example: makeUiPageExample(routeHint),
     });
   }
@@ -2610,7 +2665,7 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
       }
     })();
     steps.push({
-      text: `【テスト】\`tests/\` に \`<機能名>.test.js\` を追加してください。現在のテストファイル: ${testFiles}。\`npm test\` で全件グリーンを確認してください。`,
+      text: t("tasks.ai_plan_test_step", lang, { files: testFiles }),
       example: makeTestExample(testFiles),
     });
   }
@@ -2620,7 +2675,7 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
     const routeFile = domain ? domain.route : "routes/対象.js";
     const mName = domain ? domain.modelName || "Model" : "Model";
     steps.push({
-      text: `【CSV出力】\`${routeFile}\` にエクスポートエンドポイントを追加してください。BOM付きCSVにするとExcelで文字化けしません。`,
+      text: t("tasks.ai_plan_csv_step", lang, { file: routeFile }),
       example: makeCsvExample(routeFile, mName),
     });
   }
@@ -2630,7 +2685,7 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
     const sName = domain ? domain.schema : "対象Schema";
     const fields = domain ? extractSchemaFields(modelsSrc, sName) : [];
     steps.push({
-      text: `【パフォーマンス】\`models/index.js\` にインデックスを追加し、クエリに \`.lean()\` を徹底してください。N+1問題は \`aggregate\` パイプラインで解消してください。`,
+      text: t("tasks.ai_plan_perf_step", lang),
       example: makePerfExample(sName, fields),
     });
   }
@@ -2638,7 +2693,9 @@ function buildCodeActionPlan(titleOrig, bodyOrig) {
   if (isSecurity && steps.length < 5) {
     const helperFns = extractExportedFunctions(readSrc("lib/helpers.js"));
     steps.push({
-      text: `【セキュリティ】\`lib/helpers.js\` の \`${helperFns.join(", ")}\` でユーザー入力を全てサニタイズしてください。`,
+      text: t("tasks.ai_plan_security_step", lang, {
+        fns: helperFns.join(", "),
+      }),
       example: `// 修正例: ユーザー入力を直接HTMLに出力している箇所を修正
 const { escapeHtml } = require('../lib/helpers');
 
@@ -2655,7 +2712,7 @@ const { escapeHtml } = require('../lib/helpers');
 
   if (isRefactor && steps.length < 5) {
     steps.push({
-      text: `【リファクタ】重複処理は \`lib/helpers.js\` または新規 \`lib/<モジュール名>.js\` に切り出してください。`,
+      text: t("tasks.ai_plan_refactor_step", lang),
       example: `// lib/新モジュール.js を新規作成
 "use strict";
 
@@ -2677,7 +2734,10 @@ module.exports = { sharedFunction };
 
   if (isBugFix && !domainMatched && steps.length < 3) {
     steps.push({
-      text: `【バグ修正】現在マウント済みのルートモジュール: ${mountedRoutes.join("、") || "（確認できません）"}。エラーログで対象ファイルを特定し try/catch を確認してください。`,
+      text: t("tasks.ai_plan_bugfix_fallback", lang, {
+        routes:
+          mountedRoutes.join("、") || t("tasks.ai_plan_cannot_confirm", lang),
+      }),
       example: `// 対象ルートハンドラのデバッグ方法
 router.post('/対象パス', requireLogin, async (req, res) => {
   try {
@@ -2701,14 +2761,17 @@ router.post('/対象パス', requireLogin, async (req, res) => {
 
   if (isNewFeat && !domainMatched && steps.length < 3) {
     steps.push({
-      text: `【新規機能】現在マウント済みのルート: ${mountedRoutes.join("、") || "（確認できません）"}。新規ルートファイルを作成し \`server.js\` にマウントしてください。`,
+      text: t("tasks.ai_plan_newfeat_fallback", lang, {
+        routes:
+          mountedRoutes.join("、") || t("tasks.ai_plan_cannot_confirm", lang),
+      }),
       example: makeNewRouteFileExample("routes/新機能.js", "NewModel"),
     });
   }
 
   if (steps.length === 0) {
     steps.push({
-      text: `チケットのタイトル・本文にドメイン（勤怠・チャット・掲示板・目標・休暇・給与・日報・通知・認証・スキルシートなど）と実装内容（新規機能・バグ修正・UI変更・DBスキーマ変更など）を具体的に記述することで、このリポジトリのどのファイルをどう修正すればよいかの実装プランと修正例コードを自動生成できます。`,
+      text: t("tasks.ai_plan_empty_fallback", lang),
       example: "",
     });
   }
@@ -2716,7 +2779,7 @@ router.post('/対象パス', requireLogin, async (req, res) => {
   return steps.slice(0, 5);
 }
 
-function generateAiAnalysis(task, overrideDueDate) {
+function generateAiAnalysis(task, overrideDueDate, lang = "ja") {
   const title = (task.title || "").toLowerCase();
   const labels = (task.labels || []).map((l) => l.toLowerCase());
   const status = (task.status || "").toLowerCase();
@@ -2746,21 +2809,25 @@ function generateAiAnalysis(task, overrideDueDate) {
     priority === "low" ||
     priority === "低";
 
-  const aiPriority = isCritical ? "高" : isLow ? "低" : "中";
+  const aiPriority = isCritical
+    ? t("tasks.filter_priority_high", lang)
+    : isLow
+      ? t("tasks.filter_priority_low", lang)
+      : t("tasks.filter_priority_mid", lang);
   const priorityReason = isCritical
     ? title.includes("login") || title.includes("ログイン")
-      ? "ログイン不可によりユーザー影響が大きい"
+      ? t("tasks.ai_reason_login", lang)
       : title.includes("error") || title.includes("エラー")
-        ? "エラーが発生しておりユーザー影響が懸念される"
-        : "バグ・修正系タスクのため優先度が高い"
+        ? t("tasks.ai_reason_error_task", lang)
+        : t("tasks.ai_reason_bug_fix", lang)
     : isLow
-      ? "ドキュメント・リファクタ系タスクのため緊急度は低い"
-      : "通常の開発タスクです";
+      ? t("tasks.ai_reason_docs", lang)
+      : t("tasks.ai_reason_normal", lang);
   const confidence = isCritical ? "85%" : isLow ? "78%" : "72%";
 
   // 緊急度判定（基本情報の期限日をもとに算出）
-  let urgencyLevel = "通常対応";
-  let urgencyReason = "期限が設定されていません";
+  let urgencyLevel = t("tasks.ai_urgency_normal_level", lang);
+  let urgencyReason = t("tasks.ai_urgency_reason_none", lang);
   let diffDaysForAction = null;
   if (dueDate) {
     const due = new Date(dueDate);
@@ -2770,63 +2837,87 @@ function generateAiAnalysis(task, overrideDueDate) {
     const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
     diffDaysForAction = diffDays;
     if (diffDays < 0) {
-      urgencyLevel = "即日対応が必要";
-      urgencyReason = `期限日（${dueDate}）を${Math.abs(diffDays)}日超過しています`;
+      urgencyLevel = t("tasks.ai_urgency_overdue", lang);
+      urgencyReason = t("tasks.ai_urgency_reason_overdue", lang, {
+        date: dueDate,
+        days: Math.abs(diffDays),
+      });
     } else if (diffDays === 0) {
-      urgencyLevel = "今日が期限";
-      urgencyReason = `本日（${dueDate}）が期限です。今すぐ対応してください`;
+      urgencyLevel = t("tasks.ai_urgency_today", lang);
+      urgencyReason = t("tasks.ai_urgency_reason_today", lang, {
+        date: dueDate,
+      });
     } else if (diffDays <= 3) {
-      urgencyLevel = "今日中に確認推奨";
-      urgencyReason = `期限日（${dueDate}）まであと${diffDays}日です`;
+      urgencyLevel = t("tasks.ai_urgency_soon", lang);
+      urgencyReason = t("tasks.ai_urgency_reason_near", lang, {
+        date: dueDate,
+        days: diffDays,
+      });
     } else if (diffDays <= 7) {
-      urgencyLevel = "今週中に対応推奨";
-      urgencyReason = `期限日（${dueDate}）まであと${diffDays}日です`;
+      urgencyLevel = t("tasks.ai_urgency_this_week", lang);
+      urgencyReason = t("tasks.ai_urgency_reason_near", lang, {
+        date: dueDate,
+        days: diffDays,
+      });
     } else if (diffDays <= 14) {
-      urgencyLevel = "2週間以内に対応";
-      urgencyReason = `期限日（${dueDate}）まであと${diffDays}日あります`;
+      urgencyLevel = t("tasks.ai_urgency_2weeks", lang);
+      urgencyReason = t("tasks.ai_urgency_reason_far", lang, {
+        date: dueDate,
+        days: diffDays,
+      });
     } else {
-      urgencyLevel = "通常対応";
-      urgencyReason = `期限日（${dueDate}）まであと${diffDays}日あります`;
+      urgencyLevel = t("tasks.ai_urgency_normal_level", lang);
+      urgencyReason = t("tasks.ai_urgency_reason_far", lang, {
+        date: dueDate,
+        days: diffDays,
+      });
     }
   } else if (isCritical) {
-    urgencyLevel = "早急に確認推奨";
-    urgencyReason =
-      "期限未設定ですが優先度の高いタスクです。期限日を設定することを推奨します";
+    urgencyLevel = t("tasks.ai_urgency_critical", lang);
+    urgencyReason = t("tasks.ai_urgency_reason_critical_no_due", lang);
   }
 
   // リスク
   const risks = [];
-  if (!assignee) risks.push("担当者未設定による放置リスク");
-  if (isCritical) risks.push("リリース遅延の可能性");
-  if (type === "bug" || type === "issue") risks.push("同種バグの再発可能性");
-  if (!dueDate) risks.push("期限未設定のため進捗管理が困難");
+  if (!assignee) risks.push(t("tasks.ai_risk_no_assignee", lang));
+  if (isCritical) risks.push(t("tasks.ai_risk_delay", lang));
+  if (type === "bug" || type === "issue")
+    risks.push(t("tasks.ai_risk_recurring", lang));
+  if (!dueDate) risks.push(t("tasks.ai_risk_no_due", lang));
   if (diffDaysForAction !== null && diffDaysForAction < 0)
-    risks.push("期限超過により関係者への影響が拡大するリスク");
-  if (risks.length === 0)
-    risks.push("特筆すべきリスクは現時点では検出されていません");
+    risks.push(t("tasks.ai_risk_overdue", lang));
+  if (risks.length === 0) risks.push(t("tasks.ai_risk_none", lang));
 
   // ── 推奨アクション：現在のコードベースを実際に読んで動的に生成 ──
-  const actions = buildCodeActionPlan(task.title || "", task.body || "");
+  const actions = buildCodeActionPlan(task.title || "", task.body || "", lang);
 
   // 要約
   const typeLabel =
     type === "bug" || type === "バグ"
-      ? "バグ"
+      ? t("tasks.ai_type_bug", lang)
       : type === "pr"
-        ? "プルリクエスト"
-        : "タスク";
+        ? t("tasks.ai_type_pr", lang)
+        : t("tasks.ai_type_task", lang);
   const dueSummary = dueDate
     ? diffDaysForAction !== null && diffDaysForAction < 0
-      ? `期限（${dueDate}）を${Math.abs(diffDaysForAction)}日超過しており早急な対応が必要です。`
-      : `期限は${dueDate}（あと${diffDaysForAction}日）です。`
-    : "期限が未設定のため、速やかに設定することを推奨します。";
+      ? t("tasks.ai_summary_overdue", lang, {
+          date: dueDate,
+          days: Math.abs(diffDaysForAction),
+        })
+      : t("tasks.ai_summary_due", lang, {
+          date: dueDate,
+          days: diffDaysForAction,
+        })
+    : t("tasks.ai_summary_no_due", lang);
   const summary =
-    `${typeLabel}に関するタスクです。` +
+    t("tasks.ai_summary_type", lang, { type: typeLabel }) +
     (isCritical
-      ? "影響範囲が広く優先対応が求められます。"
-      : "通常の開発タスクです。") +
+      ? t("tasks.ai_summary_critical", lang)
+      : t("tasks.ai_summary_normal", lang)) +
     dueSummary +
-    (assignee ? `担当者：${assignee}。` : "担当者が未設定です。");
+    (assignee
+      ? t("tasks.ai_summary_assignee", lang, { name: assignee })
+      : t("tasks.ai_summary_no_assignee", lang));
 
   return {
     aiPriority,
@@ -2846,6 +2937,7 @@ function generateAiAnalysis(task, overrideDueDate) {
 router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
   const tool = req.params.tool;
   const id = req.params.id;
+  const lang = req.lang || req.session?.lang || "ja";
   const validTool = TASK_TOOLS.find((t) => t.key === tool);
   if (!validTool) return res.status(404).send("ツールが見つかりません");
 
@@ -2870,6 +2962,20 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
     else if (tool === "backlog")
       taskData = await fetchBacklogTaskDetail(cfg, id);
 
+    // Localize link labels from external task data
+    if (taskData?.task?.links) {
+      const linkLabelMap = {
+        GitHubリンク: t("tasks.link_github", lang),
+        PRリンク: t("tasks.link_pr", lang),
+        JIRAチケット: t("tasks.link_jira", lang),
+        Backlogチケット: t("tasks.link_backlog", lang),
+      };
+      taskData.task.links = taskData.task.links.map((l) => ({
+        ...l,
+        label: linkLabelMap[l.label] || l.label,
+      }));
+    }
+
     const task = taskData.task;
     const fetchError = taskData.error;
 
@@ -2889,14 +2995,14 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
     }
     const canEdit = canEditDue(role, isAdmin);
 
-    const ai = task ? generateAiAnalysis(task, dbDueDate) : null;
+    const ai = task ? generateAiAnalysis(task, dbDueDate, lang) : null;
     const taskRawId = task
       ? escapeHtml(String(task.rawId || task.no || id))
       : "";
     const dueDateDetailHtml = canEdit
       ? `<span class="tkl-due-cell" data-taskid="${taskRawId}" data-tool="${escapeHtml(tool)}">
-           <span class="tkl-due-val">${dbDueDate ? escapeHtml(dbDueDate) : '<span class="tkl-due-unset">未設定</span>'}</span>
-           <button type="button" class="tkl-due-btn" title="期限日を変更" onclick="openDueEdit(this)">
+           <span class="tkl-due-val">${dbDueDate ? escapeHtml(dbDueDate) : `<span class="tkl-due-unset">${escapeHtml(t("tasks.due_unset", lang))}</span>`}</span>
+           <button type="button" class="tkl-due-btn" title="${escapeHtml(t("tasks.due_edit_title", lang))}" onclick="openDueEdit(this)">
              <i class="fa-solid fa-pen-to-square"></i>
            </button>
          </span>`
@@ -2911,27 +3017,27 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
           <div class="tkd-meta-source">
             <span class="tkd-source-badge">${escapeHtml(task.source)}</span>
             <span class="tkd-mono">${escapeHtml(task.no)}</span>
-            <span style="color:#94a3b8">← 管理元: ${escapeHtml(task.sourceId)}</span>
+            <span style="color:#94a3b8">← ${escapeHtml(t("tasks.detail_source", lang))}: ${escapeHtml(task.sourceId)}</span>
           </div>
         </div>
       </div>
       <div class="tkd-section">
-        <div class="tkd-section-title"><i class="fa-solid fa-circle-info"></i> 基本情報</div>
+        <div class="tkd-section-title"><i class="fa-solid fa-circle-info"></i> ${escapeHtml(t("tasks.detail_basic_info", lang))}</div>
         <dl class="tkd-dl">
-          <dt>ステータス</dt><dd><span class="tkd-status-badge">${escapeHtml(task.status || "—")}</span></dd>
-          <dt>種別</dt><dd>${escapeHtml(task.type || "—")}</dd>
-          <dt>優先度</dt><dd>${escapeHtml(task.priority || "—")}</dd>
-          <dt>担当者</dt><dd>${escapeHtml(task.assignee || "（未設定）")}</dd>
-          <dt>期限日</dt><dd>${dueDateDetailHtml}</dd>
-          <dt>更新日</dt><dd>${escapeHtml(task.updatedAt || "—")}</dd>
+          <dt>${escapeHtml(t("tasks.col_status", lang))}</dt><dd><span class="tkd-status-badge">${escapeHtml(task.status || "—")}</span></dd>
+          <dt>${escapeHtml(t("tasks.col_type", lang))}</dt><dd>${escapeHtml(task.type || "—")}</dd>
+          <dt>${escapeHtml(t("tasks.col_priority", lang))}</dt><dd>${escapeHtml(task.priority || "—")}</dd>
+          <dt>${escapeHtml(t("tasks.col_assignee", lang))}</dt><dd>${escapeHtml(task.assignee || t("tasks.detail_assignee_unset", lang))}</dd>
+          <dt>${escapeHtml(t("tasks.col_due_date", lang))}</dt><dd>${dueDateDetailHtml}</dd>
+          <dt>${escapeHtml(t("tasks.col_updated_at", lang))}</dt><dd>${escapeHtml(task.updatedAt || "—")}</dd>
         </dl>
       </div>
       <div class="tkd-section">
-        <div class="tkd-section-title"><i class="fa-solid fa-align-left"></i> 説明 / 本文</div>
-        <div class="tkd-body">${renderMarkdown(task.body || "（説明なし）")}</div>
+        <div class="tkd-section-title"><i class="fa-solid fa-align-left"></i> ${escapeHtml(t("tasks.detail_body_title", lang))}</div>
+        <div class="tkd-body">${renderMarkdown(task.body || t("tasks.detail_body_empty", lang))}</div>
       </div>
       <div class="tkd-section">
-        <div class="tkd-section-title"><i class="fa-solid fa-tag"></i> ラベル / タグ</div>
+        <div class="tkd-section-title"><i class="fa-solid fa-tag"></i> ${escapeHtml(t("tasks.detail_labels_title", lang))}</div>
         <div class="tkd-labels">
           ${
             task.labels && task.labels.length
@@ -2941,12 +3047,12 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
                       `<span class="tkd-label">${escapeHtml(String(l))}</span>`,
                   )
                   .join("")
-              : "<span style='color:#94a3b8'>なし</span>"
+              : `<span style='color:#94a3b8'>${escapeHtml(t("tasks.detail_labels_none", lang))}</span>`
           }
         </div>
       </div>
       <div class="tkd-section">
-        <div class="tkd-section-title"><i class="fa-regular fa-comments"></i> コメント履歴</div>
+        <div class="tkd-section-title"><i class="fa-regular fa-comments"></i> ${escapeHtml(t("tasks.detail_comments_title", lang))}</div>
         ${
           task.comments && task.comments.length
             ? task.comments
@@ -2959,11 +3065,11 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
             </div>`,
                 )
                 .join("")
-            : '<p style="color:#94a3b8;margin:0">コメントはありません</p>'
+            : `<p style="color:#94a3b8;margin:0">${escapeHtml(t("tasks.detail_comments_none", lang))}</p>`
         }
       </div>
       <div class="tkd-section">
-        <div class="tkd-section-title"><i class="fa-solid fa-paperclip"></i> 添付 / 関連リンク</div>
+        <div class="tkd-section-title"><i class="fa-solid fa-paperclip"></i> ${escapeHtml(t("tasks.detail_links_title", lang))}</div>
         ${
           task.links && task.links.length
             ? task.links
@@ -2972,35 +3078,35 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
                     `<div class="tkd-link"><a href="${escapeHtml(l.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(l.label)} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:10px"></i></a></div>`,
                 )
                 .join("")
-            : '<p style="color:#94a3b8;margin:0">リンクなし</p>'
+            : `<p style="color:#94a3b8;margin:0">${escapeHtml(t("tasks.detail_links_none", lang))}</p>`
         }
       </div>
     `
-      : `<div style="padding:40px;text-align:center;color:#dc2626">${escapeHtml(fetchError || "タスクが見つかりませんでした")}</div>`;
+      : `<div style="padding:40px;text-align:center;color:#dc2626">${escapeHtml(fetchError || t("tasks.detail_not_found", lang))}</div>`;
 
     // AI分析セクション HTML
     const aiHtml = ai
       ? `
-      <div class="tkd-ai-header"><i class="fa-solid fa-robot"></i> AI分析</div>
+      <div class="tkd-ai-header"><i class="fa-solid fa-robot"></i> ${escapeHtml(t("tasks.ai_header", lang))}</div>
       <div class="tkd-ai-block">
-        <div class="tkd-ai-label">優先度判定</div>
+        <div class="tkd-ai-label">${escapeHtml(t("tasks.ai_priority_label", lang))}</div>
         <div class="tkd-ai-value">${escapeHtml(ai.aiPriority)}</div>
-        <div class="tkd-ai-sub">理由：${escapeHtml(ai.priorityReason)}</div>
-        <div class="tkd-ai-sub">信頼度：${escapeHtml(ai.confidence)}</div>
+        <div class="tkd-ai-sub">${escapeHtml(t("tasks.ai_reason_prefix", lang))} ${escapeHtml(ai.priorityReason)}</div>
+        <div class="tkd-ai-sub">${escapeHtml(t("tasks.ai_confidence_prefix", lang))} ${escapeHtml(ai.confidence)}</div>
       </div>
       <div class="tkd-ai-block">
-        <div class="tkd-ai-label">緊急度</div>
+        <div class="tkd-ai-label">${escapeHtml(t("tasks.ai_urgency_label", lang))}</div>
         <div class="tkd-ai-value">${escapeHtml(ai.urgencyLevel)}</div>
-        <div class="tkd-ai-sub">理由：${escapeHtml(ai.urgencyReason)}</div>
+        <div class="tkd-ai-sub">${escapeHtml(t("tasks.ai_reason_prefix", lang))} ${escapeHtml(ai.urgencyReason)}</div>
       </div>
       <div class="tkd-ai-block">
-        <div class="tkd-ai-label">リスク</div>
+        <div class="tkd-ai-label">${escapeHtml(t("tasks.ai_risk_label", lang))}</div>
         <ul class="tkd-ai-list">
           ${ai.risks.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}
         </ul>
       </div>
       <div class="tkd-ai-block">
-        <div class="tkd-ai-label">推奨アクション（コードベース実装プラン）</div>
+        <div class="tkd-ai-label">${escapeHtml(t("tasks.ai_action_label", lang))}</div>
         <ol class="tkd-ai-list tkd-ai-list--ol">
           ${ai.actions
             .map((a, idx) => {
@@ -3018,11 +3124,11 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
               const exampleHtml = item.example
                 ? `<div class="tkd-ai-example-wrap">
                    <button type="button" class="tkd-ai-ex-toggle" onclick="toggleAiExample('${exampleId}')">
-                     <i class="fa-solid fa-code" style="margin-right:4px"></i>修正例を見る
+                     <i class="fa-solid fa-code" style="margin-right:4px"></i>${escapeHtml(t("tasks.ai_show_example", lang))}
                    </button>
                    <div id="${exampleId}" class="tkd-ai-example" style="display:none">
                      <button type="button" class="tkd-ai-copy-btn" onclick="copyAiExample('${exampleId}')">
-                       <i class="fa-regular fa-copy"></i> コピー
+                       <i class="fa-regular fa-copy"></i> ${escapeHtml(t("tasks.ai_copy", lang))}
                      </button>
                      <pre class="tkd-ai-pre"><code>${escapeHtml(item.example)}</code></pre>
                    </div>
@@ -3034,11 +3140,11 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
         </ol>
       </div>
       <div class="tkd-ai-block">
-        <div class="tkd-ai-label">要約</div>
+        <div class="tkd-ai-label">${escapeHtml(t("tasks.ai_summary_label", lang))}</div>
         <div class="tkd-ai-summary">${escapeHtml(ai.summary)}</div>
       </div>
     `
-      : `<div style="padding:20px;color:#94a3b8;font-size:13px">AI分析を実行できませんでした</div>`;
+      : `<div style="padding:20px;color:#94a3b8;font-size:13px">${escapeHtml(t("tasks.ai_failed", lang))}</div>`;
 
     const extraHead = `
 <style>
@@ -3119,6 +3225,21 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
 .tkl-due-popup-cancel:hover { background:#e2e8f0; }
 </style>
 <script>
+var _tkdI18n = {
+  aiShowExample: ${JSON.stringify(t("tasks.ai_show_example", lang))},
+  aiHideExample: ${JSON.stringify(t("tasks.ai_hide_example", lang))},
+  aiCopy: ${JSON.stringify(t("tasks.ai_copy", lang))},
+  aiCopied: ${JSON.stringify(t("tasks.ai_copied", lang))},
+  duePopupTitle: ${JSON.stringify(t("tasks.due_popup_title", lang))},
+  duePopupSave: ${JSON.stringify(t("tasks.due_popup_save", lang))},
+  duePopupClear: ${JSON.stringify(t("tasks.due_popup_clear", lang))},
+  duePopupClearTitle: ${JSON.stringify(t("tasks.due_popup_clear_title", lang))},
+  duePopupCancel: ${JSON.stringify(t("tasks.due_popup_cancel", lang))},
+  dueSaveFailed: ${JSON.stringify(t("tasks.due_save_failed", lang))},
+  dueUnknownError: ${JSON.stringify(t("tasks.due_unknown_error", lang))},
+  dueNetworkError: ${JSON.stringify(t("tasks.due_network_error", lang))},
+  dueUnset: ${JSON.stringify(t("tasks.due_unset", lang))},
+};
 // AI修正例 トグル
 function toggleAiExample(id) {
   var el = document.getElementById(id);
@@ -3126,10 +3247,10 @@ function toggleAiExample(id) {
   var btn = el.previousElementSibling;
   if (el.style.display === 'none') {
     el.style.display = 'block';
-    if (btn) btn.innerHTML = '<i class="fa-solid fa-code" style="margin-right:4px"></i>修正例を閉じる';
+    if (btn) btn.innerHTML = '<i class="fa-solid fa-code" style="margin-right:4px"></i>' + _tkdI18n.aiHideExample;
   } else {
     el.style.display = 'none';
-    if (btn) btn.innerHTML = '<i class="fa-solid fa-code" style="margin-right:4px"></i>修正例を見る';
+    if (btn) btn.innerHTML = '<i class="fa-solid fa-code" style="margin-right:4px"></i>' + _tkdI18n.aiShowExample;
   }
 }
 // AI修正例 コピー
@@ -3140,7 +3261,7 @@ function copyAiExample(id) {
   var text = pre ? pre.innerText : '';
   navigator.clipboard.writeText(text).then(function() {
     var btn = el.querySelector('.tkd-ai-copy-btn');
-    if (btn) { var orig = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-check"></i> コピー済'; setTimeout(function(){ btn.innerHTML = orig; }, 1500); }
+    if (btn) { var orig = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-check"></i> ' + _tkdI18n.aiCopied; setTimeout(function(){ btn.innerHTML = orig; }, 1500); }
   }).catch(function() {
     var ta = document.createElement('textarea');
     ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
@@ -3156,16 +3277,16 @@ function openDueEdit(btn) {
   var toolKey = cell.dataset.tool;
   var valEl = cell.querySelector('.tkl-due-val');
   var currentVal = valEl ? valEl.innerText.trim() : '';
-  if (currentVal === '未設定') currentVal = '';
+  if (currentVal === _tkdI18n.dueUnset) currentVal = '';
   var popup = document.createElement('div');
   popup.className = 'tkl-due-popup';
   popup.innerHTML =
-    '<h4><i class="fa-solid fa-calendar-days" style="margin-right:6px;color:#1d4ed8"></i>期限日を設定</h4>' +
+    '<h4><i class="fa-solid fa-calendar-days" style="margin-right:6px;color:#1d4ed8"></i>' + _tkdI18n.duePopupTitle + '</h4>' +
     '<input type="date" id="duePopupDate">' +
     '<div class="tkl-due-popup-actions">' +
-      '<button class="tkl-due-popup-save">保存</button>' +
-      '<button class="tkl-due-popup-clear" title="期限日をクリア">クリア</button>' +
-      '<button class="tkl-due-popup-cancel">キャンセル</button>' +
+      '<button class="tkl-due-popup-save">' + _tkdI18n.duePopupSave + '</button>' +
+      '<button class="tkl-due-popup-clear" title="' + _tkdI18n.duePopupClearTitle + '">' + _tkdI18n.duePopupClear + '</button>' +
+      '<button class="tkl-due-popup-cancel">' + _tkdI18n.duePopupCancel + '</button>' +
     '</div>';
   var rect = btn.getBoundingClientRect();
   popup.style.top  = (rect.bottom + window.scrollY + 6) + 'px';
@@ -3206,36 +3327,37 @@ async function saveDue(taskId, toolKey, clear) {
       body: JSON.stringify({ dueDate: dateVal })
     });
     var d = await r.json();
-    if (!d.ok) { alert('保存失敗: ' + (d.error || '不明なエラー')); return; }
+    if (!d.ok) { alert(_tkdI18n.dueSaveFailed + ': ' + (d.error || _tkdI18n.dueUnknownError)); return; }
     if (_duePopup) {
       var valEl = _duePopup.cell.querySelector('.tkl-due-val');
-      if (valEl) valEl.innerHTML = dateVal ? dateVal : '<span class="tkl-due-unset">未設定</span>';
+      if (valEl) valEl.innerHTML = dateVal ? dateVal : '<span class="tkl-due-unset">' + _tkdI18n.dueUnset + '</span>';
     }
     closeDuePopup();
   } catch(e) {
-    alert('通信エラー: ' + e.message);
+    alert(_tkdI18n.dueNetworkError + ': ' + e.message);
   }
 }
 </script>`;
 
     const html =
       buildPageShell({
-        title: `${task ? escapeHtml(task.no) + " " + escapeHtml(task.title).substring(0, 30) : id} | タスク詳細`,
+        title: `${task ? escapeHtml(task.no) + " " + escapeHtml(task.title).substring(0, 30) : id} | ${t("tasks.detail_title", lang)}`,
         currentPath: "/tasks",
         employee,
         isAdmin,
         role,
         extraHead,
+        lang,
       }) +
       `
 <div class="main-content">
 <div class="tkd-wrap">
   <div class="tkd-topbar">
     <a href="/tasks/${tool}" class="tkd-back">
-      <i class="fa-solid fa-arrow-left"></i> タスク一覧に戻る
+      <i class="fa-solid fa-arrow-left"></i> ${escapeHtml(t("tasks.detail_back", lang))}
     </a>
     <div class="tkd-page-title">
-      タスク詳細 <span>（${escapeHtml(validTool.label)}）</span>
+      ${escapeHtml(t("tasks.detail_title", lang))} <span>（${escapeHtml(validTool.label)}）</span>
     </div>
   </div>
   <div class="tkd-layout">

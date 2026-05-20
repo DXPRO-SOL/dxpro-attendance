@@ -3024,7 +3024,7 @@ router.get("/hr/daily-report/new", requireLogin, async (req, res) => {
     renderPage(
       req,
       res,
-      "日報投稿",
+      t("hr.new_report_title", lang),
       t("hr.new_report_title", lang),
       `
             <style>
@@ -3065,81 +3065,37 @@ router.get("/hr/daily-report/new", requireLogin, async (req, res) => {
 
                 <!-- フォーマットガイド -->
                 <div class="guide-box">
-                    <h4>📋 日報フォーマットガイド（記入例）</h4>
+                    <h4>${escapeHtml(t("hr.dr_guide_title", lang))}</h4>
 
                     <div class="guide-section">
-                        <div class="guide-section-title">【本日の業務内容】の書き方</div>
-                        <div class="guide-section-body">• 時間帯と業務名をセットで書く（例：9:00〜11:00）
-• 会議・打ち合わせは参加者・議題も記載
-• 対応した作業・タスクはできるだけ具体的に
-• 社外対応（顧客・取引先）がある場合は相手先も明記
-
-例）
-9:00〜 9:30　　朝礼・メールチェック・当日タスク確認
-9:30〜11:30　　○○プロジェクト 要件定義書レビュー（田中PM・鈴木さんと共同）
-11:30〜12:00　　△△社からの問い合わせ対応（電話・メール返信）
-13:00〜15:00　　システム仕様書の修正・更新（v2.3 → v2.4）
-15:00〜15:30　　週次定例MTG（参加者：開発チーム全員 / 進捗共有）
-15:30〜17:00　　新機能のコーディング（ログイン画面バリデーション処理）
-17:00〜17:30　　明日分のタスク整理・上長への進捗報告</div>
+                        <div class="guide-section-title">${escapeHtml(t("hr.dr_guide_content_title", lang))}</div>
+                        <div class="guide-section-body">${escapeHtml(t("hr.dr_guide_content_body", lang))}</div>
                     </div>
 
                     <div class="guide-section">
-                        <div class="guide-section-title">【本日の成果・進捗】の書き方</div>
-                        <div class="guide-section-body">• 完了したタスクに「✅」、進行中は「🔄」、着手予定は「⏳」
-• 数字・割合で進捗を具体的に表現する
-• 期待以上の成果があれば積極的に記載
-
-例）
-✅ ○○プロジェクト 要件定義書レビュー完了（指摘事項3件 → 全対応済み）
-✅ △△社問い合わせ対応完了（回答メール送付、担当者より了承返信あり）
-🔄 システム仕様書 修正90%完了（残：3章の図表修正のみ）
-🔄 ログイン画面バリデーション実装 約60%完了（入力チェックまで実装済み）
-⏳ ユーザーテスト準備（明日対応予定）</div>
+                        <div class="guide-section-title">${escapeHtml(t("hr.dr_guide_achieve_title", lang))}</div>
+                        <div class="guide-section-body">${escapeHtml(t("hr.dr_guide_achieve_body", lang))}</div>
                     </div>
 
                     <div class="guide-section">
-                        <div class="guide-section-title">【課題・問題点】の書き方</div>
-                        <div class="guide-section-body">• 問題は「事実」「影響」「対応策」の3点セットで書く
-• 解決できた問題と未解決の問題を分けて書く
-• 一人で抱え込まず、支援が必要なものは明示する
-
-例）
-■ 解決済み
-→ 仕様書の旧バージョンを参照していた問題 → 最新版に切り替えて修正完了
-
-■ 未解決・要確認
-→ △△社からAPIの仕様変更の通知あり。影響範囲の調査が必要。
-　 【影響】ログイン処理・データ同期の2モジュールに影響の可能性
-　 【対応予定】明日午前中に技術担当と確認MTG設定
-→ ○○画面のレイアウトがiPadで崩れる事象を確認。
-　 【影響】タブレット使用ユーザーの操作に支障
-　 【要支援】CSSの修正方針について田中PMの確認が必要</div>
+                        <div class="guide-section-title">${escapeHtml(t("hr.dr_guide_issues_title", lang))}</div>
+                        <div class="guide-section-body">${escapeHtml(t("hr.dr_guide_issues_body", lang))}</div>
                     </div>
 
                     <div class="guide-section">
-                        <div class="guide-section-title">【明日の予定】の書き方</div>
-                        <div class="guide-section-body">• 優先度順に並べる（最重要タスクを上に）
-• 所要時間の目安も書くと計画的
-• 社外アポ・締め切りがある場合は必ず明記
-
-例）
-① 【最優先】△△社API仕様変更の影響調査・技術MTG（午前中）
-② ログイン画面バリデーション実装の続き・完成目標（13:00〜15:00）
-③ システム仕様書 残り図表修正・最終確認（15:00〜16:00）
-④ ユーザーテスト準備資料作成（16:00〜）
-⑤ 週次レポート提出（17:00までに提出）</div>
+                        <div class="guide-section-title">${escapeHtml(t("hr.dr_guide_tomorrow_title", lang))}</div>
+                        <div class="guide-section-body">${escapeHtml(t("hr.dr_guide_tomorrow_body", lang))}</div>
                     </div>
                 </div>
 
                 <div class="form-card">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-                        <h3 style="margin:0;font-size:18px;color:#0b2540">日報を記入</h3>
-                        <button type="button" class="sample-btn" onclick="insertSample()">📝 記入例を挿入</button>
+                        <h3 style="margin:0;font-size:18px;color:#0b2540">${escapeHtml(t("hr.dr_form_title", lang))}</h3>
+                        <button type="button" class="sample-btn" onclick="insertSample()">${escapeHtml(t("hr.dr_sample_btn", lang))}</button>
                     </div>
                     <form action="/hr/daily-report/new" method="POST" id="reportForm" enctype="multipart/form-data">
                         <div style="margin-bottom:18px">
-                            <label class="field-label">日付</label>
+                            <label class="field-label">${escapeHtml(t("hr.date", lang))}</label>
                             <div style="position:relative;display:inline-flex;align-items:center">
                                 <i class="fa-regular fa-calendar" style="position:absolute;left:10px;color:#94a3b8;font-size:13px;pointer-events:none"></i>
                                 <input type="text" id="dr-date-new" name="reportDate" value="${today}" required autocomplete="off" placeholder="${t("hr.date_placeholder", lang)}" style="padding:10px 10px 10px 34px;border-radius:8px;border:1px solid #e2e8f0;font-size:14px;cursor:pointer">
@@ -3148,51 +3104,51 @@ router.get("/hr/daily-report/new", requireLogin, async (req, res) => {
                         </div>
 
                         <div style="margin-bottom:18px">
-                            <label class="field-label">本日の業務内容 <span style="color:#ef4444">*</span></label>
-                            <span class="field-hint">時間帯ごとに実施した業務を具体的に記入してください。@名前 でメンションできます</span>
+                            <label class="field-label">${escapeHtml(t("hr.content_label", lang))} <span style="color:#ef4444">*</span></label>
+                            <span class="field-hint">${escapeHtml(t("hr.dr_content_hint", lang))}</span>
                             <div class="mention-wrap">
-                                <textarea id="f_content" name="content" rows="8" required class="form-textarea" placeholder="例）9:00〜 朝礼・メールチェック&#10;9:30〜11:30　○○プロジェクト 要件定義書レビュー&#10;@田中さん と連携して進めました"></textarea>
+                                <textarea id="f_content" name="content" rows="8" required class="form-textarea" placeholder="${t("hr.dr_content_placeholder", lang).replace(/\n/g, "&#10;").replace(/"/g, "&quot;")}"></textarea>
                                 <div class="mention-suggest" id="ms_content"></div>
                             </div>
-                            <div class="char-count"><span id="cnt_content">0</span> 文字</div>
+                            <div class="char-count"><span id="cnt_content">0</span>${escapeHtml(t("hr.dr_char_suffix", lang))}</div>
                         </div>
 
                         <div style="margin-bottom:18px">
-                            <label class="field-label">本日の成果・進捗</label>
-                            <span class="field-hint">✅ 完了 / 🔄 進行中 / ⏳ 着手予定 などの記号を使うと分かりやすいです</span>
+                            <label class="field-label">${escapeHtml(t("hr.dr_achieve_label", lang))}</label>
+                            <span class="field-hint">${escapeHtml(t("hr.dr_achieve_hint", lang))}</span>
                             <div class="mention-wrap">
-                                <textarea id="f_achievements" name="achievements" rows="5" class="form-textarea" placeholder="例）&#10;✅ ○○レビュー完了（指摘事項3件 → 全対応済み）&#10;🔄 仕様書修正 90%完了（残：図表修正のみ）&#10;⏳ ユーザーテスト準備（明日対応予定）"></textarea>
+                                <textarea id="f_achievements" name="achievements" rows="5" class="form-textarea" placeholder="${t("hr.dr_achieve_placeholder", lang).replace(/\n/g, "&#10;").replace(/"/g, "&quot;")}"></textarea>
                                 <div class="mention-suggest" id="ms_achievements"></div>
                             </div>
-                            <div class="char-count"><span id="cnt_achievements">0</span> 文字</div>
+                            <div class="char-count"><span id="cnt_achievements">0</span>${escapeHtml(t("hr.dr_char_suffix", lang))}</div>
                         </div>
 
                         <div style="margin-bottom:18px">
-                            <label class="field-label">課題・問題点</label>
-                            <span class="field-hint">「事実」「影響」「対応策」の3点セットで。支援が必要な場合は明示してください</span>
+                            <label class="field-label">${escapeHtml(t("hr.dr_issues_label", lang))}</label>
+                            <span class="field-hint">${escapeHtml(t("hr.dr_issues_hint", lang))}</span>
                             <div class="mention-wrap">
-                                <textarea id="f_issues" name="issues" rows="5" class="form-textarea" placeholder="例）&#10;■ 解決済み：仕様書バージョン誤り → 最新版に修正済み&#10;■ 未解決：△△社APIの仕様変更通知あり。影響範囲を明日調査予定。"></textarea>
+                                <textarea id="f_issues" name="issues" rows="5" class="form-textarea" placeholder="${t("hr.dr_issues_placeholder", lang).replace(/\n/g, "&#10;").replace(/"/g, "&quot;")}"></textarea>
                                 <div class="mention-suggest" id="ms_issues"></div>
                             </div>
-                            <div class="char-count"><span id="cnt_issues">0</span> 文字</div>
+                            <div class="char-count"><span id="cnt_issues">0</span>${escapeHtml(t("hr.dr_char_suffix", lang))}</div>
                         </div>
 
                         <div style="margin-bottom:18px">
-                            <label class="field-label">明日の予定</label>
-                            <span class="field-hint">優先度順に記入。締め切りや社外アポは必ず明記してください</span>
+                            <label class="field-label">${escapeHtml(t("hr.dr_tomorrow_label", lang))}</label>
+                            <span class="field-hint">${escapeHtml(t("hr.dr_tomorrow_hint", lang))}</span>
                             <div class="mention-wrap">
-                                <textarea id="f_tomorrow" name="tomorrow" rows="5" class="form-textarea" placeholder="例）&#10;① 【最優先】△△社API仕様変更の影響調査・技術MTG（午前中）&#10;② ログイン画面実装の続き（13:00〜15:00）&#10;③ 週次レポート提出（17:00締め切り）"></textarea>
+                                <textarea id="f_tomorrow" name="tomorrow" rows="5" class="form-textarea" placeholder="${t("hr.dr_tomorrow_placeholder", lang).replace(/\n/g, "&#10;").replace(/"/g, "&quot;")}"></textarea>
                                 <div class="mention-suggest" id="ms_tomorrow"></div>
                             </div>
-                            <div class="char-count"><span id="cnt_tomorrow">0</span> 文字</div>
+                            <div class="char-count"><span id="cnt_tomorrow">0</span>${escapeHtml(t("hr.dr_char_suffix", lang))}</div>
                         </div>
 
                         <div style="margin-bottom:24px">
-                            <label class="field-label">ファイル添付（任意）</label>
-                            <span class="field-hint">画像・PDF・Officeファイルなど。複数選択可。最大20MB/ファイル</span>
+                            <label class="field-label">${escapeHtml(t("hr.dr_attach_label", lang))}</label>
+                            <span class="field-hint">${escapeHtml(t("hr.dr_attach_hint", lang))}</span>
                             <label for="fileInput" class="attach-area" id="dropArea">
                                 <span style="font-size:20px">📎</span>
-                                <span>ここをクリックまたはファイルをドラッグ&ドロップ</span>
+                                <span>${escapeHtml(t("hr.dr_attach_area", lang))}</span>
                                 <input type="file" name="attachments" id="fileInput" multiple
                                     style="opacity:0;position:absolute;width:0;height:0"
                                     accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
@@ -3390,7 +3346,7 @@ router.get("/hr/daily-report/new", requireLogin, async (req, res) => {
                                 window.location.href = '/hr/daily-report';
                             }).catch(function(err) {
                                 console.error('[FORM SUBMIT] Error:', err);
-                                alert('エラーが発生しました');
+                                alert(${JSON.stringify(t("error.server_error", lang))});
                             });
                         } else {
                             console.log('[FORM SUBMIT] No files, using normal submit');
@@ -3598,7 +3554,7 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
     renderPage(
       req,
       res,
-      "日報編集",
+      t("hr.edit_report_title", lang),
       t("hr.edit_report_title", lang),
       `
             <style>
@@ -3628,7 +3584,7 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
             <div style="max-width:860px;margin:0 auto">
                 <div style="margin-bottom:16px">
                     <a href="/hr/daily-report/${report._id}" style="color:#3b82f6;text-decoration:none;font-size:14px;display:inline-flex;align-items:center;gap:5px">
-                        <i class="fa-solid fa-arrow-left" style="font-size:12px"></i> 詳細に戻る
+                        <i class="fa-solid fa-arrow-left" style="font-size:12px"></i> ${escapeHtml(t("hr.dr_back_to_detail", lang))}
                     </a>
                 </div>
                 <div class="form-card">
@@ -3638,7 +3594,7 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
                     </div>
                     <form action="/hr/daily-report/${report._id}/edit" method="POST" id="editForm" enctype="multipart/form-data">
                         <div style="margin-bottom:18px">
-                            <label class="field-label">日付</label>
+                            <label class="field-label">${escapeHtml(t("hr.date", lang))}</label>
                             <div style="position:relative;display:inline-flex;align-items:center">
                                 <i class="fa-regular fa-calendar" style="position:absolute;left:10px;color:#94a3b8;font-size:13px;pointer-events:none"></i>
                                 <input type="text" id="dr-date-edit" name="reportDate" value="${dateVal}" required autocomplete="off" placeholder="${t("hr.date_placeholder", lang)}" style="padding:10px 10px 10px 34px;border-radius:8px;border:1px solid #e2e8f0;font-size:14px;cursor:pointer">
@@ -3646,41 +3602,41 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
                         </div>
                         </div>
                         <div style="margin-bottom:18px">
-                            <label class="field-label">本日の業務内容 <span style="color:#ef4444">*</span></label>
-                            <span class="field-hint">@名前 でメンションできます</span>
+                            <label class="field-label">${escapeHtml(t("hr.content_label", lang))} <span style="color:#ef4444">*</span></label>
+                            <span class="field-hint">${escapeHtml(t("hr.dr_mention_hint", lang))}</span>
                             <div class="mention-wrap">
                                 <textarea id="f_content" name="content" rows="8" required class="form-textarea">${escapeHtml(report.content || "")}</textarea>
                                 <div class="mention-suggest" id="ms_content"></div>
                             </div>
-                            <div class="char-count"><span id="cnt_content">0</span> 文字</div>
+                            <div class="char-count"><span id="cnt_content">0</span>${escapeHtml(t("hr.dr_char_suffix", lang))}</div>
                         </div>
                         <div style="margin-bottom:18px">
-                            <label class="field-label">本日の成果・進捗</label>
+                            <label class="field-label">${escapeHtml(t("hr.dr_achieve_label", lang))}</label>
                             <div class="mention-wrap">
                                 <textarea id="f_achievements" name="achievements" rows="5" class="form-textarea">${escapeHtml(report.achievements || "")}</textarea>
                                 <div class="mention-suggest" id="ms_achievements"></div>
                             </div>
-                            <div class="char-count"><span id="cnt_achievements">0</span> 文字</div>
+                            <div class="char-count"><span id="cnt_achievements">0</span>${escapeHtml(t("hr.dr_char_suffix", lang))}</div>
                         </div>
                         <div style="margin-bottom:18px">
-                            <label class="field-label">課題・問題点</label>
+                            <label class="field-label">${escapeHtml(t("hr.dr_issues_label", lang))}</label>
                             <div class="mention-wrap">
                                 <textarea id="f_issues" name="issues" rows="5" class="form-textarea">${escapeHtml(report.issues || "")}</textarea>
                                 <div class="mention-suggest" id="ms_issues"></div>
                             </div>
-                            <div class="char-count"><span id="cnt_issues">0</span> 文字</div>
+                            <div class="char-count"><span id="cnt_issues">0</span>${escapeHtml(t("hr.dr_char_suffix", lang))}</div>
                         </div>
                         <div style="margin-bottom:18px">
-                            <label class="field-label">明日の予定</label>
+                            <label class="field-label">${escapeHtml(t("hr.dr_tomorrow_label", lang))}</label>
                             <div class="mention-wrap">
                                 <textarea id="f_tomorrow" name="tomorrow" rows="5" class="form-textarea">${escapeHtml(report.tomorrow || "")}</textarea>
                                 <div class="mention-suggest" id="ms_tomorrow"></div>
                             </div>
-                            <div class="char-count"><span id="cnt_tomorrow">0</span> 文字</div>
+                            <div class="char-count"><span id="cnt_tomorrow">0</span>${escapeHtml(t("hr.dr_char_suffix", lang))}</div>
                         </div>
                         <div style="margin-bottom:24px">
-                            <label class="field-label">ファイル添付（追加）</label>
-                            <span class="field-hint">既存ファイルも右上の×で削除できます</span>
+                            <label class="field-label">${escapeHtml(t("hr.dr_attach_add_label", lang))}</label>
+                            <span class="field-hint">${escapeHtml(t("hr.dr_attach_add_hint", lang))}</span>
                             <input type="hidden" name="removeAttachmentIds" id="removeAttachmentIds" value="">
                             ${existingAttachHtml ? `<div class="attach-list" style="margin-bottom:8px">${existingAttachHtml}</div>` : ""}
                             <label for="fileInput" class="attach-area" id="dropArea"
@@ -3688,7 +3644,7 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
                                 ondragleave="this.classList.remove('drag-over')"
                                 ondrop="event.preventDefault();this.classList.remove('drag-over');handleFileDrop(event)">
                                 <span style="font-size:20px">📎</span>
-                                <span>ここをクリックまたはファイルをドラッグ&ドロップ</span>
+                                <span>${escapeHtml(t("hr.dr_attach_area", lang))}</span>
                                 <input type="file" name="attachments" id="fileInput" multiple
                                     style="opacity:0;position:absolute;width:0;height:0"
                                     accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
@@ -3922,7 +3878,7 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
                     })
                     .catch(function(err) {
                         console.error('[EDIT SAVE] Error:', err);
-                        alert('保存に失敗しました');
+                        alert(${JSON.stringify(t("hr.dr_save_failed", lang))});
                     });
                 });
             }
@@ -5117,7 +5073,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
     renderPage(
       req,
       res,
-      "日報詳細",
+      t("hr.dr_detail_title", lang),
       `${escapeHtml(emp.name || "")} ${t("hr.daily_report_list", lang)}`,
       `
 <style>
@@ -5250,7 +5206,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
         <!-- ヘッダー -->
         <div style="display:flex;gap:12px;align-items:center;margin-bottom:24px;flex-wrap:wrap;border-bottom:2px solid #f1f5f9;padding-bottom:18px">
             <span style="font-size:20px;font-weight:800;color:#0f172a">${dateStr}</span>
-            <span style="padding:3px 14px;background:#eff6ff;color:#2563eb;border-radius:999px;font-weight:700;font-size:13px">${escapeHtml(emp.name || "不明")}</span>
+            <span style="padding:3px 14px;background:#eff6ff;color:#2563eb;border-radius:999px;font-weight:700;font-size:13px">${escapeHtml(emp.name || t("hr.dr_unknown_user", lang))}</span>
             <span style="font-size:13px;color:#64748b">${escapeHtml(emp.department || "")}</span>
             ${
               String(report.userId) === String(req.session.userId) ||
@@ -5258,11 +5214,11 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                 ? `
             <div style="margin-left:auto;display:flex;gap:8px">
                 <a href="/hr/daily-report/${report._id}/edit" style="padding:6px 16px;background:#f1f5f9;color:#374151;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:5px">
-                    <i class="fa-solid fa-pen" style="font-size:11px"></i> 編集
+                    <i class="fa-solid fa-pen" style="font-size:11px"></i> ${escapeHtml(t("hr.dr_btn_edit", lang))}
                 </a>
-                <form method="POST" action="/hr/daily-report/${report._id}/delete" onsubmit="return confirm('この日報を削除しますか？この操作は元に戻せません。')" style="margin:0">
+                <form method="POST" action="/hr/daily-report/${report._id}/delete" onsubmit="return confirm(${JSON.stringify(t("hr.dr_delete_confirm", lang))})" style="margin:0">
                     <button type="submit" style="padding:6px 16px;background:#fee2e2;color:#dc2626;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px">
-                        <i class="fa-solid fa-trash" style="font-size:11px"></i> 削除
+                        <i class="fa-solid fa-trash" style="font-size:11px"></i> ${escapeHtml(t("hr.dr_btn_delete", lang))}
                     </button>
                 </form>
             </div>`
@@ -5272,14 +5228,14 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
 
         <!-- 本文セクション -->
         <div class="section-block">
-            <div class="section-label"><i class="fa-solid fa-pen-to-square" style="color:#3b82f6"></i>本日の業務内容</div>
+            <div class="section-label"><i class="fa-solid fa-pen-to-square" style="color:#3b82f6"></i>${escapeHtml(t("hr.content_label", lang))}</div>
             <div class="section-body">${nl2br(report.content || "-")}</div>
         </div>
         ${
           report.achievements
             ? `
         <div class="section-block">
-            <div class="section-label"><i class="fa-solid fa-trophy" style="color:#f59e0b"></i>本日の成果・進捗</div>
+            <div class="section-label"><i class="fa-solid fa-trophy" style="color:#f59e0b"></i>${escapeHtml(t("hr.dr_achieve_label", lang))}</div>
             <div class="section-body">${nl2br(report.achievements)}</div>
         </div>`
             : ""
@@ -5288,7 +5244,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
           report.issues
             ? `
         <div class="section-block">
-            <div class="section-label"><i class="fa-solid fa-triangle-exclamation" style="color:#ef4444"></i>課題・問題点</div>
+            <div class="section-label"><i class="fa-solid fa-triangle-exclamation" style="color:#ef4444"></i>${escapeHtml(t("hr.dr_issues_label", lang))}</div>
             <div class="section-body">${nl2br(report.issues)}</div>
         </div>`
             : ""
@@ -5297,7 +5253,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
           report.tomorrow
             ? `
         <div class="section-block">
-            <div class="section-label"><i class="fa-solid fa-calendar-check" style="color:#10b981"></i>明日の予定</div>
+            <div class="section-label"><i class="fa-solid fa-calendar-check" style="color:#10b981"></i>${escapeHtml(t("hr.dr_tomorrow_label", lang))}</div>
             <div class="section-body">${nl2br(report.tomorrow)}</div>
         </div>`
             : ""
@@ -5308,7 +5264,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
           report.attachments && report.attachments.length
             ? `
         <div class="section-block">
-            <div class="section-label"><i class="fa-solid fa-paperclip" style="color:#64748b"></i>添付ファイル</div>
+            <div class="section-label"><i class="fa-solid fa-paperclip" style="color:#64748b"></i>${escapeHtml(t("hr.dr_section_attach", lang))}</div>
             ${makeAttachHtml(report.attachments)}
         </div>`
             : ""
@@ -5345,13 +5301,14 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
         <div style="margin-top:24px;padding-top:20px;border-top:1px solid #f1f5f9">
             <div style="font-size:14px;font-weight:700;color:#1e293b;margin-bottom:14px;display:flex;align-items:center;gap:7px">
                 <i class="fa-solid fa-comment-dots" style="color:#3b82f6"></i>
-                コメント
+                ${escapeHtml(t("hr.dr_comment_heading", lang))}
                 <span style="background:#f1f5f9;color:#64748b;font-size:11.5px;border-radius:999px;padding:1px 9px;font-weight:600">${(report.comments || []).length}</span>
             </div>
             <div class="comment-list">
                 ${(report.comments || [])
                   .map((c) => {
-                    const authorName = c.authorName || "不明";
+                    const authorName =
+                      c.authorName || t("hr.dr_unknown_user", lang);
                     const commentDate = c.at
                       ? new Date(c.at).toLocaleString("ja-JP")
                       : "";
@@ -5424,17 +5381,17 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                         <div style="flex:1;min-width:0">
                             <div class="comment-meta">
                                 ${escapeHtml(authorName)} · ${commentDate}
-                                ${c.editedAt ? `<span style="font-size:11px;color:#9ca3af;margin-left:4px">（編集済み）</span>` : ""}
+                                ${c.editedAt ? `<span style="font-size:11px;color:#9ca3af;margin-left:4px">${escapeHtml(t("hr.dr_comment_edited", lang))}</span>` : ""}
                             </div>
                             <div class="comment-body" id="cbody-${cid}">${nl2br(c.text || "")}</div>
                             <div id="cattach-${cid}">${makeAttachHtml(c.attachments)}</div>
                             ${
                               canEdit
                                 ? `<div class="comment-actions">
-                                <button type="button" class="c-action-btn edit" onclick="startEditComment('${cid}')">✏️ 編集</button>
+                                <button type="button" class="c-action-btn edit" onclick="startEditComment('${cid}')">${escapeHtml(t("hr.dr_comment_edit_btn", lang))}</button>
                                 <form method="POST" action="/hr/daily-report/${report._id}/comment/${cid}/delete"
-                                    onsubmit="return confirm('このコメントを削除しますか？')" style="margin:0">
-                                    <button type="submit" class="c-action-btn del">🗑 削除</button>
+                                    onsubmit="return confirm(${JSON.stringify(t("hr.dr_comment_del_confirm", lang))})" style="margin:0">
+                                    <button type="submit" class="c-action-btn del">${escapeHtml(t("hr.dr_comment_del_btn", lang))}</button>
                                 </form>
                             </div>`
                                 : ""
@@ -5445,14 +5402,15 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                                 <input type="hidden" id="cedit-remove-${cid}" value="">
                                 <div style="margin-top:8px">
                                     <label style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:#f8fafc;border:1.5px dashed #cbd5e1;border-radius:8px;font-size:12px;color:#64748b;cursor:pointer">
-                                        📎 ファイルを追加
+                                        ${escapeHtml(t("hr.dr_comment_file_add", lang))}
                                         <input type="file" id="cedit-files-${cid}" multiple style="display:none" onchange="handleCEditFiles('${cid}',this)">
+                                    </label>
                                     </label>
                                     <div id="cedit-newfiles-${cid}" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
                                 </div>
                                 <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
-                                    <button type="button" class="c-action-btn" onclick="cancelEditComment('${cid}')">キャンセル</button>
-                                    <button type="button" class="c-action-btn edit" onclick="submitEditComment('${cid}','${report._id}')">💾 保存</button>
+                                    <button type="button" class="c-action-btn" onclick="cancelEditComment('${cid}')">${escapeHtml(t("hr.dr_comment_cancel", lang))}</button>
+                                    <button type="button" class="c-action-btn edit" onclick="submitEditComment('${cid}','${report._id}')">${escapeHtml(t("hr.dr_comment_save", lang))}</button>
                                 </div>
                             </div>
                             <div class="c-reaction-row" id="cr-${cid}">
@@ -5476,7 +5434,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                 enctype="multipart/form-data" class="comment-form" style="margin-top:16px">
                 <div class="c-mention-wrap">
                     <textarea name="text" id="commentText" rows="3" required
-                        placeholder="コメントを入力… @名前 でメンション (Shift+Enter で改行)"></textarea>
+                        placeholder="${escapeHtml(t("hr.dr_comment_placeholder", lang))}"></textarea>
                     <div class="mention-suggest" id="ms_commentText"></div>
                 </div>
                 <!-- 添付エリア：label でラップして input を直接紐づけ -->
@@ -5484,7 +5442,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                     ondragover="event.preventDefault();this.classList.add('drag-over')"
                     ondragleave="this.classList.remove('drag-over')"
                     ondrop="event.preventDefault();this.classList.remove('drag-over');handleCDrop(event)">
-                    <span>📎 ファイルをドラッグ＆ドロップ、またはクリックして選択</span>
+                    <span>${escapeHtml(t("hr.dr_comment_attach_area", lang))}</span>
                     <input type="file" name="commentFiles" id="cFileInput" multiple
                         style="opacity:0;position:absolute;width:0;height:0"
                         onchange="handleCFileChange(this)">
@@ -5492,7 +5450,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                 <div class="c-attach-list" id="cAttachList"></div>
                 <div style="display:flex;justify-content:flex-end;margin-top:8px">
                     <button type="submit" class="comment-submit">
-                        <i class="fa-solid fa-paper-plane" style="margin-right:5px"></i>送信
+                        <i class="fa-solid fa-paper-plane" style="margin-right:5px"></i>${escapeHtml(t("hr.dr_comment_submit", lang))}
                     </button>
                 </div>
             </form>
@@ -5885,7 +5843,7 @@ function submitEditComment(cid, reportId) {
     })
     .then(r => r.json())
     .then(d => {
-        if (!d.ok) { alert(d.error || '保存に失敗しました'); return; }
+        if (!d.ok) { alert(d.error || ${JSON.stringify(t("hr.dr_save_failed", lang))}); return; }
         const bodyEl = document.getElementById('cbody-' + cid);
         if (bodyEl) {
             bodyEl.innerHTML = d.html || d.text.split('\\n').join('<br>');
@@ -5914,7 +5872,7 @@ function submitEditComment(cid, reportId) {
             const badge = document.createElement('span');
             badge.className = 'edited-badge';
             badge.style.cssText = 'font-size:11px;color:#9ca3af;margin-left:4px';
-            badge.textContent = '（編集済み）';
+            badge.textContent = ${JSON.stringify(t("hr.dr_comment_edited", lang))};
             metaEl.appendChild(badge);
         }
         const actionsEl = document.querySelector('#ci-' + cid + ' .comment-actions');
@@ -5927,7 +5885,7 @@ function submitEditComment(cid, reportId) {
         const newFilesEl = document.getElementById('cedit-newfiles-' + cid);
         if (newFilesEl) newFilesEl.innerHTML = '';
     })
-    .catch(() => alert('通信エラーが発生しました'));
+    .catch(() => alert(${JSON.stringify(t("hr.dr_network_error", lang))}));
 }
 </script>
         `,

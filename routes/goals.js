@@ -36,6 +36,7 @@ async function ensureOwnerName(goal) {
 }
 
 // パレットタレント風の共通CSS（全ページ共通）
+const FP_LOCALE_MAP = { ja: "ja", vi: "vn", ko: "ko", zh: "zh" };
 function goalCss() {
   return `
 <style>
@@ -440,7 +441,7 @@ router.get("/goals/add", requireLogin, async (req, res) => {
     `<div class="g-field"><label>${t("goals.field_description", lang)}</label><textarea name="description" placeholder="${t("goals.field_description_placeholder", lang)}"></textarea></div>` +
     '<div class="g-row">' +
     `<div class="g-col g-field"><label>${t("goals.field_level", lang)}</label><select name="goalLevel"><option value="低">${t("goals.level_low", lang)}</option><option value="中" selected>${t("goals.level_mid", lang)}</option><option value="高">${t("goals.level_high", lang)}</option></select></div>` +
-    `<div class="g-col g-field"><label>${t("goals.field_deadline", lang)}</label><input name="deadline" type="date"></div>` +
+    `<div class="g-col g-field"><label>${t("goals.field_deadline", lang)}</label><input name="deadline" id="g-deadline-new" type="text" autocomplete="off" placeholder="YYYY-MM-DD" style="cursor:pointer"></div>` +
     "</div>" +
     `<div class="g-field"><label>${t("goals.field_action_plan", lang)}</label><textarea name="actionPlan" placeholder="${t("goals.field_action_plan_placeholder", lang)}"></textarea></div>` +
     `<div class="g-field"><label>${t("goals.field_approver1", lang)}</label><select name="approverId"><option value="">${t("goals.select_placeholder", lang)}</option>` +
@@ -449,7 +450,13 @@ router.get("/goals/add", requireLogin, async (req, res) => {
     `<div class="g-form-actions"><a href="/goals" class="g-btn g-btn-ghost">${t("goals.btn_cancel", lang)}</a><button type="submit" class="g-btn g-btn-primary"><i class="fa-solid fa-floppy-disk"></i> ${t("goals.btn_save_draft", lang)}</button></div>` +
     "</form>" +
     `<p style="margin-top:12px;color:var(--g-muted);font-size:12px;">${t("goals.draft_note", lang)}</p>` +
-    "</div></div>";
+    "</div></div>" +
+    `<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">` +
+    `<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"><\/script>` +
+    (FP_LOCALE_MAP[lang]
+      ? `<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/${FP_LOCALE_MAP[lang]}.min.js"><\/script>`
+      : "") +
+    `<script>flatpickr('#g-deadline-new',{dateFormat:'Y-m-d',${FP_LOCALE_MAP[lang] ? `locale:'${FP_LOCALE_MAP[lang]}',` : ""}allowInput:true,disableMobile:false});<\/script>`;
 
   renderPage(
     req,
@@ -1084,7 +1091,7 @@ router.get("/goals/edit/:id", requireLogin, async (req, res) => {
     "</option></select></div>" +
     '<div class="g-col g-field"><label>' +
     t("goals.field_deadline", lang) +
-    '</label><input name="deadline" type="date" value="' +
+    '</label><input name="deadline" id="g-deadline-edit" type="text" autocomplete="off" placeholder="YYYY-MM-DD" style="cursor:pointer" value="' +
     deadlineVal +
     '"></div>' +
     "</div>" +
@@ -1111,7 +1118,13 @@ router.get("/goals/edit/:id", requireLogin, async (req, res) => {
         "</button>"
       : "") +
     "</div>" +
-    "</form></div></div>";
+    "</form></div></div>" +
+    `<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">` +
+    `<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"><\/script>` +
+    (FP_LOCALE_MAP[lang]
+      ? `<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/${FP_LOCALE_MAP[lang]}.min.js"><\/script>`
+      : "") +
+    `<script>flatpickr('#g-deadline-edit',{dateFormat:'Y-m-d',${FP_LOCALE_MAP[lang] ? `locale:'${FP_LOCALE_MAP[lang]}',` : ""}allowInput:true,disableMobile:false});<\/script>`;
   renderPage(req, res, t("goals.title", lang), t("goals.title", lang), html);
 });
 
