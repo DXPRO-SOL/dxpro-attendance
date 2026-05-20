@@ -21,6 +21,7 @@ const { requireLogin, isAdmin } = require("../middleware/auth");
 const { escapeHtml, buildAttachmentsAfterEdit } = require("../lib/helpers");
 const { renderPage } = require("../lib/renderPage");
 const { createNotification } = require("./notifications");
+const { t } = require("../lib/i18n");
 
 // ─── 日報スタンプ定義（一覧・詳細・APIで共通使用）────────────────
 const STAMPS = [
@@ -867,8 +868,8 @@ router.get("/hr/add", requireLogin, isAdmin, (req, res) => {
         </div>
     </div>
 
-    ${req.query.success ? `<div class="hradd-alert hradd-alert-success"><i class="fa fa-circle-check"></i> 社員を登録しました。</div>` : ''}
-    ${req.query.error   ? `<div class="hradd-alert hradd-alert-error"><i class="fa fa-triangle-exclamation"></i> エラーが発生しました：${req.query.error}</div>` : ''}
+    ${req.query.success ? `<div class="hradd-alert hradd-alert-success"><i class="fa fa-circle-check"></i> 社員を登録しました。</div>` : ""}
+    ${req.query.error ? `<div class="hradd-alert hradd-alert-error"><i class="fa fa-triangle-exclamation"></i> エラーが発生しました：${req.query.error}</div>` : ""}
 
     <form action="/hr/add" method="POST">
         <div class="hradd-card">
@@ -951,10 +952,25 @@ router.get("/hr/add", requireLogin, isAdmin, (req, res) => {
 
 router.post("/hr/add", requireLogin, isAdmin, async (req, res) => {
   try {
-    const { username, password, employeeId, name, department, position, joinDate, email, role } = req.body;
+    const {
+      username,
+      password,
+      employeeId,
+      name,
+      department,
+      position,
+      joinDate,
+      email,
+      role,
+    } = req.body;
     const hashedPassword = await bcrypt.hash(password, 10);
-    const isAdminRole = role === 'admin';
-    const user = await User.create({ username, password: hashedPassword, role: role || 'employee', isAdmin: isAdminRole });
+    const isAdminRole = role === "admin";
+    const user = await User.create({
+      username,
+      password: hashedPassword,
+      role: role || "employee",
+      isAdmin: isAdminRole,
+    });
     await Employee.create({
       userId: user._id,
       employeeId,
@@ -963,13 +979,16 @@ router.post("/hr/add", requireLogin, isAdmin, async (req, res) => {
       position,
       joinDate,
       email,
-      orgRole: role || 'employee',
+      orgRole: role || "employee",
       paidLeave: 10,
     });
     res.redirect("/hr/add?success=1");
   } catch (e) {
     console.error(e);
-    const msg = e.code === 11000 ? encodeURIComponent('ユーザー名または社員番号が重複しています') : encodeURIComponent(e.message);
+    const msg =
+      e.code === 11000
+        ? encodeURIComponent("ユーザー名または社員番号が重複しています")
+        : encodeURIComponent(e.message);
     res.redirect("/hr/add?error=" + msg);
   }
 });
@@ -1817,8 +1836,8 @@ router.get("/hr/payroll", requireLogin, async (req, res) => {
 
   // 直近12件の給与明細を取得（発行済み・確定・支払済みのみ社員に表示）
   const visibleStatuses = req.session.isAdmin
-    ? undefined  // 管理者は全ステータス表示
-    : { $in: ['issued', 'locked', 'paid'] };
+    ? undefined // 管理者は全ステータス表示
+    : { $in: ["issued", "locked", "paid"] };
   const slipQuery = { employeeId: employee._id };
   if (visibleStatuses) slipQuery.status = visibleStatuses;
   const slips = await PayrollSlip.find(slipQuery)
@@ -2111,7 +2130,9 @@ router.get("/hr/payroll/:id", requireLogin, async (req, res) => {
   const slips = await PayrollSlip.find({
     employeeId: employee._id,
     ...(payMonth ? { runId: { $in: runIds } } : {}),
-    ...(!req.session.isAdmin ? { status: { $in: ['issued', 'locked', 'paid'] } } : {}),
+    ...(!req.session.isAdmin
+      ? { status: { $in: ["issued", "locked", "paid"] } }
+      : {}),
   })
     .populate("runId")
     .sort({ createdAt: -1 });
@@ -2659,9 +2680,20 @@ router.get("/hr/payroll/:id/export", requireLogin, async (req, res) => {
 // 日報ルート
 // ==============================
 
+// Flatpickr locale map (shared across daily-report routes)
+const FP_LOCALE_MAP = { ja: "ja", vi: "vn", ko: "ko", zh: "zh" }; // en = default
+const DATE_LOCALE_MAP = {
+  ja: "ja-JP",
+  en: "en-US",
+  vi: "vi-VN",
+  ko: "ko-KR",
+  zh: "zh-CN",
+};
+
 // 日報一覧
 router.get("/hr/daily-report", requireLogin, async (req, res) => {
   try {
+    const lang = req.lang || req.session?.lang || "ja";
     const user = await User.findById(req.session.userId);
     const employee = await Employee.findOne({ userId: user._id });
     req.session.employee = employee;
@@ -2697,8 +2729,8 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
     renderPage(
       req,
       res,
-      "日報",
-      "日報一覧",
+      t("hr.daily_report_list", lang),
+      t("hr.daily_report_list", lang),
       `
             <style>
                 .report-card{background:#fff;border-radius:14px;box-shadow:0 4px 14px rgba(11,36,48,.06);margin-bottom:14px;padding:18px 22px}
@@ -2734,31 +2766,37 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
                 .rx-tooltip{position:fixed;z-index:9999;background:#1e293b;color:#f1f5f9;font-size:12px;line-height:1.5;padding:6px 10px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.22);pointer-events:none;max-width:220px;word-break:break-all;opacity:0;transition:opacity .1s}
                 .rx-tooltip.show{opacity:1}
             </style>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"><\/script>
+            ${FP_LOCALE_MAP[lang] ? `<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/${FP_LOCALE_MAP[lang]}.min.js"><\/script>` : ""}
             <div style="max-width:960px;margin:0 auto">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-                    <h2 style="margin:0;font-size:22px;color:#0b2540">日報一覧</h2>
-                    <a href="/hr/daily-report/new" style="padding:9px 20px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;margin-top:10px">＋ 日報を投稿</a>
+                    <h2 style="margin:0;font-size:22px;color:#0b2540">${t("hr.daily_report_list", lang)}</h2>
+                    <a href="/hr/daily-report/new" style="padding:9px 20px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;margin-top:10px">${t("hr.post_report", lang)}</a>
                 </div>
 
                 <form method="GET" action="/hr/daily-report" class="filters-row">
                     ${
-                      allEmployees.length > 0
+                      req.session.isAdmin
                         ? `
                     <div>
-                        <label>社員で絞り込み</label>
+                        <label>${t("hr.filter_by_employee", lang)}</label>
                         <select name="emp">
-                            <option value="">全員</option>
+                            <option value="">${t("hr.all_employees", lang)}</option>
                             ${allEmployees.map((e) => `<option value="${e._id}" ${req.query.emp === String(e._id) ? "selected" : ""}>${escapeHtml(e.name)}</option>`).join("")}
                         </select>
                     </div>`
                         : ""
                     }
                     <div>
-                        <label>日付</label>
-                        <input type="date" name="date" value="${req.query.date || ""}">
+                        <label>${t("hr.date", lang)}</label>
+                        <div style="position:relative;display:inline-flex;align-items:center">
+                            <i class="fa-regular fa-calendar" style="position:absolute;left:9px;color:#94a3b8;font-size:13px;pointer-events:none"></i>
+                            <input type="text" id="dr-date-filter" name="date" value="${req.query.date || ""}" autocomplete="off" placeholder="${t("hr.date_placeholder", lang)}" style="padding:8px 8px 8px 30px;border-radius:8px;border:1px solid #e2e8f0;font-size:13px;cursor:pointer;min-width:150px">
+                        </div>
                     </div>
-                    <button type="submit" style="padding:8px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer">絞り込み</button>
-                    <a href="/hr/daily-report" style="padding:8px 14px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-weight:600">クリア</a>
+                    <button type="submit" style="padding:8px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer">${t("hr.filter_btn", lang)}</button>
+                    <a href="/hr/daily-report" style="padding:8px 14px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-weight:600">${t("hr.clear_btn", lang)}</a>
                 </form>
 
                 ${
@@ -2766,8 +2804,8 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
                     ? `
                     <div style="background:#f8fafc;border-radius:14px;padding:40px;text-align:center;color:#6b7280">
                         <div style="font-size:32px;margin-bottom:10px">📋</div>
-                        <div style="font-weight:600">日報がまだありません</div>
-                        <a href="/hr/daily-report/new" style="display:inline-block;margin-top:14px;padding:9px 22px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">日報を投稿する</a>
+                        <div style="font-weight:600">${t("hr.no_reports", lang)}</div>
+                        <a href="/hr/daily-report/new" style="display:inline-block;margin-top:14px;padding:9px 22px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">${t("hr.post_btn", lang)}</a>
                     </div>
                 `
                     : ""
@@ -2777,7 +2815,9 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
                   .map((r) => {
                     const emp = r.employeeId || {};
                     const dateStr = r.reportDate
-                      ? new Date(r.reportDate).toLocaleDateString("ja-JP")
+                      ? new Date(r.reportDate).toLocaleDateString(
+                          DATE_LOCALE_MAP[lang] || "ja-JP",
+                        )
                       : "-";
                     const myUid = String(req.session.userId);
 
@@ -2825,9 +2865,9 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
                             <span class="report-name">${escapeHtml(emp.name || "不明")}</span>
                             <span class="report-dept">${escapeHtml(emp.department || "")}</span>
                             <span style="background:#f1f5f9;border-radius:999px;padding:2px 10px;font-size:12px;color:#374151;font-weight:600">💬 ${r.comments ? r.comments.length : 0}</span>
-                            <a href="/hr/daily-report/${r._id}" style="margin-left:auto;padding:5px 14px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600">詳細 →</a>
+                            <a href="/hr/daily-report/${r._id}" style="margin-left:auto;padding:5px 14px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600">${t("hr.detail_link", lang)}</a>
                         </div>
-                        <div class="section-label">本日の業務内容</div>
+                        <div class="section-label">${t("hr.content_label", lang)}</div>
                         <div class="section-body">${escapeHtml((r.content || "").substring(0, 160))}${(r.content || "").length > 160 ? "…" : ""}</div>
                         <div class="card-reactions" id="cr-${r._id}">
                             ${activeStamps}
@@ -2836,7 +2876,7 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
                                     😀 <span style="font-size:13px;font-weight:700">+</span>
                                 </button>
                                 <div class="cr-picker" id="crp-${r._id}">
-                                    <div style="font-size:10.5px;color:#94a3b8;margin-bottom:6px;font-weight:600">リアクションを選択</div>
+                                    <div style="font-size:10.5px;color:#94a3b8;margin-bottom:6px;font-weight:600">${t("hr.select_reaction", lang)}</div>
                                     <div class="cr-picker-grid">${pickerBtns}</div>
                                 </div>
                             </div>
@@ -2916,6 +2956,13 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
                 document.querySelectorAll('.cr-picker.open').forEach(p=>p.classList.remove('open'));
                 sendCardStamp(key,reportId);
             }
+            // Flatpickr date filter
+            flatpickr('#dr-date-filter', {
+                dateFormat: 'Y-m-d',
+                ${FP_LOCALE_MAP[lang] ? `locale: '${FP_LOCALE_MAP[lang]}',` : ""}
+                allowInput: true,
+                disableMobile: false,
+            });
             function toggleCardStamp(btn){
                 sendCardStamp(btn.dataset.key, btn.dataset.report);
             }
@@ -2967,6 +3014,7 @@ router.get("/hr/daily-report", requireLogin, async (req, res) => {
 // 日報投稿フォーム
 router.get("/hr/daily-report/new", requireLogin, async (req, res) => {
   try {
+    const lang = req.lang || req.session?.lang || "ja";
     const today = new Date().toISOString().split("T")[0];
     // メンション候補（全従業員）
     const allEmps = await Employee.find({}, "name userId").lean();
@@ -2976,8 +3024,8 @@ router.get("/hr/daily-report/new", requireLogin, async (req, res) => {
     renderPage(
       req,
       res,
-      "日報投稿",
-      "日報を投稿",
+      t("hr.new_report_title", lang),
+      t("hr.new_report_title", lang),
       `
             <style>
                 .form-card{background:#fff;border-radius:14px;padding:28px;box-shadow:0 4px 14px rgba(11,36,48,.06);max-width:860px;margin:0 auto}
@@ -3009,135 +3057,98 @@ router.get("/hr/daily-report/new", requireLogin, async (req, res) => {
                 .attach-chip .rm{background:none;border:none;cursor:pointer;color:#9ca3af;padding:0;font-size:14px;line-height:1}
                 .attach-chip .rm:hover{color:#ef4444}
             </style>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"><\/script>
+            ${FP_LOCALE_MAP[lang] ? `<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/${FP_LOCALE_MAP[lang]}.min.js"><\/script>` : ""}
 
             <div style="max-width:860px;margin:0 auto">
 
                 <!-- フォーマットガイド -->
                 <div class="guide-box">
-                    <h4>📋 日報フォーマットガイド（記入例）</h4>
+                    <h4>${escapeHtml(t("hr.dr_guide_title", lang))}</h4>
 
                     <div class="guide-section">
-                        <div class="guide-section-title">【本日の業務内容】の書き方</div>
-                        <div class="guide-section-body">• 時間帯と業務名をセットで書く（例：9:00〜11:00）
-• 会議・打ち合わせは参加者・議題も記載
-• 対応した作業・タスクはできるだけ具体的に
-• 社外対応（顧客・取引先）がある場合は相手先も明記
-
-例）
-9:00〜 9:30　　朝礼・メールチェック・当日タスク確認
-9:30〜11:30　　○○プロジェクト 要件定義書レビュー（田中PM・鈴木さんと共同）
-11:30〜12:00　　△△社からの問い合わせ対応（電話・メール返信）
-13:00〜15:00　　システム仕様書の修正・更新（v2.3 → v2.4）
-15:00〜15:30　　週次定例MTG（参加者：開発チーム全員 / 進捗共有）
-15:30〜17:00　　新機能のコーディング（ログイン画面バリデーション処理）
-17:00〜17:30　　明日分のタスク整理・上長への進捗報告</div>
+                        <div class="guide-section-title">${escapeHtml(t("hr.dr_guide_content_title", lang))}</div>
+                        <div class="guide-section-body">${escapeHtml(t("hr.dr_guide_content_body", lang))}</div>
                     </div>
 
                     <div class="guide-section">
-                        <div class="guide-section-title">【本日の成果・進捗】の書き方</div>
-                        <div class="guide-section-body">• 完了したタスクに「✅」、進行中は「🔄」、着手予定は「⏳」
-• 数字・割合で進捗を具体的に表現する
-• 期待以上の成果があれば積極的に記載
-
-例）
-✅ ○○プロジェクト 要件定義書レビュー完了（指摘事項3件 → 全対応済み）
-✅ △△社問い合わせ対応完了（回答メール送付、担当者より了承返信あり）
-🔄 システム仕様書 修正90%完了（残：3章の図表修正のみ）
-🔄 ログイン画面バリデーション実装 約60%完了（入力チェックまで実装済み）
-⏳ ユーザーテスト準備（明日対応予定）</div>
+                        <div class="guide-section-title">${escapeHtml(t("hr.dr_guide_achieve_title", lang))}</div>
+                        <div class="guide-section-body">${escapeHtml(t("hr.dr_guide_achieve_body", lang))}</div>
                     </div>
 
                     <div class="guide-section">
-                        <div class="guide-section-title">【課題・問題点】の書き方</div>
-                        <div class="guide-section-body">• 問題は「事実」「影響」「対応策」の3点セットで書く
-• 解決できた問題と未解決の問題を分けて書く
-• 一人で抱え込まず、支援が必要なものは明示する
-
-例）
-■ 解決済み
-→ 仕様書の旧バージョンを参照していた問題 → 最新版に切り替えて修正完了
-
-■ 未解決・要確認
-→ △△社からAPIの仕様変更の通知あり。影響範囲の調査が必要。
-　 【影響】ログイン処理・データ同期の2モジュールに影響の可能性
-　 【対応予定】明日午前中に技術担当と確認MTG設定
-→ ○○画面のレイアウトがiPadで崩れる事象を確認。
-　 【影響】タブレット使用ユーザーの操作に支障
-　 【要支援】CSSの修正方針について田中PMの確認が必要</div>
+                        <div class="guide-section-title">${escapeHtml(t("hr.dr_guide_issues_title", lang))}</div>
+                        <div class="guide-section-body">${escapeHtml(t("hr.dr_guide_issues_body", lang))}</div>
                     </div>
 
                     <div class="guide-section">
-                        <div class="guide-section-title">【明日の予定】の書き方</div>
-                        <div class="guide-section-body">• 優先度順に並べる（最重要タスクを上に）
-• 所要時間の目安も書くと計画的
-• 社外アポ・締め切りがある場合は必ず明記
-
-例）
-① 【最優先】△△社API仕様変更の影響調査・技術MTG（午前中）
-② ログイン画面バリデーション実装の続き・完成目標（13:00〜15:00）
-③ システム仕様書 残り図表修正・最終確認（15:00〜16:00）
-④ ユーザーテスト準備資料作成（16:00〜）
-⑤ 週次レポート提出（17:00までに提出）</div>
+                        <div class="guide-section-title">${escapeHtml(t("hr.dr_guide_tomorrow_title", lang))}</div>
+                        <div class="guide-section-body">${escapeHtml(t("hr.dr_guide_tomorrow_body", lang))}</div>
                     </div>
                 </div>
 
                 <div class="form-card">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-                        <h3 style="margin:0;font-size:18px;color:#0b2540">日報を記入</h3>
-                        <button type="button" class="sample-btn" onclick="insertSample()">📝 記入例を挿入</button>
+                        <h3 style="margin:0;font-size:18px;color:#0b2540">${escapeHtml(t("hr.dr_form_title", lang))}</h3>
+                        <button type="button" class="sample-btn" onclick="insertSample()">${escapeHtml(t("hr.dr_sample_btn", lang))}</button>
                     </div>
                     <form action="/hr/daily-report/new" method="POST" id="reportForm" enctype="multipart/form-data">
                         <div style="margin-bottom:18px">
-                            <label class="field-label">日付</label>
-                            <input type="date" name="reportDate" value="${today}" required style="padding:10px;border-radius:8px;border:1px solid #e2e8f0;font-size:14px">
+                            <label class="field-label">${escapeHtml(t("hr.date", lang))}</label>
+                            <div style="position:relative;display:inline-flex;align-items:center">
+                                <i class="fa-regular fa-calendar" style="position:absolute;left:10px;color:#94a3b8;font-size:13px;pointer-events:none"></i>
+                                <input type="text" id="dr-date-new" name="reportDate" value="${today}" required autocomplete="off" placeholder="${t("hr.date_placeholder", lang)}" style="padding:10px 10px 10px 34px;border-radius:8px;border:1px solid #e2e8f0;font-size:14px;cursor:pointer">
+                            </div>
+                        </div>
                         </div>
 
                         <div style="margin-bottom:18px">
-                            <label class="field-label">本日の業務内容 <span style="color:#ef4444">*</span></label>
-                            <span class="field-hint">時間帯ごとに実施した業務を具体的に記入してください。@名前 でメンションできます</span>
+                            <label class="field-label">${escapeHtml(t("hr.content_label", lang))} <span style="color:#ef4444">*</span></label>
+                            <span class="field-hint">${escapeHtml(t("hr.dr_content_hint", lang))}</span>
                             <div class="mention-wrap">
-                                <textarea id="f_content" name="content" rows="8" required class="form-textarea" placeholder="例）9:00〜 朝礼・メールチェック&#10;9:30〜11:30　○○プロジェクト 要件定義書レビュー&#10;@田中さん と連携して進めました"></textarea>
+                                <textarea id="f_content" name="content" rows="8" required class="form-textarea" placeholder="${t("hr.dr_content_placeholder", lang).replace(/\n/g, "&#10;").replace(/"/g, "&quot;")}"></textarea>
                                 <div class="mention-suggest" id="ms_content"></div>
                             </div>
-                            <div class="char-count"><span id="cnt_content">0</span> 文字</div>
+                            <div class="char-count"><span id="cnt_content">0</span>${escapeHtml(t("hr.dr_char_suffix", lang))}</div>
                         </div>
 
                         <div style="margin-bottom:18px">
-                            <label class="field-label">本日の成果・進捗</label>
-                            <span class="field-hint">✅ 完了 / 🔄 進行中 / ⏳ 着手予定 などの記号を使うと分かりやすいです</span>
+                            <label class="field-label">${escapeHtml(t("hr.dr_achieve_label", lang))}</label>
+                            <span class="field-hint">${escapeHtml(t("hr.dr_achieve_hint", lang))}</span>
                             <div class="mention-wrap">
-                                <textarea id="f_achievements" name="achievements" rows="5" class="form-textarea" placeholder="例）&#10;✅ ○○レビュー完了（指摘事項3件 → 全対応済み）&#10;🔄 仕様書修正 90%完了（残：図表修正のみ）&#10;⏳ ユーザーテスト準備（明日対応予定）"></textarea>
+                                <textarea id="f_achievements" name="achievements" rows="5" class="form-textarea" placeholder="${t("hr.dr_achieve_placeholder", lang).replace(/\n/g, "&#10;").replace(/"/g, "&quot;")}"></textarea>
                                 <div class="mention-suggest" id="ms_achievements"></div>
                             </div>
-                            <div class="char-count"><span id="cnt_achievements">0</span> 文字</div>
+                            <div class="char-count"><span id="cnt_achievements">0</span>${escapeHtml(t("hr.dr_char_suffix", lang))}</div>
                         </div>
 
                         <div style="margin-bottom:18px">
-                            <label class="field-label">課題・問題点</label>
-                            <span class="field-hint">「事実」「影響」「対応策」の3点セットで。支援が必要な場合は明示してください</span>
+                            <label class="field-label">${escapeHtml(t("hr.dr_issues_label", lang))}</label>
+                            <span class="field-hint">${escapeHtml(t("hr.dr_issues_hint", lang))}</span>
                             <div class="mention-wrap">
-                                <textarea id="f_issues" name="issues" rows="5" class="form-textarea" placeholder="例）&#10;■ 解決済み：仕様書バージョン誤り → 最新版に修正済み&#10;■ 未解決：△△社APIの仕様変更通知あり。影響範囲を明日調査予定。"></textarea>
+                                <textarea id="f_issues" name="issues" rows="5" class="form-textarea" placeholder="${t("hr.dr_issues_placeholder", lang).replace(/\n/g, "&#10;").replace(/"/g, "&quot;")}"></textarea>
                                 <div class="mention-suggest" id="ms_issues"></div>
                             </div>
-                            <div class="char-count"><span id="cnt_issues">0</span> 文字</div>
+                            <div class="char-count"><span id="cnt_issues">0</span>${escapeHtml(t("hr.dr_char_suffix", lang))}</div>
                         </div>
 
                         <div style="margin-bottom:18px">
-                            <label class="field-label">明日の予定</label>
-                            <span class="field-hint">優先度順に記入。締め切りや社外アポは必ず明記してください</span>
+                            <label class="field-label">${escapeHtml(t("hr.dr_tomorrow_label", lang))}</label>
+                            <span class="field-hint">${escapeHtml(t("hr.dr_tomorrow_hint", lang))}</span>
                             <div class="mention-wrap">
-                                <textarea id="f_tomorrow" name="tomorrow" rows="5" class="form-textarea" placeholder="例）&#10;① 【最優先】△△社API仕様変更の影響調査・技術MTG（午前中）&#10;② ログイン画面実装の続き（13:00〜15:00）&#10;③ 週次レポート提出（17:00締め切り）"></textarea>
+                                <textarea id="f_tomorrow" name="tomorrow" rows="5" class="form-textarea" placeholder="${t("hr.dr_tomorrow_placeholder", lang).replace(/\n/g, "&#10;").replace(/"/g, "&quot;")}"></textarea>
                                 <div class="mention-suggest" id="ms_tomorrow"></div>
                             </div>
-                            <div class="char-count"><span id="cnt_tomorrow">0</span> 文字</div>
+                            <div class="char-count"><span id="cnt_tomorrow">0</span>${escapeHtml(t("hr.dr_char_suffix", lang))}</div>
                         </div>
 
                         <div style="margin-bottom:24px">
-                            <label class="field-label">ファイル添付（任意）</label>
-                            <span class="field-hint">画像・PDF・Officeファイルなど。複数選択可。最大20MB/ファイル</span>
+                            <label class="field-label">${escapeHtml(t("hr.dr_attach_label", lang))}</label>
+                            <span class="field-hint">${escapeHtml(t("hr.dr_attach_hint", lang))}</span>
                             <label for="fileInput" class="attach-area" id="dropArea">
                                 <span style="font-size:20px">📎</span>
-                                <span>ここをクリックまたはファイルをドラッグ&ドロップ</span>
+                                <span>${escapeHtml(t("hr.dr_attach_area", lang))}</span>
                                 <input type="file" name="attachments" id="fileInput" multiple
                                     style="opacity:0;position:absolute;width:0;height:0"
                                     accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
@@ -3147,8 +3158,8 @@ router.get("/hr/daily-report/new", requireLogin, async (req, res) => {
                         </div>
 
                         <div style="display:flex;gap:10px">
-                            <button type="submit" style="padding:11px 30px;background:#0b5fff;color:#fff;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:15px">投稿する</button>
-                            <a href="/hr/daily-report" style="padding:11px 22px;background:#f3f4f6;color:#374151;border-radius:9px;text-decoration:none;font-weight:600;font-size:15px">キャンセル</a>
+                            <button type="submit" style="padding:11px 30px;background:#0b5fff;color:#fff;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:15px">${t("hr.submit_btn", lang)}</button>
+                            <a href="/hr/daily-report" style="padding:11px 22px;background:#f3f4f6;color:#374151;border-radius:9px;text-decoration:none;font-weight:600;font-size:15px">${t("hr.cancel_btn", lang)}</a>
                         </div>
                     </form>
                 </div>
@@ -3335,7 +3346,7 @@ router.get("/hr/daily-report/new", requireLogin, async (req, res) => {
                                 window.location.href = '/hr/daily-report';
                             }).catch(function(err) {
                                 console.error('[FORM SUBMIT] Error:', err);
-                                alert('エラーが発生しました');
+                                alert(${JSON.stringify(t("error.server_error", lang))});
                             });
                         } else {
                             console.log('[FORM SUBMIT] No files, using normal submit');
@@ -3413,7 +3424,14 @@ router.get("/hr/daily-report/new", requireLogin, async (req, res) => {
                     if(el && cnt) cnt.textContent = el.value.length;
                 });
             }
-            </script>
+            // Flatpickr date picker
+            flatpickr('#dr-date-new', {
+                dateFormat: 'Y-m-d',
+                ${FP_LOCALE_MAP[lang] ? `locale: '${FP_LOCALE_MAP[lang]}',` : ""}
+                allowInput: true,
+                disableMobile: false,
+            });
+            <\/script>
         `,
     );
   } catch (error) {
@@ -3502,6 +3520,7 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
       return res.redirect("/hr/daily-report/" + req.params.id);
     }
 
+    const lang = req.lang || req.session?.lang || "ja";
     const dateVal = report.reportDate
       ? new Date(report.reportDate).toISOString().split("T")[0]
       : "";
@@ -3535,8 +3554,8 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
     renderPage(
       req,
       res,
-      "日報編集",
-      "日報を編集",
+      t("hr.edit_report_title", lang),
+      t("hr.edit_report_title", lang),
       `
             <style>
                 .form-card{background:#fff;border-radius:14px;padding:28px;box-shadow:0 4px 14px rgba(11,36,48,.06);max-width:860px;margin:0 auto}
@@ -3559,58 +3578,65 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
                 .attach-chip .rm:hover{color:#ef4444;border-color:#ef4444;background:#fff5f5}
                 .attach-chip .rm-float{position:absolute;top:-6px;right:-6px}
             </style>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"><\/script>
+            ${FP_LOCALE_MAP[lang] ? `<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/${FP_LOCALE_MAP[lang]}.min.js"><\/script>` : ""}
             <div style="max-width:860px;margin:0 auto">
                 <div style="margin-bottom:16px">
                     <a href="/hr/daily-report/${report._id}" style="color:#3b82f6;text-decoration:none;font-size:14px;display:inline-flex;align-items:center;gap:5px">
-                        <i class="fa-solid fa-arrow-left" style="font-size:12px"></i> 詳細に戻る
+                        <i class="fa-solid fa-arrow-left" style="font-size:12px"></i> ${escapeHtml(t("hr.dr_back_to_detail", lang))}
                     </a>
                 </div>
                 <div class="form-card">
                     <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
-                        <h3 style="margin:0;font-size:18px;color:#0b2540">日報を編集</h3>
+                        <h3 style="margin:0;font-size:18px;color:#0b2540">${t("hr.edit_report_title", lang)}</h3>
                         <span style="padding:2px 12px;background:#eff6ff;color:#2563eb;border-radius:999px;font-size:13px;font-weight:700">${escapeHtml(emp.name || "")}</span>
                     </div>
                     <form action="/hr/daily-report/${report._id}/edit" method="POST" id="editForm" enctype="multipart/form-data">
                         <div style="margin-bottom:18px">
-                            <label class="field-label">日付</label>
-                            <input type="date" name="reportDate" value="${dateVal}" required style="padding:10px;border-radius:8px;border:1px solid #e2e8f0;font-size:14px">
+                            <label class="field-label">${escapeHtml(t("hr.date", lang))}</label>
+                            <div style="position:relative;display:inline-flex;align-items:center">
+                                <i class="fa-regular fa-calendar" style="position:absolute;left:10px;color:#94a3b8;font-size:13px;pointer-events:none"></i>
+                                <input type="text" id="dr-date-edit" name="reportDate" value="${dateVal}" required autocomplete="off" placeholder="${t("hr.date_placeholder", lang)}" style="padding:10px 10px 10px 34px;border-radius:8px;border:1px solid #e2e8f0;font-size:14px;cursor:pointer">
+                            </div>
+                        </div>
                         </div>
                         <div style="margin-bottom:18px">
-                            <label class="field-label">本日の業務内容 <span style="color:#ef4444">*</span></label>
-                            <span class="field-hint">@名前 でメンションできます</span>
+                            <label class="field-label">${escapeHtml(t("hr.content_label", lang))} <span style="color:#ef4444">*</span></label>
+                            <span class="field-hint">${escapeHtml(t("hr.dr_mention_hint", lang))}</span>
                             <div class="mention-wrap">
                                 <textarea id="f_content" name="content" rows="8" required class="form-textarea">${escapeHtml(report.content || "")}</textarea>
                                 <div class="mention-suggest" id="ms_content"></div>
                             </div>
-                            <div class="char-count"><span id="cnt_content">0</span> 文字</div>
+                            <div class="char-count"><span id="cnt_content">0</span>${escapeHtml(t("hr.dr_char_suffix", lang))}</div>
                         </div>
                         <div style="margin-bottom:18px">
-                            <label class="field-label">本日の成果・進捗</label>
+                            <label class="field-label">${escapeHtml(t("hr.dr_achieve_label", lang))}</label>
                             <div class="mention-wrap">
                                 <textarea id="f_achievements" name="achievements" rows="5" class="form-textarea">${escapeHtml(report.achievements || "")}</textarea>
                                 <div class="mention-suggest" id="ms_achievements"></div>
                             </div>
-                            <div class="char-count"><span id="cnt_achievements">0</span> 文字</div>
+                            <div class="char-count"><span id="cnt_achievements">0</span>${escapeHtml(t("hr.dr_char_suffix", lang))}</div>
                         </div>
                         <div style="margin-bottom:18px">
-                            <label class="field-label">課題・問題点</label>
+                            <label class="field-label">${escapeHtml(t("hr.dr_issues_label", lang))}</label>
                             <div class="mention-wrap">
                                 <textarea id="f_issues" name="issues" rows="5" class="form-textarea">${escapeHtml(report.issues || "")}</textarea>
                                 <div class="mention-suggest" id="ms_issues"></div>
                             </div>
-                            <div class="char-count"><span id="cnt_issues">0</span> 文字</div>
+                            <div class="char-count"><span id="cnt_issues">0</span>${escapeHtml(t("hr.dr_char_suffix", lang))}</div>
                         </div>
                         <div style="margin-bottom:18px">
-                            <label class="field-label">明日の予定</label>
+                            <label class="field-label">${escapeHtml(t("hr.dr_tomorrow_label", lang))}</label>
                             <div class="mention-wrap">
                                 <textarea id="f_tomorrow" name="tomorrow" rows="5" class="form-textarea">${escapeHtml(report.tomorrow || "")}</textarea>
                                 <div class="mention-suggest" id="ms_tomorrow"></div>
                             </div>
-                            <div class="char-count"><span id="cnt_tomorrow">0</span> 文字</div>
+                            <div class="char-count"><span id="cnt_tomorrow">0</span>${escapeHtml(t("hr.dr_char_suffix", lang))}</div>
                         </div>
                         <div style="margin-bottom:24px">
-                            <label class="field-label">ファイル添付（追加）</label>
-                            <span class="field-hint">既存ファイルも右上の×で削除できます</span>
+                            <label class="field-label">${escapeHtml(t("hr.dr_attach_add_label", lang))}</label>
+                            <span class="field-hint">${escapeHtml(t("hr.dr_attach_add_hint", lang))}</span>
                             <input type="hidden" name="removeAttachmentIds" id="removeAttachmentIds" value="">
                             ${existingAttachHtml ? `<div class="attach-list" style="margin-bottom:8px">${existingAttachHtml}</div>` : ""}
                             <label for="fileInput" class="attach-area" id="dropArea"
@@ -3618,7 +3644,7 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
                                 ondragleave="this.classList.remove('drag-over')"
                                 ondrop="event.preventDefault();this.classList.remove('drag-over');handleFileDrop(event)">
                                 <span style="font-size:20px">📎</span>
-                                <span>ここをクリックまたはファイルをドラッグ&ドロップ</span>
+                                <span>${escapeHtml(t("hr.dr_attach_area", lang))}</span>
                                 <input type="file" name="attachments" id="fileInput" multiple
                                     style="opacity:0;position:absolute;width:0;height:0"
                                     accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
@@ -3628,9 +3654,9 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
                         </div>
                         <div style="display:flex;gap:10px">
                             <button type="submit" style="padding:11px 30px;background:#2563eb;color:#fff;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:15px">
-                                <i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>保存する
+                                <i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>${t("hr.update_btn", lang)}
                             </button>
-                            <a href="/hr/daily-report/${report._id}" style="padding:11px 22px;background:#f3f4f6;color:#374151;border-radius:9px;text-decoration:none;font-weight:600;font-size:15px">キャンセル</a>
+                            <a href="/hr/daily-report/${report._id}" style="padding:11px 22px;background:#f3f4f6;color:#374151;border-radius:9px;text-decoration:none;font-weight:600;font-size:15px">${t("hr.cancel_btn", lang)}</a>
                         </div>
                     </form>
                 </div>
@@ -3852,11 +3878,18 @@ router.get("/hr/daily-report/:id/edit", requireLogin, async (req, res) => {
                     })
                     .catch(function(err) {
                         console.error('[EDIT SAVE] Error:', err);
-                        alert('保存に失敗しました');
+                        alert(${JSON.stringify(t("hr.dr_save_failed", lang))});
                     });
                 });
             }
-            </script>
+            // Flatpickr date picker
+            flatpickr('#dr-date-edit', {
+                dateFormat: 'Y-m-d',
+                ${FP_LOCALE_MAP[lang] ? `locale: '${FP_LOCALE_MAP[lang]}',` : ""}
+                allowInput: true,
+                disableMobile: false,
+            });
+            <\/script>
         `,
     );
   } catch (error) {
@@ -3952,30 +3985,41 @@ router.post("/hr/daily-report/:id/delete", requireLogin, async (req, res) => {
 // 日報 AI要約センター（生成型AIページ）
 // ══════════════════════════════════════════════════════════════════════
 
-router.get('/hr/daily-report/summary', requireLogin, async (req, res) => {
-    if (!req.session.isAdmin) return res.redirect('/');
-    const { buildPageShell, pageFooter } = require('../lib/renderPage');
-    const momentTz = require('moment-timezone');
-    const employee = await Employee.findOne({ userId: req.session.userId }).lean();
+router.get("/hr/daily-report/summary", requireLogin, async (req, res) => {
+  if (!req.session.isAdmin) return res.redirect("/");
+  const { buildPageShell, pageFooter } = require("../lib/renderPage");
+  const momentTz = require("moment-timezone");
+  const employee = await Employee.findOne({
+    userId: req.session.userId,
+  }).lean();
 
-    // 直近7日の統計を事前取得
-    const now = momentTz().tz('Asia/Tokyo');
-    const weekFrom  = now.clone().subtract(7, 'days').startOf('day').toDate();
-    const monthFrom = now.clone().subtract(1, 'month').startOf('month').toDate();
-    const monthTo   = now.clone().subtract(1, 'month').endOf('month').toDate();
+  // 直近7日の統計を事前取得
+  const now = momentTz().tz("Asia/Tokyo");
+  const weekFrom = now.clone().subtract(7, "days").startOf("day").toDate();
+  const monthFrom = now.clone().subtract(1, "month").startOf("month").toDate();
+  const monthTo = now.clone().subtract(1, "month").endOf("month").toDate();
 
-    const [weekReports, monthReports, totalEmployees] = await Promise.all([
-        DailyReport.find({ reportDate: { $gte: weekFrom } }).lean().catch(() => []),
-        DailyReport.find({ reportDate: { $gte: monthFrom, $lte: monthTo } }).lean().catch(() => []),
-        Employee.countDocuments({ isActive: { $ne: false } }).catch(() => 0),
-    ]);
+  const [weekReports, monthReports, totalEmployees] = await Promise.all([
+    DailyReport.find({ reportDate: { $gte: weekFrom } })
+      .lean()
+      .catch(() => []),
+    DailyReport.find({ reportDate: { $gte: monthFrom, $lte: monthTo } })
+      .lean()
+      .catch(() => []),
+    Employee.countDocuments({ isActive: { $ne: false } }).catch(() => 0),
+  ]);
 
-    const weekUniq  = new Set(weekReports.map(r => r.userId?.toString())).size;
-    const monthUniq = new Set(monthReports.map(r => r.userId?.toString())).size;
-    const weekRate  = totalEmployees ? Math.round(weekUniq / totalEmployees * 100) : 0;
-    const hasApiKey = !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_api_key_here');
+  const weekUniq = new Set(weekReports.map((r) => r.userId?.toString())).size;
+  const monthUniq = new Set(monthReports.map((r) => r.userId?.toString())).size;
+  const weekRate = totalEmployees
+    ? Math.round((weekUniq / totalEmployees) * 100)
+    : 0;
+  const hasApiKey = !!(
+    process.env.OPENAI_API_KEY &&
+    process.env.OPENAI_API_KEY !== "your_openai_api_key_here"
+  );
 
-    const content = `
+  const content = `
 <style>
 :root{--indigo:#4338ca;--indigo-light:#6366f1;--green:#059669;--red:#dc2626;--slate:#475569}
 *{box-sizing:border-box}
@@ -4088,7 +4132,7 @@ router.get('/hr/daily-report/summary', requireLogin, async (req, res) => {
 .sch-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:20px;font-size:11px;font-weight:700}
 
 /* ── no-api banner ── */
-.no-api{padding:10px 15px;background:#fefce8;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e;margin-top:14px;display:${hasApiKey ? 'none' : 'block'}}
+.no-api{padding:10px 15px;background:#fefce8;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e;margin-top:14px;display:${hasApiKey ? "none" : "block"}}
 </style>
 
 <div class="g">
@@ -4099,7 +4143,7 @@ router.get('/hr/daily-report/summary', requireLogin, async (req, res) => {
         <h1>🤖 日報 AI要約センター</h1>
         <p>GPT-4o-mini がリアルタイムで日報を分析。チャットで深掘りも可能です。</p>
     </div>
-    <div class="ai-live"><span class="dot"></span> AI ${hasApiKey ? 'ONLINE' : 'OFFLINE（APIキー未設定）'}</div>
+    <div class="ai-live"><span class="dot"></span> AI ${hasApiKey ? "ONLINE" : "OFFLINE（APIキー未設定）"}</div>
 </div>
 
 <!-- KPI -->
@@ -4114,7 +4158,7 @@ router.get('/hr/daily-report/summary', requireLogin, async (req, res) => {
         <div class="kpi-l">先月 日報数</div>
         <div class="kpi-v">${monthReports.length}</div>
         <div class="kpi-s">${monthUniq}名が提出</div>
-        <div class="kpi-bar"><div class="kpi-fill" style="width:${totalEmployees ? Math.round(monthUniq/totalEmployees*100) : 0}%;background:linear-gradient(90deg,#0ea5e9,#38bdf8)"></div></div>
+        <div class="kpi-bar"><div class="kpi-fill" style="width:${totalEmployees ? Math.round((monthUniq / totalEmployees) * 100) : 0}%;background:linear-gradient(90deg,#0ea5e9,#38bdf8)"></div></div>
     </div>
     <div class="kpi">
         <div class="kpi-l">週次 提出率</div>
@@ -4124,9 +4168,9 @@ router.get('/hr/daily-report/summary', requireLogin, async (req, res) => {
     </div>
     <div class="kpi">
         <div class="kpi-l">未提出（今週）</div>
-        <div class="kpi-v" style="color:${(totalEmployees-weekUniq)>0?'#dc2626':'#10b981'}">${totalEmployees - weekUniq}</div>
+        <div class="kpi-v" style="color:${totalEmployees - weekUniq > 0 ? "#dc2626" : "#10b981"}">${totalEmployees - weekUniq}</div>
         <div class="kpi-s">名がまだ未提出</div>
-        <div class="kpi-bar"><div class="kpi-fill" style="width:${totalEmployees ? Math.round((totalEmployees-weekUniq)/totalEmployees*100) : 0}%;background:linear-gradient(90deg,#f43f5e,#fb7185)"></div></div>
+        <div class="kpi-bar"><div class="kpi-fill" style="width:${totalEmployees ? Math.round(((totalEmployees - weekUniq) / totalEmployees) * 100) : 0}%;background:linear-gradient(90deg,#f43f5e,#fb7185)"></div></div>
     </div>
 </div>
 
@@ -4530,287 +4574,409 @@ function renderEmpGrid(employees) {
 })();
 </script>`;
 
-    res.send(buildPageShell({ title: '日報AI要約センター', currentPath: '/hr/daily-report/summary', employee, isAdmin: true }) + content + pageFooter());
+  res.send(
+    buildPageShell({
+      title: "日報AI要約センター",
+      currentPath: "/hr/daily-report/summary",
+      employee,
+      isAdmin: true,
+    }) +
+      content +
+      pageFooter(),
+  );
 });
 
 // ── 個人別週次データ ──
-router.get('/hr/daily-report/api/employees-weekly', requireLogin, async (req, res) => {
-    if (!req.session.isAdmin) return res.status(403).json({ error: '管理者のみ' });
+router.get(
+  "/hr/daily-report/api/employees-weekly",
+  requireLogin,
+  async (req, res) => {
+    if (!req.session.isAdmin)
+      return res.status(403).json({ error: "管理者のみ" });
     try {
-        const momentTz = require('moment-timezone');
-        const now = momentTz().tz('Asia/Tokyo');
-        const from = now.clone().subtract(7, 'days').startOf('day').toDate();
-        const reports = await DailyReport.find({ reportDate: { $gte: from } }).lean();
-        const employees = await Employee.find().lean();
-        const empMap = Object.fromEntries(employees.map(e => [e.userId?.toString(), e]));
-        const byEmp = {};
-        for (const r of reports) {
-            const uid = r.userId?.toString() || 'unknown';
-            if (!byEmp[uid]) byEmp[uid] = { reports: [], emp: empMap[uid] || {} };
-            byEmp[uid].reports.push(r);
-        }
-        const result = Object.values(byEmp).map(({ reports: rpts, emp }) => {
-            const sorted = rpts.sort((a, b) => new Date(b.reportDate) - new Date(a.reportDate));
-            return { name: emp.name||'不明', department: emp.department||'', count: rpts.length,
-                lastDate: sorted[0] ? momentTz(sorted[0].reportDate).format('M/D') : null,
-                excerpt: (sorted[0]?.content||'').slice(0, 80) };
-        }).sort((a, b) => b.count - a.count);
-        res.json({ employees: result });
-    } catch(e) { res.status(500).json({ error: e.message }); }
-});
+      const momentTz = require("moment-timezone");
+      const now = momentTz().tz("Asia/Tokyo");
+      const from = now.clone().subtract(7, "days").startOf("day").toDate();
+      const reports = await DailyReport.find({
+        reportDate: { $gte: from },
+      }).lean();
+      const employees = await Employee.find().lean();
+      const empMap = Object.fromEntries(
+        employees.map((e) => [e.userId?.toString(), e]),
+      );
+      const byEmp = {};
+      for (const r of reports) {
+        const uid = r.userId?.toString() || "unknown";
+        if (!byEmp[uid]) byEmp[uid] = { reports: [], emp: empMap[uid] || {} };
+        byEmp[uid].reports.push(r);
+      }
+      const result = Object.values(byEmp)
+        .map(({ reports: rpts, emp }) => {
+          const sorted = rpts.sort(
+            (a, b) => new Date(b.reportDate) - new Date(a.reportDate),
+          );
+          return {
+            name: emp.name || "不明",
+            department: emp.department || "",
+            count: rpts.length,
+            lastDate: sorted[0]
+              ? momentTz(sorted[0].reportDate).format("M/D")
+              : null,
+            excerpt: (sorted[0]?.content || "").slice(0, 80),
+          };
+        })
+        .sort((a, b) => b.count - a.count);
+      res.json({ employees: result });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
 
 // ── SSEストリーミング要約 ──
-router.get('/hr/daily-report/api/stream', requireLogin, async (req, res) => {
-    if (!req.session.isAdmin) return res.status(403).json({ error: '管理者のみ' });
+router.get("/hr/daily-report/api/stream", requireLogin, async (req, res) => {
+  if (!req.session.isAdmin)
+    return res.status(403).json({ error: "管理者のみ" });
 
-    const { period = 'weekly', style = 'management', question } = req.query;
-    const momentTz = require('moment-timezone');
-    const now = momentTz().tz('Asia/Tokyo');
-    let from, to, periodLabel;
-    if (period === 'monthly') {
-        from = now.clone().subtract(1, 'month').startOf('month').toDate();
-        to   = now.clone().subtract(1, 'month').endOf('month').toDate();
-        periodLabel = now.clone().subtract(1, 'month').format('YYYY年M月') + '月次';
-    } else {
-        from = now.clone().subtract(7, 'days').startOf('day').toDate();
-        to   = now.clone().endOf('day').toDate();
-        periodLabel = now.clone().subtract(7, 'days').format('M/D') + '〜' + now.format('M/D') + ' 週次';
+  const { period = "weekly", style = "management", question } = req.query;
+  const momentTz = require("moment-timezone");
+  const now = momentTz().tz("Asia/Tokyo");
+  let from, to, periodLabel;
+  if (period === "monthly") {
+    from = now.clone().subtract(1, "month").startOf("month").toDate();
+    to = now.clone().subtract(1, "month").endOf("month").toDate();
+    periodLabel = now.clone().subtract(1, "month").format("YYYY年M月") + "月次";
+  } else {
+    from = now.clone().subtract(7, "days").startOf("day").toDate();
+    to = now.clone().endOf("day").toDate();
+    periodLabel =
+      now.clone().subtract(7, "days").format("M/D") +
+      "〜" +
+      now.format("M/D") +
+      " 週次";
+  }
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  const send = (obj) => {
+    res.write("data: " + JSON.stringify(obj) + "\n\n");
+  };
+
+  try {
+    const reports = await DailyReport.find({
+      reportDate: { $gte: from, $lte: to },
+    }).lean();
+    const employees = await Employee.find().lean();
+    const empMap = Object.fromEntries(
+      employees.map((e) => [e.userId?.toString(), e]),
+    );
+    for (const r of reports) r._emp = empMap[r.userId?.toString()] || {};
+
+    const count = reports.length;
+    const empSet = new Set(reports.map((r) => r.userId?.toString()));
+    send({ meta: `${count}件の日報を分析中 · ${empSet.size}名` });
+
+    // コンテキスト文字列（チャット用）
+    const contextTexts = reports
+      .map(
+        (r) =>
+          `【${r._emp.name || "不明"} / ${r._emp.department || ""} / ${momentTz(r.reportDate).format("M/D")}】\n${r.content || ""}`,
+      )
+      .join("\n\n---\n\n");
+    send({ reportContext: contextTexts.slice(0, 12000) });
+
+    if (
+      !process.env.OPENAI_API_KEY ||
+      process.env.OPENAI_API_KEY === "your_openai_api_key_here"
+    ) {
+      // ルールベースフォールバック（ストリーミング風に送信）
+      const lines = [
+        `【${periodLabel} 日報サマリー】（AIキー未設定 / ルールベース）`,
+        ``,
+        `対象: ${count}件 / ${empSet.size}名`,
+        ``,
+        `■ 提出状況`,
+        ...employees
+          .filter((e) => empSet.has(e.userId?.toString()))
+          .slice(0, 10)
+          .map((e) => `  • ${e.name}（${e.department || ""}）`),
+        ``,
+        `■ 最新日報（抜粋）`,
+        ...reports
+          .slice(0, 5)
+          .map(
+            (r) =>
+              `  • ${r._emp.name || "不明"} (${momentTz(r.reportDate).format("M/D")}): ${(r.content || "").slice(0, 80)}…`,
+          ),
+        ``,
+        `※ OPENAI_API_KEY を設定すると GPT-4o によるリアルタイム分析が利用できます。`,
+      ];
+      for (const line of lines) {
+        send({ text: line + "\n" });
+        await new Promise((r) => setTimeout(r, 30));
+      }
+      res.write("data: [DONE]\n\n");
+      return res.end();
     }
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
+    const { default: OpenAI } = require("openai");
+    const ai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      baseURL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+      defaultHeaders: process.env.OPENAI_BASE_URL
+        ? {
+            "HTTP-Referer": "https://dxpro-sol.com",
+            "X-Title": "DXPro Attendance AI",
+          }
+        : {},
+    });
+    const AI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
-    const send = (obj) => { res.write('data: ' + JSON.stringify(obj) + '\n\n'); };
+    const styleInstructions = {
+      management: `マネジメント向けのエグゼクティブサマリー形式で。全体状況・ハイライト・注意点・推奨アクションの4セクション構成。`,
+      detailed: `詳細な分析レポート形式で。各社員・部門の状況を具体的数字と事実ベースで。`,
+      bullet: `箇条書き形式（• 記号使用）で。重要ポイントを端的に20項目以内で列挙。`,
+      action: `アクション重視形式。今すぐやること・今週中にやること・来週の準備に分けて、具体的な行動指針を提示。`,
+    };
 
-    try {
-        const reports = await DailyReport.find({ reportDate: { $gte: from, $lte: to } }).lean();
-        const employees = await Employee.find().lean();
-        const empMap = Object.fromEntries(employees.map(e => [e.userId?.toString(), e]));
-        for (const r of reports) r._emp = empMap[r.userId?.toString()] || {};
+    const baseInstruction =
+      styleInstructions[style] || styleInstructions.management;
+    const userInstruction = question
+      ? `【質問】${question}\n上記の質問に対して、日報データをもとに具体的に答えてください。`
+      : `${baseInstruction}\n以下の${periodLabel}日報データ（${count}件 / ${empSet.size}名）を分析してサマリーを作成してください。`;
 
-        const count = reports.length;
-        const empSet = new Set(reports.map(r => r.userId?.toString()));
-        send({ meta: `${count}件の日報を分析中 · ${empSet.size}名` });
+    const systemPrompt = `あなたは優秀な人事アナリスト・マネージャーです。日本語で丁寧かつ実用的なレポートを作成します。絵文字を適度に使い読みやすくしてください。`;
 
-        // コンテキスト文字列（チャット用）
-        const contextTexts = reports.map(r =>
-            `【${r._emp.name||'不明'} / ${r._emp.department||''} / ${momentTz(r.reportDate).format('M/D')}】\n${r.content||''}`
-        ).join('\n\n---\n\n');
-        send({ reportContext: contextTexts.slice(0, 12000) });
+    const stream = await ai.chat.completions.create({
+      model: AI_MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content:
+            userInstruction +
+            "\n\n日報データ:\n" +
+            contextTexts.slice(0, 10000),
+        },
+      ],
+      max_tokens: 1200,
+      temperature: 0.7,
+      stream: true,
+    });
 
-        if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
-            // ルールベースフォールバック（ストリーミング風に送信）
-            const lines = [
-                `【${periodLabel} 日報サマリー】（AIキー未設定 / ルールベース）`,
-                ``,
-                `対象: ${count}件 / ${empSet.size}名`,
-                ``,
-                `■ 提出状況`,
-                ...employees.filter(e => empSet.has(e.userId?.toString())).slice(0, 10).map(e => `  • ${e.name}（${e.department||''}）`),
-                ``,
-                `■ 最新日報（抜粋）`,
-                ...reports.slice(0, 5).map(r => `  • ${r._emp.name||'不明'} (${momentTz(r.reportDate).format('M/D')}): ${(r.content||'').slice(0,80)}…`),
-                ``,
-                `※ OPENAI_API_KEY を設定すると GPT-4o によるリアルタイム分析が利用できます。`
-            ];
-            for (const line of lines) {
-                send({ text: line + '\n' });
-                await new Promise(r => setTimeout(r, 30));
-            }
-            res.write('data: [DONE]\n\n');
-            return res.end();
-        }
-
-        const { default: OpenAI } = require('openai');
-        const ai = new OpenAI({
-            apiKey:  process.env.OPENAI_API_KEY,
-            baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
-            defaultHeaders: process.env.OPENAI_BASE_URL ? {
-                'HTTP-Referer': 'https://dxpro-sol.com',
-                'X-Title': 'DXPro Attendance AI',
-            } : {},
-        });
-        const AI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-
-        const styleInstructions = {
-            management: `マネジメント向けのエグゼクティブサマリー形式で。全体状況・ハイライト・注意点・推奨アクションの4セクション構成。`,
-            detailed:   `詳細な分析レポート形式で。各社員・部門の状況を具体的数字と事実ベースで。`,
-            bullet:     `箇条書き形式（• 記号使用）で。重要ポイントを端的に20項目以内で列挙。`,
-            action:     `アクション重視形式。今すぐやること・今週中にやること・来週の準備に分けて、具体的な行動指針を提示。`
-        };
-
-        const baseInstruction = styleInstructions[style] || styleInstructions.management;
-        const userInstruction = question
-            ? `【質問】${question}\n上記の質問に対して、日報データをもとに具体的に答えてください。`
-            : `${baseInstruction}\n以下の${periodLabel}日報データ（${count}件 / ${empSet.size}名）を分析してサマリーを作成してください。`;
-
-        const systemPrompt = `あなたは優秀な人事アナリスト・マネージャーです。日本語で丁寧かつ実用的なレポートを作成します。絵文字を適度に使い読みやすくしてください。`;
-
-        const stream = await ai.chat.completions.create({
-            model: AI_MODEL,
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user',   content: userInstruction + '\n\n日報データ:\n' + contextTexts.slice(0, 10000) }
-            ],
-            max_tokens: 1200, temperature: 0.7, stream: true
-        });
-
-        for await (const chunk of stream) {
-            const text = chunk.choices[0]?.delta?.content || '';
-            if (text) send({ text });
-        }
-        res.write('data: [DONE]\n\n');
-        res.end();
-    } catch(e) {
-        console.error('[Stream API]', e.message);
-        send({ text: '\n❌ エラー: ' + e.message });
-        res.write('data: [DONE]\n\n');
-        res.end();
+    for await (const chunk of stream) {
+      const text = chunk.choices[0]?.delta?.content || "";
+      if (text) send({ text });
     }
+    res.write("data: [DONE]\n\n");
+    res.end();
+  } catch (e) {
+    console.error("[Stream API]", e.message);
+    send({ text: "\n❌ エラー: " + e.message });
+    res.write("data: [DONE]\n\n");
+    res.end();
+  }
 });
 
 // ── AIチャット（ストリーミング） ──
-router.post('/hr/daily-report/api/chat', requireLogin, async (req, res) => {
-    if (!req.session.isAdmin) return res.status(403).json({ error: '管理者のみ' });
+router.post("/hr/daily-report/api/chat", requireLogin, async (req, res) => {
+  if (!req.session.isAdmin)
+    return res.status(403).json({ error: "管理者のみ" });
 
-    const { messages = [], reportContext = '', period = 'weekly' } = req.body;
-    if (!messages.length) return res.status(400).json({ error: 'messages は必須です' });
+  const { messages = [], reportContext = "", period = "weekly" } = req.body;
+  if (!messages.length)
+    return res.status(400).json({ error: "messages は必須です" });
 
-    const hasKey = !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_api_key_here');
+  const hasKey = !!(
+    process.env.OPENAI_API_KEY &&
+    process.env.OPENAI_API_KEY !== "your_openai_api_key_here"
+  );
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
 
-    const send = (obj) => { res.write('data: ' + JSON.stringify(obj) + '\n\n'); };
+  const send = (obj) => {
+    res.write("data: " + JSON.stringify(obj) + "\n\n");
+  };
 
-    try {
-        const momentTz = require('moment-timezone');
+  try {
+    const momentTz = require("moment-timezone");
 
-        // コンテキストが空なら直近データを取得
-        let ctx = reportContext;
-        if (!ctx) {
-            const now = momentTz().tz('Asia/Tokyo');
-            const from = period === 'monthly'
-                ? now.clone().subtract(1, 'month').startOf('month').toDate()
-                : now.clone().subtract(7, 'days').startOf('day').toDate();
-            const reports = await DailyReport.find({ reportDate: { $gte: from } }).lean();
-            const emps = await Employee.find().lean();
-            const empMap = Object.fromEntries(emps.map(e => [e.userId?.toString(), e]));
-            ctx = reports.map(r => {
-                const emp = empMap[r.userId?.toString()] || {};
-                return `【${emp.name||'不明'} / ${emp.department||''} / ${momentTz(r.reportDate).format('M/D')}】\n${r.content||''}`;
-            }).join('\n\n---\n\n').slice(0, 10000);
-        }
-
-        // APIキー未設定の場合はルールベースで回答
-        if (!hasKey) {
-            const question = messages[messages.length - 1]?.content || '';
-            const lines = ctx.split('\n').filter(l => l.trim());
-            const nameMatches = [...new Set(lines.filter(l => l.startsWith('【')).map(l => l.match(/【(.+?) \//)?.[1]).filter(Boolean))];
-
-            const reply = [
-                `⚠️ OPENAI_API_KEY が未設定のため、ルールベースで回答します。`,
-                ``,
-                `【質問】${question}`,
-                ``,
-                `【利用可能なデータ】`,
-                `日報提出者: ${nameMatches.slice(0, 10).join('、') || 'データなし'}`,
-                `総データ数: ${lines.filter(l => l.startsWith('【')).length} 件`,
-                ``,
-                `より詳細なAI分析を行うには、サーバーに OPENAI_API_KEY を設定してください。`,
-                `設定後はリアルタイムでチャット形式の分析が可能になります。`,
-            ].join('\n');
-
-            for (const char of reply) {
-                send({ text: char });
-                await new Promise(r => setTimeout(r, 8));
-            }
-            res.write('data: [DONE]\n\n');
-            return res.end();
-        }
-
-        const { default: OpenAI } = require('openai');
-        const ai = new OpenAI({
-            apiKey:  process.env.OPENAI_API_KEY,
-            baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
-            defaultHeaders: process.env.OPENAI_BASE_URL ? {
-                'HTTP-Referer': 'https://dxpro-sol.com',
-                'X-Title': 'DXPro Attendance AI',
-            } : {},
-        });
-        const AI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-
-        const systemMsg = {
-            role: 'system',
-            content: `あなたは企業の人事アナリストです。以下の日報データをもとにユーザーの質問に答えてください。日本語で回答し、具体的・実用的な内容にしてください。絵文字を適度に使い読みやすくしてください。\n\n【日報データ】\n${ctx}`
-        };
-
-        const stream = await ai.chat.completions.create({
-            model: AI_MODEL,
-            messages: [systemMsg, ...messages.slice(-12)],
-            max_tokens: 800, temperature: 0.7, stream: true
-        });
-
-        for await (const chunk of stream) {
-            const text = chunk.choices[0]?.delta?.content || '';
-            if (text) send({ text });
-        }
-        res.write('data: [DONE]\n\n');
-        res.end();
-    } catch(e) {
-        console.error('[Chat API]', e.message);
-        send({ text: '❌ ' + e.message });
-        res.write('data: [DONE]\n\n');
-        res.end();
+    // コンテキストが空なら直近データを取得
+    let ctx = reportContext;
+    if (!ctx) {
+      const now = momentTz().tz("Asia/Tokyo");
+      const from =
+        period === "monthly"
+          ? now.clone().subtract(1, "month").startOf("month").toDate()
+          : now.clone().subtract(7, "days").startOf("day").toDate();
+      const reports = await DailyReport.find({
+        reportDate: { $gte: from },
+      }).lean();
+      const emps = await Employee.find().lean();
+      const empMap = Object.fromEntries(
+        emps.map((e) => [e.userId?.toString(), e]),
+      );
+      ctx = reports
+        .map((r) => {
+          const emp = empMap[r.userId?.toString()] || {};
+          return `【${emp.name || "不明"} / ${emp.department || ""} / ${momentTz(r.reportDate).format("M/D")}】\n${r.content || ""}`;
+        })
+        .join("\n\n---\n\n")
+        .slice(0, 10000);
     }
+
+    // APIキー未設定の場合はルールベースで回答
+    if (!hasKey) {
+      const question = messages[messages.length - 1]?.content || "";
+      const lines = ctx.split("\n").filter((l) => l.trim());
+      const nameMatches = [
+        ...new Set(
+          lines
+            .filter((l) => l.startsWith("【"))
+            .map((l) => l.match(/【(.+?) \//)?.[1])
+            .filter(Boolean),
+        ),
+      ];
+
+      const reply = [
+        `⚠️ OPENAI_API_KEY が未設定のため、ルールベースで回答します。`,
+        ``,
+        `【質問】${question}`,
+        ``,
+        `【利用可能なデータ】`,
+        `日報提出者: ${nameMatches.slice(0, 10).join("、") || "データなし"}`,
+        `総データ数: ${lines.filter((l) => l.startsWith("【")).length} 件`,
+        ``,
+        `より詳細なAI分析を行うには、サーバーに OPENAI_API_KEY を設定してください。`,
+        `設定後はリアルタイムでチャット形式の分析が可能になります。`,
+      ].join("\n");
+
+      for (const char of reply) {
+        send({ text: char });
+        await new Promise((r) => setTimeout(r, 8));
+      }
+      res.write("data: [DONE]\n\n");
+      return res.end();
+    }
+
+    const { default: OpenAI } = require("openai");
+    const ai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      baseURL: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+      defaultHeaders: process.env.OPENAI_BASE_URL
+        ? {
+            "HTTP-Referer": "https://dxpro-sol.com",
+            "X-Title": "DXPro Attendance AI",
+          }
+        : {},
+    });
+    const AI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+
+    const systemMsg = {
+      role: "system",
+      content: `あなたは企業の人事アナリストです。以下の日報データをもとにユーザーの質問に答えてください。日本語で回答し、具体的・実用的な内容にしてください。絵文字を適度に使い読みやすくしてください。\n\n【日報データ】\n${ctx}`,
+    };
+
+    const stream = await ai.chat.completions.create({
+      model: AI_MODEL,
+      messages: [systemMsg, ...messages.slice(-12)],
+      max_tokens: 800,
+      temperature: 0.7,
+      stream: true,
+    });
+
+    for await (const chunk of stream) {
+      const text = chunk.choices[0]?.delta?.content || "";
+      if (text) send({ text });
+    }
+    res.write("data: [DONE]\n\n");
+    res.end();
+  } catch (e) {
+    console.error("[Chat API]", e.message);
+    send({ text: "❌ " + e.message });
+    res.write("data: [DONE]\n\n");
+    res.end();
+  }
 });
 
 // ── メール送信専用API ──
-router.post('/hr/daily-report/api/summarize', requireLogin, async (req, res) => {
-    if (!req.session.isAdmin) return res.status(403).json({ error: '管理者のみ' });
+router.post(
+  "/hr/daily-report/api/summarize",
+  requireLogin,
+  async (req, res) => {
+    if (!req.session.isAdmin)
+      return res.status(403).json({ error: "管理者のみ" });
     try {
-        const { period = 'weekly', sendEmail: doSend = false } = req.body;
-        const momentTz = require('moment-timezone');
-        const { User } = require('../models');
-        const now = momentTz().tz('Asia/Tokyo');
-        let from, to, periodLabel;
-        if (period === 'monthly') {
-            from = now.clone().subtract(1, 'month').startOf('month').toDate();
-            to   = now.clone().subtract(1, 'month').endOf('month').toDate();
-            periodLabel = now.clone().subtract(1, 'month').format('YYYY年M月') + ' 月次';
-        } else {
-            from = now.clone().subtract(7, 'days').startOf('day').toDate();
-            to   = now.clone().endOf('day').toDate();
-            periodLabel = now.clone().subtract(7, 'days').format('M/D') + '〜' + now.format('M/D') + ' 週次';
-        }
-        const reports = await DailyReport.find({ reportDate: { $gte: from, $lte: to } }).lean();
-        const employees = await Employee.find().lean();
-        const empMap = Object.fromEntries(employees.map(e => [e.userId?.toString(), e]));
-        for (const r of reports) r._emp = empMap[r.userId?.toString()] || {};
-        if (reports.length === 0) return res.json({ summary: '対象期間に日報がありません。', count: 0, employeeCount: 0 });
+      const { period = "weekly", sendEmail: doSend = false } = req.body;
+      const momentTz = require("moment-timezone");
+      const { User } = require("../models");
+      const now = momentTz().tz("Asia/Tokyo");
+      let from, to, periodLabel;
+      if (period === "monthly") {
+        from = now.clone().subtract(1, "month").startOf("month").toDate();
+        to = now.clone().subtract(1, "month").endOf("month").toDate();
+        periodLabel =
+          now.clone().subtract(1, "month").format("YYYY年M月") + " 月次";
+      } else {
+        from = now.clone().subtract(7, "days").startOf("day").toDate();
+        to = now.clone().endOf("day").toDate();
+        periodLabel =
+          now.clone().subtract(7, "days").format("M/D") +
+          "〜" +
+          now.format("M/D") +
+          " 週次";
+      }
+      const reports = await DailyReport.find({
+        reportDate: { $gte: from, $lte: to },
+      }).lean();
+      const employees = await Employee.find().lean();
+      const empMap = Object.fromEntries(
+        employees.map((e) => [e.userId?.toString(), e]),
+      );
+      for (const r of reports) r._emp = empMap[r.userId?.toString()] || {};
+      if (reports.length === 0)
+        return res.json({
+          summary: "対象期間に日報がありません。",
+          count: 0,
+          employeeCount: 0,
+        });
 
-        if (doSend) {
-            const { sendSummary: _send } = require('../lib/dailyReportSummary');
-            const admins = await User.find({ role: { $in: ['admin', 'manager'] } }).lean();
-            const emails = admins.map(u => u.email).filter(Boolean);
-            await _send(period, emails);
-            return res.json({ ok: true, message: `${periodLabel}サマリーを ${emails.length}名に送信しました`, count: reports.length });
-        }
+      if (doSend) {
+        const { sendSummary: _send } = require("../lib/dailyReportSummary");
+        const admins = await User.find({
+          role: { $in: ["admin", "manager"] },
+        }).lean();
+        const emails = admins.map((u) => u.email).filter(Boolean);
+        await _send(period, emails);
+        return res.json({
+          ok: true,
+          message: `${periodLabel}サマリーを ${emails.length}名に送信しました`,
+          count: reports.length,
+        });
+      }
 
-        res.json({ ok: false, message: '要約生成はストリーミングAPIを使用してください', count: reports.length });
+      res.json({
+        ok: false,
+        message: "要約生成はストリーミングAPIを使用してください",
+        count: reports.length,
+      });
     } catch (e) {
-        console.error('[Summarize API]', e.message);
-        res.status(500).json({ error: e.message });
+      console.error("[Summarize API]", e.message);
+      res.status(500).json({ error: e.message });
     }
-});
+  },
+);
 
 // 日報詳細・コメント
 router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
   try {
+    const lang = req.lang || req.session?.lang || "ja";
     const report = await DailyReport.findById(req.params.id).populate(
       "employeeId",
       "name department",
@@ -4820,7 +4986,9 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
 
     const emp = report.employeeId || {};
     const dateStr = report.reportDate
-      ? new Date(report.reportDate).toLocaleDateString("ja-JP")
+      ? new Date(report.reportDate).toLocaleDateString(
+          DATE_LOCALE_MAP[lang] || "ja-JP",
+        )
       : "-";
 
     // メンションハイライト付きnl2br
@@ -4905,8 +5073,8 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
     renderPage(
       req,
       res,
-      "日報詳細",
-      `${escapeHtml(emp.name || "")} の日報`,
+      t("hr.dr_detail_title", lang),
+      `${escapeHtml(emp.name || "")} ${t("hr.daily_report_list", lang)}`,
       `
 <style>
 .report-detail { background:#fff;border-radius:14px;padding:28px 32px;box-shadow:0 4px 14px rgba(11,36,48,.06);max-width:860px;margin:0 auto }
@@ -5030,7 +5198,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
 <div style="max-width:860px;margin:0 auto">
     <div style="margin-bottom:16px; margin-top:15px">
         <a href="/hr/daily-report" style="color:#3b82f6;text-decoration:none;font-size:14px;display:inline-flex;align-items:center;gap:5px;">
-            <i class="fa-solid fa-arrow-left" style="font-size:12px"></i> 日報一覧に戻る
+            <i class="fa-solid fa-arrow-left" style="font-size:12px"></i> ${t("hr.back_to_list", lang)}
         </a>
     </div>
     <div class="report-detail">
@@ -5038,7 +5206,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
         <!-- ヘッダー -->
         <div style="display:flex;gap:12px;align-items:center;margin-bottom:24px;flex-wrap:wrap;border-bottom:2px solid #f1f5f9;padding-bottom:18px">
             <span style="font-size:20px;font-weight:800;color:#0f172a">${dateStr}</span>
-            <span style="padding:3px 14px;background:#eff6ff;color:#2563eb;border-radius:999px;font-weight:700;font-size:13px">${escapeHtml(emp.name || "不明")}</span>
+            <span style="padding:3px 14px;background:#eff6ff;color:#2563eb;border-radius:999px;font-weight:700;font-size:13px">${escapeHtml(emp.name || t("hr.dr_unknown_user", lang))}</span>
             <span style="font-size:13px;color:#64748b">${escapeHtml(emp.department || "")}</span>
             ${
               String(report.userId) === String(req.session.userId) ||
@@ -5046,11 +5214,11 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                 ? `
             <div style="margin-left:auto;display:flex;gap:8px">
                 <a href="/hr/daily-report/${report._id}/edit" style="padding:6px 16px;background:#f1f5f9;color:#374151;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:5px">
-                    <i class="fa-solid fa-pen" style="font-size:11px"></i> 編集
+                    <i class="fa-solid fa-pen" style="font-size:11px"></i> ${escapeHtml(t("hr.dr_btn_edit", lang))}
                 </a>
-                <form method="POST" action="/hr/daily-report/${report._id}/delete" onsubmit="return confirm('この日報を削除しますか？この操作は元に戻せません。')" style="margin:0">
+                <form method="POST" action="/hr/daily-report/${report._id}/delete" onsubmit="return confirm(${JSON.stringify(t("hr.dr_delete_confirm", lang))})" style="margin:0">
                     <button type="submit" style="padding:6px 16px;background:#fee2e2;color:#dc2626;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px">
-                        <i class="fa-solid fa-trash" style="font-size:11px"></i> 削除
+                        <i class="fa-solid fa-trash" style="font-size:11px"></i> ${escapeHtml(t("hr.dr_btn_delete", lang))}
                     </button>
                 </form>
             </div>`
@@ -5060,14 +5228,14 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
 
         <!-- 本文セクション -->
         <div class="section-block">
-            <div class="section-label"><i class="fa-solid fa-pen-to-square" style="color:#3b82f6"></i>本日の業務内容</div>
+            <div class="section-label"><i class="fa-solid fa-pen-to-square" style="color:#3b82f6"></i>${escapeHtml(t("hr.content_label", lang))}</div>
             <div class="section-body">${nl2br(report.content || "-")}</div>
         </div>
         ${
           report.achievements
             ? `
         <div class="section-block">
-            <div class="section-label"><i class="fa-solid fa-trophy" style="color:#f59e0b"></i>本日の成果・進捗</div>
+            <div class="section-label"><i class="fa-solid fa-trophy" style="color:#f59e0b"></i>${escapeHtml(t("hr.dr_achieve_label", lang))}</div>
             <div class="section-body">${nl2br(report.achievements)}</div>
         </div>`
             : ""
@@ -5076,7 +5244,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
           report.issues
             ? `
         <div class="section-block">
-            <div class="section-label"><i class="fa-solid fa-triangle-exclamation" style="color:#ef4444"></i>課題・問題点</div>
+            <div class="section-label"><i class="fa-solid fa-triangle-exclamation" style="color:#ef4444"></i>${escapeHtml(t("hr.dr_issues_label", lang))}</div>
             <div class="section-body">${nl2br(report.issues)}</div>
         </div>`
             : ""
@@ -5085,7 +5253,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
           report.tomorrow
             ? `
         <div class="section-block">
-            <div class="section-label"><i class="fa-solid fa-calendar-check" style="color:#10b981"></i>明日の予定</div>
+            <div class="section-label"><i class="fa-solid fa-calendar-check" style="color:#10b981"></i>${escapeHtml(t("hr.dr_tomorrow_label", lang))}</div>
             <div class="section-body">${nl2br(report.tomorrow)}</div>
         </div>`
             : ""
@@ -5096,7 +5264,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
           report.attachments && report.attachments.length
             ? `
         <div class="section-block">
-            <div class="section-label"><i class="fa-solid fa-paperclip" style="color:#64748b"></i>添付ファイル</div>
+            <div class="section-label"><i class="fa-solid fa-paperclip" style="color:#64748b"></i>${escapeHtml(t("hr.dr_section_attach", lang))}</div>
             ${makeAttachHtml(report.attachments)}
         </div>`
             : ""
@@ -5114,7 +5282,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                         <span style="font-size:12px">+</span>
                     </button>
                     <div class="stamp-picker" id="picker-${report._id}">
-                        <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;font-weight:600">リアクションを選択</div>
+                        <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;font-weight:600">${t("hr.select_reaction", lang)}</div>
                         <div class="stamp-picker-grid">
                             ${STAMPS.map(
                               (s) => `
@@ -5133,13 +5301,14 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
         <div style="margin-top:24px;padding-top:20px;border-top:1px solid #f1f5f9">
             <div style="font-size:14px;font-weight:700;color:#1e293b;margin-bottom:14px;display:flex;align-items:center;gap:7px">
                 <i class="fa-solid fa-comment-dots" style="color:#3b82f6"></i>
-                コメント
+                ${escapeHtml(t("hr.dr_comment_heading", lang))}
                 <span style="background:#f1f5f9;color:#64748b;font-size:11.5px;border-radius:999px;padding:1px 9px;font-weight:600">${(report.comments || []).length}</span>
             </div>
             <div class="comment-list">
                 ${(report.comments || [])
                   .map((c) => {
-                    const authorName = c.authorName || "不明";
+                    const authorName =
+                      c.authorName || t("hr.dr_unknown_user", lang);
                     const commentDate = c.at
                       ? new Date(c.at).toLocaleString("ja-JP")
                       : "";
@@ -5189,31 +5358,40 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                     ).join("");
 
                     // 編集フォーム用：既存添付ファイルの削除ボタン付きリスト
-                    const ceditAttHtml = (c.attachments || []).map(a => {
-                      const icon = (a.mimetype||'').startsWith('image/') ? '🖼️'
-                        : (a.originalName||'').toLowerCase().endsWith('.pdf') ? '📄' : '📎';
-                      return `<div class="cedit-att-item" id="catt-${a._id}" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:#f1f5f9;border-radius:8px;font-size:12px;color:#374151;border:1px solid #e2e8f0">`
-                        + `${icon} ${escapeHtml(a.originalName||a.filename)}`
-                        + `<button type="button" onclick="removeCEditAttachment('${cid}','${a._id}',this)" style="background:none;border:none;cursor:pointer;color:#ef4444;font-size:16px;line-height:1;padding:0 2px" title="削除">×</button>`
-                        + `</div>`;
-                    }).join('');
+                    const ceditAttHtml = (c.attachments || [])
+                      .map((a) => {
+                        const icon = (a.mimetype || "").startsWith("image/")
+                          ? "🖼️"
+                          : (a.originalName || "")
+                                .toLowerCase()
+                                .endsWith(".pdf")
+                            ? "📄"
+                            : "📎";
+                        return (
+                          `<div class="cedit-att-item" id="catt-${a._id}" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:#f1f5f9;border-radius:8px;font-size:12px;color:#374151;border:1px solid #e2e8f0">` +
+                          `${icon} ${escapeHtml(a.originalName || a.filename)}` +
+                          `<button type="button" onclick="removeCEditAttachment('${cid}','${a._id}',this)" style="background:none;border:none;cursor:pointer;color:#ef4444;font-size:16px;line-height:1;padding:0 2px" title="削除">×</button>` +
+                          `</div>`
+                        );
+                      })
+                      .join("");
 
                     return `<div class="comment-item" id="ci-${cid}">
                         <div class="comment-avatar">${escapeHtml(initial)}</div>
                         <div style="flex:1;min-width:0">
                             <div class="comment-meta">
                                 ${escapeHtml(authorName)} · ${commentDate}
-                                ${c.editedAt ? `<span style="font-size:11px;color:#9ca3af;margin-left:4px">（編集済み）</span>` : ""}
+                                ${c.editedAt ? `<span style="font-size:11px;color:#9ca3af;margin-left:4px">${escapeHtml(t("hr.dr_comment_edited", lang))}</span>` : ""}
                             </div>
                             <div class="comment-body" id="cbody-${cid}">${nl2br(c.text || "")}</div>
                             <div id="cattach-${cid}">${makeAttachHtml(c.attachments)}</div>
                             ${
                               canEdit
                                 ? `<div class="comment-actions">
-                                <button type="button" class="c-action-btn edit" onclick="startEditComment('${cid}')">✏️ 編集</button>
+                                <button type="button" class="c-action-btn edit" onclick="startEditComment('${cid}')">${escapeHtml(t("hr.dr_comment_edit_btn", lang))}</button>
                                 <form method="POST" action="/hr/daily-report/${report._id}/comment/${cid}/delete"
-                                    onsubmit="return confirm('このコメントを削除しますか？')" style="margin:0">
-                                    <button type="submit" class="c-action-btn del">🗑 削除</button>
+                                    onsubmit="return confirm(${JSON.stringify(t("hr.dr_comment_del_confirm", lang))})" style="margin:0">
+                                    <button type="submit" class="c-action-btn del">${escapeHtml(t("hr.dr_comment_del_btn", lang))}</button>
                                 </form>
                             </div>`
                                 : ""
@@ -5224,14 +5402,15 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                                 <input type="hidden" id="cedit-remove-${cid}" value="">
                                 <div style="margin-top:8px">
                                     <label style="display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:#f8fafc;border:1.5px dashed #cbd5e1;border-radius:8px;font-size:12px;color:#64748b;cursor:pointer">
-                                        📎 ファイルを追加
+                                        ${escapeHtml(t("hr.dr_comment_file_add", lang))}
                                         <input type="file" id="cedit-files-${cid}" multiple style="display:none" onchange="handleCEditFiles('${cid}',this)">
+                                    </label>
                                     </label>
                                     <div id="cedit-newfiles-${cid}" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
                                 </div>
                                 <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">
-                                    <button type="button" class="c-action-btn" onclick="cancelEditComment('${cid}')">キャンセル</button>
-                                    <button type="button" class="c-action-btn edit" onclick="submitEditComment('${cid}','${report._id}')">💾 保存</button>
+                                    <button type="button" class="c-action-btn" onclick="cancelEditComment('${cid}')">${escapeHtml(t("hr.dr_comment_cancel", lang))}</button>
+                                    <button type="button" class="c-action-btn edit" onclick="submitEditComment('${cid}','${report._id}')">${escapeHtml(t("hr.dr_comment_save", lang))}</button>
                                 </div>
                             </div>
                             <div class="c-reaction-row" id="cr-${cid}">
@@ -5239,7 +5418,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                                 <div style="position:relative;display:inline-block">
                                     <button class="c-stamp-add" onclick="toggleCPicker(this)" title="リアクション">😀 <span>+</span></button>
                                     <div class="stamp-picker" id="cpicker-${cid}">
-                                        <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;font-weight:600">リアクションを選択</div>
+                                        <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;font-weight:600">${t("hr.select_reaction", lang)}</div>
                                         <div class="stamp-picker-grid">${cPickerBtns}</div>
                                     </div>
                                 </div>
@@ -5255,7 +5434,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                 enctype="multipart/form-data" class="comment-form" style="margin-top:16px">
                 <div class="c-mention-wrap">
                     <textarea name="text" id="commentText" rows="3" required
-                        placeholder="コメントを入力… @名前 でメンション (Shift+Enter で改行)"></textarea>
+                        placeholder="${escapeHtml(t("hr.dr_comment_placeholder", lang))}"></textarea>
                     <div class="mention-suggest" id="ms_commentText"></div>
                 </div>
                 <!-- 添付エリア：label でラップして input を直接紐づけ -->
@@ -5263,7 +5442,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                     ondragover="event.preventDefault();this.classList.add('drag-over')"
                     ondragleave="this.classList.remove('drag-over')"
                     ondrop="event.preventDefault();this.classList.remove('drag-over');handleCDrop(event)">
-                    <span>📎 ファイルをドラッグ＆ドロップ、またはクリックして選択</span>
+                    <span>${escapeHtml(t("hr.dr_comment_attach_area", lang))}</span>
                     <input type="file" name="commentFiles" id="cFileInput" multiple
                         style="opacity:0;position:absolute;width:0;height:0"
                         onchange="handleCFileChange(this)">
@@ -5271,7 +5450,7 @@ router.get("/hr/daily-report/:id", requireLogin, async (req, res) => {
                 <div class="c-attach-list" id="cAttachList"></div>
                 <div style="display:flex;justify-content:flex-end;margin-top:8px">
                     <button type="submit" class="comment-submit">
-                        <i class="fa-solid fa-paper-plane" style="margin-right:5px"></i>送信
+                        <i class="fa-solid fa-paper-plane" style="margin-right:5px"></i>${escapeHtml(t("hr.dr_comment_submit", lang))}
                     </button>
                 </div>
             </form>
@@ -5664,7 +5843,7 @@ function submitEditComment(cid, reportId) {
     })
     .then(r => r.json())
     .then(d => {
-        if (!d.ok) { alert(d.error || '保存に失敗しました'); return; }
+        if (!d.ok) { alert(d.error || ${JSON.stringify(t("hr.dr_save_failed", lang))}); return; }
         const bodyEl = document.getElementById('cbody-' + cid);
         if (bodyEl) {
             bodyEl.innerHTML = d.html || d.text.split('\\n').join('<br>');
@@ -5693,7 +5872,7 @@ function submitEditComment(cid, reportId) {
             const badge = document.createElement('span');
             badge.className = 'edited-badge';
             badge.style.cssText = 'font-size:11px;color:#9ca3af;margin-left:4px';
-            badge.textContent = '（編集済み）';
+            badge.textContent = ${JSON.stringify(t("hr.dr_comment_edited", lang))};
             metaEl.appendChild(badge);
         }
         const actionsEl = document.querySelector('#ci-' + cid + ' .comment-actions');
@@ -5706,7 +5885,7 @@ function submitEditComment(cid, reportId) {
         const newFilesEl = document.getElementById('cedit-newfiles-' + cid);
         if (newFilesEl) newFilesEl.innerHTML = '';
     })
-    .catch(() => alert('通信エラーが発生しました'));
+    .catch(() => alert(${JSON.stringify(t("hr.dr_network_error", lang))}));
 }
 </script>
         `,
@@ -5971,23 +6150,43 @@ router.post(
       // 添付ファイル表示HTMLを生成してフロントエンドへ返す
       const updatedComment = report.comments.id(req.params.commentId);
       const atts = updatedComment ? updatedComment.attachments || [] : [];
-      let attachHtml = '';
+      let attachHtml = "";
       if (atts.length) {
-        attachHtml = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">'
-          + atts.map(a => {
-              const isImage = (a.mimetype || '').startsWith('image/');
-              const url = '/uploads/daily/' + a.filename;
+        attachHtml =
+          '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">' +
+          atts
+            .map((a) => {
+              const isImage = (a.mimetype || "").startsWith("image/");
+              const url = "/uploads/daily/" + a.filename;
               if (isImage) {
                 return `<a href="${url}" target="_blank" style="display:block"><img src="${url}" alt="${esc(a.originalName || a.filename)}" style="max-width:160px;max-height:120px;border-radius:8px;border:1px solid #e2e8f0;object-fit:cover"></a>`;
               }
-              const icon = (a.originalName || '').endsWith('.pdf') ? '📄' : '📎';
-              const size = a.size > 1024*1024 ? (a.size/1024/1024).toFixed(1)+'MB' : Math.round((a.size||0)/1024)+'KB';
+              const icon = (a.originalName || "").endsWith(".pdf")
+                ? "📄"
+                : "📎";
+              const size =
+                a.size > 1024 * 1024
+                  ? (a.size / 1024 / 1024).toFixed(1) + "MB"
+                  : Math.round((a.size || 0) / 1024) + "KB";
               return `<a href="${url}" target="_blank" download="${esc(a.originalName || a.filename)}" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#f1f5f9;border-radius:8px;font-size:13px;color:#374151;text-decoration:none;border:1px solid #e2e8f0">${icon} ${esc(a.originalName || a.filename)} <span style="color:#9ca3af;font-size:11px">${size}</span></a>`;
-            }).join('')
-          + '</div>';
+            })
+            .join("") +
+          "</div>";
       }
 
-      res.json({ ok: true, text: comment.text, html, attachHtml, attachments: atts.map(a => ({ _id: String(a._id), originalName: a.originalName || a.filename, filename: a.filename, mimetype: a.mimetype || '', size: a.size || 0 })) });
+      res.json({
+        ok: true,
+        text: comment.text,
+        html,
+        attachHtml,
+        attachments: atts.map((a) => ({
+          _id: String(a._id),
+          originalName: a.originalName || a.filename,
+          filename: a.filename,
+          mimetype: a.mimetype || "",
+          size: a.size || 0,
+        })),
+      });
     } catch (e) {
       console.error(e);
       res.json({ ok: false, error: "サーバーエラー" });
@@ -6028,21 +6227,20 @@ router.post(
 // ─────────────────────────────────────────────────────────────
 // 給与明細「確認しました」ボタン（Issue #20）
 // ─────────────────────────────────────────────────────────────
-router.post('/hr/payroll/:id/confirm', requireLogin, async (req, res) => {
-    try {
-        const employee = await Employee.findOne({ userId: req.session.userId });
-        const slip = await PayrollSlip.findById(req.params.id);
-        if (!slip || String(slip.employeeId) !== String(employee._id)) {
-            return res.status(403).json({ error: '権限がありません' });
-        }
-        slip.confirmedAt = new Date();
-        slip.confirmedBy = req.session.userId;
-        await slip.save();
-        res.json({ ok: true, confirmedAt: slip.confirmedAt });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
+router.post("/hr/payroll/:id/confirm", requireLogin, async (req, res) => {
+  try {
+    const employee = await Employee.findOne({ userId: req.session.userId });
+    const slip = await PayrollSlip.findById(req.params.id);
+    if (!slip || String(slip.employeeId) !== String(employee._id)) {
+      return res.status(403).json({ error: "権限がありません" });
     }
+    slip.confirmedAt = new Date();
+    slip.confirmedBy = req.session.userId;
+    await slip.save();
+    res.json({ ok: true, confirmedAt: slip.confirmedAt });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 module.exports = router;
-
