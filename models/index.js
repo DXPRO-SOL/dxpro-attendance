@@ -1220,6 +1220,40 @@ const WorkflowFlowTemplate = mongoose.model(
   WorkflowFlowTemplateSchema,
 );
 
+// 監査ログスキーマ
+const AuditLogSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+  username: { type: String, default: "" },
+  action: {
+    type: String,
+    required: true,
+    enum: [
+      "login",
+      "login_failed",
+      "logout",
+      "create",
+      "update",
+      "delete",
+      "approve",
+      "reject",
+      "export",
+      "view",
+    ],
+  },
+  category: { type: String, default: "" }, // auth / attendance / leave / goals / user / hr / etc.
+  targetId: { type: String, default: "" },
+  targetModel: { type: String, default: "" },
+  detail: { type: String, default: "" },
+  ipAddress: { type: String, default: "" },
+  userAgent: { type: String, default: "" },
+  result: { type: String, enum: ["success", "failure"], default: "success" },
+  createdAt: { type: Date, default: Date.now },
+});
+AuditLogSchema.index({ createdAt: -1 });
+AuditLogSchema.index({ userId: 1, createdAt: -1 });
+AuditLogSchema.index({ action: 1, createdAt: -1 });
+const AuditLog = mongoose.model("AuditLog", AuditLogSchema);
+
 module.exports = {
   ChatRoom,
   ChatMessage,
@@ -1254,6 +1288,7 @@ module.exports = {
   Workflow,
   WorkflowForm,
   WorkflowFlowTemplate,
+  AuditLog,
   Schedule,
   ScheduleComment,
   ScheduleCommentRead,

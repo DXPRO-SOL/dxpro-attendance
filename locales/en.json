@@ -1130,5 +1130,31 @@
     "server_error": "A server error occurred",
     "unauthorized": "Authentication required",
     "forbidden": "Insufficient permissions"
+  },
+  "audit_log": {
+    "title": "Audit Log",
+    "description": "User actions, authentication, and data change history",
+    "action_login": "Login",
+    "action_login_failed": "Login Failed",
+    "action_logout": "Logout",
+    "action_create": "Create",
+    "action_update": "Update",
+    "action_delete": "Delete",
+    "action_approve": "Approve",
+    "action_reject": "Reject",
+    "action_export": "Export",
+    "action_view": "View",
+    "result_success": "Success",
+    "result_failure": "Failure",
+    "col_datetime": "Date/Time",
+    "col_user": "User",
+    "col_action": "Action",
+    "col_category": "Category",
+    "col_detail": "Detail",
+    "col_ip": "IP Address",
+    "col_result": "Result",
+    "export_csv": "Export CSV",
+    "filter_reset": "Reset",
+    "no_logs": "No logs found"
   }
 }

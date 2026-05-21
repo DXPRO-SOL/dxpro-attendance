@@ -1130,5 +1130,31 @@
     "server_error": "サーバーエラーが発生しました",
     "unauthorized": "認証が必要です",
     "forbidden": "権限が不足しています"
+  },
+  "audit_log": {
+    "title": "監査ログ",
+    "description": "ユーザー操作・認証・データ変更履歴",
+    "action_login": "ログイン",
+    "action_login_failed": "ログイン失敗",
+    "action_logout": "ログアウト",
+    "action_create": "作成",
+    "action_update": "更新",
+    "action_delete": "削除",
+    "action_approve": "承認",
+    "action_reject": "却下",
+    "action_export": "エクスポート",
+    "action_view": "閲覧",
+    "result_success": "成功",
+    "result_failure": "失敗",
+    "col_datetime": "日時",
+    "col_user": "ユーザー",
+    "col_action": "操作種別",
+    "col_category": "カテゴリ",
+    "col_detail": "詳細",
+    "col_ip": "IPアドレス",
+    "col_result": "結果",
+    "export_csv": "CSV出力",
+    "filter_reset": "リセット",
+    "no_logs": "ログが見つかりません"
   }
 }
