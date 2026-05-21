@@ -14,6 +14,7 @@ const {
 const { renderPage } = require("../lib/renderPage");
 const { createNotification } = require("./notifications");
 const { t } = require("../lib/i18n");
+const { sendEmailToUser } = require("../lib/emailHelper");
 
 // ─── 共通ヘルパー ─────────────────────────────────────────
 // ownerName / createdByName を最新の Employee 情報に同期する
@@ -591,6 +592,10 @@ router.get("/goals/submit1/:id", requireLogin, async (req, res) => {
         fromUserId: req.session.userId,
         fromName: employee.name,
       });
+      sendEmailToUser(approverEmp.userId, {
+        subject: "【NOKORI目標管理】1次承認依頼が届きました",
+        text: `${employee.name} さんから目標「${goal.title || ""}」の1次承認依頼が届きました。\n\n承認はこちら: ${process.env.APP_URL || ""}/goals/approval`,
+      }).catch(() => {});
     }
   }
   res.redirect("/goals");
@@ -624,6 +629,10 @@ router.get("/goals/approve1/:id", requireLogin, async (req, res) => {
         fromUserId: req.session.userId,
         fromName: employee ? employee.name : "",
       });
+      sendEmailToUser(creatorEmp.userId, {
+        subject: "【NOKORI目標管理】目標が1次承認されました",
+        text: `目標「${goal.title || ""}」が1次承認されました。評価入力へ進んでください。\n\n${process.env.APP_URL || ""}/goals`,
+      }).catch(() => {});
     }
   }
   res.redirect("/goals");
@@ -712,6 +721,10 @@ router.post("/goals/reject1/:id", requireLogin, async (req, res) => {
         fromUserId: req.session.userId,
         fromName: employee ? employee.name : "",
       });
+      sendEmailToUser(creatorEmp.userId, {
+        subject: "【NOKORI目標管理】目標が差し戻されました（1次）",
+        text: `目標「${goal.title || ""}」が1次差し戻されました。${comment ? "\n理由: " + comment : ""}\n\n${process.env.APP_URL || ""}/goals`,
+      }).catch(() => {});
     }
   }
   res.redirect("/goals/approval");
@@ -853,6 +866,10 @@ router.post("/goals/evaluate/:id", requireLogin, async (req, res) => {
       fromUserId: req.session.userId,
       fromName: employee ? employee.name : "",
     });
+    sendEmailToUser(approverEmp.userId, {
+      subject: "【NOKORI目標管理】2次承認依頼が届きました",
+      text: `${employee ? employee.name : "社員"} さんから目標「${goal.title || ""}」の2次承認依頼が届きました。\n\n${process.env.APP_URL || ""}/goals/approval`,
+    }).catch(() => {});
   }
   res.redirect("/goals");
 });
@@ -947,6 +964,10 @@ router.post("/goals/reject2/:id", requireLogin, async (req, res) => {
         fromUserId: req.session.userId,
         fromName: employee ? employee.name : "",
       });
+      sendEmailToUser(creatorEmp.userId, {
+        subject: "【NOKORI目標管理】目標が差し戻されました（2次）",
+        text: `目標「${goal.title || ""}」が2次差し戻されました。${comment ? "\n理由: " + comment : ""}\n\n${process.env.APP_URL || ""}/goals`,
+      }).catch(() => {});
     }
   }
   res.redirect("/goals/approval");
@@ -992,6 +1013,10 @@ router.get("/goals/approve2/:id", requireLogin, async (req, res) => {
         fromUserId: req.session.userId,
         fromName: employee.name,
       });
+      sendEmailToUser(creatorEmp.userId, {
+        subject: "【NOKORI目標管理】目標が最終承認されました",
+        text: `目標「${goal.title || ""}」が最終承認されました。評価プロセスが完了しました。\n\n${process.env.APP_URL || ""}/goals`,
+      }).catch(() => {});
     }
   }
   res.redirect("/goals/approval");
