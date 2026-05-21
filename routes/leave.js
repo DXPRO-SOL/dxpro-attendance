@@ -1,85 +1,103 @@
 // ==============================
 // routes/leave.js - 休暇申請・残日数管理
 // ==============================
-const router = require('express').Router();
-const moment = require('moment-timezone');
-const { User, Employee, LeaveRequest, LeaveBalance, Attendance } = require('../models');
-const { requireLogin, isAdmin } = require('../middleware/auth');
-const { sendMail } = require('../config/mailer');
-const { renderPage } = require('../lib/renderPage');
-const { escapeHtml } = require('../lib/helpers');
-const { createNotification } = require('./notifications');
-const { notifyEvent } = require('../lib/integrations');
+const router = require("express").Router();
+const moment = require("moment-timezone");
+const {
+  User,
+  Employee,
+  LeaveRequest,
+  LeaveBalance,
+  Attendance,
+} = require("../models");
+const { requireLogin, isAdmin } = require("../middleware/auth");
+const { sendMail } = require("../config/mailer");
+const { renderPage } = require("../lib/renderPage");
+const { escapeHtml } = require("../lib/helpers");
+const { createNotification } = require("./notifications");
+const { notifyEvent } = require("../lib/integrations");
+const { sendEmailToUser } = require("../lib/emailHelper");
 
 // ── 休暇種別→残日数フィールドのマッピング ──────────
-const leaveTypeToField = { '有給': 'paid', '病欠': 'sick', '慶弔': 'special', 'その他': 'other', '午前休': 'paid', '午後休': 'paid', '早退': 'paid' };
+const leaveTypeToField = {
+  有給: "paid",
+  病欠: "sick",
+  慶弔: "special",
+  その他: "other",
+  午前休: "paid",
+  午後休: "paid",
+  早退: "paid",
+};
 // 半日扱い（0.5日消費）
-const HALF_DAY_TYPES = new Set(['午前休', '午後休', '早退']);
+const HALF_DAY_TYPES = new Set(["午前休", "午後休", "早退"]);
 
 // ── 次回有給付与スケジュール計算 ──────────────────────
 // 労働基準法に基づく付与スケジュール
 const PAID_LEAVE_SCHEDULE = [
-    { months:  6, days: 10 },
-    { months: 18, days: 11 },
-    { months: 30, days: 12 },
-    { months: 42, days: 14 },
-    { months: 54, days: 16 },
-    { months: 66, days: 18 },
-    { months: 78, days: 20 },
+  { months: 6, days: 10 },
+  { months: 18, days: 11 },
+  { months: 30, days: 12 },
+  { months: 42, days: 14 },
+  { months: 54, days: 16 },
+  { months: 66, days: 18 },
+  { months: 78, days: 20 },
 ];
 function calcNextPaidLeaveGrant(joinDate) {
-    if (!joinDate) return null;
-    const now  = moment.tz('Asia/Tokyo');
-    const join = moment.tz(joinDate, 'Asia/Tokyo').startOf('day');
-    if (now.isBefore(join)) return null;
+  if (!joinDate) return null;
+  const now = moment.tz("Asia/Tokyo");
+  const join = moment.tz(joinDate, "Asia/Tokyo").startOf("day");
+  if (now.isBefore(join)) return null;
 
-    // スケジュール内の次回付与日を検索
-    for (const s of PAID_LEAVE_SCHEDULE) {
-        const grantDate = join.clone().add(s.months, 'months');
-        if (grantDate.isAfter(now, 'day')) {
-            return {
-                grantDate:  grantDate.format('YYYY年MM月DD日'),
-                grantDays:  s.days,
-                daysUntil:  grantDate.diff(now.startOf('day'), 'days'),
-                monthsMark: s.months,
-            };
-        }
+  // スケジュール内の次回付与日を検索
+  for (const s of PAID_LEAVE_SCHEDULE) {
+    const grantDate = join.clone().add(s.months, "months");
+    if (grantDate.isAfter(now, "day")) {
+      return {
+        grantDate: grantDate.format("YYYY年MM月DD日"),
+        grantDays: s.days,
+        daysUntil: grantDate.diff(now.startOf("day"), "days"),
+        monthsMark: s.months,
+      };
     }
-    // 6年6ヶ月以上 → 以降は12ヶ月ごとに20日
-    let m = 78;
-    while (m < 78 + 12 * 50) { // 最大50年分
-        m += 12;
-        const grantDate = join.clone().add(m, 'months');
-        if (grantDate.isAfter(now, 'day')) {
-            return {
-                grantDate:  grantDate.format('YYYY年MM月DD日'),
-                grantDays:  20,
-                daysUntil:  grantDate.diff(now.startOf('day'), 'days'),
-                monthsMark: m,
-            };
-        }
+  }
+  // 6年6ヶ月以上 → 以降は12ヶ月ごとに20日
+  let m = 78;
+  while (m < 78 + 12 * 50) {
+    // 最大50年分
+    m += 12;
+    const grantDate = join.clone().add(m, "months");
+    if (grantDate.isAfter(now, "day")) {
+      return {
+        grantDate: grantDate.format("YYYY年MM月DD日"),
+        grantDays: 20,
+        daysUntil: grantDate.diff(now.startOf("day"), "days"),
+        monthsMark: m,
+      };
     }
-    return null;
+  }
+  return null;
 }
 // 現在の勤続年数ラベル
 function tenureLabel(joinDate) {
-    if (!joinDate) return '';
-    const months = moment.tz('Asia/Tokyo').diff(moment.tz(joinDate, 'Asia/Tokyo'), 'months');
-    const y = Math.floor(months / 12);
-    const m = months % 12;
-    return y > 0 ? `${y}年${m}ヶ月` : `${m}ヶ月`;
+  if (!joinDate) return "";
+  const months = moment
+    .tz("Asia/Tokyo")
+    .diff(moment.tz(joinDate, "Asia/Tokyo"), "months");
+  const y = Math.floor(months / 12);
+  const m = months % 12;
+  return y > 0 ? `${y}年${m}ヶ月` : `${m}ヶ月`;
 }
 // 次回付与バナーHTML生成
 function buildNextGrantBanner(joinDate) {
-    const next = calcNextPaidLeaveGrant(joinDate);
-    if (!next) return '';
-    const urgent = next.daysUntil <= 30;
-    const bg     = urgent ? '#fff7ed' : '#eff6ff';
-    const border = urgent ? '#fdba74' : '#bfdbfe';
-    const icon   = urgent ? '🔔' : '📅';
-    const color  = urgent ? '#92400e' : '#1d4ed8';
-    const tenure = tenureLabel(joinDate);
-    return `
+  const next = calcNextPaidLeaveGrant(joinDate);
+  if (!next) return "";
+  const urgent = next.daysUntil <= 30;
+  const bg = urgent ? "#fff7ed" : "#eff6ff";
+  const border = urgent ? "#fdba74" : "#bfdbfe";
+  const icon = urgent ? "🔔" : "📅";
+  const color = urgent ? "#92400e" : "#1d4ed8";
+  const tenure = tenureLabel(joinDate);
+  return `
 <div style="background:${bg};border:1.5px solid ${border};border-radius:12px;padding:14px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <div>
         <div style="font-weight:700;font-size:15px;color:${color}">${icon} 次回有給付与のお知らせ</div>
@@ -96,23 +114,28 @@ function buildNextGrantBanner(joinDate) {
 
 // ── 残日数を取得（なければ作成）──────────────────────
 async function getOrCreateBalance(employeeId) {
-    let bal = await LeaveBalance.findOne({ employeeId });
-    if (!bal) bal = await LeaveBalance.create({ employeeId });
-    return bal;
+  let bal = await LeaveBalance.findOne({ employeeId });
+  if (!bal) bal = await LeaveBalance.create({ employeeId });
+  return bal;
 }
 
 // ────────────────────────────────────────────────────────────
 // 休暇申請フォーム（残日数付き）
 // ────────────────────────────────────────────────────────────
-router.get('/leave/apply', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        if (!employee) return res.status(400).send('社員情報がありません');
+router.get("/leave/apply", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
+    const employee = await Employee.findOne({ userId: user._id });
+    if (!employee) return res.status(400).send("社員情報がありません");
 
-        const bal = await getOrCreateBalance(employee._id);
+    const bal = await getOrCreateBalance(employee._id);
 
-        renderPage(req, res, '休暇申請', '休暇申請', `
+    renderPage(
+      req,
+      res,
+      "休暇申請",
+      "休暇申請",
+      `
             <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
             <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/ja.min.js"></script>
@@ -157,7 +180,7 @@ router.get('/leave/apply', requireLogin, async (req, res) => {
 
                 <div class="form-card">
                     <h3 style="margin-bottom:16px">休暇申請フォーム</h3>
-                    ${req.query.err === 'balance' ? `<div style="background:#fef2f2;border-left:4px solid #ef4444;padding:10px;margin-bottom:14px;border-radius:6px;color:#b91c1c">残日数が不足しています</div>` : ''}
+                    ${req.query.err === "balance" ? `<div style="background:#fef2f2;border-left:4px solid #ef4444;padding:10px;margin-bottom:14px;border-radius:6px;color:#b91c1c">残日数が不足しています</div>` : ""}
                     <form action="/leave/apply" method="POST" id="leaveForm">
                         <input type="hidden" name="leaveType" id="leaveTypeHidden" required>
 
@@ -254,24 +277,30 @@ router.get('/leave/apply', requireLogin, async (req, res) => {
                 }
             });
             </script>
-        `);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('エラーが発生しました');
-    }
+        `,
+    );
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("エラーが発生しました");
+  }
 });
 
 // ────────────────────────────────────────────────────────────
 // 早退申請フォーム（専用ページ）
 // ────────────────────────────────────────────────────────────
-router.get('/leave/early', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        if (!employee) return res.status(400).send('社員情報がありません');
-        const bal = await getOrCreateBalance(employee._id);
+router.get("/leave/early", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
+    const employee = await Employee.findOne({ userId: user._id });
+    if (!employee) return res.status(400).send("社員情報がありません");
+    const bal = await getOrCreateBalance(employee._id);
 
-        renderPage(req, res, '早退申請', '早退申請', `
+    renderPage(
+      req,
+      res,
+      "早退申請",
+      "早退申請",
+      `
             <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
             <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/ja.min.js"></script>
@@ -312,8 +341,8 @@ router.get('/leave/early', requireLogin, async (req, res) => {
                     🗓 有給残日数：<strong>${bal.paid} 日</strong>　（早退申請で <strong>0.5日</strong> 消費されます）
                 </div>
 
-                ${req.query.err === 'balance' ? `<div class="el-alert-err">⚠️ 有給残日数が不足しています</div>` : ''}
-                ${req.query.ok ? `<div class="el-alert-ok">✅ 早退申請を送信しました</div>` : ''}
+                ${req.query.err === "balance" ? `<div class="el-alert-err">⚠️ 有給残日数が不足しています</div>` : ""}
+                ${req.query.ok ? `<div class="el-alert-ok">✅ 早退申請を送信しました</div>` : ""}
 
                 <div class="el-card">
                     <form action="/leave/early" method="POST" id="earlyForm">
@@ -345,103 +374,127 @@ router.get('/leave/early', requireLogin, async (req, res) => {
             flatpickr.localize(flatpickr.l10ns.ja);
             flatpickr("#earlyDate", {dateFormat:"Y-m-d", locale:"ja", defaultDate:"today"});
             </script>
-        `);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('エラーが発生しました');
-    }
+        `,
+    );
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("エラーが発生しました");
+  }
 });
 
-router.post('/leave/early', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        if (!employee) return res.status(400).send('社員情報がありません');
+router.post("/leave/early", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
+    const employee = await Employee.findOne({ userId: user._id });
+    if (!employee) return res.status(400).send("社員情報がありません");
 
-        const { earlyDate, earlyLeaveTime, reason } = req.body;
-        if (!earlyDate || !earlyLeaveTime || !reason) return res.redirect('/leave/early');
+    const { earlyDate, earlyLeaveTime, reason } = req.body;
+    if (!earlyDate || !earlyLeaveTime || !reason)
+      return res.redirect("/leave/early");
 
-        // 残日数チェック（0.5日消費）
-        const bal = await getOrCreateBalance(employee._id);
-        if (bal.paid < 0.5) return res.redirect('/leave/early?err=balance');
+    // 残日数チェック（0.5日消費）
+    const bal = await getOrCreateBalance(employee._id);
+    if (bal.paid < 0.5) return res.redirect("/leave/early?err=balance");
 
-        const leaveRequest = new LeaveRequest({
-            userId: user._id,
-            employeeId: employee.employeeId,
-            name: employee.name,
-            department: employee.department,
-            leaveType: '早退',
-            halfDay: null,
-            earlyLeaveTime,
-            startDate: new Date(earlyDate),
-            endDate:   new Date(earlyDate),
-            days: 0.5,
-            reason,
-            status: 'pending'
-        });
-        await leaveRequest.save();
-        res.redirect('/leave/my-requests');
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('申請エラーが発生しました');
-    }
+    const leaveRequest = new LeaveRequest({
+      userId: user._id,
+      employeeId: employee.employeeId,
+      name: employee.name,
+      department: employee.department,
+      leaveType: "早退",
+      halfDay: null,
+      earlyLeaveTime,
+      startDate: new Date(earlyDate),
+      endDate: new Date(earlyDate),
+      days: 0.5,
+      reason,
+      status: "pending",
+    });
+    await leaveRequest.save();
+    res.redirect("/leave/my-requests");
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("申請エラーが発生しました");
+  }
 });
 
-router.post('/leave/apply', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        if (!employee) return res.status(400).send('社員情報がありません');
+router.post("/leave/apply", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
+    const employee = await Employee.findOne({ userId: user._id });
+    if (!employee) return res.status(400).send("社員情報がありません");
 
-        const { leaveType, startDate, endDate, days, reason, earlyLeaveTime } = req.body;
-        const daysNum = parseFloat(days) || (HALF_DAY_TYPES.has(leaveType) ? 0.5 : 1);
-        const field = leaveTypeToField[leaveType];
+    const { leaveType, startDate, endDate, days, reason, earlyLeaveTime } =
+      req.body;
+    const daysNum =
+      parseFloat(days) || (HALF_DAY_TYPES.has(leaveType) ? 0.5 : 1);
+    const field = leaveTypeToField[leaveType];
 
-        // 残日数チェック（半日は0.5消費）
-        const bal = await getOrCreateBalance(employee._id);
-        if (field && bal[field] < daysNum) {
-            return res.redirect('/leave/apply?err=balance');
-        }
-
-        // halfDay フラグ
-        const halfDay = leaveType === '午前休' ? 'AM' : (leaveType === '午後休' ? 'PM' : null);
-
-        const leaveRequest = new LeaveRequest({
-            userId: user._id,
-            employeeId: employee.employeeId,
-            name: employee.name,
-            department: employee.department,
-            leaveType,
-            halfDay,
-            earlyLeaveTime: leaveType === '早退' ? (earlyLeaveTime || null) : null,
-            startDate: new Date(startDate),
-            endDate: new Date(endDate || startDate),
-            days: daysNum,
-            reason,
-            status: 'pending'
-        });
-        await leaveRequest.save();
-        res.redirect('/leave/my-requests');
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('申請エラーが発生しました');
+    // 残日数チェック（半日は0.5消費）
+    const bal = await getOrCreateBalance(employee._id);
+    if (field && bal[field] < daysNum) {
+      return res.redirect("/leave/apply?err=balance");
     }
+
+    // halfDay フラグ
+    const halfDay =
+      leaveType === "午前休" ? "AM" : leaveType === "午後休" ? "PM" : null;
+
+    const leaveRequest = new LeaveRequest({
+      userId: user._id,
+      employeeId: employee.employeeId,
+      name: employee.name,
+      department: employee.department,
+      leaveType,
+      halfDay,
+      earlyLeaveTime: leaveType === "早退" ? earlyLeaveTime || null : null,
+      startDate: new Date(startDate),
+      endDate: new Date(endDate || startDate),
+      days: daysNum,
+      reason,
+      status: "pending",
+    });
+    await leaveRequest.save();
+    res.redirect("/leave/my-requests");
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("申請エラーが発生しました");
+  }
 });
 
 // ────────────────────────────────────────────────────────────
 // 自分の申請履歴（残日数付き）
 // ────────────────────────────────────────────────────────────
-router.get('/leave/my-requests', requireLogin, async (req, res) => {
-    try {
-        const user = await User.findById(req.session.userId);
-        const employee = await Employee.findOne({ userId: user._id });
-        const requests = await LeaveRequest.find({ userId: user._id }).sort({ createdAt: -1 });
-        const bal = employee ? await getOrCreateBalance(employee._id) : null;
+router.get("/leave/my-requests", requireLogin, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.userId);
+    const employee = await Employee.findOne({ userId: user._id });
+    const requests = await LeaveRequest.find({ userId: user._id }).sort({
+      createdAt: -1,
+    });
+    const bal = employee ? await getOrCreateBalance(employee._id) : null;
 
-        const statusLabel = s => ({ pending:'待機中', approved:'承認済', rejected:'拒否', canceled:'キャンセル' }[s] || s);
-        const statusColor = s => ({ pending:'#f59e0b', approved:'#16a34a', rejected:'#ef4444', canceled:'#6b7280' }[s] || '#6b7280');
+    const statusLabel = (s) =>
+      ({
+        pending: "待機中",
+        approved: "承認済",
+        rejected: "拒否",
+        canceled: "キャンセル",
+      })[s] || s;
+    const statusColor = (s) =>
+      ({
+        pending: "#f59e0b",
+        approved: "#16a34a",
+        rejected: "#ef4444",
+        canceled: "#6b7280",
+      })[s] || "#6b7280";
 
-        renderPage(req, res, '休暇申請履歴', '休暇申請履歴', `
+    renderPage(
+      req,
+      res,
+      "休暇申請履歴",
+      "休暇申請履歴",
+      `
             <style>
                 .bal-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
                 .bal-card{background:#fff;border-radius:12px;padding:16px;box-shadow:0 4px 14px rgba(11,36,48,.06);text-align:center}
@@ -458,7 +511,9 @@ router.get('/leave/my-requests', requireLogin, async (req, res) => {
                 }
             </style>
             <div style="max-width:1000px;margin:0 auto">
-                ${bal ? `
+                ${
+                  bal
+                    ? `
                 <h3 style="margin-bottom:12px">休暇残日数</h3>
                 <div class="bal-grid">
                     <div class="bal-card"><div class="bal-num">${bal.paid}</div><div class="bal-label">有給</div></div>
@@ -466,8 +521,10 @@ router.get('/leave/my-requests', requireLogin, async (req, res) => {
                     <div class="bal-card"><div class="bal-num">${bal.special}</div><div class="bal-label">慶弔</div></div>
                     <div class="bal-card"><div class="bal-num">${bal.other}</div><div class="bal-label">その他</div></div>
                 </div>
-                ${employee ? buildNextGrantBanner(employee.joinDate) : ''}
-                ` : ''}
+                ${employee ? buildNextGrantBanner(employee.joinDate) : ""}
+                `
+                    : ""
+                }
 
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
                     <h3 style="margin:0">申請履歴</h3>
@@ -479,36 +536,48 @@ router.get('/leave/my-requests', requireLogin, async (req, res) => {
                         <th>休暇種類</th><th>期間</th><th>日数</th><th>理由</th><th>状況</th><th>申請日</th><th>処理日</th><th>備考</th>
                     </tr></thead>
                     <tbody>
-                        ${requests.length === 0 ? `<tr><td colspan="8" style="text-align:center;color:#6b7280">申請履歴がありません</td></tr>` : ''}
-                        ${requests.map(r => `<tr>
-                            <td>${escapeHtml(r.leaveType)}${r.earlyLeaveTime ? `<br><small style="color:#f59e0b">🕐 ${r.earlyLeaveTime}</small>` : ''}</td>
-                            <td>${moment(r.startDate).format('YYYY/MM/DD')}〜${moment(r.endDate).format('YYYY/MM/DD')}</td>
+                        ${requests.length === 0 ? `<tr><td colspan="8" style="text-align:center;color:#6b7280">申請履歴がありません</td></tr>` : ""}
+                        ${requests
+                          .map(
+                            (r) => `<tr>
+                            <td>${escapeHtml(r.leaveType)}${r.earlyLeaveTime ? `<br><small style="color:#f59e0b">🕐 ${r.earlyLeaveTime}</small>` : ""}</td>
+                            <td>${moment(r.startDate).format("YYYY/MM/DD")}〜${moment(r.endDate).format("YYYY/MM/DD")}</td>
                             <td>${r.days}日</td>
                             <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(r.reason)}</td>
                             <td><span style="background:${statusColor(r.status)}22;color:${statusColor(r.status)};padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px">${statusLabel(r.status)}</span></td>
-                            <td>${moment(r.createdAt).format('YYYY/MM/DD')}</td>
-                            <td>${r.processedAt ? moment(r.processedAt).format('YYYY/MM/DD') : '-'}</td>
-                            <td>${escapeHtml(r.notes || '-')}</td>
-                        </tr>`).join('')}
+                            <td>${moment(r.createdAt).format("YYYY/MM/DD")}</td>
+                            <td>${r.processedAt ? moment(r.processedAt).format("YYYY/MM/DD") : "-"}</td>
+                            <td>${escapeHtml(r.notes || "-")}</td>
+                        </tr>`,
+                          )
+                          .join("")}
                     </tbody>
                 </table>
                 </div>
             </div>
-        `);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('エラーが発生しました');
-    }
+        `,
+    );
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("エラーが発生しました");
+  }
 });
 
 // ────────────────────────────────────────────────────────────
 // 管理者: 休暇承認一覧
 // ────────────────────────────────────────────────────────────
-router.get('/admin/leave-requests', requireLogin, isAdmin, async (req, res) => {
-    try {
-        const requests = await LeaveRequest.find({ status: 'pending' }).sort({ createdAt: 1 });
+router.get("/admin/leave-requests", requireLogin, isAdmin, async (req, res) => {
+  try {
+    const requests = await LeaveRequest.find({ status: "pending" }).sort({
+      createdAt: 1,
+    });
 
-        renderPage(req, res, '休暇承認管理', '休暇承認管理', `
+    renderPage(
+      req,
+      res,
+      "休暇承認管理",
+      "休暇承認管理",
+      `
             <style>
                 .req-card{background:#fff;border-radius:12px;padding:18px;margin-bottom:14px;box-shadow:0 4px 14px rgba(11,36,48,.06)}
                 .req-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px}
@@ -524,16 +593,18 @@ router.get('/admin/leave-requests', requireLogin, isAdmin, async (req, res) => {
                     <h3 style="margin:0">承認待ち申請一覧</h3>
                     <a href="/admin/leave-balance" style="padding:9px 20px;background:#0b5fff;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;margin-top:10px">残日数管理</a>
                 </div>
-                ${requests.length === 0 ? `<div style="background:#f0fdf4;border-radius:12px;padding:24px;text-align:center;color:#16a34a;font-weight:600">承認待ちの申請はありません ✅</div>` : ''}
-                ${requests.map(r => `
+                ${requests.length === 0 ? `<div style="background:#f0fdf4;border-radius:12px;padding:24px;text-align:center;color:#16a34a;font-weight:600">承認待ちの申請はありません ✅</div>` : ""}
+                ${requests
+                  .map(
+                    (r) => `
                 <div class="req-card">
                     <div class="req-head">
                         <strong>${escapeHtml(r.name)}（${escapeHtml(r.employeeId)}）${escapeHtml(r.department)}</strong>
-                        <span style="color:#6b7280;font-size:13px">${moment(r.createdAt).format('YYYY/MM/DD')}</span>
+                        <span style="color:#6b7280;font-size:13px">${moment(r.createdAt).format("YYYY/MM/DD")}</span>
                     </div>
                     <div style="font-size:14px;color:#374151">
-                        <span style="margin-right:16px">🏷 ${escapeHtml(r.leaveType)}${r.earlyLeaveTime ? ` <span style="color:#f59e0b">（早退 ${r.earlyLeaveTime}）</span>` : ''}</span>
-                        <span style="margin-right:16px">📅 ${moment(r.startDate).format('YYYY/MM/DD')}〜${moment(r.endDate).format('YYYY/MM/DD')}（${r.days}日）</span>
+                        <span style="margin-right:16px">🏷 ${escapeHtml(r.leaveType)}${r.earlyLeaveTime ? ` <span style="color:#f59e0b">（早退 ${r.earlyLeaveTime}）</span>` : ""}</span>
+                        <span style="margin-right:16px">📅 ${moment(r.startDate).format("YYYY/MM/DD")}〜${moment(r.endDate).format("YYYY/MM/DD")}（${r.days}日）</span>
                     </div>
                     <div style="margin-top:6px;font-size:14px;color:#6b7280">理由: ${escapeHtml(r.reason)}</div>
                     <div class="req-actions">
@@ -545,157 +616,209 @@ router.get('/admin/leave-requests', requireLogin, isAdmin, async (req, res) => {
                             <button style="padding:8px 20px;background:#ef4444;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">拒否</button>
                         </form>
                     </div>
-                </div>`).join('')}
+                </div>`,
+                  )
+                  .join("")}
             </div>
-        `);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('エラーが発生しました');
-    }
+        `,
+    );
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("エラーが発生しました");
+  }
 });
 
 // 承認処理（残日数を消費）
-router.post('/admin/approve-leave/:id', requireLogin, isAdmin, async (req, res) => {
+router.post(
+  "/admin/approve-leave/:id",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const request = await LeaveRequest.findById(req.params.id);
-        if (!request) return res.redirect('/admin/leave-requests');
+      const request = await LeaveRequest.findById(req.params.id);
+      if (!request) return res.redirect("/admin/leave-requests");
 
-        const employee = await Employee.findOne({ employeeId: request.employeeId });
-        if (employee) {
-            const field = leaveTypeToField[request.leaveType];
-            if (field) {
-                const bal = await getOrCreateBalance(employee._id);
-                bal[field] = Math.max(0, (bal[field] || 0) - request.days);
-                bal.history.push({ grantedBy: req.session.userId, leaveType: request.leaveType, delta: -request.days, note: '承認により消費', at: new Date() });
-                bal.updatedAt = new Date();
-                await bal.save();
-            }
+      const employee = await Employee.findOne({
+        employeeId: request.employeeId,
+      });
+      if (employee) {
+        const field = leaveTypeToField[request.leaveType];
+        if (field) {
+          const bal = await getOrCreateBalance(employee._id);
+          bal[field] = Math.max(0, (bal[field] || 0) - request.days);
+          bal.history.push({
+            grantedBy: req.session.userId,
+            leaveType: request.leaveType,
+            delta: -request.days,
+            note: "承認により消費",
+            at: new Date(),
+          });
+          bal.updatedAt = new Date();
+          await bal.save();
         }
+      }
 
-        request.status = 'approved';
-        request.processedAt = new Date();
-        request.processedBy = req.session.userId;
-        await request.save();
+      request.status = "approved";
+      request.processedAt = new Date();
+      request.processedBy = req.session.userId;
+      await request.save();
 
-        // ─── 勤怠レコードへの自動反映 ───────────────────────────────
-        if (employee && employee.userId) {
-            // 休暇種別 → 勤怠ステータス・勤務時間のマッピング
-            const leaveToAttendance = {
-                '有給':  { status: '有休', workingHours: 8 },  // 有給は出勤日扱い
-                '病欠':  { status: '欠勤', workingHours: 0 },
-                '慶弔':  { status: '休暇', workingHours: 0 },
-                'その他':{ status: '休暇', workingHours: 0 },
-                '午前休':{ status: '午前休', workingHours: 4 }, // 午後から出社
-                '午後休':{ status: '午後休', workingHours: 4 }, // 午前出社・午後退社
-                '早退':  { status: '早退', workingHours: 4 },
-            };
-            const attMap = leaveToAttendance[request.leaveType];
-            if (attMap) {
-                try {
-                    const cur = moment.tz(request.startDate, 'Asia/Tokyo').startOf('day');
-                    const end = moment.tz(request.endDate || request.startDate, 'Asia/Tokyo').startOf('day');
-                    let created = 0, updated = 0;
-                    while (cur.isSameOrBefore(end)) {
-                        const dow = cur.day(); // 0=日, 6=土
-                        if (dow !== 0 && dow !== 6) {
-                            const dayStart = cur.clone().toDate();
-                            const dayEnd   = cur.clone().endOf('day').toDate();
-                            const existing = await Attendance.findOne({
-                                userId: employee.userId,
-                                date: { $gte: dayStart, $lte: dayEnd }
-                            });
-                            if (existing) {
-                                existing.status = attMap.status;
-                                if (!['午前休', '午後休', '早退'].includes(request.leaveType)) {
-                                    existing.workingHours = attMap.workingHours;
-                                    existing.totalHours   = attMap.workingHours;
-                                }
-                                await existing.save();
-                                updated++;
-                            } else {
-                                await Attendance.create({
-                                    userId: employee.userId,
-                                    date:   dayStart,
-                                    status: attMap.status,
-                                    workingHours: attMap.workingHours,
-                                    totalHours:   attMap.workingHours,
-                                });
-                                created++;
-                            }
-                        }
-                        cur.add(1, 'day');
-                    }
-                    console.log(`[leave approve] 勤怠反映完了: ${employee.name} ${request.leaveType} 作成=${created} 更新=${updated}`);
-                } catch (attErr) {
-                    console.error('[leave approve] 勤怠レコード作成エラー:', attErr.message);
+      // ─── 勤怠レコードへの自動反映 ───────────────────────────────
+      if (employee && employee.userId) {
+        // 休暇種別 → 勤怠ステータス・勤務時間のマッピング
+        const leaveToAttendance = {
+          有給: { status: "有休", workingHours: 8 }, // 有給は出勤日扱い
+          病欠: { status: "欠勤", workingHours: 0 },
+          慶弔: { status: "休暇", workingHours: 0 },
+          その他: { status: "休暇", workingHours: 0 },
+          午前休: { status: "午前休", workingHours: 4 }, // 午後から出社
+          午後休: { status: "午後休", workingHours: 4 }, // 午前出社・午後退社
+          早退: { status: "早退", workingHours: 4 },
+        };
+        const attMap = leaveToAttendance[request.leaveType];
+        if (attMap) {
+          try {
+            const cur = moment
+              .tz(request.startDate, "Asia/Tokyo")
+              .startOf("day");
+            const end = moment
+              .tz(request.endDate || request.startDate, "Asia/Tokyo")
+              .startOf("day");
+            let created = 0,
+              updated = 0;
+            while (cur.isSameOrBefore(end)) {
+              const dow = cur.day(); // 0=日, 6=土
+              if (dow !== 0 && dow !== 6) {
+                const dayStart = cur.clone().toDate();
+                const dayEnd = cur.clone().endOf("day").toDate();
+                const existing = await Attendance.findOne({
+                  userId: employee.userId,
+                  date: { $gte: dayStart, $lte: dayEnd },
+                });
+                if (existing) {
+                  existing.status = attMap.status;
+                  if (
+                    !["午前休", "午後休", "早退"].includes(request.leaveType)
+                  ) {
+                    existing.workingHours = attMap.workingHours;
+                    existing.totalHours = attMap.workingHours;
+                  }
+                  await existing.save();
+                  updated++;
+                } else {
+                  await Attendance.create({
+                    userId: employee.userId,
+                    date: dayStart,
+                    status: attMap.status,
+                    workingHours: attMap.workingHours,
+                    totalHours: attMap.workingHours,
+                  });
+                  created++;
                 }
+              }
+              cur.add(1, "day");
             }
-        } else {
-            console.warn('[leave approve] 社員が見つからないため勤怠反映スキップ:', request.employeeId);
+            console.log(
+              `[leave approve] 勤怠反映完了: ${employee.name} ${request.leaveType} 作成=${created} 更新=${updated}`,
+            );
+          } catch (attErr) {
+            console.error(
+              "[leave approve] 勤怠レコード作成エラー:",
+              attErr.message,
+            );
+          }
         }
+      } else {
+        console.warn(
+          "[leave approve] 社員が見つからないため勤怠反映スキップ:",
+          request.employeeId,
+        );
+      }
 
-        // 申請者に承認通知
-        if (employee && employee.userId) {
-            await createNotification({
-                userId: employee.userId,
-                type: 'leave_approved',
-                title: '✅ 休暇申請が承認されました',
-                body: `${request.leaveType} (${request.startDate}〜${request.endDate || request.startDate})`,
-                link: '/leave',
-            });
-        }
-        // Slack / LINE WORKS 通知
-        notifyEvent('leaveApproval',
-            `✅ 休暇申請が承認されました\n社員: ${employee ? employee.name : '不明'}\n種別: ${request.leaveType}\n期間: ${request.startDate}〜${request.endDate || request.startDate}`
-        ).catch(() => {});
-        res.redirect('/admin/leave-requests');
+      // 申請者に承認通知
+      if (employee && employee.userId) {
+        await createNotification({
+          userId: employee.userId,
+          type: "leave_approved",
+          title: "✅ 休暇申請が承認されました",
+          body: `${request.leaveType} (${request.startDate}〜${request.endDate || request.startDate})`,
+          link: "/leave",
+        });
+        sendEmailToUser(employee.userId, {
+          subject: "【NOKORI休暇申請】休暇申請が承認されました",
+          text: `休暇申請が承認されました。\n\n種別: ${request.leaveType}\n期間: ${request.startDate}～${request.endDate || request.startDate}\n\n${process.env.APP_URL || ""}/leave`,
+        }).catch(() => {});
+      }
+      // Slack / LINE WORKS 通知
+      notifyEvent(
+        "leaveApproval",
+        `✅ 休暇申請が承認されました\n社員: ${employee ? employee.name : "不明"}\n種別: ${request.leaveType}\n期間: ${request.startDate}〜${request.endDate || request.startDate}`,
+      ).catch(() => {});
+      res.redirect("/admin/leave-requests");
     } catch (error) {
-        console.error(error);
-        res.redirect('/admin/leave-requests');
+      console.error(error);
+      res.redirect("/admin/leave-requests");
     }
-});
+  },
+);
 
 // 拒否処理
-router.post('/admin/reject-leave/:id', requireLogin, isAdmin, async (req, res) => {
+router.post(
+  "/admin/reject-leave/:id",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const request = await LeaveRequest.findById(req.params.id);
-        if (!request) return res.redirect('/admin/leave-requests');
+      const request = await LeaveRequest.findById(req.params.id);
+      if (!request) return res.redirect("/admin/leave-requests");
 
-        request.status = 'rejected';
-        request.processedAt = new Date();
-        request.processedBy = req.session.userId;
-        request.notes = req.body.notes || '';
-        await request.save();
+      request.status = "rejected";
+      request.processedAt = new Date();
+      request.processedBy = req.session.userId;
+      request.notes = req.body.notes || "";
+      await request.save();
 
-        // 申請者に却下通知
-        const emp = await Employee.findOne({ employeeId: request.employeeId });
-        if (emp && emp.userId) {
-            await createNotification({
-                userId: emp.userId,
-                type: 'leave_rejected',
-                title: '❌ 休暇申請が却下されました',
-                body: `${request.leaveType} (${request.startDate}〜${request.endDate || request.startDate})${request.notes ? ' - ' + request.notes : ''}`,
-                link: '/leave',
-            });
-        }
-        res.redirect('/admin/leave-requests');
+      // 申請者に却下通知
+      const emp = await Employee.findOne({ employeeId: request.employeeId });
+      if (emp && emp.userId) {
+        await createNotification({
+          userId: emp.userId,
+          type: "leave_rejected",
+          title: "❌ 休暇申請が却下されました",
+          body: `${request.leaveType} (${request.startDate}〜${request.endDate || request.startDate})${request.notes ? " - " + request.notes : ""}`,
+          link: "/leave",
+        });
+        sendEmailToUser(emp.userId, {
+          subject: "【NOKORI休暇申請】休暇申請が却下されました",
+          text: `休暇申請が却下されました。\n\n種別: ${request.leaveType}\n期間: ${request.startDate}～${request.endDate || request.startDate}${request.notes ? "\n理由: " + request.notes : ""}\n\n${process.env.APP_URL || ""}/leave`,
+        }).catch(() => {});
+      }
+      res.redirect("/admin/leave-requests");
     } catch (error) {
-        console.error(error);
-        res.redirect('/admin/leave-requests');
+      console.error(error);
+      res.redirect("/admin/leave-requests");
     }
-});
+  },
+);
 
 // ────────────────────────────────────────────────────────────
 // 管理者: 全社員の休暇残日数管理
 // ────────────────────────────────────────────────────────────
-router.get('/admin/leave-balance', requireLogin, isAdmin, async (req, res) => {
-    try {
-        const employees = await Employee.find().sort({ employeeId: 1 });
-        const balMap = {};
-        const bals = await LeaveBalance.find();
-        bals.forEach(b => { balMap[b.employeeId.toString()] = b; });
+router.get("/admin/leave-balance", requireLogin, isAdmin, async (req, res) => {
+  try {
+    const employees = await Employee.find().sort({ employeeId: 1 });
+    const balMap = {};
+    const bals = await LeaveBalance.find();
+    bals.forEach((b) => {
+      balMap[b.employeeId.toString()] = b;
+    });
 
-        renderPage(req, res, '休暇残日数管理', '休暇残日数管理', `
+    renderPage(
+      req,
+      res,
+      "休暇残日数管理",
+      "休暇残日数管理",
+      `
             <style>
                 .tbl{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 14px rgba(11,36,48,.06)}
                 .tbl th{background:#f8fafc;padding:12px 14px;font-weight:600;font-size:13px;text-align:left;border-bottom:1px solid #e2e8f0}
@@ -719,8 +842,14 @@ router.get('/admin/leave-balance', requireLogin, isAdmin, async (req, res) => {
                         <th>付与・操作</th>
                     </tr></thead>
                     <tbody>
-                        ${employees.map(emp => {
-                            const b = balMap[emp._id.toString()] || { paid:0, sick:0, special:0, other:0 };
+                        ${employees
+                          .map((emp) => {
+                            const b = balMap[emp._id.toString()] || {
+                              paid: 0,
+                              sick: 0,
+                              special: 0,
+                              other: 0,
+                            };
                             return `<tr>
                                 <td>${escapeHtml(emp.employeeId)}</td>
                                 <td>${escapeHtml(emp.name)}</td>
@@ -744,37 +873,50 @@ router.get('/admin/leave-balance', requireLogin, isAdmin, async (req, res) => {
                                     </form>
                                 </td>
                             </tr>`;
-                        }).join('')}
+                          })
+                          .join("")}
                     </tbody>
                 </table>
                 <p style="margin-top:10px;color:#6b7280;font-size:13px">※ 付与日数欄にマイナス値を入力すると減算できます</p>
             </div>
             </div>
-        `);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('エラーが発生しました');
-    }
+        `,
+    );
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("エラーが発生しました");
+  }
 });
 
 // 管理者: 休暇日数付与処理
-router.post('/admin/leave-balance/grant', requireLogin, isAdmin, async (req, res) => {
+router.post(
+  "/admin/leave-balance/grant",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const { employeeId, leaveType, delta, note } = req.body;
-        const field = leaveTypeToField[leaveType];
-        if (!field) return res.redirect('/admin/leave-balance');
+      const { employeeId, leaveType, delta, note } = req.body;
+      const field = leaveTypeToField[leaveType];
+      if (!field) return res.redirect("/admin/leave-balance");
 
-        const deltaNum = parseInt(delta) || 0;
-        const bal = await getOrCreateBalance(employeeId);
-        bal[field] = Math.max(0, (bal[field] || 0) + deltaNum);
-        bal.history.push({ grantedBy: req.session.userId, leaveType, delta: deltaNum, note: note || '', at: new Date() });
-        bal.updatedAt = new Date();
-        await bal.save();
-        res.redirect('/admin/leave-balance');
+      const deltaNum = parseInt(delta) || 0;
+      const bal = await getOrCreateBalance(employeeId);
+      bal[field] = Math.max(0, (bal[field] || 0) + deltaNum);
+      bal.history.push({
+        grantedBy: req.session.userId,
+        leaveType,
+        delta: deltaNum,
+        note: note || "",
+        at: new Date(),
+      });
+      bal.updatedAt = new Date();
+      await bal.save();
+      res.redirect("/admin/leave-balance");
     } catch (error) {
-        console.error(error);
-        res.redirect('/admin/leave-balance');
+      console.error(error);
+      res.redirect("/admin/leave-balance");
     }
-});
+  },
+);
 
 module.exports = router;

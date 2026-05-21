@@ -714,6 +714,28 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             </div>
         </div>
 
+        <!-- ── メール未認証アラート ── -->
+        ${
+          !user.email || !user.emailVerified
+            ? `
+        <div style="background:linear-gradient(135deg,#fef3c7,#fffbeb);border:1.5px solid #f59e0b;border-radius:14px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:42px;height:42px;border-radius:10px;background:#fef3c7;border:1.5px solid #fcd34d;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <i class="fa-solid fa-envelope" style="color:#d97706;font-size:18px"></i>
+            </div>
+            <div>
+              <div style="font-size:14px;font-weight:700;color:#92400e">${t("email.dashboard_alert_title", lang)}</div>
+              <div style="font-size:12px;color:#a16207;margin-top:2px">${t("email.dashboard_alert_desc", lang)}</div>
+            </div>
+          </div>
+          <a href="/email/register" class="btn" style="background:#d97706;color:#fff;font-weight:700;padding:10px 24px;border-radius:10px;text-decoration:none;font-size:13px;white-space:nowrap;box-shadow:0 2px 8px rgba(217,119,6,.3)">
+            <i class="fa-solid fa-pen-to-square"></i> ${t("email.dashboard_alert_btn", lang)}
+          </a>
+        </div>
+        `
+            : ""
+        }
+
         <!-- ── KPI Row ── -->
         <div class="kpi-grid">
 

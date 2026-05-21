@@ -18,6 +18,7 @@ const { buildPageShell, pageFooter } = require("../lib/renderPage");
 const { t } = require("../lib/i18n");
 const { sendMail } = require("../config/mailer");
 const { createNotification } = require("./notifications");
+const { sendEmailToUser } = require("../lib/emailHelper");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
@@ -2581,6 +2582,10 @@ router.post("/api/schedule", requireLogin, async (req, res) => {
           fromUserId: myId,
           fromName: creatorName,
         });
+        sendEmailToUser(uid, {
+          subject: `【NOKORIスケジュール】会議招待（繰り返し）: ${schedule.title}`,
+          text: `${creatorName} さんから「${schedule.title}」の繰り返し予定（${createdSchedules.length}件）の招待が届いています。\n\n${APP_URL}/schedule`,
+        }).catch(() => {});
         if (global.io) {
           global.io.to("u_" + String(uid)).emit("notification_new", {
             type: "schedule_invite",
