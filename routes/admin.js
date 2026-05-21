@@ -1,20 +1,31 @@
 // ==============================
 // routes/admin.js - 管理者機能
 // ==============================
-const router = require('express').Router();
-const bcrypt = require('bcryptjs');
-const moment = require('moment-timezone');
-const pdf = require('html-pdf');
-const { User, Employee, Attendance, ApprovalRequest, LeaveRequest, PayrollSlip, Goal, SemiAnnualFeedback } = require('../models');
-const { requireLogin, isAdmin } = require('../middleware/auth');
-const { sendMail } = require('../config/mailer');
-const { escapeHtml } = require('../lib/helpers');
-const { renderPage, buildPageShell, pageFooter } = require('../lib/renderPage');
-const { createNotification } = require('./notifications');
+const router = require("express").Router();
+const bcrypt = require("bcryptjs");
+const moment = require("moment-timezone");
+const pdf = require("html-pdf");
+const {
+  User,
+  Employee,
+  Attendance,
+  ApprovalRequest,
+  LeaveRequest,
+  PayrollSlip,
+  Goal,
+  SemiAnnualFeedback,
+} = require("../models");
+const { requireLogin, isAdmin } = require("../middleware/auth");
+const { sendMail } = require("../config/mailer");
+const { escapeHtml } = require("../lib/helpers");
+const { renderPage, buildPageShell, pageFooter } = require("../lib/renderPage");
+const { createNotification } = require("./notifications");
+const { sendEmailToUser } = require("../lib/emailHelper");
 
-router.get('/admin', requireLogin, isAdmin, async (req, res) => {
-        const username = req.session.user?.username || req.session.username || '管理者';
-        const html = `
+router.get("/admin", requireLogin, isAdmin, async (req, res) => {
+  const username =
+    req.session.user?.username || req.session.username || "管理者";
+  const html = `
         <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
         <style>
             body{font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans JP',sans-serif;background:#f5f7fb;margin:0}
@@ -131,50 +142,65 @@ router.get('/admin', requireLogin, isAdmin, async (req, res) => {
         </div>
         `;
 
-        renderPage(req, res, '管理者メニュー', '管理者メニュー', html);
+  renderPage(req, res, "管理者メニュー", "管理者メニュー", html);
 });
 
 // 従業員登録 → 統合ページにリダイレクト
-router.get('/admin/register-employee', requireLogin, isAdmin, (req, res) => {
-    res.redirect('/hr/add');
+router.get("/admin/register-employee", requireLogin, isAdmin, (req, res) => {
+  res.redirect("/hr/add");
 });
-router.post('/admin/register-employee', requireLogin, isAdmin, (req, res) => {
-    res.redirect('/hr/add');
+router.post("/admin/register-employee", requireLogin, isAdmin, (req, res) => {
+  res.redirect("/hr/add");
 });
 
-router.get('/admin/register-employee', requireLogin, isAdmin, (req, res) => {
-    res.redirect('/hr/add');
+router.get("/admin/register-employee", requireLogin, isAdmin, (req, res) => {
+  res.redirect("/hr/add");
 });
-router.post('/admin/register-employee', requireLogin, isAdmin, (req, res) => {
-    res.redirect('/hr/add');
+router.post("/admin/register-employee", requireLogin, isAdmin, (req, res) => {
+  res.redirect("/hr/add");
 });
 
 // ── AI評価 自己評価レポート（管理者閲覧）──
-router.get('/admin/semi-assessments', requireLogin, isAdmin, async (req, res) => {
+router.get(
+  "/admin/semi-assessments",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        // 全フィードバックを取得（ユーザー・従業員情報を結合）
-        const feedbacks = await SemiAnnualFeedback.find().sort({ createdAt: -1 }).limit(200).lean();
-        const userIds = [...new Set(feedbacks.map(f => String(f.userId)))];
-        const [users, employees] = await Promise.all([
-            User.find({ _id: { $in: userIds } }).lean(),
-            Employee.find({ userId: { $in: userIds } }).lean(),
-        ]);
-        const userMap = Object.fromEntries(users.map(u => [String(u._id), u]));
-        const empMap  = Object.fromEntries(employees.map(e => [String(e.userId), e]));
+      // 全フィードバックを取得（ユーザー・従業員情報を結合）
+      const feedbacks = await SemiAnnualFeedback.find()
+        .sort({ createdAt: -1 })
+        .limit(200)
+        .lean();
+      const userIds = [...new Set(feedbacks.map((f) => String(f.userId)))];
+      const [users, employees] = await Promise.all([
+        User.find({ _id: { $in: userIds } }).lean(),
+        Employee.find({ userId: { $in: userIds } }).lean(),
+      ]);
+      const userMap = Object.fromEntries(users.map((u) => [String(u._id), u]));
+      const empMap = Object.fromEntries(
+        employees.map((e) => [String(e.userId), e]),
+      );
 
-        const catKeys   = ['attendance','goal','quality','overtime','leave'];
-        const catLabels = ['出勤・時間管理','目標管理','業務品質','残業管理','休暇管理'];
-        const catColors = ['#2563eb','#16a34a','#0891b2','#7c3aed','#d97706'];
+      const catKeys = ["attendance", "goal", "quality", "overtime", "leave"];
+      const catLabels = [
+        "出勤・時間管理",
+        "目標管理",
+        "業務品質",
+        "残業管理",
+        "休暇管理",
+      ];
+      const catColors = ["#2563eb", "#16a34a", "#0891b2", "#7c3aed", "#d97706"];
 
-        const rows = feedbacks.map(f => {
-            const u = userMap[String(f.userId)] || {};
-            const e = empMap[String(f.userId)] || {};
-            const ratings = f.selfRatings || {};
-            const stars = n => n ? '★'.repeat(n) + '☆'.repeat(5-n) : '—';
-            return { f, u, e, ratings, stars };
-        });
+      const rows = feedbacks.map((f) => {
+        const u = userMap[String(f.userId)] || {};
+        const e = empMap[String(f.userId)] || {};
+        const ratings = f.selfRatings || {};
+        const stars = (n) => (n ? "★".repeat(n) + "☆".repeat(5 - n) : "—");
+        return { f, u, e, ratings, stars };
+      });
 
-        const html = `
+      const html = `
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
 <style>
 body{font-family:Inter,'Noto Sans JP',system-ui,sans-serif;background:#f5f6fa;margin:0;color:#111827}
@@ -222,38 +248,51 @@ body{font-family:Inter,'Noto Sans JP',system-ui,sans-serif;background:#f5f6fa;ma
         <input type="text" id="filterName" placeholder="🔍 名前・ユーザー名で絞り込み" style="min-width:220px">
         <select id="filterGrade">
             <option value="">すべてのグレード</option>
-            ${['S+','S','A+','A','B+','B','C','D'].map(g=>`<option value="${g}">${g}</option>`).join('')}
+            ${["S+", "S", "A+", "A", "B+", "B", "C", "D"].map((g) => `<option value="${g}">${g}</option>`).join("")}
         </select>
         <span class="count-badge" id="visibleCount">${rows.length}件</span>
     </div>
 
-    ${rows.length === 0 ? `
+    ${
+      rows.length === 0
+        ? `
     <div class="empty-state">
         <i class="fa-solid fa-inbox" style="font-size:40px;margin-bottom:12px;display:block"></i>
         まだ自己評価の送信がありません
-    </div>` : rows.map(({f, u, e, ratings, stars}) => `
-    <div class="card assess-card" data-name="${escapeHtml((e.name||u.username||'').toLowerCase())}" data-grade="${escapeHtml(f.predictedGrade||'')}">
+    </div>`
+        : rows
+            .map(
+              ({ f, u, e, ratings, stars }) => `
+    <div class="card assess-card" data-name="${escapeHtml((e.name || u.username || "").toLowerCase())}" data-grade="${escapeHtml(f.predictedGrade || "")}">
         <div class="card-head">
             <div>
-                <div class="emp-name"><i class="fa-solid fa-user" style="color:#7c3aed;margin-right:5px"></i>${escapeHtml(e.name || u.username || '不明')}</div>
-                <div class="emp-meta">${escapeHtml(e.department||'')}${e.position?' · '+escapeHtml(e.position):''} &nbsp;@${escapeHtml(u.username||'')}</div>
+                <div class="emp-name"><i class="fa-solid fa-user" style="color:#7c3aed;margin-right:5px"></i>${escapeHtml(e.name || u.username || "不明")}</div>
+                <div class="emp-meta">${escapeHtml(e.department || "")}${e.position ? " · " + escapeHtml(e.position) : ""} &nbsp;@${escapeHtml(u.username || "")}</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                <span class="grade-badge">${escapeHtml(f.predictedGrade||'?')}</span>
-                <span style="font-size:13px;color:#6b7280;font-weight:600">${f.predictedScore||0}点</span>
-                <span class="date-badge"><i class="fa-regular fa-clock" style="margin-right:3px"></i>${moment(f.createdAt).format('YYYY/MM/DD HH:mm')}</span>
+                <span class="grade-badge">${escapeHtml(f.predictedGrade || "?")}</span>
+                <span style="font-size:13px;color:#6b7280;font-weight:600">${f.predictedScore || 0}点</span>
+                <span class="date-badge"><i class="fa-regular fa-clock" style="margin-right:3px"></i>${moment(f.createdAt).format("YYYY/MM/DD HH:mm")}</span>
             </div>
         </div>
         <div class="card-body">
             <!-- 左：カテゴリ別自己評価 -->
             <div>
                 <div class="section-label"><i class="fa-solid fa-star" style="color:#f59e0b;margin-right:4px"></i>カテゴリ別 自己評価</div>
-                ${catKeys.map((k,i) => `
+                ${catKeys
+                  .map(
+                    (k, i) => `
                 <div class="star-row">
                     <span class="star-label" style="color:${catColors[i]};font-weight:600">${catLabels[i]}</span>
-                    ${ratings[k] ? `<span class="stars">${'★'.repeat(ratings[k])}<span class="empty">${'★'.repeat(5-ratings[k])}</span></span>
-                    <span style="font-size:11px;color:#9ca3af">${ratings[k]}/5</span>` : `<span class="no-data">未回答</span>`}
-                </div>`).join('')}
+                    ${
+                      ratings[k]
+                        ? `<span class="stars">${"★".repeat(ratings[k])}<span class="empty">${"★".repeat(5 - ratings[k])}</span></span>
+                    <span style="font-size:11px;color:#9ca3af">${ratings[k]}/5</span>`
+                        : `<span class="no-data">未回答</span>`
+                    }
+                </div>`,
+                  )
+                  .join("")}
             </div>
             <!-- 右：コミットメント・アピール -->
             <div>
@@ -263,7 +302,10 @@ body{font-family:Inter,'Noto Sans JP',system-ui,sans-serif;background:#f5f6fa;ma
                 ${f.appeal ? `<div class="text-box" style="border-color:#bfdbfe;background:#eff6ff">${escapeHtml(f.appeal)}</div>` : `<div class="no-data">（記入なし）</div>`}
             </div>
         </div>
-    </div>`).join('')}
+    </div>`,
+            )
+            .join("")
+    }
 </div>
 
 <script>
@@ -287,61 +329,98 @@ body{font-family:Inter,'Noto Sans JP',system-ui,sans-serif;background:#f5f6fa;ma
 })();
 </script>`;
 
-        renderPage(req, res, 'AI評価 自己評価レポート', '管理者 / AI評価レポート', html);
+      renderPage(
+        req,
+        res,
+        "AI評価 自己評価レポート",
+        "管理者 / AI評価レポート",
+        html,
+      );
     } catch (err) {
-        console.error('semi-assessments error', err);
-        res.status(500).send('エラーが発生しました');
+      console.error("semi-assessments error", err);
+      res.status(500).send("エラーが発生しました");
     }
-});
+  },
+);
 
 // 管理者月別勤怠照会ページ
-router.get('/admin/monthly-attendance', requireLogin, isAdmin, async (req, res) => {
+router.get(
+  "/admin/monthly-attendance",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const year       = parseInt(req.query.year)  || new Date().getFullYear();
-        const month      = parseInt(req.query.month) || new Date().getMonth() + 1;
-        const department = req.query.department || '';
+      const year = parseInt(req.query.year) || new Date().getFullYear();
+      const month = parseInt(req.query.month) || new Date().getMonth() + 1;
+      const department = req.query.department || "";
 
-        const startDate = new Date(year, month - 1, 1);
-        const endDate   = new Date(year, month, 0);
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0);
 
-        const query = department ? { department } : {};
-        const employees = await Employee.find(query).populate('userId');
+      const query = department ? { department } : {};
+      const employees = await Employee.find(query).populate("userId");
 
-        const monthlyData = await Promise.all(employees.map(async employee => {
-            const attendances = await Attendance.find({
-                userId: employee.userId._id,
-                date: { $gte: startDate, $lte: endDate }
-            }).sort({ date: 1 });
+      const monthlyData = await Promise.all(
+        employees.map(async (employee) => {
+          const attendances = await Attendance.find({
+            userId: employee.userId._id,
+            date: { $gte: startDate, $lte: endDate },
+          }).sort({ date: 1 });
 
-            const approvalRequest = await ApprovalRequest.findOne({
-                employeeId: employee.employeeId,
-                year,
-                month
-            });
+          const approvalRequest = await ApprovalRequest.findOne({
+            employeeId: employee.employeeId,
+            year,
+            month,
+          });
 
-            const totalHours = attendances.reduce((s, a) => s + (a.workingHours || 0), 0);
-            const cntAbsent  = attendances.filter(a => a.status === '欠勤').length;
-            const cntLate    = attendances.filter(a => a.status === '遅刻').length;
+          const totalHours = attendances.reduce(
+            (s, a) => s + (a.workingHours || 0),
+            0,
+          );
+          const cntAbsent = attendances.filter(
+            (a) => a.status === "欠勤",
+          ).length;
+          const cntLate = attendances.filter((a) => a.status === "遅刻").length;
 
-            return { employee, attendances, approvalRequest, totalHours, cntAbsent, cntLate };
-        }));
+          return {
+            employee,
+            attendances,
+            approvalRequest,
+            totalHours,
+            cntAbsent,
+            cntLate,
+          };
+        }),
+      );
 
-        const departments = await Employee.distinct('department');
+      const departments = await Employee.distinct("department");
 
-        const now = moment().tz('Asia/Tokyo');
-        const yearOptions = [now.year()-1, now.year(), now.year()+1]
-            .map(y => `<option value="${y}" ${y===year?'selected':''}>${y}年</option>`).join('');
-        const monthOptions = Array.from({length:12},(_,i)=>i+1)
-            .map(m => `<option value="${m}" ${m===month?'selected':''}>${m}月</option>`).join('');
-        const deptOptions = departments
-            .map(d => `<option value="${escapeHtml(d)}" ${d===department?'selected':''}>${escapeHtml(d)}</option>`).join('');
+      const now = moment().tz("Asia/Tokyo");
+      const yearOptions = [now.year() - 1, now.year(), now.year() + 1]
+        .map(
+          (y) =>
+            `<option value="${y}" ${y === year ? "selected" : ""}>${y}年</option>`,
+        )
+        .join("");
+      const monthOptions = Array.from({ length: 12 }, (_, i) => i + 1)
+        .map(
+          (m) =>
+            `<option value="${m}" ${m === month ? "selected" : ""}>${m}月</option>`,
+        )
+        .join("");
+      const deptOptions = departments
+        .map(
+          (d) =>
+            `<option value="${escapeHtml(d)}" ${d === department ? "selected" : ""}>${escapeHtml(d)}</option>`,
+        )
+        .join("");
 
-        const shell = buildPageShell({
-            title: `月別勤怠照会 ${year}年${month}月`,
-            currentPath: '/admin/monthly-attendance',
-            employee: req.session.employee,
-            isAdmin: true,
-            extraHead: `<style>
+      const shell = buildPageShell({
+        title: `月別勤怠照会 ${year}年${month}月`,
+        currentPath: "/admin/monthly-attendance",
+        employee: req.session.employee,
+        isAdmin: true,
+        extraHead: `<style>
 .page-header { display:flex; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
 .page-header h2 { margin:0; font-size:22px; font-weight:700; color:#0b2540; }
 .filter-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
@@ -369,10 +448,10 @@ router.get('/admin/monthly-attendance', requireLogin, isAdmin, async (req, res) 
   .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
   .tbl-wrap table{min-width:560px}
 }
-</style>`
-        });
+</style>`,
+      });
 
-        res.send(`${shell}
+      res.send(`${shell}
 <div class="page-header">
     <a href="/admin" class="btn btn-ghost btn-sm"><i class="fa-solid fa-arrow-left"></i></a>
     <h2><i class="fa-solid fa-calendar-days" style="color:#ef4444"></i> 月別勤怠照会</h2>
@@ -392,12 +471,29 @@ router.get('/admin/monthly-attendance', requireLogin, isAdmin, async (req, res) 
     </form>
 </div>
 
-${monthlyData.length === 0 ? `<div class="card" style="text-align:center;padding:40px;color:#6b7280">対象社員がいません</div>` : ''}
+${monthlyData.length === 0 ? `<div class="card" style="text-align:center;padding:40px;color:#6b7280">対象社員がいません</div>` : ""}
 
-${monthlyData.map(data => {
-    const { employee, attendances, approvalRequest, totalHours, cntAbsent, cntLate } = data;
-    const statusMap = { pending:['badge-warning','承認待ち'], approved:['badge-success','承認済み'], returned:['badge-danger','差し戻し'] };
-    const [bCls, bLabel] = approvalRequest ? (statusMap[approvalRequest.status] || ['badge-muted', approvalRequest.status]) : [];
+${monthlyData
+  .map((data) => {
+    const {
+      employee,
+      attendances,
+      approvalRequest,
+      totalHours,
+      cntAbsent,
+      cntLate,
+    } = data;
+    const statusMap = {
+      pending: ["badge-warning", "承認待ち"],
+      approved: ["badge-success", "承認済み"],
+      returned: ["badge-danger", "差し戻し"],
+    };
+    const [bCls, bLabel] = approvalRequest
+      ? statusMap[approvalRequest.status] || [
+          "badge-muted",
+          approvalRequest.status,
+        ]
+      : [];
     return `
 <div class="emp-block">
     <div class="emp-block-header">
@@ -410,20 +506,28 @@ ${monthlyData.map(data => {
                 <span class="emp-stat">遅刻: <strong>${cntLate}</strong></span>
                 <span class="emp-stat">欠勤: <strong>${cntAbsent}</strong></span>
             </div>
-            ${approvalRequest ? `<span class="badge ${bCls}">${bLabel}</span>` : ''}
-            ${approvalRequest && approvalRequest.status === 'pending' ? `
+            ${approvalRequest ? `<span class="badge ${bCls}">${bLabel}</span>` : ""}
+            ${
+              approvalRequest && approvalRequest.status === "pending"
+                ? `
                 <button onclick="approveAttendance('${escapeHtml(employee.employeeId)}',${year},${month})"
                         class="btn btn-success btn-sm"><i class="fa-solid fa-check"></i> 承認</button>
-            ` : ''}
+            `
+                : ""
+            }
             <button onclick="window.open('/admin/print-attendance?employeeId=${escapeHtml(employee.employeeId)}&year=${year}&month=${month}','_blank')"
                     class="btn btn-ghost btn-sm"><i class="fa-solid fa-print"></i> 印刷</button>
         </div>
     </div>
-    ${approvalRequest && approvalRequest.status === 'pending' ? `
+    ${
+      approvalRequest && approvalRequest.status === "pending"
+        ? `
     <div class="approval-notice">
         <i class="fa-solid fa-bell"></i> <strong>${year}年${month}月の承認リクエストがあります</strong>
-        — リクエスト日: ${approvalRequest.requestedAt ? approvalRequest.requestedAt.toLocaleDateString('ja-JP') : '-'}
-    </div>` : ''}
+        — リクエスト日: ${approvalRequest.requestedAt ? approvalRequest.requestedAt.toLocaleDateString("ja-JP") : "-"}
+    </div>`
+        : ""
+    }
     <div class="tbl-wrap">
         <table>
             <thead>
@@ -440,34 +544,44 @@ ${monthlyData.map(data => {
                 </tr>
             </thead>
             <tbody>
-                ${attendances.length === 0 ? `<tr><td colspan="9" style="text-align:center;color:#9ca3af;padding:20px">記録なし</td></tr>` : ''}
-                ${attendances.map(att => {
-                    const statusCls = att.status === '遅刻' ? 'badge-warning' : att.status === '早退' ? 'badge-warning' : att.status === '欠勤' ? 'badge-danger' : 'badge-success';
+                ${attendances.length === 0 ? `<tr><td colspan="9" style="text-align:center;color:#9ca3af;padding:20px">記録なし</td></tr>` : ""}
+                ${attendances
+                  .map((att) => {
+                    const statusCls =
+                      att.status === "遅刻"
+                        ? "badge-warning"
+                        : att.status === "早退"
+                          ? "badge-warning"
+                          : att.status === "欠勤"
+                            ? "badge-danger"
+                            : "badge-success";
                     return `<tr>
-                        <td>${moment(att.date).tz('Asia/Tokyo').format('YYYY/MM/DD (ddd)')}</td>
-                        <td>${att.checkIn  ? moment(att.checkIn).tz('Asia/Tokyo').format('HH:mm')  : '<span style="color:#9ca3af">-</span>'}</td>
-                        <td>${att.checkOut ? moment(att.checkOut).tz('Asia/Tokyo').format('HH:mm') : '<span style="color:#9ca3af">-</span>'}</td>
+                        <td>${moment(att.date).tz("Asia/Tokyo").format("YYYY/MM/DD (ddd)")}</td>
+                        <td>${att.checkIn ? moment(att.checkIn).tz("Asia/Tokyo").format("HH:mm") : '<span style="color:#9ca3af">-</span>'}</td>
+                        <td>${att.checkOut ? moment(att.checkOut).tz("Asia/Tokyo").format("HH:mm") : '<span style="color:#9ca3af">-</span>'}</td>
                         <td style="color:#6b7280;font-size:12px">
-                            ${att.lunchStart ? moment(att.lunchStart).tz('Asia/Tokyo').format('HH:mm') : '-'} ～
-                            ${att.lunchEnd   ? moment(att.lunchEnd).tz('Asia/Tokyo').format('HH:mm')   : '-'}
+                            ${att.lunchStart ? moment(att.lunchStart).tz("Asia/Tokyo").format("HH:mm") : "-"} ～
+                            ${att.lunchEnd ? moment(att.lunchEnd).tz("Asia/Tokyo").format("HH:mm") : "-"}
                         </td>
-                        <td>${att.workingHours != null ? att.workingHours + 'h' : '-'}</td>
+                        <td>${att.workingHours != null ? att.workingHours + "h" : "-"}</td>
                         <td><span class="badge ${statusCls}">${att.status}</span>
-                            ${att.isConfirmed ? '<span class="badge badge-info" style="margin-left:2px">確定</span>' : ''}</td>
+                            ${att.isConfirmed ? '<span class="badge badge-info" style="margin-left:2px">確定</span>' : ""}</td>
                         <td>
                             ${att.isGpsVerified ? '<span style="background:#dcfce7;color:#16a34a;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:600">GPS</span>' : '<span style="background:#f1f5f9;color:#94a3b8;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:600">手動</span>'}
                         </td>
-                        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;color:#6b7280">${att.notes ? escapeHtml(att.notes) : '-'}</td>
+                        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;color:#6b7280">${att.notes ? escapeHtml(att.notes) : "-"}</td>
                         <td>
                             <a href="/edit-attendance/${att._id}" class="btn btn-ghost btn-sm"><i class="fa-solid fa-pen"></i></a>
                         </td>
                     </tr>`;
-                }).join('')}
+                  })
+                  .join("")}
             </tbody>
         </table>
     </div>
 </div>`;
-}).join('')}
+  })
+  .join("")}
 
 <script>
 function approveAttendance(employeeId, year, month) {
@@ -484,141 +598,180 @@ function approveAttendance(employeeId, year, month) {
 </script>
 ${pageFooter()}`);
     } catch (error) {
-        console.error('error:', error);
-        res.status(500).send(`<div style="padding:40px;font-family:sans-serif"><h2>エラー</h2><p>データ照会中にエラーが発生しました</p><a href="/admin">管理画面に戻る</a></div>`);
+      console.error("error:", error);
+      res
+        .status(500)
+        .send(
+          `<div style="padding:40px;font-family:sans-serif"><h2>エラー</h2><p>データ照会中にエラーが発生しました</p><a href="/admin">管理画面に戻る</a></div>`,
+        );
     }
-});
-        
+  },
+);
+
 // 勤怠承認リクエスト処理
-router.post('/admin/request-approval', requireLogin, isAdmin, async (req, res) => {
+router.post(
+  "/admin/request-approval",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const { employeeId, year, month } = req.body;
-        
-        // 필수 파라미터 검증
-        if (!employeeId || !year || !month) {
-            return res.status(400).json({
-                success: false,
-                message: '必須パラメータが不足しています'
-            });
-        }
+      const { employeeId, year, month } = req.body;
 
-        // 실제 승인 로직 구현 (예시)
-        const employee = await Employee.findOne({ employeeId });
-        if (!employee) {
-            return res.status(404).json({
-                success: false,
-                message: '従業員が見つかりません'
-            });
-        }
-
-        // 여기에 실제 승인 처리 로직 추가
-        console.log(`勤怠承認リクエスト: ${employeeId} - ${year}年${month}月`);
-
-        res.json({
-            success: true,
-            message: '承認リクエストが完了しました',
-            employeeId,
-            year,
-            month
+      // 필수 파라미터 검증
+      if (!employeeId || !year || !month) {
+        return res.status(400).json({
+          success: false,
+          message: "必須パラメータが不足しています",
         });
+      }
+
+      // 실제 승인 로직 구현 (예시)
+      const employee = await Employee.findOne({ employeeId });
+      if (!employee) {
+        return res.status(404).json({
+          success: false,
+          message: "従業員が見つかりません",
+        });
+      }
+
+      // 여기에 실제 승인 처리 로직 추가
+      console.log(`勤怠承認リクエスト: ${employeeId} - ${year}年${month}月`);
+
+      res.json({
+        success: true,
+        message: "承認リクエストが完了しました",
+        employeeId,
+        year,
+        month,
+      });
     } catch (error) {
-        console.error('承認リクエストエラー:', error);
-        res.status(500).json({
-            success: false,
-            message: '内部サーバーエラーが発生しました'
-        });
+      console.error("承認リクエストエラー:", error);
+      res.status(500).json({
+        success: false,
+        message: "内部サーバーエラーが発生しました",
+      });
     }
-});
+  },
+);
 
-router.post('/admin/approve-attendance', requireLogin, isAdmin, async (req, res) => {
+router.post(
+  "/admin/approve-attendance",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const { employeeId, year, month } = req.body;
+      const { employeeId, year, month } = req.body;
 
-        // 従業員情報取得
-        const employee = await Employee.findOne({ employeeId });
-        if (!employee) {
-            return res.status(404).json({ 
-                success: false, 
-                message: '従業員が見つかりません' 
-            });
-        }
-
-        // 承認リクエスト取得
-        const approvalRequest = await ApprovalRequest.findOne({
-            employeeId: employeeId,
-            year: year,
-            month: month,
-            status: 'pending'
+      // 従業員情報取得
+      const employee = await Employee.findOne({ employeeId });
+      if (!employee) {
+        return res.status(404).json({
+          success: false,
+          message: "従業員が見つかりません",
         });
+      }
 
-        if (!approvalRequest) {
-            return res.status(400).json({ 
-                success: false, 
-                message: '承認待ちのリクエストが見つかりません' 
-            });
-        }
+      // 承認リクエスト取得
+      const approvalRequest = await ApprovalRequest.findOne({
+        employeeId: employeeId,
+        year: year,
+        month: month,
+        status: "pending",
+      });
 
-        // 該当月の勤怠を承認済みに更新
-        const startDate = new Date(year, month - 1, 1);
-        const endDate = new Date(year, month, 0);
-        
-        await Attendance.updateMany({
-            userId: employee.userId,
-            date: { $gte: startDate, $lte: endDate }
-        }, {
-            $set: {
-                isConfirmed: true,
-                confirmedAt: new Date(),
-                confirmedBy: req.session.userId
-            }
+      if (!approvalRequest) {
+        return res.status(400).json({
+          success: false,
+          message: "承認待ちのリクエストが見つかりません",
         });
+      }
 
-        // 承認リクエストを承認済みに更新
-        approvalRequest.status = 'approved';
-        approvalRequest.processedAt = new Date();
-        approvalRequest.processedBy = req.session.userId;
-        await approvalRequest.save();
+      // 該当月の勤怠を承認済みに更新
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0);
 
-        res.json({ 
-            success: true,
-            message: '勤怠記録を承認しました',
-            employeeId: employeeId,
-            employeeName: employee.name,
-            year: year,
-            month: month
+      await Attendance.updateMany(
+        {
+          userId: employee.userId,
+          date: { $gte: startDate, $lte: endDate },
+        },
+        {
+          $set: {
+            isConfirmed: true,
+            confirmedAt: new Date(),
+            confirmedBy: req.session.userId,
+          },
+        },
+      );
+
+      // 承認リクエストを承認済みに更新
+      approvalRequest.status = "approved";
+      approvalRequest.processedAt = new Date();
+      approvalRequest.processedBy = req.session.userId;
+      await approvalRequest.save();
+
+      // 社員に承認完了を通知
+      if (employee.userId) {
+        await createNotification({
+          userId: employee.userId,
+          type: "attendance_approved",
+          title: `✅ ${year}年${month}月分の勤怠が承認されました`,
+          body: "勤怠記録が承認済みになりました。",
+          link: "/attendance",
         });
+        sendEmailToUser(employee.userId, {
+          subject: `【NOKORI勤怠管理】${year}年${month}月分の勤怠が承認されました`,
+          text: `${year}年${month}月分の勤怠が承認されました。\n\n${process.env.APP_URL || ""}/attendance`,
+        }).catch(() => {});
+      }
+
+      res.json({
+        success: true,
+        message: "勤怠記録を承認しました",
+        employeeId: employeeId,
+        employeeName: employee.name,
+        year: year,
+        month: month,
+      });
     } catch (error) {
-        console.error('承認処理エラー:', error);
-        res.status(500).json({ 
-            success: false,
-            message: '承認処理中にエラーが発生しました',
-            error: error.message
-        });
+      console.error("承認処理エラー:", error);
+      res.status(500).json({
+        success: false,
+        message: "承認処理中にエラーが発生しました",
+        error: error.message,
+      });
     }
-});
+  },
+);
 
 // 勤怠表印刷ページ
-router.get('/admin/print-attendance', requireLogin, isAdmin, async (req, res) => {
+router.get(
+  "/admin/print-attendance",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const { employeeId, year, month } = req.query;
-        
-        const employee = await Employee.findOne({ employeeId });
-        if (!employee) {
-            return res.status(404).send('従業員が見つかりません');
-        }
-        
-        const startDate = new Date(year, month - 1, 1);
-        const endDate = new Date(year, month, 0);
-        
-        const attendances = await Attendance.find({
-            userId: employee.userId,
-            date: { $gte: startDate, $lte: endDate }
-        }).sort({ date: 1 });
-        
-        // 総勤務時間計算
-        const totalWorkingHours = attendances.filter(a => a.status !== '欠勤').reduce((sum, att) => sum + (att.workingHours || 0), 0);
-        
-        res.send(`
+      const { employeeId, year, month } = req.query;
+
+      const employee = await Employee.findOne({ employeeId });
+      if (!employee) {
+        return res.status(404).send("従業員が見つかりません");
+      }
+
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0);
+
+      const attendances = await Attendance.find({
+        userId: employee.userId,
+        date: { $gte: startDate, $lte: endDate },
+      }).sort({ date: 1 });
+
+      // 総勤務時間計算
+      const totalWorkingHours = attendances
+        .filter((a) => a.status !== "欠勤")
+        .reduce((sum, att) => sum + (att.workingHours || 0), 0);
+
+      res.send(`
             <!DOCTYPE html>
             <html>
             <head>
@@ -696,28 +849,34 @@ router.get('/admin/print-attendance', requireLogin, isAdmin, async (req, res) =>
                             </tr>
                         </thead>
                         <tbody>
-                            ${attendances.map(att => {
-                                let statusClass = '';
-                                if (att.status === '正常') statusClass = 'status-normal';
-                                else if (att.status === '遅刻') statusClass = 'status-late';
-                                else if (att.status === '早退') statusClass = 'status-early';
-                                else if (att.status === '欠勤') statusClass = 'status-absent';
-                                
+                            ${attendances
+                              .map((att) => {
+                                let statusClass = "";
+                                if (att.status === "正常")
+                                  statusClass = "status-normal";
+                                else if (att.status === "遅刻")
+                                  statusClass = "status-late";
+                                else if (att.status === "早退")
+                                  statusClass = "status-early";
+                                else if (att.status === "欠勤")
+                                  statusClass = "status-absent";
+
                                 return `
                                 <tr>
-                                    <td>${moment(att.date).tz('Asia/Tokyo').format('YYYY/MM/DD')}</td>
-                                    <td>${att.checkIn ? moment(att.checkIn).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}</td>
-                                    <td>${att.checkOut ? moment(att.checkOut).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}</td>
+                                    <td>${moment(att.date).tz("Asia/Tokyo").format("YYYY/MM/DD")}</td>
+                                    <td>${att.checkIn ? moment(att.checkIn).tz("Asia/Tokyo").format("HH:mm:ss") : "-"}</td>
+                                    <td>${att.checkOut ? moment(att.checkOut).tz("Asia/Tokyo").format("HH:mm:ss") : "-"}</td>
                                     <td>
-                                        ${att.lunchStart ? moment(att.lunchStart).tz('Asia/Tokyo').format('HH:mm:ss') : '-'} ～
-                                        ${att.lunchEnd ? moment(att.lunchEnd).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}
+                                        ${att.lunchStart ? moment(att.lunchStart).tz("Asia/Tokyo").format("HH:mm:ss") : "-"} ～
+                                        ${att.lunchEnd ? moment(att.lunchEnd).tz("Asia/Tokyo").format("HH:mm:ss") : "-"}
                                     </td>
-                                    <td>${att.workingHours || '-'}時間</td>
+                                    <td>${att.workingHours || "-"}時間</td>
                                     <td class="status-cell ${statusClass}">${att.status}</td>
-                                    <td>${att.notes || '-'}</td>
+                                    <td>${att.notes || "-"}</td>
                                 </tr>
                             `;
-                            }).join('')}
+                              })
+                              .join("")}
                         </tbody>
                     </table>
                     
@@ -726,7 +885,7 @@ router.get('/admin/print-attendance', requireLogin, isAdmin, async (req, res) =>
                     </div>
                     
                     <div class="print-footer">
-                        <div>作成日: ${new Date().toLocaleDateString('ja-JP')}</div>
+                        <div>作成日: ${new Date().toLocaleDateString("ja-JP")}</div>
                         <div class="signature-line">
                             <span class="approver-signature">DXPRO SOLUTIONS 金 兌訓
                                 <span class="inkan-image">
@@ -745,48 +904,65 @@ router.get('/admin/print-attendance', requireLogin, isAdmin, async (req, res) =>
             </html>
         `);
     } catch (error) {
-        console.error(error);
-        res.status(500).send('勤怠表印刷中にエラーが発生しました');
+      console.error(error);
+      res.status(500).send("勤怠表印刷中にエラーが発生しました");
     }
-});
+  },
+);
 
 // 一般ユーザー月別勤怠照会ページ
-router.get('/admin/approval-requests', requireLogin, isAdmin, async (req, res) => {
+router.get(
+  "/admin/approval-requests",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const requests = await ApprovalRequest.find({
-            status: { $in: ['pending', 'returned'] }
-        })
-            .populate('userId', 'username')
-            .populate('processedBy', 'username')
-            .sort({ requestedAt: -1 });
+      const requests = await ApprovalRequest.find({
+        status: { $in: ["pending", "returned"] },
+      })
+        .populate("userId", "username")
+        .populate("processedBy", "username")
+        .sort({ requestedAt: -1 });
 
-        const rows = requests.map(r => `
+      const rows = requests
+        .map(
+          (r) => `
             <tr class="apr-row">
-                <td class="apr-td" style="font-family:monospace;font-size:12px;color:#64748b">${escapeHtml(r.employeeId || '')}</td>
-                <td class="apr-td" style="font-weight:700;color:#0f172a">${escapeHtml(r.userId?.username || '-')}</td>
+                <td class="apr-td" style="font-family:monospace;font-size:12px;color:#64748b">${escapeHtml(r.employeeId || "")}</td>
+                <td class="apr-td" style="font-weight:700;color:#0f172a">${escapeHtml(r.userId?.username || "-")}</td>
                 <td class="apr-td">${r.year}年${r.month}月</td>
-                <td class="apr-td" style="color:#64748b">${new Date(r.requestedAt).toLocaleDateString('ja-JP')}</td>
+                <td class="apr-td" style="color:#64748b">${new Date(r.requestedAt).toLocaleDateString("ja-JP")}</td>
                 <td class="apr-td">
-                    ${r.status === 'pending'
+                    ${
+                      r.status === "pending"
                         ? '<span class="apr-badge apr-badge-pending">⏳ 承認待ち</span>'
-                        : '<span class="apr-badge apr-badge-returned">↩ 差し戻し</span>'}
-                    ${r.status === 'returned' && r.returnReason
+                        : '<span class="apr-badge apr-badge-returned">↩ 差し戻し</span>'
+                    }
+                    ${
+                      r.status === "returned" && r.returnReason
                         ? `<div class="apr-return-reason"><i class="fa fa-comment-dots"></i> ${escapeHtml(r.returnReason)}</div>`
-                        : ''}
+                        : ""
+                    }
                 </td>
                 <td class="apr-td">
                     <div class="apr-actions">
-                        ${r.status === 'pending' ? `
+                        ${
+                          r.status === "pending"
+                            ? `
                             <a href="/admin/approve-request/${r._id}" class="apr-btn apr-btn-approve"><i class="fa fa-check"></i> 承認</a>
                             <button onclick="openReturnModal('${r._id}')" class="apr-btn apr-btn-return"><i class="fa fa-rotate-left"></i> 差し戻し</button>
-                        ` : ''}
+                        `
+                            : ""
+                        }
                         <a href="/admin/view-attendance/${r.userId?._id}/${r.year}/${r.month}" class="apr-btn apr-btn-view"><i class="fa fa-eye"></i> 詳細</a>
                     </div>
                 </td>
             </tr>
-        `).join('');
+        `,
+        )
+        .join("");
 
-        const html = `
+      const html = `
         <style>
             .apr-wrap { max-width: 1100px; margin: 0 auto; padding: 0 0 60px; }
             .apr-breadcrumb { display:flex; align-items:center; gap:6px; font-size:12px; color:#94a3b8; margin-bottom:24px; }
@@ -863,12 +1039,15 @@ router.get('/admin/approval-requests', requireLogin, isAdmin, async (req, res) =
             </div>
 
             <div class="apr-card">
-                ${requests.length === 0 ? `
+                ${
+                  requests.length === 0
+                    ? `
                     <div class="apr-empty">
                         <div class="apr-empty-icon">✅</div>
                         <div class="apr-empty-msg">承認待ちのリクエストはありません</div>
                     </div>
-                ` : `
+                `
+                    : `
                 <div class="apr-table-wrap"><table class="apr-table">
                     <thead>
                         <tr>
@@ -883,7 +1062,8 @@ router.get('/admin/approval-requests', requireLogin, isAdmin, async (req, res) =
                     <tbody>
                         ${rows}
                     </tbody>
-                </table></div>`}
+                </table></div>`
+                }
             </div>
 
             <div class="apr-footer">
@@ -932,121 +1112,146 @@ router.get('/admin/approval-requests', requireLogin, isAdmin, async (req, res) =
         });
         </script>
         `;
-        renderPage(req, res, '承認リクエスト一覧', '承認リクエスト一覧', html);
+      renderPage(req, res, "承認リクエスト一覧", "承認リクエスト一覧", html);
     } catch (error) {
-        console.error(error);
-        res.status(500).send('承認リクエスト一覧取得中にエラーが発生しました');
+      console.error(error);
+      res.status(500).send("承認リクエスト一覧取得中にエラーが発生しました");
     }
-});
+  },
+);
 
-router.post('/admin/return-request', requireLogin, isAdmin, async (req, res) => {
+router.post(
+  "/admin/return-request",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const { requestId, returnReason } = req.body;
-        
-        const request = await ApprovalRequest.findById(requestId);
-        if (!request) {
-            return res.status(404).json({ success: false, message: 'リクエストが見つかりません' });
-        }
-        
-        // 해당 월의 근태 기록 확정 상태 해제
-        const startDate = new Date(request.year, request.month - 1, 1);
-        const endDate = new Date(request.year, request.month, 0);
-        
-        await Attendance.updateMany({
-            userId: request.userId,
-            date: { $gte: startDate, $lte: endDate }
-        }, {
-            $set: {
-                isConfirmed: false,
-                confirmedAt: null,
-                confirmedBy: null
-            }
-        });
-        
-        request.status = 'returned';
-        request.returnReason = returnReason;
-        request.processedAt = new Date();
-        request.processedBy = req.session.userId;
-        await request.save();
+      const { requestId, returnReason } = req.body;
 
-        // 勤怠差し戻し通知
-        await createNotification({
-            userId: request.userId,
-            type: 'attendance_returned',
-            title: `↩ 勤怠記録が差し戻されました`,
-            body: `${request.year}年${request.month}月の勤怠${returnReason ? ' - ' + returnReason.substring(0,60) : ''}`,
-            link: '/attendance',
-        });
-        res.redirect('/admin/approval-requests');
+      const request = await ApprovalRequest.findById(requestId);
+      if (!request) {
+        return res
+          .status(404)
+          .json({ success: false, message: "リクエストが見つかりません" });
+      }
+
+      // 해당 월의 근태 기록 확정 상태 해제
+      const startDate = new Date(request.year, request.month - 1, 1);
+      const endDate = new Date(request.year, request.month, 0);
+
+      await Attendance.updateMany(
+        {
+          userId: request.userId,
+          date: { $gte: startDate, $lte: endDate },
+        },
+        {
+          $set: {
+            isConfirmed: false,
+            confirmedAt: null,
+            confirmedBy: null,
+          },
+        },
+      );
+
+      request.status = "returned";
+      request.returnReason = returnReason;
+      request.processedAt = new Date();
+      request.processedBy = req.session.userId;
+      await request.save();
+
+      // 勤怠差し戻し通知
+      await createNotification({
+        userId: request.userId,
+        type: "attendance_returned",
+        title: `↩ 勤怠記録が差し戻されました`,
+        body: `${request.year}年${request.month}月の勤怠${returnReason ? " - " + returnReason.substring(0, 60) : ""}`,
+        link: "/attendance",
+      });
+      res.redirect("/admin/approval-requests");
     } catch (error) {
-        console.error('差し戻し処理エラー:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: '差し戻し処理中にエラーが発生しました',
-            error: error.message 
-        });
+      console.error("差し戻し処理エラー:", error);
+      res.status(500).json({
+        success: false,
+        message: "差し戻し処理中にエラーが発生しました",
+        error: error.message,
+      });
     }
-});
+  },
+);
 
-router.get('/admin/approve-request', requireLogin, isAdmin, async (req, res) => {
-    res.redirect('/admin/approval-requests');
-});
+router.get(
+  "/admin/approve-request",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
+    res.redirect("/admin/approval-requests");
+  },
+);
 
 // 관리자 승인 처리
-router.get('/admin/approve-request/:id', requireLogin, isAdmin, async (req, res) => {
+router.get(
+  "/admin/approve-request/:id",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const request = await ApprovalRequest.findById(req.params.id);
-        if (!request) {
-            return res.redirect('/admin/approval-requests');
-        }
+      const request = await ApprovalRequest.findById(req.params.id);
+      if (!request) {
+        return res.redirect("/admin/approval-requests");
+      }
 
-        // 해당 월의 모든 근태 기록을 확정 상태로 변경
-        const startDate = new Date(request.year, request.month - 1, 1);
-        const endDate = new Date(request.year, request.month, 0);
-        
-        await Attendance.updateMany({
-            userId: request.userId,
-            date: { $gte: startDate, $lte: endDate }
-        }, {
-            $set: {
-                isConfirmed: true,
-                confirmedAt: new Date(),
-                confirmedBy: req.session.userId
-            }
-        });
+      // 해당 월의 모든 근태 기록을 확정 상태로 변경
+      const startDate = new Date(request.year, request.month - 1, 1);
+      const endDate = new Date(request.year, request.month, 0);
 
-        // 요청 상태 업데이트
-        request.status = 'approved';
-        request.processedAt = new Date();
-        request.processedBy = req.session.userId;
-        await request.save();
+      await Attendance.updateMany(
+        {
+          userId: request.userId,
+          date: { $gte: startDate, $lte: endDate },
+        },
+        {
+          $set: {
+            isConfirmed: true,
+            confirmedAt: new Date(),
+            confirmedBy: req.session.userId,
+          },
+        },
+      );
 
-        // 勤怠承認通知
-        await createNotification({
-            userId: request.userId,
-            type: 'attendance_approved',
-            title: `✅ 勤怠記録が承認されました`,
-            body: `${request.year}年${request.month}月の勤怠が承認されました`,
-            link: '/attendance',
-        });
+      // 요청 상태 업데이트
+      request.status = "approved";
+      request.processedAt = new Date();
+      request.processedBy = req.session.userId;
+      await request.save();
 
-        // 승인 완료 후 이메일 발송 로직 추가
-        try {
-            // 1. 사용자 정보 조회
-            const user = await User.findById(request.userId);
-            const employee = await Employee.findOne({ userId: request.userId });
+      // 勤怠承認通知
+      await createNotification({
+        userId: request.userId,
+        type: "attendance_approved",
+        title: `✅ 勤怠記録が承認されました`,
+        body: `${request.year}年${request.month}月の勤怠が承認されました`,
+        link: "/attendance",
+      });
 
-            // 2. 근태 데이터 조회
-            const attendances = await Attendance.find({
-                userId: request.userId,
-                date: { $gte: startDate, $lte: endDate }
-            }).sort({ date: 1 });
+      // 승인 완료 후 이메일 발송 로직 추가
+      try {
+        // 1. 사용자 정보 조회
+        const user = await User.findById(request.userId);
+        const employee = await Employee.findOne({ userId: request.userId });
 
-            // 3. 총 근무 시간 계산
-            const totalWorkingHours = attendances.filter(a => a.status !== '欠勤').reduce((sum, att) => sum + (att.workingHours || 0), 0);
+        // 2. 근태 데이터 조회
+        const attendances = await Attendance.find({
+          userId: request.userId,
+          date: { $gte: startDate, $lte: endDate },
+        }).sort({ date: 1 });
 
-            // 4. HTML 생성 (기존 print-attendance 페이지와 동일한 형식)
-            const html = `
+        // 3. 총 근무 시간 계산
+        const totalWorkingHours = attendances
+          .filter((a) => a.status !== "欠勤")
+          .reduce((sum, att) => sum + (att.workingHours || 0), 0);
+
+        // 4. HTML 생성 (기존 print-attendance 페이지와 동일한 형식)
+        const html = `
                 <!DOCTYPE html>
                 <html>
                 <head>
@@ -1091,19 +1296,23 @@ router.get('/admin/approve-request/:id', requireLogin, isAdmin, async (req, res)
                             </tr>
                         </thead>
                         <tbody>
-                            ${attendances.map(att => `
+                            ${attendances
+                              .map(
+                                (att) => `
                                 <tr>
-                                    <td>${moment(att.date).tz('Asia/Tokyo').format('YYYY/MM/DD')}</td>
-                                    <td>${att.checkIn ? moment(att.checkIn).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}</td>
-                                    <td>${att.checkOut ? moment(att.checkOut).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}</td>
+                                    <td>${moment(att.date).tz("Asia/Tokyo").format("YYYY/MM/DD")}</td>
+                                    <td>${att.checkIn ? moment(att.checkIn).tz("Asia/Tokyo").format("HH:mm:ss") : "-"}</td>
+                                    <td>${att.checkOut ? moment(att.checkOut).tz("Asia/Tokyo").format("HH:mm:ss") : "-"}</td>
                                     <td>
-                                        ${att.lunchStart ? moment(att.lunchStart).tz('Asia/Tokyo').format('HH:mm:ss') : '-'} ～
-                                        ${att.lunchEnd ? moment(att.lunchEnd).tz('Asia/Tokyo').format('HH:mm:ss') : '-'}
+                                        ${att.lunchStart ? moment(att.lunchStart).tz("Asia/Tokyo").format("HH:mm:ss") : "-"} ～
+                                        ${att.lunchEnd ? moment(att.lunchEnd).tz("Asia/Tokyo").format("HH:mm:ss") : "-"}
                                     </td>
-                                    <td>${att.workingHours || '-'}時間</td>
+                                    <td>${att.workingHours || "-"}時間</td>
                                     <td>${att.status}</td>
                                 </tr>
-                            `).join('')}
+                            `,
+                              )
+                              .join("")}
                         </tbody>
                     </table>
                     
@@ -1112,31 +1321,30 @@ router.get('/admin/approve-request/:id', requireLogin, isAdmin, async (req, res)
                     </div>
                     
                     <div class="print-footer">
-                        <div>承認日: ${new Date().toLocaleDateString('ja-JP')}</div>
+                        <div>承認日: ${new Date().toLocaleDateString("ja-JP")}</div>
                     </div>
                 </body>
                 </html>
             `;
 
-            // 5. PDF 생성
-            const pdfBuffer = await generatePdf(html, {
-                format: 'A4',
-                border: {
-                    top: '20mm',
-                    right: '10mm',
-                    bottom: '20mm',
-                    left: '10mm'
-                }
-            });
+        // 5. PDF 생성
+        const pdfBuffer = await generatePdf(html, {
+          format: "A4",
+          border: {
+            top: "20mm",
+            right: "10mm",
+            bottom: "20mm",
+            left: "10mm",
+          },
+        });
 
-            // 6. 이메일 발송
-            const mailOptions = {
-                from: process.env.EMAIL_USER || 'info@dxpro-sol.com',
-                to: 'nakamura-s-office@bg8.so-net.ne.jp, msatoh@bg8.so-net.ne.jp',
-                cc: 'kim_taehoon@dxpro-sol.com, otomo_kento@dxpro-sol.com',
-                subject: `【勤怠報告】${employee.name}様の${request.year}年${request.month}月分勤怠情報のご報告`,
-                text:
-            `佐藤公臣税理士事務所  
+        // 6. 이메일 발송
+        const mailOptions = {
+          from: process.env.EMAIL_USER || "info@dxpro-sol.com",
+          to: "nakamura-s-office@bg8.so-net.ne.jp, msatoh@bg8.so-net.ne.jp",
+          cc: "kim_taehoon@dxpro-sol.com, otomo_kento@dxpro-sol.com",
+          subject: `【勤怠報告】${employee.name}様の${request.year}年${request.month}月分勤怠情報のご報告`,
+          text: `佐藤公臣税理士事務所  
             佐藤 様
             
             いつも大変お世話になっております。  
@@ -1169,8 +1377,7 @@ router.get('/admin/approve-request/:id', requireLogin, isAdmin, async (req, res)
             東京都北区田端4-21-14 シャンボール大和郷 402  
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             `,
-                html:
-            `<p>佐藤公臣税理士事務所<br>佐藤 様</p>
+          html: `<p>佐藤公臣税理士事務所<br>佐藤 様</p>
             <p>いつも大変お世話になっております。<br>合同会社DXPRO SOLUTIONSの金です。</p>
             <p>このたび、<strong>${employee.name}</strong>さんの${request.year}年${request.month}月分の勤怠情報につきまして、</p>
             <p>以下の通りご報告申し上げます。</p>
@@ -1200,84 +1407,103 @@ https://www.dxpro-sol.com/
 東京都北区田端4-21-14 シャンボール大和郷 402  
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 </pre>
-`
-            ,
-                attachments: [{
-                    filename: `勤怠表_${employee.name}_${request.year}年${request.month}月.pdf`,
-                    content: pdfBuffer,
-                    contentType: 'application/pdf'
-                }]
-            };
-            
-
-            await transporter.sendMail(mailOptions);
-            console.log(`勤怠メール送信完了: ${employee.name} - ${request.year}年 ${request.month}月`);
-        } catch (emailError) {
-            console.error('メール発信中にエラー発生:', emailError);
-            // 이메일 실패해도 승인은 정상 처리
-        }
-
-        res.redirect('/admin/approval-requests');
-    } catch (error) {
-        console.error(error);
-        res.redirect('/admin/approval-requests');
-    }
-});
-
-// 관리자 거절 처리
-router.get('/admin/reject-request/:id', requireLogin, isAdmin, async (req, res) => {
-    try {
-        const request = await ApprovalRequest.findById(req.params.id);
-        if (!request) {
-            return res.redirect('/admin/approval-requests');
-        }
-
-        // 요청 상태만 업데이트 (근태 기록은 변경하지 않음)
-        request.status = 'rejected';
-        request.processedAt = new Date();
-        request.processedBy = req.session.userId;
-        await request.save();
-        
-        res.redirect('/admin/approval-requests');
-    } catch (error) {
-        console.error(error);
-        res.redirect('/admin/approval-requests');
-    }
-});
-
-// 관리자 근태 확인 페이지
-router.get('/admin/view-attendance/:userId/:year/:month', requireLogin, isAdmin, async (req, res) => {
-    try {
-        const { userId, year, month } = req.params;
-        const user = await User.findById(userId);
-        const employee = await Employee.findOne({ userId: userId });
-        
-        if (!employee) {
-            return res.status(404).send('従業員情報が見つかりません');
-        }
-
-        const startDate = new Date(year, month - 1, 1);
-        const endDate = new Date(year, month, 0);
-        
-        const attendances = await Attendance.find({
-            userId: userId,
-            date: { $gte: startDate, $lte: endDate }
-        }).sort({ date: 1 });
-
-        const statusBadge = s => {
-            const map = {
-                '正常': { bg:'#f0fdf4', color:'#15803d', border:'#bbf7d0' },
-                '遅刻': { bg:'#fffbeb', color:'#92400e', border:'#fcd34d' },
-                '早退': { bg:'#fff7ed', color:'#c2410c', border:'#fed7aa' },
-                '欠勤': { bg:'#fef2f2', color:'#dc2626', border:'#fecaca' },
-            };
-            const st = map[s] || { bg:'#f1f5f9', color:'#64748b', border:'#e2e8f0' };
-            return `<span style="background:${st.bg};color:${st.color};border:1.5px solid ${st.border};padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">${s||'正常'}</span>`;
+`,
+          attachments: [
+            {
+              filename: `勤怠表_${employee.name}_${request.year}年${request.month}月.pdf`,
+              content: pdfBuffer,
+              contentType: "application/pdf",
+            },
+          ],
         };
 
-        const totalHours = attendances.reduce((s, a) => s + (a.workingHours || 0), 0);
+        await transporter.sendMail(mailOptions);
+        console.log(
+          `勤怠メール送信完了: ${employee.name} - ${request.year}年 ${request.month}月`,
+        );
+      } catch (emailError) {
+        console.error("メール発信中にエラー発生:", emailError);
+        // 이메일 실패해도 승인은 정상 처리
+      }
 
-        const html = `
+      res.redirect("/admin/approval-requests");
+    } catch (error) {
+      console.error(error);
+      res.redirect("/admin/approval-requests");
+    }
+  },
+);
+
+// 관리자 거절 처리
+router.get(
+  "/admin/reject-request/:id",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const request = await ApprovalRequest.findById(req.params.id);
+      if (!request) {
+        return res.redirect("/admin/approval-requests");
+      }
+
+      // 요청 상태만 업데이트 (근태 기록은 변경하지 않음)
+      request.status = "rejected";
+      request.processedAt = new Date();
+      request.processedBy = req.session.userId;
+      await request.save();
+
+      res.redirect("/admin/approval-requests");
+    } catch (error) {
+      console.error(error);
+      res.redirect("/admin/approval-requests");
+    }
+  },
+);
+
+// 관리자 근태 확인 페이지
+router.get(
+  "/admin/view-attendance/:userId/:year/:month",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const { userId, year, month } = req.params;
+      const user = await User.findById(userId);
+      const employee = await Employee.findOne({ userId: userId });
+
+      if (!employee) {
+        return res.status(404).send("従業員情報が見つかりません");
+      }
+
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0);
+
+      const attendances = await Attendance.find({
+        userId: userId,
+        date: { $gte: startDate, $lte: endDate },
+      }).sort({ date: 1 });
+
+      const statusBadge = (s) => {
+        const map = {
+          正常: { bg: "#f0fdf4", color: "#15803d", border: "#bbf7d0" },
+          遅刻: { bg: "#fffbeb", color: "#92400e", border: "#fcd34d" },
+          早退: { bg: "#fff7ed", color: "#c2410c", border: "#fed7aa" },
+          欠勤: { bg: "#fef2f2", color: "#dc2626", border: "#fecaca" },
+        };
+        const st = map[s] || {
+          bg: "#f1f5f9",
+          color: "#64748b",
+          border: "#e2e8f0",
+        };
+        return `<span style="background:${st.bg};color:${st.color};border:1.5px solid ${st.border};padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;">${s || "正常"}</span>`;
+      };
+
+      const totalHours = attendances.reduce(
+        (s, a) => s + (a.workingHours || 0),
+        0,
+      );
+
+      const html = `
         <style>
             .vatt-wrap { max-width: 900px; margin: 0 auto; padding: 0 0 60px; }
             .vatt-breadcrumb { display:flex; align-items:center; gap:6px; font-size:12px; color:#94a3b8; margin-bottom:24px; }
@@ -1333,7 +1559,7 @@ router.get('/admin/view-attendance/:userId/:year/:month', requireLogin, isAdmin,
                 </div>
                 <div class="vatt-info-chip">
                     <i class="fa fa-building" style="color:#6366f1;font-size:16px"></i>
-                    <div><span class="chip-label">部署</span><span class="chip-val">${escapeHtml(employee.department||'-')}</span></div>
+                    <div><span class="chip-label">部署</span><span class="chip-val">${escapeHtml(employee.department || "-")}</span></div>
                 </div>
                 <div class="vatt-info-chip">
                     <i class="fa fa-calendar" style="color:#6366f1;font-size:16px"></i>
@@ -1348,11 +1574,11 @@ router.get('/admin/view-attendance/:userId/:year/:month', requireLogin, isAdmin,
                 </div>
                 <div class="vatt-stat">
                     <div class="vatt-stat-ico" style="background:#fff7ed"><i class="fa fa-triangle-exclamation" style="color:#f59e0b"></i></div>
-                    <div><div class="vatt-stat-num">${attendances.filter(a=>a.status==='遅刻').length}</div><div class="vatt-stat-lbl">遅刻</div></div>
+                    <div><div class="vatt-stat-num">${attendances.filter((a) => a.status === "遅刻").length}</div><div class="vatt-stat-lbl">遅刻</div></div>
                 </div>
                 <div class="vatt-stat">
                     <div class="vatt-stat-ico" style="background:#fef2f2"><i class="fa fa-circle-xmark" style="color:#ef4444"></i></div>
-                    <div><div class="vatt-stat-num">${attendances.filter(a=>a.status==='欠勤').length}</div><div class="vatt-stat-lbl">欠勤</div></div>
+                    <div><div class="vatt-stat-num">${attendances.filter((a) => a.status === "欠勤").length}</div><div class="vatt-stat-lbl">欠勤</div></div>
                 </div>
             </div>
 
@@ -1368,20 +1594,28 @@ router.get('/admin/view-attendance/:userId/:year/:month', requireLogin, isAdmin,
                         </tr>
                     </thead>
                     <tbody>
-                        ${attendances.length === 0 ? `
+                        ${
+                          attendances.length === 0
+                            ? `
                             <tr><td colspan="5" style="text-align:center;padding:40px;color:#94a3b8;font-size:14px">
                                 <i class="fa fa-inbox" style="font-size:28px;margin-bottom:8px;display:block;opacity:.4"></i>
                                 該当月の勤怠記録がありません
                             </td></tr>
-                        ` : attendances.map((att, i) => `
+                        `
+                            : attendances
+                                .map(
+                                  (att, i) => `
                             <tr class="vatt-tr">
-                                <td class="vatt-td" style="font-weight:600">${moment(att.date).tz('Asia/Tokyo').format('YYYY/MM/DD（ddd）')}</td>
-                                <td class="vatt-td">${att.checkIn  ? moment(att.checkIn).tz('Asia/Tokyo').format('HH:mm')  : '<span style="color:#cbd5e1">—</span>'}</td>
-                                <td class="vatt-td">${att.checkOut ? moment(att.checkOut).tz('Asia/Tokyo').format('HH:mm') : '<span style="color:#cbd5e1">—</span>'}</td>
-                                <td class="vatt-td" style="font-weight:600">${att.workingHours != null ? att.workingHours+'h' : '<span style="color:#cbd5e1">—</span>'}</td>
+                                <td class="vatt-td" style="font-weight:600">${moment(att.date).tz("Asia/Tokyo").format("YYYY/MM/DD（ddd）")}</td>
+                                <td class="vatt-td">${att.checkIn ? moment(att.checkIn).tz("Asia/Tokyo").format("HH:mm") : '<span style="color:#cbd5e1">—</span>'}</td>
+                                <td class="vatt-td">${att.checkOut ? moment(att.checkOut).tz("Asia/Tokyo").format("HH:mm") : '<span style="color:#cbd5e1">—</span>'}</td>
+                                <td class="vatt-td" style="font-weight:600">${att.workingHours != null ? att.workingHours + "h" : '<span style="color:#cbd5e1">—</span>'}</td>
                                 <td class="vatt-td">${statusBadge(att.status)}</td>
                             </tr>
-                        `).join('')}
+                        `,
+                                )
+                                .join("")
+                        }
                     </tbody>
                 </table></div>
             </div>
@@ -1389,42 +1623,76 @@ router.get('/admin/view-attendance/:userId/:year/:month', requireLogin, isAdmin,
             </a>
         </div>
         `;
-        renderPage(req, res, `${employee.name}さんの勤怠記録`, `${employee.name}さんの${year}年${month}月勤怠記録`, html);
+      renderPage(
+        req,
+        res,
+        `${employee.name}さんの勤怠記録`,
+        `${employee.name}さんの${year}年${month}月勤怠記録`,
+        html,
+      );
     } catch (error) {
-        console.error(error);
-        res.status(500).send('勤怠確認中にエラーが発生しました');
+      console.error(error);
+      res.status(500).send("勤怠確認中にエラーが発生しました");
     }
-});
+  },
+);
 
 // 一般ユーザー勤怠表印刷ページ
 
 // ユーザー権限管理
-router.get('/admin/users', requireLogin, isAdmin, async (req, res) => {
-    try {
-        const users = await User.find({}, 'username isAdmin role createdAt').lean();
+router.get("/admin/users", requireLogin, isAdmin, async (req, res) => {
+  try {
+    const users = await User.find({}, "username isAdmin role createdAt").lean();
 
-        const ROLE_OPTS = [
-            { val: 'admin',       label: '👑 管理者' },
-            { val: 'manager',     label: '🔵 部門長' },
-            { val: 'team_leader', label: '🟢 チームリーダー' },
-            { val: 'employee',    label: '⚪ 一般社員' },
-            { val: 'test_user',   label: '🧪 テストユーザー' },
-        ];
-        const ROLE_BADGE = {
-            admin:       { label: '👑 管理者',          bg: '#fffbeb', color: '#92400e', border: '#fcd34d' },
-            manager:     { label: '🔵 部門長',          bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
-            team_leader: { label: '🟢 チームリーダー',  bg: '#f0fdf4', color: '#15803d', border: '#86efac' },
-            employee:    { label: '⚪ 一般社員',         bg: '#f0f9ff', color: '#0369a1', border: '#bae6fd' },
-            test_user:   { label: '🧪 テストユーザー',  bg: '#faf5ff', color: '#7c3aed', border: '#d8b4fe' },
-        };
+    const ROLE_OPTS = [
+      { val: "admin", label: "👑 管理者" },
+      { val: "manager", label: "🔵 部門長" },
+      { val: "team_leader", label: "🟢 チームリーダー" },
+      { val: "employee", label: "⚪ 一般社員" },
+      { val: "test_user", label: "🧪 テストユーザー" },
+    ];
+    const ROLE_BADGE = {
+      admin: {
+        label: "👑 管理者",
+        bg: "#fffbeb",
+        color: "#92400e",
+        border: "#fcd34d",
+      },
+      manager: {
+        label: "🔵 部門長",
+        bg: "#eff6ff",
+        color: "#1d4ed8",
+        border: "#bfdbfe",
+      },
+      team_leader: {
+        label: "🟢 チームリーダー",
+        bg: "#f0fdf4",
+        color: "#15803d",
+        border: "#86efac",
+      },
+      employee: {
+        label: "⚪ 一般社員",
+        bg: "#f0f9ff",
+        color: "#0369a1",
+        border: "#bae6fd",
+      },
+      test_user: {
+        label: "🧪 テストユーザー",
+        bg: "#faf5ff",
+        color: "#7c3aed",
+        border: "#d8b4fe",
+      },
+    };
 
-        const rows = users.map((u, idx) => {
-            const role = u.role || (u.isAdmin ? 'admin' : 'employee');
-            const badge = ROLE_BADGE[role] || ROLE_BADGE.employee;
-            const opts = ROLE_OPTS.map(o =>
-                `<option value="${o.val}" ${role === o.val ? 'selected' : ''}>${o.label}</option>`
-            ).join('');
-            return `
+    const rows = users
+      .map((u, idx) => {
+        const role = u.role || (u.isAdmin ? "admin" : "employee");
+        const badge = ROLE_BADGE[role] || ROLE_BADGE.employee;
+        const opts = ROLE_OPTS.map(
+          (o) =>
+            `<option value="${o.val}" ${role === o.val ? "selected" : ""}>${o.label}</option>`,
+        ).join("");
+        return `
             <tr class="uadm-row" style="animation-delay:${idx * 40}ms">
                 <td class="uadm-td uadm-td-user">
                     <div class="uadm-user-cell">
@@ -1467,9 +1735,10 @@ router.get('/admin/users', requireLogin, isAdmin, async (req, res) => {
                     </div>
                 </td>
             </tr>`;
-        }).join('');
+      })
+      .join("");
 
-        const html = `
+    const html = `
         <style>
             .uadm-wrap{max-width:1100px;margin:0 auto;padding:0 0 60px}
             .uadm-breadcrumb{display:flex;align-items:center;gap:6px;font-size:12px;color:#94a3b8;margin-bottom:24px}
@@ -1534,9 +1803,9 @@ router.get('/admin/users', requireLogin, isAdmin, async (req, res) => {
                 <div class="uadm-count-chip"><i class="fa fa-users" style="margin-right:5px;opacity:.7"></i>${users.length} アカウント</div>
             </div>
 
-            ${req.query.success === 'role'     ? '<div class="uadm-alert uadm-alert-success"><i class="fa fa-circle-check"></i> ロールを変更しました。</div>' : ''}
-            ${req.query.success === 'password' ? '<div class="uadm-alert uadm-alert-success"><i class="fa fa-circle-check"></i> パスワードをリセットしました。</div>' : ''}
-            ${req.query.error                  ? '<div class="uadm-alert uadm-alert-error"><i class="fa fa-triangle-exclamation"></i> エラーが発生しました。</div>' : ''}
+            ${req.query.success === "role" ? '<div class="uadm-alert uadm-alert-success"><i class="fa fa-circle-check"></i> ロールを変更しました。</div>' : ""}
+            ${req.query.success === "password" ? '<div class="uadm-alert uadm-alert-success"><i class="fa fa-circle-check"></i> パスワードをリセットしました。</div>' : ""}
+            ${req.query.error ? '<div class="uadm-alert uadm-alert-error"><i class="fa fa-triangle-exclamation"></i> エラーが発生しました。</div>' : ""}
 
             <div class="uadm-card">
                 <div class="uadm-table-wrap"><table class="uadm-table">
@@ -1557,76 +1826,107 @@ router.get('/admin/users', requireLogin, isAdmin, async (req, res) => {
             </div>
         </div>
         `;
-        renderPage(req, res, 'ユーザー権限管理', 'ユーザー権限管理', html);
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('エラーが発生しました');
-    }
+    renderPage(req, res, "ユーザー権限管理", "ユーザー権限管理", html);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("エラーが発生しました");
+  }
 });
 
-router.post('/admin/users/change-role', requireLogin, isAdmin, async (req, res) => {
+router.post(
+  "/admin/users/change-role",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const { userId, role } = req.body;
-        const validRoles = ['admin', 'manager', 'team_leader', 'employee', 'test_user'];
-        if (!validRoles.includes(role)) return res.redirect('/admin/users?error=1');
-        await User.findByIdAndUpdate(userId, {
-            role,
-            isAdmin: role === 'admin'
-        });
-        res.redirect('/admin/users?success=role');
+      const { userId, role } = req.body;
+      const validRoles = [
+        "admin",
+        "manager",
+        "team_leader",
+        "employee",
+        "test_user",
+      ];
+      if (!validRoles.includes(role))
+        return res.redirect("/admin/users?error=1");
+      await User.findByIdAndUpdate(userId, {
+        role,
+        isAdmin: role === "admin",
+      });
+      res.redirect("/admin/users?success=role");
     } catch (err) {
-        console.error(err);
-        res.redirect('/admin/users?error=1');
+      console.error(err);
+      res.redirect("/admin/users?error=1");
     }
-});
+  },
+);
 
 // 旧 toggle-admin は change-role にリダイレクト
-router.post('/admin/users/toggle-admin', requireLogin, isAdmin, async (req, res) => {
+router.post(
+  "/admin/users/toggle-admin",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const { userId, isAdmin: newVal } = req.body;
-        const role = newVal === '1' ? 'admin' : 'employee';
-        await User.findByIdAndUpdate(userId, { isAdmin: newVal === '1', role });
-        res.redirect('/admin/users?success=role');
+      const { userId, isAdmin: newVal } = req.body;
+      const role = newVal === "1" ? "admin" : "employee";
+      await User.findByIdAndUpdate(userId, { isAdmin: newVal === "1", role });
+      res.redirect("/admin/users?success=role");
     } catch (err) {
-        res.redirect('/admin/users?error=1');
+      res.redirect("/admin/users?error=1");
     }
-});
+  },
+);
 
-
-router.post('/admin/users/reset-password', requireLogin, isAdmin, async (req, res) => {
+router.post(
+  "/admin/users/reset-password",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const { userId, newPassword } = req.body;
-        const bcrypt = require('bcryptjs');
-        const hashed = await bcrypt.hash(newPassword, 10);
-        await User.findByIdAndUpdate(userId, { password: hashed });
-        res.redirect('/admin/users?success=password');
+      const { userId, newPassword } = req.body;
+      const bcrypt = require("bcryptjs");
+      const hashed = await bcrypt.hash(newPassword, 10);
+      await User.findByIdAndUpdate(userId, { password: hashed });
+      res.redirect("/admin/users?success=password");
     } catch (err) {
-        console.error(err);
-        res.redirect('/admin/users?error=1');
+      console.error(err);
+      res.redirect("/admin/users?error=1");
     }
-});
+  },
+);
 
 // ── 社員一覧JSON API（スキルマップセレクト用）──
-router.get('/admin/api/employees', async (req, res) => {
-    if (!req.session || !req.session.isAdmin) return res.status(403).json([]);
-    try {
-        const { Employee: EmpModel } = require('../models');
-        const emps = await EmpModel.find().select('_id name department position').lean();
-        res.json(emps);
-    } catch (e) { res.status(500).json([]); }
+router.get("/admin/api/employees", async (req, res) => {
+  if (!req.session || !req.session.isAdmin) return res.status(403).json([]);
+  try {
+    const { Employee: EmpModel } = require("../models");
+    const emps = await EmpModel.find()
+      .select("_id name department position")
+      .lean();
+    res.json(emps);
+  } catch (e) {
+    res.status(500).json([]);
+  }
 });
 
 // ── チャット管理（管理者マスタ）──────────────────────────────
-router.get('/admin/chat-management', requireLogin, isAdmin, async (req, res) => {
-    const { User: UserModel, ChatMessage, ChatRoom } = require('../models');
-    const users = await UserModel.find({}, '_id username name').lean();
+router.get(
+  "/admin/chat-management",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
+    const { User: UserModel, ChatMessage, ChatRoom } = require("../models");
+    const users = await UserModel.find({}, "_id username name").lean();
     // 各ユーザーのメッセージ件数
     const counts = await ChatMessage.aggregate([
-        { $group: { _id: '$fromUserId', count: { $sum: 1 } } }
+      { $group: { _id: "$fromUserId", count: { $sum: 1 } } },
     ]);
     const countMap = {};
-    counts.forEach(c => { countMap[String(c._id)] = c.count; });
-    const rooms = await ChatRoom.find({}, '_id name members').lean();
+    counts.forEach((c) => {
+      countMap[String(c._id)] = c.count;
+    });
+    const rooms = await ChatRoom.find({}, "_id name members").lean();
 
     const html = `
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
@@ -1666,7 +1966,9 @@ tr:last-child td{border-bottom:none}
   <div class="card-wrap"><table>
     <thead><tr><th>ユーザー</th><th>送信メッセージ数</th><th>操作</th></tr></thead>
     <tbody>
-    ${users.map(u => `
+    ${users
+      .map(
+        (u) => `
       <tr>
         <td><b>${escapeHtml(u.name || u.username)}</b><br><span style="color:#9ca3af;font-size:.78rem">@${escapeHtml(u.username)}</span></td>
         <td><span class="badge">${countMap[String(u._id)] || 0} 件</span></td>
@@ -1675,7 +1977,9 @@ tr:last-child td{border-bottom:none}
             <i class="fa-solid fa-trash"></i> メッセージ全削除
           </button>
         </td>
-      </tr>`).join('')}
+      </tr>`,
+      )
+      .join("")}
     </tbody>
   </table></div>
 </div>
@@ -1685,7 +1989,9 @@ tr:last-child td{border-bottom:none}
   <div class="card-wrap"><table>
     <thead><tr><th>グループ名</th><th>メンバー数</th><th>操作</th></tr></thead>
     <tbody>
-    ${rooms.map(r => `
+    ${rooms
+      .map(
+        (r) => `
       <tr>
         <td><b>${escapeHtml(r.name)}</b></td>
         <td>${r.members.length} 人</td>
@@ -1694,7 +2000,9 @@ tr:last-child td{border-bottom:none}
             <i class="fa-solid fa-trash"></i> 全メッセージ削除
           </button>
         </td>
-      </tr>`).join('')}
+      </tr>`,
+      )
+      .join("")}
     </tbody>
   </table></div>
 </div>
@@ -1724,40 +2032,61 @@ async function delRoom(roomId, name) {
     else alert('エラー: ' + (data.error || '不明'));
 }
 </script>`;
-    renderPage(req, res, 'チャット管理', 'チャット管理', html);
-});
+    renderPage(req, res, "チャット管理", "チャット管理", html);
+  },
+);
 
 // ユーザーのメッセージ全削除 API
-router.post('/admin/api/chat/delete-user', requireLogin, isAdmin, async (req, res) => {
+router.post(
+  "/admin/api/chat/delete-user",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const { ChatMessage } = require('../models');
-        const mongoose = require('mongoose');
-        const { userId } = req.body;
-        if (!userId) return res.status(400).json({ error: 'userId が必要です' });
-        const uid = new mongoose.Types.ObjectId(String(userId));
-        const result = await ChatMessage.deleteMany({
-            $or: [{ fromUserId: uid }, { toUserId: uid }]
-        });
-        if (global.io) {
-            global.io.to('u_' + String(userId)).emit('chat_cleared', { adminClear: true });
-        }
-        res.json({ ok: true, deleted: result.deletedCount });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
+      const { ChatMessage } = require("../models");
+      const mongoose = require("mongoose");
+      const { userId } = req.body;
+      if (!userId) return res.status(400).json({ error: "userId が必要です" });
+      const uid = new mongoose.Types.ObjectId(String(userId));
+      const result = await ChatMessage.deleteMany({
+        $or: [{ fromUserId: uid }, { toUserId: uid }],
+      });
+      if (global.io) {
+        global.io
+          .to("u_" + String(userId))
+          .emit("chat_cleared", { adminClear: true });
+      }
+      res.json({ ok: true, deleted: result.deletedCount });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
 
 // グループのメッセージ全削除 API
-router.post('/admin/api/chat/delete-room', requireLogin, isAdmin, async (req, res) => {
+router.post(
+  "/admin/api/chat/delete-room",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
     try {
-        const { ChatMessage, ChatRoom } = require('../models');
-        const mongoose = require('mongoose');
-        const { roomId } = req.body;
-        if (!roomId) return res.status(400).json({ error: 'roomId が必要です' });
-        const result = await ChatMessage.deleteMany({ roomId: new mongoose.Types.ObjectId(String(roomId)) });
-        if (global.io) {
-            global.io.to('r_' + String(roomId)).emit('chat_cleared', { adminClear: true, roomId });
-        }
-        res.json({ ok: true, deleted: result.deletedCount });
-    } catch (e) { res.status(500).json({ error: e.message }); }
-});
+      const { ChatMessage, ChatRoom } = require("../models");
+      const mongoose = require("mongoose");
+      const { roomId } = req.body;
+      if (!roomId) return res.status(400).json({ error: "roomId が必要です" });
+      const result = await ChatMessage.deleteMany({
+        roomId: new mongoose.Types.ObjectId(String(roomId)),
+      });
+      if (global.io) {
+        global.io
+          .to("r_" + String(roomId))
+          .emit("chat_cleared", { adminClear: true, roomId });
+      }
+      res.json({ ok: true, deleted: result.deletedCount });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
 
 module.exports = router;

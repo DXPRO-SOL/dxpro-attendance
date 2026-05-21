@@ -5,6 +5,12 @@ const UserSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   isAdmin: { type: Boolean, default: false },
+  // メールアドレス認証
+  email: { type: String, default: "" }, // ユーザーのメールアドレス
+  emailVerified: { type: Boolean, default: false }, // 認証済みフラグ
+  emailVerificationCode: { type: String, default: "" }, // 認証コード
+  emailVerificationExpires: { type: Date, default: null }, // 認証コード有効期限
+  emailVerifiedAt: { type: Date, default: null }, // 認証完了日時
   // Issue #19: 中間ロール拡張
   // 'admin' | 'manager' | 'team_leader' | 'employee'
   role: {
