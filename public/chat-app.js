@@ -3366,7 +3366,7 @@
   <div id="csm-body">
     <div id="csm-left">
       <div id="csm-col-title">文字起こし</div>
-      <textarea id="csm-transcript" placeholder="文字起こしテキストがここに表示されます。\n「文字起こし開始」で自動生成するか、直接入力・貼り付けも可能です。"></textarea>
+      <textarea id="csm-transcript" placeholder="録画中にブラウザの音声認識で自動取得された文字起こしがここに表示されます。\n空の場合は直接入力や貼り付けも可能です。修正して「保存」を押すとDBに反映されます。"></textarea>
     </div>
     <div id="csm-right">
       <div id="csm-col-title">AI要約</div>
@@ -3378,7 +3378,6 @@
     </div>
   </div>
   <div id="csm-actions">
-    <button class="csm-btn csm-btn-secondary" id="csm-transcribe-btn" onclick="chatApp.startCallTranscription()">🎤 文字起こし開始</button>
     <button class="csm-btn csm-btn-primary" id="csm-summarize-btn" onclick="chatApp.generateCallSummary()">✨ AI要約生成</button>
     <button class="csm-btn csm-btn-success" onclick="chatApp.saveCallSummary()">💾 保存</button>
     <button class="csm-btn csm-btn-secondary" onclick="chatApp.copyCallSummary()">📋 コピー</button>
@@ -3447,7 +3446,7 @@
   }
 
   function setCsmBusy(busy) {
-    ["csm-transcribe-btn", "csm-summarize-btn"].forEach((id) => {
+    ["csm-summarize-btn"].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.disabled = busy;
     });
