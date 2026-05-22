@@ -816,9 +816,25 @@ router.get(
 // =====================================================================
 // 作成 / 更新 / 削除
 // =====================================================================
+// multer は multipart のファイル名を latin1 として扱うため、
+// 日本語などのマルチバイト文字が含まれる originalname を UTF-8 に戻す。
+function decodeOriginalName(name) {
+  if (!name) return "";
+  try {
+    // 既に正常な UTF-8 ならそのまま、化けている場合は latin1→utf8 で復元
+    const reencoded = Buffer.from(name, "latin1").toString("utf8");
+    // 復元後に置換文字(U+FFFD)が増えていれば元の方が正しい
+    const origBad = (name.match(/\uFFFD/g) || []).length;
+    const newBad = (reencoded.match(/\uFFFD/g) || []).length;
+    return newBad > origBad ? name : reencoded;
+  } catch (e) {
+    return name;
+  }
+}
+
 function articleFromBody(req) {
   const files = (req.files || []).map((f) => ({
-    name: f.originalname,
+    name: decodeOriginalName(f.originalname),
     url: "/uploads/" + f.filename,
     mimeType: f.mimetype,
     size: f.size,
