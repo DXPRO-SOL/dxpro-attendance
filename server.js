@@ -241,6 +241,31 @@ io.on("connection", (socket) => {
     if (data && data.toUserId)
       socket.to("u_" + data.toUserId).emit("recording_stopped", data);
   });
+
+  // ── 議事録文字起こし（Web Speech API による分散文字起こし） ──
+  // 録画開始時に「全参加者でそれぞれの音声を認識して結果を寄越して」と通知
+  socket.on("transcription_start", (data) => {
+    if (!data) return;
+    if (data.roomId) {
+      socket.to("r_" + data.roomId).emit("transcription_start", data);
+    } else if (data.toUserId) {
+      socket.to("u_" + data.toUserId).emit("transcription_start", data);
+    }
+  });
+  // 各参加者の認識結果（確定文）を録画者へ集約
+  socket.on("transcription_utterance", (data) => {
+    if (!data || !data.toUserId) return;
+    socket.to("u_" + data.toUserId).emit("transcription_utterance", data);
+  });
+  // 録画停止時：各参加者の認識を止めさせる
+  socket.on("transcription_stop", (data) => {
+    if (!data) return;
+    if (data.roomId) {
+      socket.to("r_" + data.roomId).emit("transcription_stop", data);
+    } else if (data.toUserId) {
+      socket.to("u_" + data.toUserId).emit("transcription_stop", data);
+    }
+  });
   socket.on("call_mic_mute", (data) => {
     if (data && data.toUserId)
       socket.to("u_" + data.toUserId).emit("call_mic_mute", data);
