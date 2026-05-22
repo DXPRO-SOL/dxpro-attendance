@@ -1129,7 +1129,7 @@ router.post(
   chatUpload.single("recording"),
   async (req, res) => {
     try {
-      const { toUserId, roomId, duration } = req.body;
+      const { toUserId, roomId, duration, transcript } = req.body;
       if (!req.file)
         return res.status(400).json({ error: "ファイルがありません" });
       const fromId = req.session.userId;
@@ -1151,6 +1151,22 @@ router.post(
       else if (toUserId) msgData.toUserId = toUserId;
 
       const msg = await ChatMessage.create(msgData);
+
+      // Web Speech API でクライアント側が文字起こしを送ってきた場合は
+      // CallSummary に保存しておく（モーダルを開いた時点で表示される）
+      if (transcript && transcript.trim()) {
+        try {
+          await CallSummary.create({
+            recordingMessageId: msg._id,
+            recordingUrl: attachment.url,
+            transcript: transcript.trim(),
+            status: "transcribed",
+            createdBy: fromId,
+          });
+        } catch (csErr) {
+          console.error("[CallSummary] 初期保存エラー:", csErr);
+        }
+      }
 
       // senderName を通常メッセージと同様に取得
       const [senderEmp, senderUser] = await Promise.all([
@@ -1264,8 +1280,24 @@ router.post(
         await rec.save();
       }
 
+      // Whisper は OpenAI 公式エンドポイントのみ対応（OpenRouter は非対応）
+      // OPENAI_BASE_URL が OpenRouter 等に設定されていても明示的に公式 URL を使う
+      if (/^sk-or-/i.test(directKey)) {
+        rec.status = "error";
+        rec.errorMessage =
+          "OPENAI_DIRECT_KEY に OpenRouter のキーが設定されています。Whisper は OpenAI 公式 API キー (sk-...) が必要です。";
+        await rec.save();
+        return res.status(500).json({
+          error:
+            "OPENAI_DIRECT_KEY に OpenRouter のキーが設定されています。Whisper には OpenAI 公式の API キー (sk-... で始まるもの) を設定してください。",
+        });
+      }
+
       const { default: OpenAI } = require("openai");
-      const openai = new OpenAI({ apiKey: directKey });
+      const openai = new OpenAI({
+        apiKey: directKey,
+        baseURL: "https://api.openai.com/v1",
+      });
 
       let transcriptText;
       try {
@@ -1278,6 +1310,7 @@ router.post(
         transcriptText =
           typeof result === "string" ? result : result.text || "";
       } catch (apiErr) {
+        console.error("[Whisper] transcription error:", apiErr);
         rec.status = "error";
         rec.errorMessage = apiErr.message;
         await rec.save();
