@@ -484,6 +484,7 @@ app.use("/", require("./routes/workflow"));
 app.use("/", require("./routes/schedule"));
 app.use("/", require("./routes/email").router);
 app.use("/", require("./routes/auditlog"));
+app.use("/", require("./routes/contracts"));
 
 // ── グローバルエラーハンドラー（500エラーでプロセスをクラッシュさせない） ─
 app.use((err, req, res, next) => {

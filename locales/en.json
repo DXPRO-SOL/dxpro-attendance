@@ -52,7 +52,8 @@
     "schedule": "Schedule",
     "workflow": "Workflow",
     "cloud": "Cloud Drive",
-    "integrations": "External API Integration"
+    "integrations": "External API Integration",
+    "contracts": "Contract Management"
   },
   "topbar": {
     "admin_badge": "Admin",
