@@ -11,7 +11,13 @@ const path = require("path");
 const fs = require("fs");
 const mongoose = require("mongoose");
 const { requireLogin } = require("../middleware/auth");
-const { User, Employee, ChatMessage, ChatRoom } = require("../models");
+const {
+  User,
+  Employee,
+  ChatMessage,
+  ChatRoom,
+  CallSummary,
+} = require("../models");
 const { renderPage } = require("../lib/renderPage");
 
 const UPLOAD_DIR = path.join(__dirname, "../uploads/chat");
@@ -1181,6 +1187,248 @@ router.post(
       // message をレスポンスに含めることで、フロント側が Socket.IO に頼らず
       // 直接チャットに表示できるようにする（Socket.IO の遅延・フィルタ外れの保険）
       res.json({ ok: true, url: attachment.url, message: payload });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
+// ==============================
+// AI議事録 API
+// ==============================
+
+// GET: 要約データ取得
+router.get(
+  "/api/chat/recording/:msgId/summary",
+  requireLogin,
+  async (req, res) => {
+    try {
+      const msg = await ChatMessage.findById(req.params.msgId).lean();
+      if (!msg)
+        return res.status(404).json({ error: "メッセージが見つかりません" });
+      const summary = await CallSummary.findOne({
+        recordingMessageId: req.params.msgId,
+      }).lean();
+      res.json({ ok: true, summary: summary || null });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
+// POST: Whisper による文字起こし
+router.post(
+  "/api/chat/recording/:msgId/transcribe",
+  requireLogin,
+  async (req, res) => {
+    try {
+      const { msgId } = req.params;
+      const msg = await ChatMessage.findById(msgId).lean();
+      if (!msg)
+        return res.status(404).json({ error: "メッセージが見つかりません" });
+
+      const att = (msg.attachments || []).find(
+        (a) =>
+          /^video\//.test(a.mimeType || "") || /\.webm$/i.test(a.url || ""),
+      );
+      if (!att)
+        return res.status(400).json({ error: "録画ファイルが見つかりません" });
+
+      const directKey = process.env.OPENAI_DIRECT_KEY;
+      if (!directKey) {
+        return res.status(500).json({
+          error:
+            "OPENAI_DIRECT_KEY が未設定です。.env に OpenAI 直接 API キーを追加してください。",
+        });
+      }
+
+      const filePath = path.join(__dirname, "..", att.url.replace(/^\//, ""));
+      if (!fs.existsSync(filePath)) {
+        return res
+          .status(404)
+          .json({ error: "録画ファイルが見つかりません: " + att.url });
+      }
+
+      // DB レコード作成 or 更新
+      let rec = await CallSummary.findOne({ recordingMessageId: msgId });
+      if (!rec) {
+        rec = await CallSummary.create({
+          recordingMessageId: msgId,
+          recordingUrl: att.url,
+          status: "transcribing",
+          createdBy: req.session.userId,
+        });
+      } else {
+        rec.status = "transcribing";
+        rec.errorMessage = "";
+        await rec.save();
+      }
+
+      const { default: OpenAI } = require("openai");
+      const openai = new OpenAI({ apiKey: directKey });
+
+      let transcriptText;
+      try {
+        const result = await openai.audio.transcriptions.create({
+          file: fs.createReadStream(filePath),
+          model: "whisper-1",
+          language: "ja",
+          response_format: "text",
+        });
+        transcriptText =
+          typeof result === "string" ? result : result.text || "";
+      } catch (apiErr) {
+        rec.status = "error";
+        rec.errorMessage = apiErr.message;
+        await rec.save();
+        return res
+          .status(500)
+          .json({ error: "Whisper API エラー: " + apiErr.message });
+      }
+
+      rec.transcript = transcriptText;
+      rec.status = "transcribed";
+      await rec.save();
+
+      res.json({ ok: true, transcript: transcriptText });
+    } catch (e) {
+      await CallSummary.findOneAndUpdate(
+        { recordingMessageId: req.params.msgId },
+        { status: "error", errorMessage: e.message },
+      ).catch(() => {});
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
+// POST: GPT による AI 要約生成
+router.post(
+  "/api/chat/recording/:msgId/summarize",
+  requireLogin,
+  async (req, res) => {
+    try {
+      const { msgId } = req.params;
+      const { transcript } = req.body;
+
+      if (!transcript || !transcript.trim()) {
+        return res.status(400).json({ error: "文字起こしテキストが空です" });
+      }
+
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ error: "OPENAI_API_KEY が未設定です" });
+      }
+
+      let rec = await CallSummary.findOne({ recordingMessageId: msgId });
+      if (!rec) {
+        const msg = await ChatMessage.findById(msgId).lean();
+        if (!msg)
+          return res.status(404).json({ error: "メッセージが見つかりません" });
+        rec = await CallSummary.create({
+          recordingMessageId: msgId,
+          transcript,
+          status: "summarizing",
+          createdBy: req.session.userId,
+        });
+      } else {
+        rec.transcript = transcript;
+        rec.status = "summarizing";
+        rec.errorMessage = "";
+        await rec.save();
+      }
+
+      const { default: OpenAI } = require("openai");
+      const baseURL = process.env.OPENAI_BASE_URL;
+      const model = process.env.OPENAI_MODEL || "openai/gpt-4o-mini";
+      const openai = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+
+      const prompt = `以下は会議の文字起こしです。日本語で次のJSON形式のみを返してください（説明文不要）。
+
+{
+  "overview": "会議概要（2〜3文）",
+  "decisions": ["決定事項1", "決定事項2"],
+  "todos": ["TODO1", "TODO2"],
+  "issues": ["課題1", "課題2"],
+  "nextActions": ["次回対応事項1", "次回対応事項2"]
+}
+
+文字起こし:
+${transcript.slice(0, 6000)}`;
+
+      let summaryData = {
+        overview: "",
+        decisions: [],
+        todos: [],
+        issues: [],
+        nextActions: [],
+      };
+
+      try {
+        const resp = await openai.chat.completions.create({
+          model,
+          messages: [{ role: "user", content: prompt }],
+          max_tokens: 1200,
+          temperature: 0.4,
+        });
+        const raw = (resp.choices[0].message.content || "").trim();
+        const jsonStr = raw.replace(/^```json\s*/i, "").replace(/\s*```$/, "");
+        summaryData = JSON.parse(jsonStr);
+      } catch (parseErr) {
+        // パース失敗時は生テキストを overview に格納
+        const resp = await openai.chat.completions
+          .create({
+            model,
+            messages: [{ role: "user", content: prompt }],
+            max_tokens: 1200,
+            temperature: 0.4,
+          })
+          .catch(() => null);
+        if (resp) summaryData.overview = resp.choices[0].message.content || "";
+      }
+
+      rec.summary = summaryData;
+      rec.status = "done";
+      await rec.save();
+
+      res.json({ ok: true, summary: summaryData });
+    } catch (e) {
+      await CallSummary.findOneAndUpdate(
+        { recordingMessageId: req.params.msgId },
+        { status: "error", errorMessage: e.message },
+      ).catch(() => {});
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
+// PUT: 議事録手動保存
+router.put(
+  "/api/chat/recording/:msgId/summary",
+  requireLogin,
+  async (req, res) => {
+    try {
+      const { msgId } = req.params;
+      const { transcript, summary } = req.body;
+
+      let rec = await CallSummary.findOne({ recordingMessageId: msgId });
+      if (!rec) {
+        const msg = await ChatMessage.findById(msgId).lean();
+        if (!msg)
+          return res.status(404).json({ error: "メッセージが見つかりません" });
+        rec = await CallSummary.create({
+          recordingMessageId: msgId,
+          transcript: transcript || "",
+          summary: summary || {},
+          status: "done",
+          createdBy: req.session.userId,
+        });
+      } else {
+        if (transcript !== undefined) rec.transcript = transcript;
+        if (summary !== undefined) rec.summary = summary;
+        rec.status = "done";
+        await rec.save();
+      }
+      res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
