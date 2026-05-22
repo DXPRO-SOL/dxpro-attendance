@@ -348,7 +348,7 @@
         esc(msg.replyPreview.slice(0, 60)) +
         "…</span></div>"
       : "";
-    const attachHtml = buildAttachHtml(msg.attachments || []);
+    const attachHtml = buildAttachHtml(msg.attachments || [], msg._id);
     const readBadge = isMine
       ? '<span class="sc-read unread" data-read="' +
         msg._id +
@@ -451,7 +451,7 @@
     );
   }
 
-  function buildAttachHtml(attachments) {
+  function buildAttachHtml(attachments, msgId) {
     if (!attachments.length) return "";
     return (
       '<div class="sc-atts">' +
@@ -476,6 +476,11 @@
                 ? (a.size / 1048576).toFixed(1) + "MB"
                 : Math.ceil(a.size / 1024) + "KB"
               : "";
+            const aiBtn = msgId
+              ? '<button class="sc-att-ai-btn" onclick="chatApp.openCallSummaryModal(\'' +
+                msgId +
+                '\')" title="AI議事録を開く">📋 AI議事録</button>'
+              : "";
             return (
               '<div class="sc-att-video">' +
               '<video src="' +
@@ -492,6 +497,7 @@
               '" download="' +
               esc(a.name) +
               '" class="sc-att-dl-btn" title="ダウンロード">⬇</a>' +
+              aiBtn +
               "</div></div>"
             );
           }
@@ -1329,7 +1335,7 @@
         timeZone: "Asia/Tokyo",
       });
       const content = esc(m.content || "");
-      const attHtml = buildAttachHtml(m.attachments || []);
+      const attHtml = buildAttachHtml(m.attachments || [], id);
       html += `<div class="sc-date-div"><span>${dateStr}</span></div>`;
       html += `<div class="sc-msg" data-id="${id}" data-at="${at}">`;
       html += `<div class="sc-av sc-av-c${colorIdx}">${initial}</div>`;
@@ -3117,6 +3123,303 @@
   }
   wireCallButtons();
 
+  // ── AI議事録モーダル ──────────────────────────────────────
+  (function injectCallSummaryModal() {
+    const style = document.createElement("style");
+    style.textContent = `
+#csm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;display:flex;align-items:center;justify-content:center;}
+#csm-panel{background:#1e293b;color:#e2e8f0;border-radius:12px;width:92vw;max-width:980px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.7);overflow:hidden;}
+#csm-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#0f172a;border-bottom:1px solid #334155;flex-shrink:0;}
+#csm-header h3{margin:0;font-size:16px;font-weight:700;color:#f1f5f9;}
+#csm-header-close{background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;line-height:1;padding:0 4px;}
+#csm-header-close:hover{color:#f1f5f9;}
+#csm-body{display:flex;gap:0;flex:1;overflow:hidden;}
+#csm-left,#csm-right{flex:1;display:flex;flex-direction:column;padding:16px;overflow:hidden;}
+#csm-left{border-right:1px solid #334155;}
+#csm-col-title{font-size:13px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;}
+#csm-transcript{flex:1;resize:none;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:10px;font-size:13px;line-height:1.6;outline:none;font-family:inherit;}
+#csm-transcript:focus{border-color:#3b82f6;}
+#csm-right{overflow-y:auto;}
+.csm-section{margin-bottom:12px;}
+.csm-section label{font-size:12px;font-weight:600;color:#7dd3fc;display:block;margin-bottom:4px;}
+.csm-section textarea{width:100%;resize:vertical;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px;font-size:13px;line-height:1.6;outline:none;font-family:inherit;box-sizing:border-box;min-height:60px;}
+.csm-section textarea:focus{border-color:#3b82f6;}
+#csm-actions{display:flex;gap:8px;padding:12px 20px;background:#0f172a;border-top:1px solid #334155;flex-shrink:0;flex-wrap:wrap;align-items:center;}
+.csm-btn{padding:7px 14px;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:background .15s;}
+.csm-btn-primary{background:#3b82f6;color:#fff;}
+.csm-btn-primary:hover{background:#2563eb;}
+.csm-btn-secondary{background:#334155;color:#e2e8f0;}
+.csm-btn-secondary:hover{background:#475569;}
+.csm-btn-success{background:#16a34a;color:#fff;}
+.csm-btn-success:hover{background:#15803d;}
+.csm-btn:disabled{opacity:.5;cursor:not-allowed;}
+#csm-status-bar{font-size:12px;color:#94a3b8;margin-left:auto;}
+#csm-status-bar.error{color:#f87171;}
+#csm-status-bar.ok{color:#4ade80;}
+.sc-att-ai-btn{margin-left:8px;padding:4px 10px;background:#1d4ed8;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:12px;font-weight:600;}
+.sc-att-ai-btn:hover{background:#2563eb;}
+@media(max-width:640px){#csm-body{flex-direction:column;}#csm-left{border-right:none;border-bottom:1px solid #334155;max-height:35vh;}}
+`;
+    document.head.appendChild(style);
+
+    const div = document.createElement("div");
+    div.id = "csm-overlay";
+    div.style.display = "none";
+    div.innerHTML = `
+<div id="csm-panel">
+  <div id="csm-header">
+    <h3>📋 AI議事録</h3>
+    <button id="csm-header-close" onclick="chatApp.closeCallSummaryModal()">✕</button>
+  </div>
+  <div id="csm-body">
+    <div id="csm-left">
+      <div id="csm-col-title">文字起こし</div>
+      <textarea id="csm-transcript" placeholder="文字起こしテキストがここに表示されます。\n「文字起こし開始」で自動生成するか、直接入力・貼り付けも可能です。"></textarea>
+    </div>
+    <div id="csm-right">
+      <div id="csm-col-title">AI要約</div>
+      <div class="csm-section"><label>■ 会議概要</label><textarea id="csm-overview" rows="3"></textarea></div>
+      <div class="csm-section"><label>■ 決定事項</label><textarea id="csm-decisions" rows="3" placeholder="1行1件で入力"></textarea></div>
+      <div class="csm-section"><label>■ TODO</label><textarea id="csm-todos" rows="3" placeholder="1行1件で入力"></textarea></div>
+      <div class="csm-section"><label>■ 課題</label><textarea id="csm-issues" rows="3" placeholder="1行1件で入力"></textarea></div>
+      <div class="csm-section"><label>■ 次回対応事項</label><textarea id="csm-next-actions" rows="3" placeholder="1行1件で入力"></textarea></div>
+    </div>
+  </div>
+  <div id="csm-actions">
+    <button class="csm-btn csm-btn-secondary" id="csm-transcribe-btn" onclick="chatApp.startCallTranscription()">🎤 文字起こし開始</button>
+    <button class="csm-btn csm-btn-primary" id="csm-summarize-btn" onclick="chatApp.generateCallSummary()">✨ AI要約生成</button>
+    <button class="csm-btn csm-btn-success" onclick="chatApp.saveCallSummary()">💾 保存</button>
+    <button class="csm-btn csm-btn-secondary" onclick="chatApp.copyCallSummary()">📋 コピー</button>
+    <span id="csm-status-bar"></span>
+  </div>
+</div>`;
+    document.body.appendChild(div);
+    div.addEventListener("click", (e) => {
+      if (e.target === div) chatApp.closeCallSummaryModal();
+    });
+  })();
+
+  let _csmMsgId = null;
+
+  function openCallSummaryModal(msgId) {
+    _csmMsgId = msgId;
+    const overlay = document.getElementById("csm-overlay");
+    if (!overlay) return;
+    // フィールドクリア
+    [
+      "csm-transcript",
+      "csm-overview",
+      "csm-decisions",
+      "csm-todos",
+      "csm-issues",
+      "csm-next-actions",
+    ].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+    setCsmStatus("", "");
+    overlay.style.display = "flex";
+    // 既存データ読み込み
+    fetch("/api/chat/recording/" + msgId + "/summary")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.summary) {
+          const s = data.summary;
+          if (s.transcript) setEl("csm-transcript", s.transcript);
+          if (s.summary) {
+            const sm = s.summary;
+            setEl("csm-overview", sm.overview || "");
+            setEl("csm-decisions", (sm.decisions || []).join("\n"));
+            setEl("csm-todos", (sm.todos || []).join("\n"));
+            setEl("csm-issues", (sm.issues || []).join("\n"));
+            setEl("csm-next-actions", (sm.nextActions || []).join("\n"));
+          }
+          if (s.status === "error")
+            setCsmStatus("エラー: " + (s.errorMessage || ""), "error");
+          else if (s.status === "done") setCsmStatus("保存済み", "ok");
+        }
+      })
+      .catch(() => {});
+  }
+
+  function setEl(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.value = val;
+  }
+
+  function setCsmStatus(text, cls) {
+    const el = document.getElementById("csm-status-bar");
+    if (!el) return;
+    el.textContent = text;
+    el.className = cls || "";
+  }
+
+  function setCsmBusy(busy) {
+    ["csm-transcribe-btn", "csm-summarize-btn"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = busy;
+    });
+  }
+
+  function closeCallSummaryModal() {
+    const overlay = document.getElementById("csm-overlay");
+    if (overlay) overlay.style.display = "none";
+    _csmMsgId = null;
+  }
+
+  async function startCallTranscription() {
+    if (!_csmMsgId) return;
+    setCsmBusy(true);
+    setCsmStatus("文字起こし中...", "");
+    try {
+      const r = await fetch(
+        "/api/chat/recording/" + _csmMsgId + "/transcribe",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+      const data = await r.json();
+      if (!r.ok) {
+        setCsmStatus("エラー: " + (data.error || r.status), "error");
+      } else {
+        setEl("csm-transcript", data.transcript || "");
+        setCsmStatus("文字起こし完了", "ok");
+      }
+    } catch (e) {
+      setCsmStatus("エラー: " + e.message, "error");
+    } finally {
+      setCsmBusy(false);
+    }
+  }
+
+  async function generateCallSummary() {
+    if (!_csmMsgId) return;
+    const transcript =
+      (document.getElementById("csm-transcript") || {}).value || "";
+    if (!transcript.trim()) {
+      setCsmStatus("文字起こしテキストを入力してください", "error");
+      return;
+    }
+    setCsmBusy(true);
+    setCsmStatus("AI要約生成中...", "");
+    try {
+      const r = await fetch("/api/chat/recording/" + _csmMsgId + "/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        setCsmStatus("エラー: " + (data.error || r.status), "error");
+      } else {
+        const sm = data.summary || {};
+        setEl("csm-overview", sm.overview || "");
+        setEl("csm-decisions", (sm.decisions || []).join("\n"));
+        setEl("csm-todos", (sm.todos || []).join("\n"));
+        setEl("csm-issues", (sm.issues || []).join("\n"));
+        setEl("csm-next-actions", (sm.nextActions || []).join("\n"));
+        setCsmStatus("AI要約完了", "ok");
+      }
+    } catch (e) {
+      setCsmStatus("エラー: " + e.message, "error");
+    } finally {
+      setCsmBusy(false);
+    }
+  }
+
+  async function saveCallSummary() {
+    if (!_csmMsgId) return;
+    const transcript =
+      (document.getElementById("csm-transcript") || {}).value || "";
+    const summary = {
+      overview: (document.getElementById("csm-overview") || {}).value || "",
+      decisions: ((document.getElementById("csm-decisions") || {}).value || "")
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+      todos: ((document.getElementById("csm-todos") || {}).value || "")
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+      issues: ((document.getElementById("csm-issues") || {}).value || "")
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+      nextActions: (
+        (document.getElementById("csm-next-actions") || {}).value || ""
+      )
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    };
+    setCsmStatus("保存中...", "");
+    try {
+      const r = await fetch("/api/chat/recording/" + _csmMsgId + "/summary", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript, summary }),
+      });
+      const data = await r.json();
+      if (!r.ok) setCsmStatus("エラー: " + (data.error || r.status), "error");
+      else setCsmStatus("保存しました ✓", "ok");
+    } catch (e) {
+      setCsmStatus("エラー: " + e.message, "error");
+    }
+  }
+
+  function copyCallSummary() {
+    const overview =
+      (document.getElementById("csm-overview") || {}).value || "";
+    const decisions =
+      (document.getElementById("csm-decisions") || {}).value || "";
+    const todos = (document.getElementById("csm-todos") || {}).value || "";
+    const issues = (document.getElementById("csm-issues") || {}).value || "";
+    const nextActions =
+      (document.getElementById("csm-next-actions") || {}).value || "";
+    const text = [
+      overview && "■ 会議概要\n" + overview,
+      decisions &&
+        "■ 決定事項\n" +
+          decisions
+            .split("\n")
+            .filter(Boolean)
+            .map((s) => "・" + s)
+            .join("\n"),
+      todos &&
+        "■ TODO\n" +
+          todos
+            .split("\n")
+            .filter(Boolean)
+            .map((s) => "・" + s)
+            .join("\n"),
+      issues &&
+        "■ 課題\n" +
+          issues
+            .split("\n")
+            .filter(Boolean)
+            .map((s) => "・" + s)
+            .join("\n"),
+      nextActions &&
+        "■ 次回対応事項\n" +
+          nextActions
+            .split("\n")
+            .filter(Boolean)
+            .map((s) => "・" + s)
+            .join("\n"),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    if (!text) {
+      setCsmStatus("コピーする内容がありません", "error");
+      return;
+    }
+    navigator.clipboard
+      .writeText(text)
+      .then(() => setCsmStatus("クリップボードにコピーしました ✓", "ok"))
+      .catch(() => setCsmStatus("コピーに失敗しました", "error"));
+  }
+
   // ── 公開 API ──────────────────────────────────────────────
   window.chatApp = {
     send,
@@ -3150,5 +3453,11 @@
     doStartGroupCall,
     joinGroupCall,
     dismissGroupCallBanner,
+    openCallSummaryModal,
+    closeCallSummaryModal,
+    startCallTranscription,
+    generateCallSummary,
+    saveCallSummary,
+    copyCallSummary,
   };
 })();
