@@ -1291,6 +1291,142 @@ const CallSummarySchema = new mongoose.Schema(
 );
 const CallSummary = mongoose.model("CallSummary", CallSummarySchema);
 
+// ─── ナレッジ管理（Knowledge Base） ─────────────────────────────────────
+// カテゴリ（自己参照ツリー対応）
+const KnowledgeCategorySchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    description: { type: String, default: "" },
+    icon: { type: String, default: "📁" },
+    color: { type: String, default: "#0b69ff" },
+    parentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "KnowledgeCategory",
+      default: null,
+    },
+    sortOrder: { type: Number, default: 0 },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  },
+  { timestamps: true },
+);
+KnowledgeCategorySchema.index({ parentId: 1, sortOrder: 1 });
+const KnowledgeCategory = mongoose.model(
+  "KnowledgeCategory",
+  KnowledgeCategorySchema,
+);
+
+// 記事
+const KnowledgeArticleSchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true },
+    summary: { type: String, default: "" },
+    body: { type: String, default: "" }, // Markdown
+    categoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "KnowledgeCategory",
+      default: null,
+    },
+    tags: [{ type: String }],
+    attachments: [
+      {
+        name: { type: String },
+        url: { type: String },
+        mimeType: { type: String },
+        size: { type: Number },
+      },
+    ],
+    authorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    lastEditorId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    // 'public' | 'restricted'
+    visibility: {
+      type: String,
+      enum: ["public", "restricted"],
+      default: "public",
+    },
+    // restricted の場合のみ参照される
+    allowedDepartmentIds: [
+      { type: mongoose.Schema.Types.ObjectId, ref: "Department" },
+    ],
+    // 'draft' | 'published' | 'archived'
+    status: {
+      type: String,
+      enum: ["draft", "published", "archived"],
+      default: "published",
+    },
+    pinned: { type: Boolean, default: false },
+    views: { type: Number, default: 0 },
+    favoritesCount: { type: Number, default: 0 },
+    // 外部リンク用（記事本文の代わりに直接URLへ飛ばすタイプ）
+    externalUrl: { type: String, default: "" },
+  },
+  { timestamps: true },
+);
+KnowledgeArticleSchema.index({ categoryId: 1, updatedAt: -1 });
+KnowledgeArticleSchema.index({ tags: 1 });
+KnowledgeArticleSchema.index({ status: 1, updatedAt: -1 });
+// 全文検索用テキストインデックス（自然言語検索の基盤）
+KnowledgeArticleSchema.index(
+  { title: "text", summary: "text", body: "text", tags: "text" },
+  {
+    weights: { title: 10, tags: 8, summary: 4, body: 1 },
+    name: "knowledge_text_idx",
+  },
+);
+const KnowledgeArticle = mongoose.model(
+  "KnowledgeArticle",
+  KnowledgeArticleSchema,
+);
+
+// 更新履歴（リビジョン）
+const KnowledgeRevisionSchema = new mongoose.Schema(
+  {
+    articleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "KnowledgeArticle",
+      required: true,
+      index: true,
+    },
+    editorId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    title: { type: String, default: "" },
+    summary: { type: String, default: "" },
+    body: { type: String, default: "" },
+    tags: [{ type: String }],
+    changeNote: { type: String, default: "" },
+  },
+  { timestamps: true },
+);
+KnowledgeRevisionSchema.index({ articleId: 1, createdAt: -1 });
+const KnowledgeRevision = mongoose.model(
+  "KnowledgeRevision",
+  KnowledgeRevisionSchema,
+);
+
+// お気に入り
+const KnowledgeFavoriteSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    articleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "KnowledgeArticle",
+      required: true,
+    },
+  },
+  { timestamps: true },
+);
+KnowledgeFavoriteSchema.index({ userId: 1, articleId: 1 }, { unique: true });
+const KnowledgeFavorite = mongoose.model(
+  "KnowledgeFavorite",
+  KnowledgeFavoriteSchema,
+);
+
 module.exports = {
   ChatRoom,
   ChatMessage,
@@ -1330,4 +1466,8 @@ module.exports = {
   Schedule,
   ScheduleComment,
   ScheduleCommentRead,
+  KnowledgeCategory,
+  KnowledgeArticle,
+  KnowledgeRevision,
+  KnowledgeFavorite,
 };
