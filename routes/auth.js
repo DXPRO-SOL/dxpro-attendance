@@ -11,6 +11,7 @@ const {
 } = require("../lib/helpers");
 const { buildPageShell } = require("../lib/renderPage");
 const { t } = require("../lib/i18n");
+const { writeAuditLog } = require("../lib/auditLog");
 
 router.get("/", requireLogin, (req, res) => {
   res.redirect("/attendance-main");
@@ -326,6 +327,13 @@ router.post("/login", async (req, res) => {
     const user = await User.findOne({ username: req.body.username });
     if (!user) {
       console.log("ユーザーが見つかりません:", req.body.username);
+      await writeAuditLog(req, {
+        action: "login_failed",
+        category: "auth",
+        detail: `ユーザー名: ${req.body.username} (存在しないユーザー)`,
+        username: req.body.username,
+        result: "failure",
+      });
       return res.redirect("/login?error=user_not_found");
     }
 
@@ -335,6 +343,14 @@ router.post("/login", async (req, res) => {
     );
     if (!isPasswordValid) {
       console.log("パスワード誤り:", req.body.username);
+      await writeAuditLog(req, {
+        action: "login_failed",
+        category: "auth",
+        detail: `ユーザー名: ${user.username} (パスワード誤り)`,
+        userId: user._id,
+        username: user.username,
+        result: "failure",
+      });
       return res.redirect("/login?error=invalid_password");
     }
 
@@ -348,6 +364,13 @@ router.post("/login", async (req, res) => {
     // 多言語対応: DBの優先言語 → ログイン前に選択した言語 → デフォルト日本語
     req.session.lang = user.preferredLang || req.session.lang || "ja";
 
+    await writeAuditLog(req, {
+      action: "login",
+      category: "auth",
+      detail: `ログイン成功 (管理者: ${user.isAdmin ? "はい" : "いいえ"})`,
+      userId: user._id,
+      username: user.username,
+    });
     console.log("ログイン成功:", user.username, "管理者:", user.isAdmin);
     return res.redirect("/dashboard");
   } catch (error) {
@@ -501,7 +524,13 @@ router.post("/register", (req, res) => {
   res.redirect("/login");
 });
 
-router.get("/logout", (req, res) => {
+router.get("/logout", async (req, res) => {
+  // ログアウト前に監査ログを記録（セッション破棄前に書き込む）
+  await writeAuditLog(req, {
+    action: "logout",
+    category: "auth",
+    detail: "ログアウト",
+  });
   req.session.destroy((err) => {
     if (err) console.error("セッション削除エラー:", err);
     res.clearCookie("connect.sid");
