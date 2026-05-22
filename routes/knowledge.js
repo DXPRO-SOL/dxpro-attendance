@@ -94,59 +94,87 @@ function safeUrl(url) {
 const KN_BASE_CSS = `
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
 <style>
-:root{--bg:#f7fbff;--card:#fff;--muted:#6b7280;--accent:#0b69ff;--accent2:#1a73e8;--border:#e5e7eb}
+:root{--bg:#f5f8fc;--card:#fff;--muted:#64748b;--text:#0f172a;--accent:#2563eb;--accent2:#1d4ed8;--border:#e2e8f0;--shadow:0 1px 2px rgba(15,23,42,.04),0 4px 12px rgba(15,23,42,.04)}
 body{background:var(--bg)}
-.kn-wrap{max-width:1200px;margin:24px auto;padding:18px}
-.kn-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:18px}
-.kn-title{font-size:24px;font-weight:800;margin:0;color:#072144}
-.kn-sub{color:var(--muted);font-size:13px;margin-top:6px}
+.kn-wrap{max-width:1240px;margin:24px auto;padding:18px}
+
+/* ヘッダー */
+.kn-head{background:#fff;border:1px solid var(--border);border-radius:16px;padding:22px 26px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;box-shadow:var(--shadow)}
+.kn-head-left{display:flex;align-items:center;gap:16px;min-width:0}
+.kn-head-icon{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#2563eb,#7c3aed);display:flex;align-items:center;justify-content:center;color:#fff;font-size:24px;flex-shrink:0;box-shadow:0 8px 20px rgba(37,99,235,.25)}
+.kn-title{font-size:22px;font-weight:800;margin:0;color:var(--text);letter-spacing:.01em}
+.kn-sub{color:var(--muted);font-size:13px;margin-top:4px}
 .kn-actions{display:flex;gap:8px;flex-wrap:wrap}
-.kn-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:10px;font-size:13px;font-weight:700;border:none;cursor:pointer;text-decoration:none;transition:opacity .15s}
-.kn-btn-primary{background:linear-gradient(90deg,#0b5fff,#184df2);color:#fff;box-shadow:0 6px 18px rgba(11,95,255,.18)}
-.kn-btn-primary:hover{opacity:.9}
-.kn-btn-ghost{background:#f1f5f9;color:#374151}
-.kn-btn-ghost:hover{background:#e5e7eb}
+.kn-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:10px;font-size:13px;font-weight:700;border:none;cursor:pointer;text-decoration:none;transition:all .15s;white-space:nowrap}
+.kn-btn-primary{background:var(--accent);color:#fff;box-shadow:0 4px 12px rgba(37,99,235,.25)}
+.kn-btn-primary:hover{background:var(--accent2);transform:translateY(-1px);box-shadow:0 6px 16px rgba(37,99,235,.3)}
+.kn-btn-ghost{background:#f1f5f9;color:#334155}
+.kn-btn-ghost:hover{background:#e2e8f0}
 .kn-btn-danger{background:#fee2e2;color:#b91c1c}
 .kn-btn-danger:hover{background:#fecaca}
-.kn-search{flex:1;min-width:240px;display:flex;gap:6px;align-items:center;background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:8px 12px;box-shadow:0 4px 14px rgba(11,36,64,.05)}
-.kn-search input{border:none;outline:none;flex:1;font-size:14px;background:transparent}
-.kn-search i{color:#9ca3af}
 
-.kn-layout{display:grid;grid-template-columns:260px 1fr;gap:20px;align-items:flex-start}
+/* 検索バー */
+.kn-search{display:flex;gap:8px;align-items:center;background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:10px 16px;box-shadow:var(--shadow);margin-bottom:20px;transition:border-color .15s,box-shadow .15s}
+.kn-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 4px rgba(37,99,235,.1)}
+.kn-search input{border:none;outline:none;flex:1;font-size:14.5px;background:transparent;min-width:0}
+.kn-search > i{color:#94a3b8;font-size:16px}
+
+/* レイアウト */
+.kn-layout{display:grid;grid-template-columns:260px 1fr;gap:22px;align-items:flex-start}
 @media(max-width:900px){.kn-layout{grid-template-columns:1fr}}
 
-.kn-side{background:#fff;border-radius:14px;border:1px solid var(--border);padding:14px;position:sticky;top:14px}
-.kn-side h3{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280;margin:0 0 10px;font-weight:800}
+/* サイドバー */
+.kn-side{background:#fff;border-radius:16px;border:1px solid var(--border);padding:16px;position:sticky;top:14px;box-shadow:var(--shadow)}
+.kn-side h3{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;margin:0 0 8px;font-weight:800}
+.kn-side h3:not(:first-child){margin-top:18px;padding-top:14px;border-top:1px solid #f1f5f9}
 .kn-cat-list{list-style:none;padding:0;margin:0}
 .kn-cat-list li{margin:0}
-.kn-cat-list a{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;color:#0b2540;text-decoration:none;font-size:13.5px;font-weight:600}
+.kn-cat-list a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;color:#1e293b;text-decoration:none;font-size:13.5px;font-weight:600;transition:background .12s,color .12s}
 .kn-cat-list a:hover{background:#eff6ff;color:var(--accent)}
-.kn-cat-list a.active{background:linear-gradient(90deg,#eef4ff,#f7fbff);color:var(--accent)}
-.kn-cat-list .kn-cat-icon{width:22px;text-align:center}
-.kn-cat-list .kn-cat-count{margin-left:auto;font-size:11px;color:#9ca3af;background:#f1f5f9;padding:1px 7px;border-radius:999px}
+.kn-cat-list a.active{background:#dbeafe;color:var(--accent2)}
+.kn-cat-list .kn-cat-icon{width:18px;text-align:center;font-size:14px;flex-shrink:0}
+.kn-cat-list .kn-cat-count{margin-left:auto;font-size:11px;color:#64748b;background:#f1f5f9;padding:1px 8px;border-radius:999px;font-weight:700;min-width:22px;text-align:center}
+.kn-cat-list a.active .kn-cat-count{background:#fff;color:var(--accent2)}
 .kn-cat-list ul{list-style:none;padding-left:18px;margin:2px 0}
 
-.kn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
-.kn-card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:8px;transition:transform .15s,box-shadow .15s;text-decoration:none;color:inherit}
-.kn-card:hover{transform:translateY(-3px);box-shadow:0 10px 30px rgba(11,65,130,.08);border-color:#c7d8ff}
-.kn-card-cat{font-size:11px;font-weight:700;color:var(--accent);background:#eff6ff;padding:3px 10px;border-radius:999px;width:fit-content}
-.kn-card-title{font-size:15.5px;font-weight:800;color:#0b2540;line-height:1.4;margin:0}
-.kn-card-summary{font-size:13px;color:#6b7280;line-height:1.55;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.kn-card-foot{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:11.5px;color:#9ca3af}
-.kn-tags{display:flex;flex-wrap:wrap;gap:4px}
-.kn-tag{font-size:10.5px;background:#f1f5f9;color:#475569;padding:2px 8px;border-radius:999px;text-decoration:none}
-.kn-tag:hover{background:#e0e7ff;color:#3730a3}
-.kn-meta{display:flex;align-items:center;gap:10px}
+/* セクション */
+.kn-section{margin-bottom:30px}
+.kn-section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid #e2e8f0}
+.kn-section-title{font-size:16px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:10px;margin:0}
+.kn-section-title .kn-section-icon{width:30px;height:30px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:14px;color:#fff}
+.kn-section-icon-pin{background:linear-gradient(135deg,#f59e0b,#d97706)}
+.kn-section-icon-recent{background:linear-gradient(135deg,#06b6d4,#0891b2)}
+.kn-section-icon-popular{background:linear-gradient(135deg,#ef4444,#dc2626)}
+.kn-section-icon-fav{background:linear-gradient(135deg,#f59e0b,#eab308)}
+.kn-section-more{font-size:12.5px;color:var(--accent);text-decoration:none;font-weight:700;display:inline-flex;align-items:center;gap:4px}
+.kn-section-more:hover{color:var(--accent2)}
+
+/* カードリスト */
+.kn-grid{display:flex;flex-direction:column;gap:6px}
+.kn-card{position:relative;background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 16px;display:flex;flex-direction:column;gap:6px;cursor:pointer;transition:background .13s,border-color .13s,box-shadow .13s}
+.kn-card:hover{background:#f0f7ff;border-color:#bfdbfe;box-shadow:0 2px 8px rgba(37,99,235,.06)}
+.kn-card-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.kn-card-cat{font-size:11px;font-weight:700;color:var(--accent2);background:#dbeafe;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.kn-card-cat-empty{font-size:11px;font-weight:700;color:#94a3b8;background:#f1f5f9;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.kn-card-pin{font-size:11px;font-weight:700;color:#b45309;background:#fef3c7;padding:2px 7px;border-radius:999px;display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
+.kn-card-ext{font-size:11px;font-weight:700;color:#5b21b6;background:#ede9fe;padding:2px 7px;border-radius:999px;display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
+.kn-card-title{display:block;font-size:15px;font-weight:700;color:var(--text);line-height:1.4;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:none}
+.kn-card-title::after{content:"";position:absolute;inset:0;z-index:0}
+.kn-card-summary{font-size:12.5px;color:var(--muted);line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kn-card-foot{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;padding-top:8px;border-top:1px solid #f1f5f9;gap:8px;flex-wrap:wrap}
+.kn-card-tags{display:flex;align-items:center;gap:5px}
+.kn-card-tag{position:relative;z-index:1;font-size:10.5px;background:#f1f5f9;color:#475569;padding:2px 8px;border-radius:999px;text-decoration:none;font-weight:600;white-space:nowrap}
+.kn-card-tag:hover{background:#dbeafe;color:var(--accent2)}
+.kn-card-tag-more{font-size:10.5px;color:#94a3b8;font-weight:700}
+.kn-meta{display:flex;align-items:center;gap:10px;font-size:11.5px;color:#94a3b8}
+.kn-meta span{display:inline-flex;align-items:center;gap:4px}
 .kn-meta i{font-size:11px}
 
-.kn-section{margin-bottom:28px}
-.kn-section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-.kn-section-title{font-size:15px;font-weight:800;color:#0b2540;display:flex;align-items:center;gap:8px}
-.kn-section-title i{color:var(--accent)}
-.kn-section-more{font-size:12px;color:var(--accent);text-decoration:none;font-weight:700}
-
-.kn-empty{padding:40px 20px;text-align:center;background:#fff;border:1px dashed #c7d8ff;border-radius:14px;color:#6b7280}
-.kn-empty i{font-size:36px;color:#c7d8ff;margin-bottom:8px;display:block}
+/* 空状態 */
+.kn-empty{padding:48px 24px;text-align:center;background:#fff;border:1.5px dashed #cbd5e1;border-radius:14px;color:#64748b}
+.kn-empty i{font-size:44px;color:#cbd5e1;margin-bottom:12px;display:block}
+.kn-empty p{margin:0;font-size:14px}
+.kn-empty p + p{margin-top:6px;font-size:12.5px;color:#94a3b8}
 </style>
 `;
 
@@ -335,39 +363,68 @@ async function renderSidebar(ctx, activeCategoryId = null) {
 }
 
 function renderArticleCard(article, categoryName = "") {
-  const tagsHtml = (article.tags || [])
-    .slice(0, 4)
+  const tagList = article.tags || [];
+  const tagsHtml = tagList
+    .slice(0, 2)
     .map(
       (t) =>
-        `<a href="/knowledge/tag/${encodeURIComponent(t)}" class="kn-tag">#${escapeHtml(t)}</a>`,
+        `<a href="/knowledge/tag/${encodeURIComponent(t)}" class="kn-card-tag" onclick="event.stopPropagation()">#${escapeHtml(t)}</a>`,
     )
     .join("");
-  const summary =
+  const moreTags =
+    tagList.length > 2
+      ? `<span class="kn-card-tag-more">+${tagList.length - 2}</span>`
+      : "";
+  const rawSummary =
     article.summary ||
-    (article.body || "").replace(/[#*`>_~\-]/g, "").slice(0, 140);
+    (article.body || "")
+      .replace(/```[\s\S]*?```/g, " ")
+      .replace(/[#*`>_~\-]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 160);
   const dateStr = article.updatedAt
-    ? new Date(article.updatedAt).toLocaleDateString("ja-JP")
+    ? new Date(article.updatedAt).toLocaleDateString("ja-JP", {
+        month: "numeric",
+        day: "numeric",
+      })
     : "";
   const isExternal = !!article.externalUrl;
   const href = isExternal
     ? safeUrl(article.externalUrl)
     : `/knowledge/articles/${article._id}`;
   const target = isExternal ? `target="_blank" rel="noopener noreferrer"` : "";
-  return `<a class="kn-card" href="${href}" ${target}>
-        ${categoryName ? `<span class="kn-card-cat">${escapeHtml(categoryName)}</span>` : ""}
-        <h3 class="kn-card-title">${isExternal ? "🔗 " : ""}${escapeHtml(article.title)}</h3>
-        ${summary ? `<div class="kn-card-summary">${escapeHtml(summary)}</div>` : ""}
-        <div class="kn-tags">${tagsHtml}</div>
+  const topBadges = [];
+  if (categoryName) {
+    topBadges.push(
+      `<span class="kn-card-cat">${escapeHtml(categoryName)}</span>`,
+    );
+  } else {
+    topBadges.push(`<span class="kn-card-cat-empty">未分類</span>`);
+  }
+  if (article.pinned) {
+    topBadges.push(
+      `<span class="kn-card-pin"><i class="fa-solid fa-thumbtack"></i> ピン留め</span>`,
+    );
+  }
+  if (isExternal) {
+    topBadges.push(
+      `<span class="kn-card-ext"><i class="fa-solid fa-up-right-from-square"></i> 外部</span>`,
+    );
+  }
+  return `<div class="kn-card">
+        <div class="kn-card-top">${topBadges.join("")}</div>
+        <a class="kn-card-title" href="${href}" ${target}>${escapeHtml(article.title)}</a>
+        ${rawSummary ? `<div class="kn-card-summary">${escapeHtml(rawSummary)}</div>` : ""}
         <div class="kn-card-foot">
+            <div class="kn-card-tags">${tagsHtml}${moreTags}</div>
             <div class="kn-meta">
-                <span><i class="fa-regular fa-clock"></i> ${dateStr}</span>
-            </div>
-            <div class="kn-meta">
-                <span><i class="fa-regular fa-eye"></i> ${article.views || 0}</span>
-                <span><i class="fa-regular fa-star"></i> ${article.favoritesCount || 0}</span>
+                <span title="更新日"><i class="fa-regular fa-clock"></i> ${dateStr}</span>
+                <span title="閲覧数"><i class="fa-regular fa-eye"></i> ${article.views || 0}</span>
+                <span title="お気に入り数"><i class="fa-regular fa-star"></i> ${article.favoritesCount || 0}</span>
             </div>
         </div>
-    </a>`;
+    </div>`;
 }
 
 // =====================================================================
@@ -421,16 +478,19 @@ router.get("/knowledge", requireLogin, async (req, res) => {
   const html = `${KN_BASE_CSS}
     <div class="kn-wrap">
         <div class="kn-head">
-            <div>
-                <h2 class="kn-title">📚 ナレッジ管理</h2>
-                <div class="kn-sub">手順書・FAQ・トラブル対応・ノウハウなど社内ナレッジを蓄積／検索／共有</div>
+            <div class="kn-head-left">
+                <div class="kn-head-icon"><i class="fa-solid fa-book-open"></i></div>
+                <div>
+                    <h2 class="kn-title">ナレッジ管理</h2>
+                    <div class="kn-sub">手順書・FAQ・トラブル対応・ノウハウを社内で蓄積・検索・共有</div>
+                </div>
             </div>
             <div class="kn-actions">
                 ${ctx.isAdmin ? `<a href="/knowledge/articles/new" class="kn-btn kn-btn-primary"><i class="fa-solid fa-plus"></i> 新規作成</a>` : ""}
             </div>
         </div>
 
-        <form action="/knowledge/search" method="get" class="kn-search" style="margin-bottom:20px">
+        <form action="/knowledge/search" method="get" class="kn-search">
             <i class="fa-solid fa-magnifying-glass"></i>
             <input type="text" name="q" placeholder="自然文で検索（例: 勤怠承認エラーの対応方法 / AI議事録 設定方法）" value="${escapeHtml(req.query.q || "")}">
             <button type="submit" class="kn-btn kn-btn-primary"><i class="fa-solid fa-search"></i> 検索</button>
@@ -442,7 +502,7 @@ router.get("/knowledge", requireLogin, async (req, res) => {
                 ${
                   pinned.length
                     ? `<section class="kn-section">
-                    <div class="kn-section-head"><div class="kn-section-title"><i class="fa-solid fa-thumbtack"></i> ピン留め</div></div>
+                    <div class="kn-section-head"><h3 class="kn-section-title"><span class="kn-section-icon kn-section-icon-pin"><i class="fa-solid fa-thumbtack"></i></span>ピン留め</h3></div>
                     <div class="kn-grid">${pinned.map((a) => renderArticleCard(a, catName(a))).join("")}</div>
                 </section>`
                     : ""
@@ -450,13 +510,13 @@ router.get("/knowledge", requireLogin, async (req, res) => {
 
                 <section class="kn-section">
                     <div class="kn-section-head">
-                        <div class="kn-section-title"><i class="fa-regular fa-clock"></i> 最近更新された記事</div>
-                        <a class="kn-section-more" href="/knowledge/recent">すべて見る →</a>
+                        <h3 class="kn-section-title"><span class="kn-section-icon kn-section-icon-recent"><i class="fa-regular fa-clock"></i></span>最近更新された記事</h3>
+                        <a class="kn-section-more" href="/knowledge/recent">すべて見る <i class="fa-solid fa-arrow-right"></i></a>
                     </div>
                     ${
                       recent.length
                         ? `<div class="kn-grid">${recent.map((a) => renderArticleCard(a, catName(a))).join("")}</div>`
-                        : `<div class="kn-empty"><i class="fa-regular fa-folder-open"></i>まだ記事がありません。${ctx.isAdmin ? "右上の「新規作成」から追加してください。" : ""}</div>`
+                        : `<div class="kn-empty"><i class="fa-regular fa-folder-open"></i><p>まだ記事がありません</p>${ctx.isAdmin ? `<p>右上の「新規作成」から最初のナレッジを追加してみましょう。</p>` : ""}</div>`
                     }
                 </section>
 
@@ -464,8 +524,8 @@ router.get("/knowledge", requireLogin, async (req, res) => {
                   popular.length
                     ? `<section class="kn-section">
                     <div class="kn-section-head">
-                        <div class="kn-section-title"><i class="fa-solid fa-fire"></i> 人気記事</div>
-                        <a class="kn-section-more" href="/knowledge/popular">すべて見る →</a>
+                        <h3 class="kn-section-title"><span class="kn-section-icon kn-section-icon-popular"><i class="fa-solid fa-fire"></i></span>人気記事</h3>
+                        <a class="kn-section-more" href="/knowledge/popular">すべて見る <i class="fa-solid fa-arrow-right"></i></a>
                     </div>
                     <div class="kn-grid">${popular.map((a) => renderArticleCard(a, catName(a))).join("")}</div>
                 </section>`
@@ -475,7 +535,7 @@ router.get("/knowledge", requireLogin, async (req, res) => {
                 ${
                   favArticles.length
                     ? `<section class="kn-section">
-                    <div class="kn-section-head"><div class="kn-section-title"><i class="fa-solid fa-star" style="color:#f59e0b"></i> お気に入り</div></div>
+                    <div class="kn-section-head"><h3 class="kn-section-title"><span class="kn-section-icon kn-section-icon-fav"><i class="fa-solid fa-star"></i></span>お気に入り</h3></div>
                     <div class="kn-grid">${favArticles.map((a) => renderArticleCard(a, catName(a))).join("")}</div>
                 </section>`
                     : ""
@@ -538,14 +598,17 @@ router.get("/knowledge/search", requireLogin, async (req, res) => {
   const html = `${KN_BASE_CSS}
     <div class="kn-wrap">
         <div class="kn-head">
-            <div>
-                <h2 class="kn-title">🔍 検索結果</h2>
-                <div class="kn-sub">${q ? `「<b>${escapeHtml(q)}</b>」に対して ${articles.length} 件` : "キーワードを入力してください"}</div>
+            <div class="kn-head-left">
+                <div class="kn-head-icon" style="background:linear-gradient(135deg,#06b6d4,#2563eb)"><i class="fa-solid fa-magnifying-glass"></i></div>
+                <div>
+                    <h2 class="kn-title">検索結果</h2>
+                    <div class="kn-sub">${q ? `「<b>${escapeHtml(q)}</b>」に対して <b>${articles.length}</b> 件` : "キーワードを入力してください"}</div>
+                </div>
             </div>
             <div class="kn-actions"><a href="/knowledge" class="kn-btn kn-btn-ghost"><i class="fa-solid fa-arrow-left"></i> ナレッジトップ</a></div>
         </div>
 
-        <form action="/knowledge/search" method="get" class="kn-search" style="margin-bottom:20px">
+        <form action="/knowledge/search" method="get" class="kn-search">
             <i class="fa-solid fa-magnifying-glass"></i>
             <input type="text" name="q" value="${escapeHtml(q)}" placeholder="自然文で検索">
             <button type="submit" class="kn-btn kn-btn-primary">検索</button>
@@ -557,7 +620,7 @@ router.get("/knowledge/search", requireLogin, async (req, res) => {
                 ${
                   articles.length
                     ? `<div class="kn-grid">${articles.map((a) => renderArticleCard(a, catName(a))).join("")}</div>`
-                    : `<div class="kn-empty"><i class="fa-regular fa-face-frown"></i>該当する記事が見つかりませんでした。</div>`
+                    : `<div class="kn-empty"><i class="fa-regular fa-face-frown"></i><p>該当する記事が見つかりませんでした</p><p>別のキーワードや、より短い言葉で試してみてください。</p></div>`
                 }
             </main>
         </div>
@@ -610,9 +673,12 @@ async function renderList(req, res, opts) {
   const html = `${KN_BASE_CSS}
     <div class="kn-wrap">
         <div class="kn-head">
-            <div>
-                <h2 class="kn-title">${escapeHtml(pageTitle)}</h2>
-                <div class="kn-sub">${articles.length} 件</div>
+            <div class="kn-head-left">
+                <div class="kn-head-icon"><i class="fa-solid fa-folder-open"></i></div>
+                <div>
+                    <h2 class="kn-title">${escapeHtml(pageTitle)}</h2>
+                    <div class="kn-sub">${articles.length} 件の記事</div>
+                </div>
             </div>
             <div class="kn-actions">
                 ${
@@ -631,7 +697,7 @@ async function renderList(req, res, opts) {
                 ${
                   articles.length
                     ? `<div class="kn-grid">${articles.map((a) => renderArticleCard(a, catName(a))).join("")}</div>`
-                    : `<div class="kn-empty"><i class="fa-regular fa-folder-open"></i>記事がありません。</div>`
+                    : `<div class="kn-empty"><i class="fa-regular fa-folder-open"></i><p>記事がありません</p></div>`
                 }
             </main>
         </div>
