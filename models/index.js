@@ -1220,9 +1220,48 @@ const WorkflowFlowTemplate = mongoose.model(
   WorkflowFlowTemplateSchema,
 );
 
+// ─── 通話AI議事録スキーマ ─────────────────────────────────────────────────────
+const CallSummarySchema = new mongoose.Schema(
+  {
+    recordingMessageId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ChatMessage",
+      required: true,
+      unique: true,
+    },
+    recordingUrl: { type: String, default: "" },
+    transcript: { type: String, default: "" },
+    summary: {
+      overview: { type: String, default: "" },
+      decisions: [{ type: String }],
+      todos: [{ type: String }],
+      issues: [{ type: String }],
+      nextActions: [{ type: String }],
+    },
+    // pending | transcribing | transcribed | summarizing | done | error
+    status: {
+      type: String,
+      enum: [
+        "pending",
+        "transcribing",
+        "transcribed",
+        "summarizing",
+        "done",
+        "error",
+      ],
+      default: "pending",
+    },
+    errorMessage: { type: String, default: "" },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  },
+  { timestamps: true },
+);
+const CallSummary = mongoose.model("CallSummary", CallSummarySchema);
+
 module.exports = {
   ChatRoom,
   ChatMessage,
+  CallSummary,
   User,
   Attendance,
   Employee,
