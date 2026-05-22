@@ -2069,7 +2069,7 @@ function buildMessagesHtml(data) {
         (m.replyPreview.length > 60 ? "…" : "") +
         "</span></div>"
       : "";
-    const attachHtml = buildAttachmentsHtml(m.attachments || []);
+    const attachHtml = buildAttachmentsHtml(m.attachments || [], m._id);
     const reactHtml = buildReactHtml(m, myId);
     const editedBadge = m.edited
       ? '<span class="sc-edited">（編集済み）</span>'
@@ -2173,7 +2173,7 @@ function buildMessagesHtml(data) {
   return html;
 }
 
-function buildAttachmentsHtml(attachments) {
+function buildAttachmentsHtml(attachments, msgId) {
   if (!attachments.length) return "";
   return (
     '<div class="sc-atts">' +
@@ -2237,6 +2237,11 @@ function buildAttachmentsHtml(attachments) {
             '" download="' +
             escHtml(a.name) +
             '" class="sc-att-dl-btn" title="ダウンロード">⬇</a>' +
+            (msgId
+              ? '<button class="sc-att-ai-btn" onclick="chatApp.openCallSummaryModal(\'' +
+                msgId +
+                '\')" title="AI議事録を開く">📋 AI議事録</button>'
+              : "") +
             "</div></div>"
           );
         }
