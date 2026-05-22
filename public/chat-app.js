@@ -1368,6 +1368,12 @@
   let callStartTime = null; // 通話開始時刻（ms）
   let mediaRecorder = null; // 録画用 MediaRecorder
   let recordChunks = []; // 録画データバッファ
+  let speechRecognizer = null; // Web Speech API SpeechRecognition インスタンス
+  let speechRecognizerStopRequested = false; // 明示的に停止要求したかどうか
+  // 議事録用：参加者全員分の発言をタイムスタンプ付きで蓄積
+  let transcriptUtterances = []; // { ts:number(ms), userId, name, text }
+  let transcriptionSessionId = null; // 録画議事録セッションID
+  let transcriptionRecorderId = null; // 現進行議事録の録画者 userId（参加者用）
   let callTargetId = null; // 現在通話中の相手 userId（doHangup で参照）
   let pendingCandidates = []; // setRemoteDescription 前に届いた ICE キャンディデートのバッファ
   let remoteScreenInfo = null; // 相手の画面情報 { screenW, screenH, windowX, windowY, viewportW, viewportH }
@@ -2242,6 +2248,112 @@
     clearPointerCanvas();
   }
 
+  // ─ Web Speech API (録画と同時に動かす無料の文字起こし) ──────────
+  // mode: "recorder" = 自分が録画者。自分の発話を直接 transcriptUtterances に追加
+  //       "participant" = 他人の録画に協力。発話をソケットで録画者に送る
+  // recorderUserId: participant モード時に発話送信先となる録画者 userId
+  function startSpeechRecognitionForRecording(mode, recorderUserId) {
+    try {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        console.warn(
+          "[SpeechRecognition] このブラウザは Web Speech API に対応していません",
+        );
+        return;
+      }
+      // 多重起動防止
+      stopSpeechRecognitionForRecording();
+      speechRecognizerStopRequested = false;
+      const rec = new SR();
+      rec.lang = "ja-JP";
+      rec.continuous = true;
+      rec.interimResults = false; // 確定結果のみ蓄積
+      rec.maxAlternatives = 1;
+      rec.onresult = (e) => {
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i];
+          if (!r.isFinal) continue;
+          const txt = ((r[0] && r[0].transcript) || "").trim();
+          if (!txt) continue;
+          const ts = Date.now();
+          if (mode === "recorder") {
+            transcriptUtterances.push({
+              ts,
+              userId: String(MY_ID),
+              name: MY_NAME || "自分",
+              text: txt,
+            });
+          } else if (mode === "participant" && recorderUserId) {
+            socket.emit("transcription_utterance", {
+              sessionId: transcriptionSessionId,
+              toUserId: recorderUserId,
+              fromUserId: String(MY_ID),
+              fromName: MY_NAME || "参加者",
+              ts,
+              text: txt,
+            });
+          }
+        }
+      };
+      rec.onerror = (ev) => {
+        if (
+          ev &&
+          ev.error &&
+          ev.error !== "no-speech" &&
+          ev.error !== "aborted"
+        ) {
+          console.warn("[SpeechRecognition] error:", ev.error);
+        }
+      };
+      rec.onend = () => {
+        // 自動で止まった場合は再開（録画中 or 参加者モードで停止要求が来ていない場合）
+        if (speechRecognizerStopRequested) return;
+        const stillRecording =
+          mode === "recorder"
+            ? mediaRecorder && mediaRecorder.state === "recording"
+            : transcriptionRecorderId != null;
+        if (stillRecording) {
+          try {
+            rec.start();
+          } catch (_) {}
+        }
+      };
+      try {
+        rec.start();
+      } catch (e) {
+        console.warn("[SpeechRecognition] start error:", e);
+      }
+      speechRecognizer = rec;
+    } catch (e) {
+      console.warn("[SpeechRecognition] init error:", e);
+    }
+  }
+
+  function stopSpeechRecognitionForRecording() {
+    speechRecognizerStopRequested = true;
+    if (speechRecognizer) {
+      try {
+        speechRecognizer.stop();
+      } catch (_) {}
+      speechRecognizer = null;
+    }
+  }
+
+  // 発話配列を時系列でソートし、議事録形式のテキストに整形する
+  function buildTranscriptText() {
+    if (!transcriptUtterances.length) return "";
+    const sorted = transcriptUtterances.slice().sort((a, b) => a.ts - b.ts);
+    return sorted
+      .map((u) => {
+        const d = new Date(u.ts);
+        const hh = String(d.getHours()).padStart(2, "0");
+        const mm = String(d.getMinutes()).padStart(2, "0");
+        const ss = String(d.getSeconds()).padStart(2, "0");
+        return `[${hh}:${mm}:${ss}] ${u.name}: ${u.text}`;
+      })
+      .join("\n");
+  }
+
   // ─ 録画 ──────────────────────────────────────────────────────
   async function toggleRecord(btn) {
     if (mediaRecorder && mediaRecorder.state === "recording") {
@@ -2267,6 +2379,25 @@
       : "video/webm";
     recordChunks = [];
     mediaRecorder = new MediaRecorder(stream, { mimeType });
+
+    // ─ Web Speech API で録画と同時に文字赳こし (参加者全員の声を集約) ─
+    transcriptUtterances = [];
+    transcriptionSessionId =
+      "tr_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+    // 参加者に「あなたのマイクも認識して送るよ」と依頼
+    {
+      const startPayload = {
+        sessionId: transcriptionSessionId,
+        recorderUserId: String(MY_ID),
+        recorderName: MY_NAME || "",
+      };
+      if (ROOM_ID) startPayload.roomId = ROOM_ID;
+      else if (callTargetId || TARGET_ID)
+        startPayload.toUserId = callTargetId || TARGET_ID;
+      socket.emit("transcription_start", startPayload);
+    }
+    // 録画者自身のマイクも認識
+    startSpeechRecognitionForRecording("recorder");
 
     // 相手に録画開始を通知（相手側の録画ボタンを無効化させる）
     const recTarget = callTargetId || TARGET_ID;
@@ -2297,6 +2428,15 @@
     };
     mediaRecorder.onstop = async () => {
       clearInterval(recTimerInterval);
+      // 録画と同期して出ていた Speech Recognition も停止
+      stopSpeechRecognitionForRecording();
+      // 参加者にも認識停止を通知
+      {
+        const stopPayload = { sessionId: transcriptionSessionId };
+        if (ROOM_ID) stopPayload.roomId = ROOM_ID;
+        else if (recTarget) stopPayload.toUserId = recTarget;
+        socket.emit("transcription_stop", stopPayload);
+      }
       // 相手に録画停止を通知（相手側の録画ボタンを再有効化）
       if (recTarget)
         socket.emit("recording_stopped", {
@@ -2325,6 +2465,15 @@
       const fd = new FormData();
       fd.append("recording", blob, `recording_${Date.now()}.webm`);
       fd.append("duration", recSeconds);
+      // Web Speech API で取得した文字赳こしを一緒に送る（空のときもOK）
+      // 遅て届く参加者の発言も取りこぼさないよう短いグレースを取る
+      await new Promise((r) => setTimeout(r, 800));
+      const transcriptText = buildTranscriptText();
+      if (transcriptText) {
+        fd.append("transcript", transcriptText);
+      }
+      transcriptUtterances = [];
+      transcriptionSessionId = null;
       // roomId がある場合はグループ室宛て。toUserId は送らない（二重保存防止）
       if (ROOM_ID) {
         fd.append("roomId", ROOM_ID);
@@ -2897,6 +3046,49 @@
     const badge = document.getElementById("call-remote-rec-badge");
     if (badge) badge.style.display = "none";
     hideNoticeBar();
+  });
+
+  // ── AI議事録：他の参加者からの「文字起こし協力依頼」 ──
+  // 録画者から受け取る：自分のマイクを認識して結果をその録画者に送る
+  socket.on("transcription_start", (data) => {
+    if (!data || !data.recorderUserId) return;
+    // 録画者自身は participant モードに入らない
+    if (String(data.recorderUserId) === String(MY_ID)) return;
+    transcriptionSessionId = data.sessionId || null;
+    transcriptionRecorderId = String(data.recorderUserId);
+    startSpeechRecognitionForRecording("participant", transcriptionRecorderId);
+  });
+  // 録画者側：参加者からの発話結果を受信して蓄積
+  socket.on("transcription_utterance", (data) => {
+    if (!data || !data.fromUserId) return;
+    // セッションIDが一致するもののみ採用（古いセッションの遅延配送を防ぐ）
+    if (
+      transcriptionSessionId &&
+      data.sessionId &&
+      data.sessionId !== transcriptionSessionId
+    )
+      return;
+    transcriptUtterances.push({
+      ts: Number(data.ts) || Date.now(),
+      userId: String(data.fromUserId),
+      name: data.fromName || "参加者",
+      text: String(data.text || ""),
+    });
+  });
+  // 参加者側：録画者から停止指示を受け取って認識を止める
+  socket.on("transcription_stop", (data) => {
+    // 録画者自身は無視（自分は mediaRecorder.onstop 内で停止済み）
+    if (transcriptionRecorderId == null) return;
+    if (
+      data &&
+      data.sessionId &&
+      transcriptionSessionId &&
+      data.sessionId !== transcriptionSessionId
+    )
+      return;
+    stopSpeechRecognitionForRecording();
+    transcriptionRecorderId = null;
+    transcriptionSessionId = null;
   });
 
   // 相手のマイクミュー状態を表示
