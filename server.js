@@ -458,6 +458,7 @@ app.use("/", require("./routes/cloud"));
 app.use("/", require("./routes/workflow"));
 app.use("/", require("./routes/schedule"));
 app.use("/", require("./routes/email").router);
+app.use("/", require("./routes/auditlog"));
 
 // ── グローバルエラーハンドラー（500エラーでプロセスをクラッシュさせない） ─
 app.use((err, req, res, next) => {

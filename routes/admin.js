@@ -133,6 +133,11 @@ router.get("/admin", requireLogin, isAdmin, async (req, res) => {
                         <div class="admin-desc" style="color:#6b7280;">社員が送信した自己評価・コミットメント・アピール文を一覧で確認します。</div>
                     </a>
 
+                    <a class="admin-card" href="/admin/audit-log" style="border:1.5px solid #dbeafe;background:linear-gradient(180deg,#eff6ff,#fff);">
+                        <div class="admin-head"><div class="admin-icon" style="background:linear-gradient(90deg,#dbeafe,#bfdbfe);color:#1d4ed8">🛡️</div><div class="admin-title">監査ログ</div></div>
+                        <div class="admin-desc">ログイン履歴・データ変更・承認操作・削除履歴を記録・検索・CSV出力できます。</div>
+                    </a>
+
                     <a class="admin-card" href="/admin/chat-management" style="border:1.5px solid #fecaca;background:linear-gradient(180deg,#fff5f5,#fff);">
                         <div class="admin-head"><div class="admin-icon" style="background:linear-gradient(90deg,#fee2e2,#fef2f2);color:#ef4444">🗑</div><div class="admin-title">チャット管理</div></div>
                         <div class="admin-desc">従業員・グループのチャット履歴を削除します。</div>
