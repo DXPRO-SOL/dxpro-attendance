@@ -27,6 +27,8 @@
   let editingMsgId = null;
   let emojiForMsgId = null; // null = 入力欄用
   let pendingFiles = []; // { file, dataUrl?, name }
+  let pendingSticker = null; // { url, name } 送信待ちスタンプ
+  let stampCache = null; // スタンプ一覧キャッシュ
   let typingTimer = null;
   let autoStatusTimer = null;
   let autoBreakTimer = null;
@@ -321,6 +323,59 @@
       return;
     }
 
+    // スタンプメッセージの専用表示
+    if (msg.isSticker && msg.stickerUrl) {
+      const isMineS = msg.fromUserId === MY_ID;
+      const senderNameS = isMineS
+        ? MY_NAME
+        : msg.senderName || TARGET_NAME || "ユーザー";
+      const initialS = (senderNameS || "?").charAt(0).toUpperCase();
+      const colorIdxS = isMineS
+        ? 0
+        : MODE === "room"
+          ? ([...String(msg.fromUserId)].reduce(
+              (a, c) => a + c.charCodeAt(0),
+              0,
+            ) %
+              5) +
+            1
+          : 1;
+      const dtS = new Date(msg.createdAt);
+      const timeStrS = dtS.toLocaleTimeString("ja-JP", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Asia/Tokyo",
+      });
+      const elS = document.createElement("div");
+      elS.className = "sc-msg" + (isMineS ? " sc-msg-mine" : "");
+      elS.dataset.id = msg._id;
+      elS.dataset.at = msg.createdAt;
+      elS.innerHTML =
+        '<div class="sc-av sc-av-c' +
+        colorIdxS +
+        '">' +
+        initialS +
+        "</div>" +
+        '<div class="sc-msg-right"><div class="sc-msg-meta"><span class="sc-sender">' +
+        esc(senderNameS) +
+        '</span><span class="sc-ts">' +
+        timeStrS +
+        "</span></div>" +
+        '<div class="sc-sticker-wrap"><img class="sc-sticker-img" src="' +
+        esc(msg.stickerUrl) +
+        '" alt="' +
+        esc(msg.stickerName || "スタンプ") +
+        '" title="' +
+        esc(msg.stickerName || "スタンプ") +
+        '" loading="lazy"></div></div>';
+      container.insertBefore(elS, bottom);
+      if (msg._id) appendedMsgIds.add(String(msg._id));
+      scrollBottom(true);
+      if (msg.fromUserId !== MY_ID && window.CallSounds)
+        CallSounds.playReceive();
+      return;
+    }
+
     const isMine = msg.fromUserId === MY_ID;
     const senderName = isMine
       ? MY_NAME
@@ -606,7 +661,12 @@
     if (!ta) return;
     ta.style.height = "auto";
     ta.style.height = Math.min(ta.scrollHeight, 160) + "px";
-    if (btn) btn.disabled = !(ta.value.trim() || pendingFiles.length);
+    if (btn)
+      btn.disabled = !(
+        ta.value.trim() ||
+        pendingFiles.length ||
+        pendingSticker
+      );
     // タイピング通知
     if (MODE === "dm" || MODE === "room") {
       socket.emit("typing", {
@@ -743,7 +803,9 @@
     const picker = document.getElementById("sc-emoji-picker");
     if (!picker) return;
     if (picker.style.display === "none" || !picker.style.display) {
-      const btn = document.querySelector('.sc-tool-btn[title="絵文字を挿入"]');
+      const btn = document.querySelector(
+        '.sc-tool-btn[title="絵文字・スタンプ"]',
+      );
       if (btn) _positionPicker(picker, btn.getBoundingClientRect());
       picker.style.display = "flex";
     } else {
@@ -763,6 +825,78 @@
     if (btn) btn.classList.add("active");
     const panel = picker.querySelector('[data-panel="' + catId + '"]');
     if (panel) panel.classList.remove("sc-ep-hidden");
+    if (catId === "stamp") loadEmojiPickerStamps();
+  }
+
+  async function loadEmojiPickerStamps() {
+    const panel = document.getElementById("sc-ep-stamp-panel");
+    if (!panel) return;
+    if (stampCache) {
+      renderEmojiPickerStamps(stampCache);
+      return;
+    }
+    panel.innerHTML = '<div class="sc-ep-stamp-loading">読み込み中...</div>';
+    try {
+      const r = await fetch("/api/chat/stamps");
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error);
+      stampCache = j.stamps;
+      renderEmojiPickerStamps(stampCache);
+    } catch (e) {
+      panel.innerHTML =
+        '<div class="sc-ep-stamp-loading">読み込みに失敗しました</div>';
+    }
+  }
+
+  function renderEmojiPickerStamps(stamps) {
+    const panel = document.getElementById("sc-ep-stamp-panel");
+    if (!panel) return;
+    const addBtn =
+      '<div style="text-align:right;padding:2px 2px 6px"><button class="sc-ep-stamp-add" onclick="chatApp.openStampManager()">＋ 登録</button></div>';
+    if (!stamps || !stamps.length) {
+      panel.innerHTML =
+        addBtn + '<div class="sc-ep-stamp-loading">スタンプがありません</div>';
+      return;
+    }
+    function makeItem(s) {
+      const u = s.url.replace(/'/g, "%27");
+      const n = (s.name || "").replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+      return `<div class="sc-ep-stamp-item" onclick="chatApp.pickStampFromPicker('${u}','${n}')" title="${n}"><img src="${s.url}" alt="${n}" loading="lazy"><span>${n}</span></div>`;
+    }
+    function groupByCategory(items) {
+      const map = {};
+      items.forEach((s) => {
+        const cat = s.category || "その他";
+        if (!map[cat]) map[cat] = [];
+        map[cat].push(s);
+      });
+      return map;
+    }
+    function makeScopeSection(scopeLabel, items) {
+      if (!items.length) return "";
+      const catMap = groupByCategory(items);
+      const catHTML = Object.keys(catMap)
+        .sort()
+        .map(
+          (cat) =>
+            `<div class="sc-ep-stamp-cat-label">${cat}</div><div class="sc-ep-stamp-grid">${catMap[cat].map(makeItem).join("")}</div>`,
+        )
+        .join("");
+      return `<div class="sc-ep-stamp-section-label">${scopeLabel}</div>${catHTML}`;
+    }
+    const team = stamps.filter((s) => s.scope !== "personal");
+    const personal = stamps.filter((s) => s.scope === "personal");
+    panel.innerHTML =
+      addBtn +
+      makeScopeSection("👥 チーム全員", team) +
+      makeScopeSection("🔒 自分だけ", personal);
+  }
+
+  function pickStampFromPicker(url, name) {
+    const picker = document.getElementById("sc-emoji-picker");
+    if (picker) picker.style.display = "none";
+    emojiForMsgId = null;
+    pickStamp(url, name);
   }
 
   function pickEmoji(emoji) {
@@ -797,7 +931,7 @@
     // ピッカー外クリックで閉じる
     if (
       !e.target.closest("#sc-emoji-picker") &&
-      !e.target.closest('.sc-tool-btn[title="絵文字を挿入"]')
+      !e.target.closest('.sc-tool-btn[title="絵文字・スタンプ"]')
     ) {
       const picker = document.getElementById("sc-emoji-picker");
       if (picker) picker.style.display = "none";
@@ -1189,6 +1323,184 @@
     if (el) el.style.display = "none";
   }
 
+  // ── スタンプピッカー ──────────────────────────────────────
+  function openStampPicker() {
+    openModal("sc-modal-stamp-picker");
+    loadStamps();
+  }
+
+  async function loadStamps() {
+    const loading = document.getElementById("stamp-picker-loading");
+    const catTabs = document.getElementById("stamp-cat-tabs");
+    const grid = document.getElementById("stamp-grid");
+    if (!catTabs || !grid) return;
+    if (loading) loading.style.display = "";
+    catTabs.innerHTML = "";
+    grid.innerHTML = "";
+    try {
+      const r = await fetch("/api/chat/stamps");
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error);
+      stampCache = j.stamps;
+    } catch (e) {
+      if (loading) loading.textContent = "読み込みに失敗しました";
+      return;
+    }
+    if (loading) loading.style.display = "none";
+    renderStampPicker(stampCache, "all");
+  }
+
+  function renderStampPicker(stamps, activeCategory) {
+    const catTabs = document.getElementById("stamp-cat-tabs");
+    const grid = document.getElementById("stamp-grid");
+    if (!catTabs || !grid) return;
+    const categories = ["all", ...new Set(stamps.map((s) => s.category))];
+    catTabs.innerHTML = categories
+      .map((cat) => {
+        const label = cat === "all" ? "すべて" : esc(cat);
+        return (
+          '<button class="sc-stamp-cat-tab' +
+          (cat === activeCategory ? " active" : "") +
+          '" onclick="chatApp.filterStampCat(\'' +
+          esc(cat) +
+          "',this)\">" +
+          label +
+          "</button>"
+        );
+      })
+      .join("");
+    const filtered =
+      activeCategory === "all"
+        ? stamps
+        : stamps.filter((s) => s.category === activeCategory);
+    if (!filtered.length) {
+      grid.innerHTML =
+        '<div style="color:#9ca3af;font-size:.8rem;padding:16px;text-align:center">\u30b9\u30bf\u30f3\u30d7\u304c\u3042\u308a\u307e\u305b\u3093</div>';
+      return;
+    }
+    grid.innerHTML = filtered
+      .map(
+        (s) =>
+          '<div class="sc-stamp-item" onclick="chatApp.pickStamp(\'' +
+          esc(s.url) +
+          "','" +
+          esc(s.name) +
+          '\')" title="' +
+          esc(s.name) +
+          '">' +
+          '<img src="' +
+          esc(s.url) +
+          '" alt="' +
+          esc(s.name) +
+          '" loading="lazy">' +
+          '<span class="sc-stamp-name">' +
+          esc(s.name) +
+          "</span>" +
+          (s.isOwn
+            ? '<button class="sc-stamp-del-btn own" onclick="event.stopPropagation();chatApp.deleteStamp(\'' +
+              s._id +
+              '\',this)" title="\u524a\u9664">\u00d7</button>'
+            : "") +
+          "</div>",
+      )
+      .join("");
+  }
+
+  function filterStampCat(cat, btn) {
+    if (!stampCache) return;
+    document
+      .querySelectorAll(".sc-stamp-cat-tab")
+      .forEach((b) => b.classList.remove("active"));
+    if (btn) btn.classList.add("active");
+    renderStampPicker(stampCache, cat);
+  }
+
+  function pickStamp(url, name) {
+    closeModal("sc-modal-stamp-picker");
+    pendingSticker = { url, name };
+    const area = document.getElementById("sc-file-preview");
+    if (area) {
+      area.innerHTML =
+        '<div class="sc-fp-sticker">' +
+        '<img src="' +
+        esc(url) +
+        '" alt="' +
+        esc(name) +
+        '" title="' +
+        esc(name) +
+        '">' +
+        '<button class="sc-fp-rm" onclick="chatApp.removeSticker()" title="\u524a\u9664">\u00d7</button>' +
+        "</div>";
+    }
+    const btn = document.getElementById("sc-send-btn");
+    if (btn) btn.disabled = false;
+  }
+
+  function removeSticker() {
+    pendingSticker = null;
+    const area = document.getElementById("sc-file-preview");
+    if (area) area.innerHTML = "";
+    const btn = document.getElementById("sc-send-btn");
+    const ta = document.getElementById("sc-msg-input");
+    if (btn) btn.disabled = !(pendingFiles.length || (ta && ta.value.trim()));
+  }
+
+  function openStampManager() {
+    window.location.href = "/chat/stamps";
+  }
+
+  async function submitStampUpload() {
+    const fi = document.getElementById("stamp-upload-file");
+    const ni = document.getElementById("stamp-upload-name");
+    const ci = document.getElementById("stamp-upload-category");
+    const si = document.querySelector('input[name="stamp-scope"]:checked');
+    const btn = document.getElementById("stamp-upload-btn");
+    if (!fi || !fi.files[0]) {
+      alert("画像ファイルを選択してください");
+      return;
+    }
+    const name = (ni && ni.value.trim()) || fi.files[0].name;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "登録中...";
+    }
+    const fd = new FormData();
+    fd.append("image", fi.files[0]);
+    fd.append("name", name);
+    fd.append("category", (ci && ci.value.trim()) || "その他");
+    fd.append("scope", si ? si.value : "team");
+    try {
+      const r = await fetch("/api/chat/stamps", { method: "POST", body: fd });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || "登録に失敗しました");
+      stampCache = null;
+      closeModal("sc-modal-stamp-manager");
+    } catch (e) {
+      alert("登録エラー: " + e.message);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "登録する";
+      }
+    }
+  }
+
+  async function deleteStamp(stampId, el) {
+    if (!confirm("このスタンプを削除しますか？")) return;
+    try {
+      const r = await fetch("/api/chat/stamps/" + stampId, {
+        method: "DELETE",
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error);
+      stampCache = null;
+      if (el) el.closest(".sc-stamp-item").remove();
+      loadStamps();
+    } catch (e) {
+      alert("削除エラー: " + e.message);
+    }
+  }
+
   // ── ユーティリティ ────────────────────────────────────────
   function esc(s) {
     return String(s || "")
@@ -1315,6 +1627,32 @@
           secs = dur % 60;
         const ds = mins > 0 ? `${mins}分${secs}秒` : `${secs}秒`;
         html += `<div class="sc-call-history" data-id="${id}" data-at="${at}"><span>📞</span> 通話 — ${ds}<span class="sc-missed-time">${t}</span></div>`;
+        continue;
+      }
+      if (m.isSticker && m.stickerUrl) {
+        const isMineS = m.fromUserId === MY_ID;
+        const senderNameS =
+          m.senderName || (isMineS ? MY_NAME : TARGET_NAME) || "?";
+        const initialS = senderNameS.charAt(0).toUpperCase();
+        const colorIdxS = isMineS ? 0 : 1;
+        const dtS = new Date(m.createdAt);
+        const dateStrS = dtS.toLocaleDateString("ja-JP", {
+          month: "long",
+          day: "numeric",
+          weekday: "short",
+          timeZone: "Asia/Tokyo",
+        });
+        const timeStrS = dtS.toLocaleTimeString("ja-JP", {
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: "Asia/Tokyo",
+        });
+        html += `<div class="sc-date-div"><span>${dateStrS}</span></div>`;
+        html += `<div class="sc-msg${isMineS ? " sc-msg-mine" : ""}" data-id="${id}" data-at="${at}">`;
+        html += `<div class="sc-av sc-av-c${colorIdxS}">${initialS}</div>`;
+        html += `<div class="sc-msg-right"><div class="sc-msg-meta"><span class="sc-sender">${esc(senderNameS)}</span><span class="sc-ts">${timeStrS}</span></div>`;
+        html += `<div class="sc-sticker-wrap"><img class="sc-sticker-img" src="${esc(m.stickerUrl)}" alt="${esc(m.stickerName || "スタンプ")}" title="${esc(m.stickerName || "スタンプ")}" loading="lazy"></div>`;
+        html += `</div></div>`;
         continue;
       }
       const isMine = m.fromUserId === MY_ID;
@@ -3641,6 +3979,14 @@
     openAddMember,
     openModal,
     closeModal,
+    openStampPicker,
+    pickStamp,
+    pickStampFromPicker,
+    removeSticker,
+    filterStampCat,
+    openStampManager,
+    submitStampUpload,
+    deleteStamp,
     doStartGroupCall,
     joinGroupCall,
     dismissGroupCallBanner,

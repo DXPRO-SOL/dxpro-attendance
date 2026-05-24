@@ -17,7 +17,9 @@ const {
   ChatMessage,
   ChatRoom,
   CallSummary,
+  Stamp,
 } = require("../models");
+const { GridFSBucket } = require("mongodb");
 const { renderPage } = require("../lib/renderPage");
 
 const UPLOAD_DIR = path.join(__dirname, "../uploads/chat");
@@ -41,6 +43,26 @@ const chatUpload = multer({
         ext,
       ),
     );
+  },
+});
+
+// ── スタンプ GridFS バケット（遅延初期化）────────────────────────────
+let _stampBucket = null;
+function getStampBucket() {
+  if (!_stampBucket) {
+    _stampBucket = new GridFSBucket(mongoose.connection.db, {
+      bucketName: "stamps",
+    });
+  }
+  return _stampBucket;
+}
+
+const stampMemUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, /\.(jpg|jpeg|png|gif|webp)$/.test(ext));
   },
 });
 
@@ -742,10 +764,23 @@ router.post(
 
 router.post("/api/chat/send", requireLogin, async (req, res) => {
   try {
-    const { toUserId, roomId, content, replyToId, attachments } = req.body;
+    const {
+      toUserId,
+      roomId,
+      content,
+      replyToId,
+      attachments,
+      isSticker,
+      stickerUrl,
+      stickerName,
+    } = req.body;
     if (!toUserId && !roomId)
       return res.status(400).json({ error: "toUserId か roomId が必要です" });
-    if (!(content && content.trim()) && !(attachments && attachments.length))
+    if (
+      !(content && content.trim()) &&
+      !(attachments && attachments.length) &&
+      !isSticker
+    )
       return res.status(400).json({ error: "コンテンツが空です" });
     let replyPreview = null;
     if (replyToId) {
@@ -761,6 +796,9 @@ router.post("/api/chat/send", requireLogin, async (req, res) => {
       replyTo: replyToId || null,
       replyPreview,
       attachments: attachments || [],
+      isSticker: !!isSticker,
+      stickerUrl: isSticker ? stickerUrl || null : null,
+      stickerName: isSticker ? stickerName || null : null,
     };
     if (toUserId) msgData.toUserId = toUserId;
     if (roomId) msgData.roomId = roomId;
@@ -784,6 +822,9 @@ router.post("/api/chat/send", requireLogin, async (req, res) => {
       createdAt: msg.createdAt,
       reactions: [],
       senderName,
+      isSticker: msg.isSticker || false,
+      stickerUrl: msg.stickerUrl || null,
+      stickerName: msg.stickerName || null,
     };
     if (toUserId && global.io) {
       global.io
@@ -1525,6 +1566,124 @@ router.delete(
   },
 );
 
+// ── スタンプ API ──────────────────────────────────────────────────────────
+
+// スタンプ画像配信（GridFS）
+router.get("/api/chat/stamps/file/:fileId", requireLogin, async (req, res) => {
+  try {
+    const fileId = new mongoose.Types.ObjectId(req.params.fileId);
+    const bucket = getStampBucket();
+    const files = await bucket.find({ _id: fileId }).toArray();
+    if (!files.length) return res.status(404).send("Not found");
+    res.set("Content-Type", files[0].contentType || "image/png");
+    res.set("Cache-Control", "public, max-age=31536000, immutable");
+    bucket.openDownloadStream(fileId).pipe(res);
+  } catch (e) {
+    res.status(400).send("Invalid file ID");
+  }
+});
+
+// スタンプ一覧取得
+router.get("/api/chat/stamps", requireLogin, async (req, res) => {
+  try {
+    const myId = String(req.session.userId);
+    const stamps = await Stamp.find({
+      $or: [{ scope: "team" }, { scope: "personal", createdBy: myId }],
+    })
+      .sort({ category: 1, createdAt: -1 })
+      .lean();
+    res.json({
+      ok: true,
+      stamps: stamps.map((s) => ({
+        _id: String(s._id),
+        name: s.name,
+        category: s.category || "その他",
+        url: "/api/chat/stamps/file/" + s.gridfsId,
+        mimeType: s.mimeType,
+        scope: s.scope,
+        isOwn: String(s.createdBy) === myId,
+      })),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// スタンプ登録（アップロード）
+router.post(
+  "/api/chat/stamps",
+  requireLogin,
+  (req, res, next) => {
+    stampMemUpload.single("image")(req, res, (err) => {
+      if (err) {
+        if (err.code === "LIMIT_FILE_SIZE")
+          return res
+            .status(400)
+            .json({ ok: false, error: "画像ファイルは5MB以下にしてください" });
+        return res.status(400).json({ ok: false, error: err.message });
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      if (!req.file)
+        return res.status(400).json({ error: "画像ファイルが必要です" });
+      const bucket = getStampBucket();
+      const filename = `${Date.now()}-${req.file.originalname}`;
+      const uploadStream = bucket.openUploadStream(filename, {
+        contentType: req.file.mimetype,
+      });
+      uploadStream.end(req.file.buffer);
+      await new Promise((resolve, reject) => {
+        uploadStream.on("finish", resolve);
+        uploadStream.on("error", reject);
+      });
+      const stamp = await Stamp.create({
+        name: (req.body.name || "").trim() || req.file.originalname,
+        category: (req.body.category || "").trim() || "その他",
+        gridfsId: uploadStream.id,
+        mimeType: req.file.mimetype,
+        scope: req.body.scope === "personal" ? "personal" : "team",
+        createdBy: oid(req.session.userId),
+      });
+      res.json({
+        ok: true,
+        stamp: {
+          _id: String(stamp._id),
+          name: stamp.name,
+          category: stamp.category,
+          url: "/api/chat/stamps/file/" + uploadStream.id,
+          mimeType: stamp.mimeType,
+          scope: stamp.scope,
+          isOwn: true,
+        },
+      });
+    } catch (e) {
+      console.error("[Stamp POST]", e);
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
+// スタンプ削除
+router.delete("/api/chat/stamps/:id", requireLogin, async (req, res) => {
+  try {
+    const stamp = await Stamp.findById(req.params.id);
+    if (!stamp) return res.status(404).json({ error: "見つかりません" });
+    if (String(stamp.createdBy) !== String(req.session.userId))
+      return res.status(403).json({ error: "権限がありません" });
+    const bucket = getStampBucket();
+    try {
+      await bucket.delete(stamp.gridfsId);
+    } catch (_) {}
+    await stamp.deleteOne();
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── HTML ビルダー ──────────────────────────────────────────────
 
 function buildPage(data) {
@@ -1586,6 +1745,8 @@ function buildPage(data) {
 </div>
 ${buildGroupCreateModal(allUsers)}
 ${buildRoomSettingsModal()}
+${buildStampPickerModal()}
+${buildStampManagerModal()}
 ${buildCallOverlay()}
 <script type="application/json" id="sc-init">${JSON.stringify(clientData)}</script>
 <script src="/socket.io/socket.io.js"></script>
@@ -1785,7 +1946,7 @@ function buildMainHtml(data) {
   const EMOJI_CATS = [
     {
       id: "reaction",
-      label: "\u{1F60A} \u30EA\u30A2\u30AF\u30B7\u30E7\u30F3",
+      label: "\u{1F60A} \u7D75\u6587\u5B57",
       items: [
         "\u{1F44D}",
         "\u{1F44E}",
@@ -1822,42 +1983,6 @@ function buildMainHtml(data) {
         "\u{1F4CC}",
         "\u26A1",
         "\u{1F680}",
-      ],
-    },
-    {
-      id: "biz",
-      label: "\u{1F4BC} \u696D\u52D9\u7528",
-      items: [
-        "\u2705\u4E86\u89E3\u3067\u3059",
-        "\u2705\u627F\u77E5\u3044\u305F\u3057\u307E\u3057\u305F",
-        "\u2705\u78BA\u8A8D\u3057\u307E\u3057\u305F",
-        "\u{1F50D}\u78BA\u8A8D\u3057\u307E\u3059",
-        "\u{1F504}\u78BA\u8A8D\u4E2D",
-        "\u2714\uFE0F\u78BA\u8A8D\u6E08",
-        "\u2699\uFE0F\u5BFE\u5FDC\u4E2D",
-        "\u2705\u5BFE\u5FDC\u3057\u307E\u3057\u305F",
-        "\u{1F4DD}\u4FEE\u6B63\u3057\u307E\u3059",
-        "\u{1F4DD}\u4FEE\u6B63\u4E2D",
-        "\u{1F4DD}\u4FEE\u6B63\u3057\u307E\u3057\u305F",
-        "\u23F3\u304A\u5F85\u3061\u304F\u3060\u3055\u3044",
-        "\u{1F4E2}\u5171\u6709\u3057\u307E\u3059",
-        "\u{1F440}\u78BA\u8A8D\u304A\u9858\u3044\u3057\u307E\u3059",
-        "\u{1F4CB}\u5831\u544A\u3057\u307E\u3059",
-        "\u{1F64F}\u3088\u308D\u3057\u304F\u304A\u9858\u3044\u3057\u307E\u3059",
-        "\u{1F64F}\u304A\u75B2\u308C\u69D8\u3067\u3059",
-        "\u{1F647}\u5931\u793C\u3057\u307E\u3059",
-        "\u{1F389}\u304A\u75B2\u308C\u69D8\u3067\u3057\u305F",
-        "\u{1F4C5}\u5F8C\u3067\u78BA\u8A8D\u3057\u307E\u3059",
-        "\u2757\u8981\u78BA\u8A8D",
-        "\u274C\u5BFE\u5FDC\u4E0D\u53EF",
-        "\u{1F501}\u3084\u308A\u76F4\u3057\u307E\u3059",
-        "\u{1F4A1}\u63D0\u6848\u304C\u3042\u308A\u307E\u3059",
-        "\u{1F4E3}\u5468\u77E5\u3057\u307E\u3057\u305F",
-        "\u{1F197}\u554F\u984C\u3042\u308A\u307E\u305B\u3093",
-        "\u26A0\uFE0F\u8981\u6CE8\u610F",
-        "\u{1F6D1}\u4E00\u6642\u4E2D\u65AD",
-        "\u25B6\uFE0F\u518D\u958B\u3057\u307E\u3059",
-        "\u{1F3C1}\u5B8C\u4E86\u3057\u307E\u3057\u305F",
       ],
     },
   ];
@@ -1921,6 +2046,7 @@ function buildMainHtml(data) {
 <div class="sc-emoji-picker" id="sc-emoji-picker" style="display:none">
 <div class="sc-ep-tabs">
   ${EMOJI_CATS.map((cat, i) => `<button class="sc-ep-tab${i === 0 ? " active" : ""}" data-cat="${cat.id}" onclick="chatApp.switchEmojiTab('${cat.id}',this)">${cat.label}</button>`).join("")}
+  <button class="sc-ep-tab" data-cat="stamp" onclick="chatApp.switchEmojiTab('stamp',this)">🖼️ スタンプ</button>
 </div>
 <div class="sc-ep-body">
   ${EMOJI_CATS.map((cat, i) => {
@@ -1932,6 +2058,7 @@ function buildMainHtml(data) {
       .join("");
     return `<div class="sc-ep-panel${i === 0 ? "" : " sc-ep-hidden"}" data-panel="${cat.id}">${btns}</div>`;
   }).join("")}
+  <div class="sc-ep-panel sc-ep-hidden sc-ep-stamp-panel" data-panel="stamp" id="sc-ep-stamp-panel"><div class="sc-ep-stamp-loading">読み込み中...</div></div>
 </div>
 </div>
 <div class="sc-reply-bar" id="sc-reply-bar" style="display:none">
@@ -1941,7 +2068,7 @@ function buildMainHtml(data) {
 <div class="sc-input-area">
     <div class="sc-input-tools">
         <button class="sc-tool-btn" title="ファイルを添付" onclick="document.getElementById('sc-file-input').click()"><i class="fa-solid fa-paperclip"></i></button>
-        <button class="sc-tool-btn" title="絵文字を挿入" onclick="chatApp.toggleInputEmoji()"><i class="fa-regular fa-face-smile"></i></button>
+        <button class="sc-tool-btn" title="絵文字・スタンプ" onclick="chatApp.toggleInputEmoji()"><i class="fa-regular fa-face-smile"></i></button>
         <input type="file" id="sc-file-input" multiple accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.csv,.mp4,.mov" style="display:none" onchange="chatApp.handleFileSelect(this)">
     </div>
     <div id="sc-file-preview" class="sc-file-preview-area"></div>
@@ -2096,6 +2223,36 @@ function buildMessagesHtml(data) {
     }
     const isCont = prevFrom === String(m.fromUserId);
     prevFrom = String(m.fromUserId);
+    // スタンプメッセージ
+    if (m.isSticker && m.stickerUrl) {
+      html +=
+        '<div class="sc-msg' +
+        (isMine ? " sc-msg-mine" : "") +
+        '" data-id="' +
+        m._id +
+        '" data-at="' +
+        m.createdAt.toISOString() +
+        '">' +
+        '<div class="sc-av sc-av-c' +
+        colorIdx +
+        '">' +
+        initial +
+        "</div>" +
+        '<div class="sc-msg-right"><div class="sc-msg-meta"><span class="sc-sender">' +
+        escHtml(senderName) +
+        '</span><span class="sc-ts">' +
+        timeStr +
+        "</span></div>" +
+        '<div class="sc-sticker-wrap"><img class="sc-sticker-img" src="' +
+        escHtml(m.stickerUrl) +
+        '" alt="' +
+        escHtml(m.stickerName || "スタンプ") +
+        '" title="' +
+        escHtml(m.stickerName || "スタンプ") +
+        '" loading="lazy"></div>' +
+        "</div></div>";
+      continue;
+    }
     const replyBlock = m.replyPreview
       ? '<div class="sc-reply-quote"><div class="sc-reply-stripe"></div><span>' +
         escHtml(m.replyPreview.slice(0, 60)) +
@@ -2597,9 +2754,22 @@ html, body { overflow: hidden !important; }
 .sc-ep-tab:hover:not(.active){background:#f1f5f9}
 .sc-ep-body{overflow-y:auto;padding:8px}
 .sc-ep-panel{display:flex;flex-wrap:wrap;gap:3px}
-.sc-ep-panel.sc-ep-hidden{display:none}
+.sc-ep-panel.sc-ep-hidden{display:none!important}
 .sc-emoji-btn{border:none;background:transparent;border-radius:var(--radius-sm);font-size:.82rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.12s;padding:4px 5px;min-width:32px;height:32px;white-space:nowrap;line-height:1.2}
 .sc-emoji-btn:hover{background:var(--c-main-surface);transform:scale(1.08)}
+.sc-ep-stamp-panel{padding:8px;overflow-y:auto;width:100%;box-sizing:border-box}
+.sc-ep-panel.sc-ep-stamp-panel{display:block}
+.sc-ep-stamp-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px}
+.sc-ep-stamp-item{display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer;border-radius:4px;padding:2px 1px;border:1.5px solid transparent;transition:.15s}
+.sc-ep-stamp-item:hover{background:var(--c-main-surface);border-color:var(--c-accent)}
+.sc-ep-stamp-item img{width:28px;height:28px;object-fit:contain;border-radius:3px}
+.sc-ep-stamp-item span{font-size:.5rem;color:var(--c-text-muted);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;max-width:36px;text-align:center}
+.sc-ep-stamp-loading{text-align:center;color:#9ca3af;font-size:.8rem;padding:20px}
+.sc-ep-stamp-add{border:1px dashed var(--c-border);background:transparent;border-radius:var(--radius-md);padding:3px 8px;font-size:.64rem;cursor:pointer;color:var(--c-text-secondary);margin-bottom:4px}
+.sc-ep-stamp-add:hover{border-color:var(--c-accent);color:var(--c-accent);background:#f0f1f8}
+.sc-ep-stamp-scope{font-size:.44rem;line-height:1;opacity:.7;margin-top:0}
+.sc-ep-stamp-section-label{font-size:.6rem;font-weight:700;color:var(--c-text-secondary);padding:4px 2px 2px;letter-spacing:.03em}
+.sc-ep-stamp-cat-label{font-size:.55rem;color:var(--c-text-muted);padding:3px 2px 1px;border-bottom:1px solid var(--c-border);margin-bottom:2px}
 
 /* ── Input area ── */
 .sc-input-area{padding:10px 20px 14px;flex-shrink:0;background:#fff;border-top:1px solid var(--c-border)}
@@ -2660,6 +2830,21 @@ html, body { overflow: hidden !important; }
 .sc-call-history{display:flex;align-items:center;gap:8px;padding:8px 20px;color:#059669;font-size:.82rem;justify-content:center;background:#f0fdf4;margin:4px 20px;border-radius:var(--radius-md)}
 .sc-missed-time{margin-left:auto;font-size:.68rem;color:var(--c-text-muted)}
 .sc-missed-icon{font-size:1rem}
+
+/* ── Stamp / Sticker ── */
+.sc-sticker-wrap{display:inline-block;margin:4px 0}.sc-sticker-img{max-width:160px;max-height:160px;border-radius:var(--radius-md);cursor:pointer;transition:transform .15s;display:block}
+.sc-sticker-img:hover{transform:scale(1.05)}
+.sc-stamp-cat-tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--c-border)}
+.sc-stamp-cat-tab{padding:4px 12px;border-radius:20px;border:1.5px solid var(--c-border);background:#fff;font-size:.76rem;cursor:pointer;transition:.12s;color:var(--c-text-secondary);font-weight:500}
+.sc-stamp-cat-tab.active,.sc-stamp-cat-tab:hover{background:var(--c-accent);color:#fff;border-color:var(--c-accent)}
+.sc-stamp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px}
+.sc-stamp-item{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;border-radius:var(--radius-md);padding:8px 4px;border:1.5px solid transparent;transition:.15s;position:relative}
+.sc-stamp-item:hover{background:var(--c-main-surface);border-color:var(--c-accent)}
+.sc-stamp-item img{width:72px;height:72px;object-fit:contain;border-radius:6px}
+.sc-stamp-name{font-size:.64rem;color:var(--c-text-muted);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px}
+.sc-stamp-del-btn{position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:var(--c-red);color:#fff;font-size:.55rem;border:none;cursor:pointer;display:none;align-items:center;justify-content:center;line-height:1}
+.sc-stamp-item:hover .sc-stamp-del-btn.own{display:flex}
+.sc-fp-sticker{position:relative;display:inline-block}.sc-fp-sticker img{width:72px;height:72px;object-fit:contain;border-radius:var(--radius-sm);border:2px solid var(--c-accent)}
 
 /* ── Video attachment ── */
 .sc-att-video{margin-top:6px;border-radius:var(--radius-lg);overflow:hidden;background:#0f172a;max-width:380px;border:1px solid var(--c-border)}
@@ -2946,5 +3131,279 @@ window._GC_MY_NAME = '${myName}';
 </body>
 </html>`);
 });
+
+function buildStampPickerModal() {
+  return `<div class="sc-overlay" id="sc-modal-stamp-picker" style="display:none">
+  <div class="sc-modal" style="max-width:520px">
+    <div class="sc-modal-hd">
+      <h3>🖼️ スタンプ</h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="sc-btn-primary" style="font-size:.76rem;padding:5px 12px" onclick="chatApp.openStampManager()">＋ 登録</button>
+        <button onclick="chatApp.closeModal('sc-modal-stamp-picker')">×</button>
+      </div>
+    </div>
+    <div style="padding:12px 16px;overflow-y:auto;max-height:60vh">
+      <div class="sc-stamp-cat-tabs" id="stamp-cat-tabs"></div>
+      <div class="sc-stamp-grid" id="stamp-grid"></div>
+      <div id="stamp-picker-loading" style="text-align:center;padding:32px;color:#9ca3af;font-size:.85rem">読み込み中...</div>
+    </div>
+  </div>
+</div>`;
+}
+
+// ── スタンプ管理ページ ──────────────────────────────────────
+router.get("/chat/stamps", requireLogin, async (req, res) => {
+  const { renderPage } = require("../lib/renderPage");
+
+  const body = `
+<style>
+.smp-wrap{max-width:860px;margin:0 auto;padding:28px 16px}
+.smp-header{display:flex;align-items:center;gap:16px;margin-bottom:28px}
+.smp-back{display:inline-flex;align-items:center;gap:6px;padding:7px 16px;background:#f5f5f4;border:1.5px solid #e7e5e0;border-radius:8px;font-size:.88rem;font-weight:600;color:#44403c;text-decoration:none;transition:.15s}
+.smp-back:hover{background:#e7e5e0;color:#1c1917}
+.smp-header h1{font-size:1.45rem;font-weight:700;margin:0}
+.smp-card{background:#fff;border:1.5px solid #e7e5e0;border-radius:14px;padding:24px 28px;margin-bottom:28px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.smp-card h2{font-size:1.05rem;font-weight:700;margin:0 0 18px;display:flex;align-items:center;gap:8px}
+.smp-form-row{margin-bottom:14px}
+.smp-form-row label{display:block;font-size:.84rem;font-weight:600;color:#44403c;margin-bottom:5px}
+.smp-form-row input[type=text]{width:100%;padding:9px 12px;border:1.5px solid #e7e5e0;border-radius:8px;font-size:.9rem;box-sizing:border-box;transition:.15s}
+.smp-form-row input[type=text]:focus{border-color:#6366f1;outline:none;box-shadow:0 0 0 3px rgba(99,102,241,.12)}
+.smp-file-area{border:2px dashed #d6d3d1;border-radius:10px;padding:20px;text-align:center;cursor:pointer;transition:.15s;background:#fafaf9;margin-bottom:8px}
+.smp-file-area:hover,.smp-file-area.drag-over{border-color:#6366f1;background:#f0f0ff}
+.smp-file-area input{display:none}
+.smp-file-label{font-size:.88rem;color:#78716c}
+.smp-preview{margin-top:10px;display:flex;justify-content:center}
+.smp-preview img{max-width:120px;max-height:120px;border-radius:10px;border:2px solid #6366f1;object-fit:contain}
+.smp-radio-row{display:flex;gap:20px;margin-top:4px}
+.smp-radio-row label{font-weight:400;display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.9rem}
+.smp-submit-btn{background:#6366f1;color:#fff;border:none;border-radius:8px;padding:10px 28px;font-size:.95rem;font-weight:700;cursor:pointer;transition:.15s;margin-top:4px}
+.smp-submit-btn:hover{background:#4f46e5}
+.smp-submit-btn:disabled{opacity:.55;cursor:not-allowed}
+.smp-success{background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:10px 16px;color:#166534;font-size:.88rem;display:none;margin-top:12px}
+.smp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(56px,56px));gap:6px}
+.smp-item{background:#fafaf9;border:1.5px solid #e7e5e0;border-radius:8px;padding:6px 4px 4px;text-align:center;position:relative;transition:.15s}
+.smp-item:hover{border-color:#c7d2fe;box-shadow:0 2px 8px rgba(99,102,241,.1)}
+.smp-item img{width:36px;height:36px;object-fit:contain;border-radius:4px;display:block;margin:0 auto}
+.smp-item-name{font-size:.58rem;font-weight:600;margin-top:3px;color:#1c1917;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:48px}
+.smp-item-meta,.smp-item-scope{display:none}
+.smp-del-btn{position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:#fee2e2;border:none;color:#dc2626;font-size:.62rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;transition:.15s;padding:0;opacity:0}
+.smp-del-btn:hover{background:#dc2626;color:#fff}
+.smp-item:hover .smp-del-btn{opacity:1}
+.smp-empty{text-align:center;padding:40px;color:#a8a29e;font-size:.9rem;grid-column:1/-1}
+.smp-loading{text-align:center;padding:40px;color:#a8a29e;font-size:.88rem}
+.smp-section-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.smp-section-hd h2{font-size:1.05rem;font-weight:700;margin:0;display:flex;align-items:center;gap:8px}
+.smp-count{background:#e0e7ff;color:#3730a3;font-size:.75rem;font-weight:700;padding:2px 8px;border-radius:20px}
+</style>
+
+<div class="smp-wrap">
+  <div class="smp-header">
+    <a class="smp-back" href="/chat">← チャットに戻る</a>
+    <h1>🖼️ スタンプ管理</h1>
+  </div>
+
+  <!-- 新規登録フォーム -->
+  <div class="smp-card">
+    <h2>✏️ 新規スタンプを登録</h2>
+    <form id="smp-form">
+      <div class="smp-form-row">
+        <label>画像ファイル（JPG / PNG / GIF / WebP ・最大 5MB）</label>
+        <div class="smp-file-area" id="smp-file-area">
+          <input type="file" id="smp-file" accept=".jpg,.jpeg,.png,.gif,.webp">
+          <div class="smp-file-label" id="smp-file-label">クリックまたはドラッグ＆ドロップで選択</div>
+          <div class="smp-preview" id="smp-preview"></div>
+        </div>
+      </div>
+      <div class="smp-form-row">
+        <label>スタンプ名</label>
+        <input type="text" id="smp-name" placeholder="例：よろしく！" maxlength="30">
+      </div>
+      <div class="smp-form-row">
+        <label>カテゴリ</label>
+        <input type="text" id="smp-category" placeholder="例：あいさつ / 業務 / その他" maxlength="20">
+      </div>
+      <div class="smp-form-row">
+        <label>公開範囲</label>
+        <div class="smp-radio-row">
+          <label><input type="radio" name="smp-scope" value="team" checked> 👥 チーム全員に公開</label>
+          <label><input type="radio" name="smp-scope" value="personal"> 🔒 自分だけ</label>
+        </div>
+      </div>
+      <button class="smp-submit-btn" type="submit" id="smp-submit">登録する</button>
+      <div class="smp-success" id="smp-success">✅ スタンプを登録しました！</div>
+    </form>
+  </div>
+
+  <!-- 登録済みスタンプ一覧 -->
+  <div class="smp-card">
+    <div class="smp-section-hd">
+      <h2>📋 登録済みスタンプ <span class="smp-count" id="smp-count">0</span></h2>
+    </div>
+    <div id="smp-grid" class="smp-grid"><div class="smp-loading">読み込み中...</div></div>
+  </div>
+</div>
+
+<script>
+(function() {
+function escH(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+function onFileChange(file) {
+  if (!file) return;
+  document.getElementById('smp-preview').innerHTML = '<img src="' + URL.createObjectURL(file) + '">';
+  document.getElementById('smp-file-label').textContent = file.name;
+  var ni = document.getElementById('smp-name');
+  if (ni && !ni.value) ni.value = file.name.replace(/\.[^.]+$/, '');
+}
+
+var fileArea = document.getElementById('smp-file-area');
+var fileInput = document.getElementById('smp-file');
+
+fileArea.addEventListener('click', function(e) {
+  if (e.target !== fileInput) fileInput.click();
+});
+fileArea.addEventListener('dragover', function(e) {
+  e.preventDefault();
+  fileArea.classList.add('drag-over');
+});
+fileArea.addEventListener('dragleave', function() {
+  fileArea.classList.remove('drag-over');
+});
+fileArea.addEventListener('drop', function(e) {
+  e.preventDefault();
+  fileArea.classList.remove('drag-over');
+  var files = e.dataTransfer && e.dataTransfer.files;
+  if (files && files.length) {
+    try { fileInput.files = files; } catch(_) {}
+    onFileChange(files[0]);
+  }
+});
+fileInput.addEventListener('change', function() {
+  onFileChange(fileInput.files[0]);
+});
+
+document.getElementById('smp-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  var fi = fileInput;
+  var ni = document.getElementById('smp-name');
+  var ci = document.getElementById('smp-category');
+  var si = document.querySelector('input[name="smp-scope"]:checked');
+  var btn = document.getElementById('smp-submit');
+  if (!fi.files[0]) { alert('画像ファイルを選択してください'); return; }
+  btn.disabled = true; btn.textContent = '登録中...';
+  var fd = new FormData();
+  fd.append('image', fi.files[0]);
+  fd.append('name', (ni.value.trim()) || fi.files[0].name);
+  fd.append('category', (ci.value.trim()) || 'その他');
+  fd.append('scope', si ? si.value : 'team');
+  try {
+    var r = await fetch('/api/chat/stamps', { method: 'POST', body: fd });
+    var j = await r.json();
+    if (!j.ok) throw new Error(j.error || '登録に失敗しました');
+    document.getElementById('smp-form').reset();
+    document.getElementById('smp-preview').innerHTML = '';
+    document.getElementById('smp-file-label').textContent = 'クリックまたはドラッグ＆ドロップで選択';
+    var suc = document.getElementById('smp-success');
+    suc.style.display = 'block';
+    setTimeout(function(){ suc.style.display = 'none'; }, 3000);
+    await loadStamps();
+  } catch(err) {
+    alert('登録エラー: ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '登録する';
+  }
+});
+
+async function loadStamps() {
+  var grid = document.getElementById('smp-grid');
+  try {
+    var r = await fetch('/api/chat/stamps');
+    var j = await r.json();
+    if (!j.ok) throw new Error(j.error);
+    document.getElementById('smp-count').textContent = j.stamps.length;
+    if (!j.stamps.length) {
+      grid.innerHTML = '<div class="smp-empty">まだスタンプが登録されていません。<br>上のフォームから登録してみましょう！</div>';
+      return;
+    }
+    grid.innerHTML = j.stamps.map(function(s) {
+      return '<div class="smp-item" id="smp-item-' + s._id + '">' +
+        '<button class="smp-del-btn" data-id="' + s._id + '" title="削除">×</button>' +
+        '<img src="' + escH(s.url) + '" alt="' + escH(s.name) + '" loading="lazy">' +
+        '<div class="smp-item-name">' + escH(s.name) + '</div>' +
+        '<div class="smp-item-meta">' + escH(s.category || '') + '</div>' +
+        '<div class="smp-item-scope">' + (s.scope === 'personal' ? '🔒 自分のみ' : '👥 チーム') + '</div>' +
+        '</div>';
+    }).join('');
+    grid.querySelectorAll('.smp-del-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() { deleteStamp(btn.dataset.id); });
+    });
+  } catch(e) {
+    grid.innerHTML = '<div class="smp-empty">読み込みに失敗しました</div>';
+  }
+}
+
+async function deleteStamp(id) {
+  if (!confirm('このスタンプを削除しますか？')) return;
+  try {
+    var r = await fetch('/api/chat/stamps/' + id, { method: 'DELETE' });
+    var j = await r.json();
+    if (!j.ok) throw new Error(j.error);
+    var el = document.getElementById('smp-item-' + id);
+    if (el) {
+      el.style.opacity = '0'; el.style.transform = 'scale(.85)'; el.style.transition = '.2s';
+      setTimeout(function(){ el.remove(); loadStamps(); }, 200);
+    }
+  } catch(e) {
+    alert('削除に失敗しました: ' + e.message);
+  }
+}
+
+loadStamps();
+})();
+</script>
+`;
+
+  return renderPage(req, res, "スタンプ管理", "スタンプ管理", body);
+});
+
+function buildStampManagerModal() {
+  return `<div class="sc-overlay" id="sc-modal-stamp-manager" style="display:none">
+  <div class="sc-modal" style="max-width:440px">
+    <div class="sc-modal-hd">
+      <h3>スタンプを登録</h3>
+      <button onclick="chatApp.closeModal('sc-modal-stamp-manager')">×</button>
+    </div>
+    <div class="sc-modal-body">
+      <div class="sc-form-row">
+        <label>画像ファイル（JPG / PNG / GIF / WebP, 最大5MB）</label>
+        <input type="file" id="stamp-upload-file" accept=".jpg,.jpeg,.png,.gif,.webp" style="font-size:.84rem">
+        <div id="stamp-upload-preview" style="margin-top:8px"></div>
+      </div>
+      <div class="sc-form-row">
+        <label>スタンプ名</label>
+        <input type="text" id="stamp-upload-name" placeholder="例：よろしく！" maxlength="30">
+      </div>
+      <div class="sc-form-row">
+        <label>カテゴリ</label>
+        <input type="text" id="stamp-upload-category" placeholder="例：あいさつ / 業務 / その他" maxlength="20">
+      </div>
+      <div class="sc-form-row">
+        <label>公開範囲</label>
+        <div style="display:flex;gap:16px;margin-top:4px">
+          <label style="font-weight:400;display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="radio" name="stamp-scope" value="team" checked> チーム全員に公開
+          </label>
+          <label style="font-weight:400;display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="radio" name="stamp-scope" value="personal"> 自分だけ
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="sc-modal-ft">
+      <button class="sc-btn-cancel" onclick="chatApp.closeModal('sc-modal-stamp-manager')">キャンセル</button>
+      <button class="sc-btn-primary" id="stamp-upload-btn" onclick="chatApp.submitStampUpload()">登録する</button>
+    </div>
+  </div>
+</div>`;
+}
 
 module.exports = router;
