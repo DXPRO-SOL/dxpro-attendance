@@ -948,9 +948,7 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
         User.find().sort({ username: 1 }).lean(),
         Employee.find().sort({ name: 1 }).lean(),
         getTypeConfigs(),
-        User.find({
-          $or: [{ isAdmin: true }, { role: { $in: ["admin", "manager"] } }],
-        })
+        User.find({ role: { $in: ["admin", "manager"] } })
           .sort({ username: 1 })
           .lean(),
       ]);
@@ -1021,14 +1019,10 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
               <div class="ct-form-grid">
                 <div class="ct-form-group">
                   <label>契約者<span class="req">*</span></label>
-                  <div class="ct-combo" id="nameCombo">
-                    <div class="ct-combo-input-wrap">
-                      <input type="text" name="name" id="nameInput" required placeholder="社員名を選択または入力..." maxlength="200" autocomplete="off">
-                      <button type="button" class="ct-combo-arrow" id="nameArrow" tabindex="-1">▾</button>
-                    </div>
-                    <div class="ct-combo-dropdown" id="nameDropdown"></div>
-                  </div>
-                  <div style="font-size:11px;color:#9ca3af;margin-top:3px">社員名を候補から選択、または自由に入力できます</div>
+                  <input type="text" name="name" id="nameInput" required list="nameList" placeholder="社員名を入力..." autocomplete="off" maxlength="200">
+                  <datalist id="nameList">
+                    ${nameSuggestions.map((e) => `<option value="${escapeHtml(e.name)}">${e.dept ? escapeHtml(e.dept) : ""}</option>`).join("")}
+                  </datalist>
                 </div>
                 <div class="ct-form-group">
                   <label>契約種別<span class="req">*</span></label>
@@ -1043,13 +1037,7 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
                 </div>
                 <div class="ct-form-group">
                   <label>契約担当者</label>
-                  <div class="ct-combo" id="respCombo">
-                    <div class="ct-combo-input-wrap">
-                      <input type="text" name="responsibleUser" id="respInput" placeholder="担当者を選択または入力..." autocomplete="off" maxlength="100">
-                      <button type="button" class="ct-combo-arrow" id="respArrow" tabindex="-1">▾</button>
-                    </div>
-                    <div class="ct-combo-dropdown" id="respDropdown"></div>
-                  </div>
+                  <input type="text" name="responsibleUser" id="respInput" list="nameList" placeholder="担当者を入力..." autocomplete="off" maxlength="100">
                 </div>
 
                 <!-- 契約種別ごとの動的フィールド -->
@@ -1067,25 +1055,16 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
                     <!-- 承認者候補 -->
                     <div>
                       <div style="font-size:11px;font-weight:700;color:#6b7280;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">承認者候補（部門長・管理者）</div>
-                      <div id="approver-candidates" style="border:1.5px solid #e5e7eb;border-radius:10px;max-height:220px;overflow-y:auto;background:#f9fafb">
-                        ${
-                          approverCandidates.length === 0
-                            ? `<div style="padding:16px;text-align:center;color:#9ca3af;font-size:12px">承認可能なユーザーがいません</div>`
-                            : approverCandidates
-                                .map(
-                                  (u) => `
-                        <div class="ct-approver-cand" data-id="${u._id}" data-name="${escapeHtml(u.username)}">
-                          <div class="ct-combo-av" style="width:28px;height:28px;font-size:.7rem;flex-shrink:0">${u.username.charAt(0).toUpperCase()}</div>
-                          <div style="flex:1;min-width:0">
-                            <div style="font-size:13px;font-weight:600;color:#374151">${escapeHtml(u.username)}</div>
-                            <div style="font-size:11px;color:#9ca3af">${u.role === "admin" ? "管理者" : "部門長"}</div>
-                          </div>
-                          <div class="ct-approver-add-icon">＋</div>
-                        </div>`,
-                                )
-                                .join("")
-                        }
-                      </div>
+                      <select id="approver-select" style="width:100%;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;background:#fff;color:#374151;outline:none;box-sizing:border-box">
+                        <option value="">-- 承認者を選択 --</option>
+                        ${approverCandidates
+                          .map(
+                            (u) =>
+                              `<option value="${u._id}" data-name="${escapeHtml(u.username)}">${escapeHtml(u.username)}（${u.role === "admin" ? "管理者" : "部門長"}）</option>`,
+                          )
+                          .join("")}
+                      </select>
+                      <button type="button" onclick="addApproverFromSelect()" id="approver-add-btn" style="margin-top:8px;width:100%;padding:8px 0;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">＋ 承認者を追加</button>
                     </div>
                     <!-- 選択済み承認者（順番） -->
                     <div>
@@ -1118,170 +1097,6 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
         </div>
       </div>
       <script>
-      // ── 契約名コンボボックス ──
-      (function(){
-        var SUGGESTIONS = ${JSON.stringify(userSuggestions)};
-        var input = document.getElementById('nameInput');
-        var dropdown = document.getElementById('nameDropdown');
-        var arrow = document.getElementById('nameArrow');
-        if (!input || !dropdown || !arrow) return;
-        var activeIdx = -1;
-
-        function renderDropdown(filter) {
-          var q = filter ? filter.toLowerCase() : '';
-          var items = q
-            ? SUGGESTIONS.filter(function(s){ return s.name.toLowerCase().indexOf(q) !== -1 || s.dept.toLowerCase().indexOf(q) !== -1; })
-            : SUGGESTIONS;
-          if(items.length === 0){
-            dropdown.innerHTML = '<div class="ct-combo-empty">候補なし（そのまま入力できます）</div>';
-          } else {
-            dropdown.innerHTML = items.map(function(s, i){
-              var nameEsc = s.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-              var deptEsc = s.dept.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-              var initial = (s.name || ' ').charAt(0).toUpperCase();
-              var hiName = q ? nameEsc.replace(new RegExp('('+q.replace(/[.*+?^{}$()|[\\]\\\\]/g,'\\\\$&')+')','gi'),'<strong>$1</strong>') : nameEsc;
-              return '<div class="ct-combo-item" data-val="'+nameEsc+'" data-idx="'+i+'">'+
-                     '<div class="ct-combo-av">'+initial+'</div>'+
-                     '<div class="ct-combo-info">'+
-                     '<div class="ct-combo-name">'+hiName+'</div>'+
-                     (s.dept ? '<div class="ct-combo-dept">'+deptEsc+'</div>' : '')+
-                     '</div></div>';
-            }).join('');
-          }
-          activeIdx = -1;
-        }
-
-        function openDropdown(filter) {
-          renderDropdown(filter);
-          dropdown.classList.add('open');
-        }
-        function closeDropdown() {
-          dropdown.classList.remove('open');
-          activeIdx = -1;
-        }
-
-        input.addEventListener('input', function(){
-          openDropdown(this.value);
-        });
-        input.addEventListener('focus', function(){
-          openDropdown(this.value);
-        });
-        input.addEventListener('keydown', function(e){
-          var items = dropdown.querySelectorAll('.ct-combo-item');
-          if(e.key === 'ArrowDown'){
-            e.preventDefault();
-            activeIdx = Math.min(activeIdx + 1, items.length - 1);
-          } else if(e.key === 'ArrowUp'){
-            e.preventDefault();
-            activeIdx = Math.max(activeIdx - 1, -1);
-          } else if(e.key === 'Enter' && activeIdx >= 0){
-            e.preventDefault();
-            input.value = items[activeIdx].dataset.val;
-            closeDropdown();
-            return;
-          } else if(e.key === 'Escape'){
-            closeDropdown(); return;
-          }
-          items.forEach(function(el, i){ el.classList.toggle('active', i === activeIdx); });
-          if(activeIdx >= 0) items[activeIdx].scrollIntoView({block:'nearest'});
-        });
-
-        dropdown.addEventListener('mousedown', function(e){
-          var item = e.target.closest('.ct-combo-item');
-          if(item){ input.value = item.dataset.val; closeDropdown(); }
-        });
-
-        arrow.addEventListener('mousedown', function(e){
-          e.preventDefault();
-          if(dropdown.classList.contains('open')){ closeDropdown(); } else { openDropdown(''); input.focus(); }
-        });
-
-        document.addEventListener('mousedown', function(e){
-          if(!document.getElementById('nameCombo').contains(e.target)) closeDropdown();
-        });
-      })();
-
-      // ── 契約担当者コンボボックス ──
-      (function(){
-        var USERS = ${JSON.stringify(userSuggestions)};
-        var input = document.getElementById('respInput');
-        var dropdown = document.getElementById('respDropdown');
-        var arrow = document.getElementById('respArrow');
-        if (!input || !dropdown || !arrow) return;
-        var activeIdx = -1;
-        function renderDropdown(filter) {
-          var q = filter ? filter.toLowerCase() : '';
-          var items = q
-            ? USERS.filter(function(s){ return s.name.toLowerCase().indexOf(q) !== -1 || s.dept.toLowerCase().indexOf(q) !== -1; })
-            : USERS;
-          if(items.length === 0){
-            dropdown.innerHTML = '<div class="ct-combo-empty">候補なし</div>';
-          } else {
-            dropdown.innerHTML = items.map(function(s, i){
-              var nameEsc = s.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-              var deptEsc = s.dept.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-              var initial = (s.name || ' ').charAt(0).toUpperCase();
-              var hiName = q ? nameEsc.replace(new RegExp('('+q.replace(/[.*+?^{}$()|[\\]\\\\]/g,'\\\\$&')+')','gi'),'<strong>$1</strong>') : nameEsc;
-              return '<div class="ct-combo-item" data-val="'+nameEsc+'" data-idx="'+i+'">'+
-                     '<div class="ct-combo-av">'+initial+'</div>'+
-                     '<div class="ct-combo-info">'+
-                     '<div class="ct-combo-name">'+hiName+'</div>'+
-                     (s.dept ? '<div class="ct-combo-dept">'+deptEsc+'</div>' : '')+
-                     '</div></div>';
-            }).join('');
-          }
-          activeIdx = -1;
-        }
-        function openDropdown(filter) { renderDropdown(filter); dropdown.classList.add('open'); }
-        function closeDropdown() { dropdown.classList.remove('open'); activeIdx = -1; }
-        input.addEventListener('input', function(){ openDropdown(this.value); });
-        input.addEventListener('focus', function(){ openDropdown(this.value); });
-        input.addEventListener('keydown', function(e){
-          var items = dropdown.querySelectorAll('.ct-combo-item');
-          if(e.key === 'ArrowDown'){ e.preventDefault(); activeIdx = Math.min(activeIdx+1, items.length-1); }
-          else if(e.key === 'ArrowUp'){ e.preventDefault(); activeIdx = Math.max(activeIdx-1, -1); }
-          else if(e.key === 'Enter' && activeIdx >= 0){ e.preventDefault(); input.value = items[activeIdx].dataset.val; closeDropdown(); return; }
-          else if(e.key === 'Escape'){ closeDropdown(); return; }
-          items.forEach(function(el,i){ el.classList.toggle('active', i===activeIdx); });
-          if(activeIdx >= 0) items[activeIdx].scrollIntoView({block:'nearest'});
-        });
-        dropdown.addEventListener('mousedown', function(e){
-          var item = e.target.closest('.ct-combo-item');
-          if(item){ input.value = item.dataset.val; closeDropdown(); }
-        });
-        arrow.addEventListener('mousedown', function(e){
-          e.preventDefault();
-          if(dropdown.classList.contains('open')){ closeDropdown(); } else { openDropdown(''); input.focus(); }
-        });
-        document.addEventListener('mousedown', function(e){
-          if(!document.getElementById('respCombo').contains(e.target)) closeDropdown();
-        });
-      })();
-
-      // ── ドラッグ&ドロップ ──
-      const dz = document.getElementById('drop-zone');
-      const fi = document.getElementById('fileInput');
-      const prev = document.getElementById('file-preview');
-      dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
-      dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
-      dz.addEventListener('drop', e => {
-        e.preventDefault(); dz.classList.remove('drag-over');
-        const dt = new DataTransfer();
-        [...(fi.files || []), ...e.dataTransfer.files].forEach(f => dt.items.add(f));
-        fi.files = dt.files; renderPreview();
-      });
-      fi.addEventListener('change', renderPreview);
-      function renderPreview() {
-        prev.innerHTML = '';
-        [...(fi.files || [])].forEach(f => {
-          const d = document.createElement('div');
-          d.style.cssText = 'display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:#eff6ff;border-radius:8px;font-size:12px;font-weight:600;color:#2563eb';
-          d.textContent = '📎 ' + f.name + ' (' + (f.size > 1048576 ? (f.size/1048576).toFixed(1)+'MB' : (f.size/1024).toFixed(0)+'KB') + ')';
-          prev.appendChild(d);
-        });
-      }
-
-      // ── 契約種別ごとの動的フィールド ──
       var TYPE_CONFIGS = ${JSON.stringify(
         activeTypes.map((t) => ({
           key: t.key,
@@ -1297,84 +1112,12 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
               systemField: f.systemField || null,
             })),
         })),
-      )};
-      var STATUS_LABELS = ${JSON.stringify(STATUS_LABEL)};
+      ).replace(/</g, "\\u003c")};
+      var STATUS_LABELS = ${JSON.stringify(STATUS_LABEL).replace(/</g, "\\u003c")};
       var CURRENT_VALS = { status: 'active', autoRenew: 'false', renewalPeriodMonths: '12' };
-      function updateDynamicFields(typeKey) {
-        var cfg = TYPE_CONFIGS.find(function(t){ return t.key === typeKey; });
-        var section = document.getElementById('dynamicFieldsSection');
-        var container = document.getElementById('dynamicFieldsContainer');
-        if(!cfg || !cfg.fields || cfg.fields.length === 0){ section.style.display='none'; container.innerHTML=''; return; }
-        section.style.display='block';
-        container.innerHTML = cfg.fields.map(function(f){
-          var reqMark = f.required ? '<span class="req">*</span>' : '';
-          var fieldName = f.systemField ? f.systemField : 'customFields['+f.key+']';
-          var curVal = f.systemField ? (CURRENT_VALS[f.systemField] !== undefined ? CURRENT_VALS[f.systemField] : '') : '';
-          var input = '';
-          if(f.fieldType === 'select'){
-            var opts = '';
-            if(f.systemField === 'status'){
-              opts = Object.keys(STATUS_LABELS).map(function(v){ return '<option value="'+v+'"'+(curVal===v?' selected':'')+'>'+STATUS_LABELS[v]+'</option>'; }).join('');
-            } else if(f.systemField === 'autoRenew'){
-              opts = '<option value="false"'+(curVal!=='true'?' selected':'')+'>なし</option><option value="true"'+(curVal==='true'?' selected':'')+'>あり</option>';
-            } else {
-              opts = '<option value="">-- 選択 --</option>'+(f.options||[]).map(function(o){ var oe=o.replace(/&/g,'&amp;').replace(/"/g,'&quot;'); return '<option value="'+oe+'"'+(curVal===o?' selected':'')+'>'+(oe)+'</option>'; }).join('');
-            }
-            input = '<select name="'+fieldName+'"'+(f.required?' required':'')+'>'+opts+'</select>';
-          } else if(f.fieldType === 'textarea'){
-            input = '<textarea name="'+fieldName+'" rows="3"'+(f.required?' required':'')+'>'+(curVal||'')+'</textarea>';
-          } else {
-            var extra = f.systemField === 'renewalPeriodMonths' ? ' min="1" max="120"' : '';
-            var ph = f.label.replace(/"/g,'&quot;');
-            input = '<input type="'+(f.fieldType||'text')+'" name="'+fieldName+'"'+(f.required?' required':'')+' value="'+(curVal||'')+'" placeholder="'+ph+'"'+extra+'>';
-          }
-          var isFull = f.fieldType === 'textarea' ? ' full' : '';
-          return '<div class="ct-form-group'+isFull+'"><label>'+f.label+reqMark+'</label>'+input+'</div>';
-        }).join('');
-      }
-
-      // ── 承認フロー選択 ──
       var selectedApprovers = [];
-      document.getElementById('approver-candidates').addEventListener('click', function(e) {
-        var cand = e.target.closest('.ct-approver-cand');
-        if (cand && !cand.classList.contains('added')) addApprover(cand);
-      });
-      function addApprover(el) {
-        if (el.classList.contains('added')) return;
-        var id = el.dataset.id;
-        var name = el.dataset.name;
-        selectedApprovers.push({ id: id, name: name });
-        el.classList.add('added');
-        el.querySelector('.ct-approver-add-icon').textContent = '✓';
-        renderSelected();
-      }
-      function removeApprover(id) {
-        selectedApprovers = selectedApprovers.filter(function(a){ return a.id !== id; });
-        var cand = document.querySelector('#approver-candidates [data-id="' + id + '"]');
-        if (cand) { cand.classList.remove('added'); cand.querySelector('.ct-approver-add-icon').textContent = '＋'; }
-        renderSelected();
-      }
-      function renderSelected() {
-        var sel = document.getElementById('approver-selected');
-        var inp = document.getElementById('approver-inputs');
-        if (selectedApprovers.length === 0) {
-          sel.innerHTML = '<div id="approver-empty-msg" style="text-align:center;color:#9ca3af;font-size:12px;padding:20px 0">左から承認者を選んでください</div>';
-          inp.innerHTML = '';
-          return;
-        }
-        sel.innerHTML = selectedApprovers.map(function(a, i) {
-          var n = a.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-          return '<div class="ct-approver-sel-item">' +
-            '<span style="width:22px;height:22px;border-radius:50%;background:#2563eb;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">' + (i+1) + '</span>' +
-            '<div style="flex:1;font-size:13px;font-weight:600;color:#374151">' + n + '</div>' +
-            '<button type="button" onclick="removeApprover(\'' + a.id + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;padding:0 4px;line-height:1" title="削除">×</button>' +
-            '</div>';
-        }).join('');
-        inp.innerHTML = selectedApprovers.map(function(a) {
-          return '<input type="hidden" name="approvers" value="' + a.id + '">';
-        }).join('');
-      }
       </script>
+      <script src="/contracts-form.js"></script>
       `,
     );
   } catch (e) {
@@ -1455,9 +1198,9 @@ router.post(
       }
 
       const contract = await Contract.create({
-        name: name.trim(),
+        name: (name || "").trim(),
         contractType,
-        counterparty: counterparty.trim(),
+        counterparty: (counterparty || "").trim(),
         startDate: startDate || undefined,
         endDate: endDate || undefined,
         autoRenew: autoRenew === "true",
@@ -1469,7 +1212,9 @@ router.post(
         status: contractStatus,
         notes: notes ? notes.trim() : "",
         attachments,
-        customFields: req.body.customFields || {},
+        customFields: req.body.customFields
+          ? new Map(Object.entries(Object.assign({}, req.body.customFields)))
+          : new Map(),
         createdBy: req.session.userId,
         approvalFlow,
         approvalStatus,
@@ -1488,7 +1233,7 @@ router.post(
             userId: respUser._id,
             type: "contract_assigned",
             title: `📋 契約管理に担当者として登録されました`,
-            body: `「${name.trim()}」（${typeLabel}）`,
+            body: `「${(name || "").trim()}」（${typeLabel}）`,
             link: `/contracts/${contract._id}`,
             fromUserId: req.session.userId,
             meta: { contractId: contract._id },
@@ -1502,7 +1247,7 @@ router.post(
           userId: approvalFlow[0].userId,
           type: "contract_approval_requested",
           title: `📋 契約の承認依頼が届きました`,
-          body: `「${name.trim()}」の承認をお願いします（第1承認者）`,
+          body: `「${(name || "").trim()}」の承認をお願いします（第1承認者）`,
           link: `/contracts/${contract._id}`,
           fromUserId: req.session.userId,
           meta: { contractId: contract._id },
@@ -2389,8 +2134,8 @@ router.get("/contracts/:id/edit", requireLogin, isAdmin, async (req, res) => {
               systemField: f.systemField || null,
             })),
         })),
-      )};
-      var STATUS_LABELS = ${JSON.stringify(STATUS_LABEL)};
+      ).replace(/</g, "\\u003c")};
+      var STATUS_LABELS = ${JSON.stringify(STATUS_LABEL).replace(/</g, "\\u003c")};
       var CURRENT_VALS = ${JSON.stringify({
         counterparty: contract.counterparty || "",
         status: contract.status || "active",
@@ -2478,9 +2223,9 @@ router.post(
         notes,
       } = req.body;
 
-      contract.name = name.trim();
+      contract.name = (name || "").trim();
       contract.contractType = contractType;
-      contract.counterparty = counterparty.trim();
+      contract.counterparty = (counterparty || "").trim();
       contract.startDate = startDate || undefined;
       contract.endDate = endDate || undefined;
       contract.autoRenew = autoRenew === "true";
@@ -2493,7 +2238,9 @@ router.post(
       contract.notes = notes ? notes.trim() : "";
       // カスタムフィールド更新（種別変更時は上書き）
       if (req.body.customFields && typeof req.body.customFields === "object") {
-        contract.customFields = req.body.customFields;
+        contract.customFields = new Map(
+          Object.entries(Object.assign({}, req.body.customFields)),
+        );
       }
 
       // 新規ファイル追加（既存は保持）
