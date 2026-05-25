@@ -1299,18 +1299,8 @@ const ContractSchema = new mongoose.Schema(
     // 基本情報
     name: { type: String, required: true }, // 契約名
     contractType: {
-      // 契約種別
+      // 契約種別（管理者が追加可能なため enum なし）
       type: String,
-      enum: [
-        "employment",
-        "subcontract",
-        "nda",
-        "dispatch",
-        "vendor",
-        "maintenance",
-        "license",
-        "other",
-      ],
       required: true,
     },
     counterparty: { type: String, required: true }, // 契約先
@@ -1368,12 +1358,48 @@ const ContractSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    // 契約種別ごとの動的カスタムフィールド値
+    customFields: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: true },
 );
 ContractSchema.index({ endDate: 1, status: 1 });
 ContractSchema.index({ counterparty: "text", name: "text" });
 const Contract = mongoose.model("Contract", ContractSchema);
+
+// ==============================
+// 契約種別設定スキーマ（管理者が項目を管理）
+// ==============================
+const ContractTypeConfigSchema = new mongoose.Schema(
+  {
+    key: { type: String, required: true, unique: true }, // 種別キー
+    label: { type: String, required: true }, // 表示名
+    color: { type: String, default: "#6b7280" }, // バッジ色
+    isBuiltin: { type: Boolean, default: false }, // 組み込み種別（削除不可）
+    isActive: { type: Boolean, default: true }, // 有効/無効
+    sortOrder: { type: Number, default: 9999 }, // 表示順
+    fields: [
+      {
+        key: { type: String, required: true }, // フィールドキー
+        label: { type: String, required: true }, // 表示ラベル
+        fieldType: {
+          type: String,
+          enum: ["text", "number", "date", "select", "textarea"],
+          default: "text",
+        },
+        required: { type: Boolean, default: false },
+        options: [{ type: String }], // select型の選択肢
+        enabled: { type: Boolean, default: true },
+        order: { type: Number, default: 0 },
+      },
+    ],
+  },
+  { timestamps: true },
+);
+const ContractTypeConfig = mongoose.model(
+  "ContractTypeConfig",
+  ContractTypeConfigSchema,
+);
 
 module.exports = {
   ChatRoom,
@@ -1415,4 +1441,5 @@ module.exports = {
   ScheduleComment,
   ScheduleCommentRead,
   Contract,
+  ContractTypeConfig,
 };

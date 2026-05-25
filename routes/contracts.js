@@ -6,7 +6,7 @@ const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
 const moment = require("moment-timezone");
-const { Contract, User, Employee } = require("../models");
+const { Contract, User, Employee, ContractTypeConfig } = require("../models");
 const { requireLogin, isAdmin } = require("../middleware/auth");
 const { renderPage } = require("../lib/renderPage");
 const { escapeHtml } = require("../lib/helpers");
@@ -71,6 +71,323 @@ const CONTRACT_TYPE_COLOR = {
   license: "#dc2626",
   other: "#6b7280",
 };
+
+// ── 契約種別のデフォルト設定（DBに未登録の場合のフォールバック）─────────
+const DEFAULT_TYPE_CONFIGS = [
+  {
+    key: "employment",
+    label: "雇用契約",
+    color: "#2563eb",
+    isBuiltin: true,
+    isActive: true,
+    fields: [
+      {
+        key: "employment_type",
+        label: "雇用形態",
+        fieldType: "select",
+        options: ["正社員", "契約社員", "パート・アルバイト", "嘱託", "その他"],
+        required: false,
+        enabled: true,
+        order: 1,
+      },
+      {
+        key: "monthly_salary",
+        label: "月額給与（円）",
+        fieldType: "number",
+        required: false,
+        enabled: true,
+        order: 2,
+      },
+      {
+        key: "probation_period",
+        label: "試用期間",
+        fieldType: "text",
+        required: false,
+        enabled: true,
+        order: 3,
+      },
+      {
+        key: "insurance",
+        label: "社会保険加入",
+        fieldType: "select",
+        options: [
+          "健康保険・厚生年金・雇用保険",
+          "健康保険・雇用保険のみ",
+          "なし",
+        ],
+        required: false,
+        enabled: true,
+        order: 4,
+      },
+      {
+        key: "job_title",
+        label: "役職",
+        fieldType: "text",
+        required: false,
+        enabled: true,
+        order: 5,
+      },
+    ],
+  },
+  {
+    key: "subcontract",
+    label: "業務委託契約",
+    color: "#7c3aed",
+    isBuiltin: true,
+    isActive: true,
+    fields: [
+      {
+        key: "work_description",
+        label: "業務内容",
+        fieldType: "textarea",
+        required: false,
+        enabled: true,
+        order: 1,
+      },
+      {
+        key: "contract_amount",
+        label: "委託金額（円）",
+        fieldType: "number",
+        required: false,
+        enabled: true,
+        order: 2,
+      },
+      {
+        key: "payment_terms",
+        label: "支払条件",
+        fieldType: "text",
+        required: false,
+        enabled: true,
+        order: 3,
+      },
+      {
+        key: "deliverables",
+        label: "成果物・納品物",
+        fieldType: "textarea",
+        required: false,
+        enabled: true,
+        order: 4,
+      },
+    ],
+  },
+  {
+    key: "nda",
+    label: "秘密保持契約（NDA）",
+    color: "#db2777",
+    isBuiltin: true,
+    isActive: true,
+    fields: [
+      {
+        key: "secret_scope",
+        label: "秘密情報の範囲",
+        fieldType: "textarea",
+        required: false,
+        enabled: true,
+        order: 1,
+      },
+      {
+        key: "penalty_amount",
+        label: "違約金額（円）",
+        fieldType: "number",
+        required: false,
+        enabled: true,
+        order: 2,
+      },
+      {
+        key: "purpose",
+        label: "目的・用途",
+        fieldType: "text",
+        required: false,
+        enabled: true,
+        order: 3,
+      },
+    ],
+  },
+  {
+    key: "dispatch",
+    label: "派遣契約",
+    color: "#0891b2",
+    isBuiltin: true,
+    isActive: true,
+    fields: [
+      {
+        key: "dispatch_company",
+        label: "派遣元会社",
+        fieldType: "text",
+        required: false,
+        enabled: true,
+        order: 1,
+      },
+      {
+        key: "dispatch_count",
+        label: "派遣人数",
+        fieldType: "number",
+        required: false,
+        enabled: true,
+        order: 2,
+      },
+      {
+        key: "hourly_rate",
+        label: "時給・日給（円）",
+        fieldType: "number",
+        required: false,
+        enabled: true,
+        order: 3,
+      },
+      {
+        key: "work_location",
+        label: "就業場所",
+        fieldType: "text",
+        required: false,
+        enabled: true,
+        order: 4,
+      },
+    ],
+  },
+  {
+    key: "vendor",
+    label: "取引先契約",
+    color: "#059669",
+    isBuiltin: true,
+    isActive: true,
+    fields: [
+      {
+        key: "service_description",
+        label: "商品・サービス内容",
+        fieldType: "textarea",
+        required: false,
+        enabled: true,
+        order: 1,
+      },
+      {
+        key: "contract_amount",
+        label: "契約金額（円）",
+        fieldType: "number",
+        required: false,
+        enabled: true,
+        order: 2,
+      },
+      {
+        key: "payment_terms",
+        label: "支払条件",
+        fieldType: "text",
+        required: false,
+        enabled: true,
+        order: 3,
+      },
+    ],
+  },
+  {
+    key: "maintenance",
+    label: "保守契約",
+    color: "#d97706",
+    isBuiltin: true,
+    isActive: true,
+    fields: [
+      {
+        key: "target_system",
+        label: "対象システム",
+        fieldType: "text",
+        required: false,
+        enabled: true,
+        order: 1,
+      },
+      {
+        key: "support_scope",
+        label: "サポート範囲",
+        fieldType: "textarea",
+        required: false,
+        enabled: true,
+        order: 2,
+      },
+      {
+        key: "monthly_fee",
+        label: "月額費用（円）",
+        fieldType: "number",
+        required: false,
+        enabled: true,
+        order: 3,
+      },
+      {
+        key: "response_time",
+        label: "対応時間・SLA",
+        fieldType: "text",
+        required: false,
+        enabled: true,
+        order: 4,
+      },
+    ],
+  },
+  {
+    key: "license",
+    label: "ライセンス契約",
+    color: "#dc2626",
+    isBuiltin: true,
+    isActive: true,
+    fields: [
+      {
+        key: "license_name",
+        label: "ライセンス内容",
+        fieldType: "text",
+        required: false,
+        enabled: true,
+        order: 1,
+      },
+      {
+        key: "license_count",
+        label: "ライセンス数",
+        fieldType: "number",
+        required: false,
+        enabled: true,
+        order: 2,
+      },
+      {
+        key: "annual_fee",
+        label: "年間費用（円）",
+        fieldType: "number",
+        required: false,
+        enabled: true,
+        order: 3,
+      },
+    ],
+  },
+  {
+    key: "other",
+    label: "その他",
+    color: "#6b7280",
+    isBuiltin: true,
+    isActive: true,
+    fields: [],
+  },
+];
+
+// ── 全契約種別設定を取得（DB優先、なければデフォルト）────────────────
+async function getTypeConfigs() {
+  const dbConfigs = await ContractTypeConfig.find()
+    .sort({ sortOrder: 1, createdAt: 1 })
+    .lean();
+  if (dbConfigs.length === 0) {
+    // 初回：デフォルト設定を一括登録（sortOrderを付与）
+    const withOrder = DEFAULT_TYPE_CONFIGS.map((c, i) => ({
+      ...c,
+      sortOrder: i,
+    }));
+    await ContractTypeConfig.insertMany(withOrder);
+    return withOrder;
+  }
+  return dbConfigs;
+}
+
+// ── 種別設定から label/color マップを生成 ──────────────────────────
+function buildTypeMaps(configs) {
+  const labelMap = {};
+  const colorMap = {};
+  configs.forEach((c) => {
+    labelMap[c.key] = c.label;
+    colorMap[c.key] = c.color || "#6b7280";
+  });
+  return { labelMap, colorMap };
+}
 const STATUS_LABEL = {
   draft: "下書き",
   active: "有効",
@@ -274,6 +591,11 @@ router.get("/contracts", requireLogin, async (req, res) => {
           "契約管理の閲覧には管理者またはチームリーダー以上の権限が必要です。",
         );
 
+    const typeConfigs = await getTypeConfigs();
+    const { labelMap: CONTRACT_TYPE_LABEL, colorMap: CONTRACT_TYPE_COLOR_DYN } =
+      buildTypeMaps(typeConfigs);
+    const activeTypes = typeConfigs.filter((c) => c.isActive !== false);
+
     // フィルター
     const q = req.query;
     const filter = {};
@@ -325,7 +647,7 @@ router.get("/contracts", requireLogin, async (req, res) => {
             <div class="ct-hero-sub">全契約の一元管理・期限アラート・PDF保管</div>
           </div>
           <div class="ct-hero-actions">
-            ${isAdminUser ? `<a href="/contracts/new" class="ct-btn ct-btn-primary">＋ 新規契約登録</a>` : ""}
+            ${isAdminUser ? `<a href="/contracts/new" class="ct-btn ct-btn-primary">＋ 新規契約登録</a><a href="/admin/contract-types" class="ct-btn ct-btn-secondary">⚙️ 種別管理</a>` : ""}
           </div>
         </div>
 
@@ -385,10 +707,10 @@ router.get("/contracts", requireLogin, async (req, res) => {
             <label>契約種別</label>
             <select name="type">
               <option value="all" ${!q.type || q.type === "all" ? "selected" : ""}>すべて</option>
-              ${Object.entries(CONTRACT_TYPE_LABEL)
+              ${activeTypes
                 .map(
-                  ([v, l]) =>
-                    `<option value="${v}" ${q.type === v ? "selected" : ""}>${l}</option>`,
+                  (t) =>
+                    `<option value="${t.key}" ${q.type === t.key ? "selected" : ""}>${t.label}</option>`,
                 )
                 .join("")}
             </select>
@@ -457,7 +779,7 @@ router.get("/contracts", requireLogin, async (req, res) => {
                 ${contracts
                   .map((c) => {
                     const typeColor =
-                      CONTRACT_TYPE_COLOR[c.contractType] || "#6b7280";
+                      CONTRACT_TYPE_COLOR_DYN[c.contractType] || "#6b7280";
                     const stColor = STATUS_COLOR[c.status] || "#6b7280";
                     const stBg = STATUS_BG[c.status] || "#f3f4f6";
                     const stLabel = STATUS_LABEL[c.status] || c.status;
@@ -509,10 +831,12 @@ router.get("/contracts", requireLogin, async (req, res) => {
 // =====================================================================
 router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
   try {
-    const [users, employees] = await Promise.all([
+    const [users, employees, typeConfigs] = await Promise.all([
       User.find().sort({ username: 1 }).lean(),
       Employee.find().sort({ name: 1 }).lean(),
+      getTypeConfigs(),
     ]);
+    const activeTypes = typeConfigs.filter((c) => c.isActive !== false);
     // コンボボックス候補：社員名＋部署のオブジェクト配列（JSONとしてページに埋め込む）
     const nameSuggestions = employees.map((e) => ({
       name: e.name || "",
@@ -581,10 +905,12 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
                 </div>
                 <div class="ct-form-group">
                   <label>契約種別<span class="req">*</span></label>
-                  <select name="contractType" required>
+                  <select name="contractType" id="contractTypeSelect" required onchange="updateDynamicFields(this.value)">
                     <option value="">-- 選択してください --</option>
-                    ${Object.entries(CONTRACT_TYPE_LABEL)
-                      .map(([v, l]) => `<option value="${v}">${l}</option>`)
+                    ${activeTypes
+                      .map(
+                        (t) => `<option value="${t.key}">${t.label}</option>`,
+                      )
                       .join("")}
                   </select>
                 </div>
@@ -640,6 +966,15 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
                   <label>備考・メモ</label>
                   <textarea name="notes" rows="3" placeholder="特記事項や補足情報を入力..."></textarea>
                 </div>
+
+                <!-- 契約種別ごとの動的フィールド -->
+                <div id="dynamicFieldsSection" class="ct-form-group full" style="display:none">
+                  <div style="border-top:2px solid #e5e7eb;padding-top:16px;margin-bottom:4px">
+                    <div style="font-size:13px;font-weight:800;color:#0b2540;margin-bottom:12px">📌 契約種別固有の情報</div>
+                    <div id="dynamicFieldsContainer" class="ct-form-grid"></div>
+                  </div>
+                </div>
+
                 <div class="ct-form-group full">
                   <label>契約書ファイル（PDF/Word/Excel/画像、最大30MB、複数可）</label>
                   <div class="ct-upload-zone" id="drop-zone" onclick="document.getElementById('fileInput').click()">
@@ -820,6 +1155,31 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
           prev.appendChild(d);
         });
       }
+
+      // ── 契約種別ごとの動的フィールド ──
+      var TYPE_CONFIGS = ${JSON.stringify(activeTypes.map((t) => ({ key: t.key, fields: (t.fields || []).filter((f) => f.enabled !== false).sort((a, b) => (a.order || 0) - (b.order || 0)) })))};
+      function updateDynamicFields(typeKey) {
+        var cfg = TYPE_CONFIGS.find(function(t){ return t.key === typeKey; });
+        var section = document.getElementById('dynamicFieldsSection');
+        var container = document.getElementById('dynamicFieldsContainer');
+        if(!cfg || !cfg.fields || cfg.fields.length === 0){ section.style.display='none'; container.innerHTML=''; return; }
+        section.style.display='block';
+        container.innerHTML = cfg.fields.map(function(f){
+          var reqMark = f.required ? '<span class="req">*</span>' : '';
+          var input = '';
+          if(f.fieldType === 'select'){
+            input = '<select name="customFields['+f.key+']"'+(f.required?' required':'')+'>'+
+              '<option value="">-- 選択 --</option>'+
+              (f.options||[]).map(function(o){ return '<option value="'+o.replace(/"/g,'&quot;')+'">'+o+'</option>'; }).join('')+
+              '</select>';
+          } else if(f.fieldType === 'textarea'){
+            input = '<textarea name="customFields['+f.key+']" rows="2"'+(f.required?' required':'')+'></textarea>';
+          } else {
+            input = '<input type="'+(f.fieldType||'text')+'" name="customFields['+f.key+']"'+(f.required?' required':'')+' placeholder="'+f.label+'">';
+          }
+          return '<div class="ct-form-group"><label>'+f.label+reqMark+'</label>'+input+'</div>';
+        }).join('');
+      }
       </script>
       `,
     );
@@ -879,6 +1239,7 @@ router.post(
         status: status || "active",
         notes: notes ? notes.trim() : "",
         attachments,
+        customFields: req.body.customFields || {},
         createdBy: req.session.userId,
       });
 
@@ -888,11 +1249,14 @@ router.post(
           username: responsibleUser.trim(),
         }).lean();
         if (respUser) {
+          const typeLabel =
+            (await ContractTypeConfig.findOne({ key: contractType }).lean())
+              ?.label || contractType;
           await createNotification({
             userId: respUser._id,
             type: "contract_assigned",
             title: `📋 契約管理に担当者として登録されました`,
-            body: `「${name.trim()}」（${CONTRACT_TYPE_LABEL[contractType] || contractType}）`,
+            body: `「${name.trim()}」（${typeLabel}）`,
             link: `/contracts/${contract._id}`,
             fromUserId: req.session.userId,
             meta: { contractId: contract._id },
@@ -924,10 +1288,25 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
       .lean();
     if (!contract) return res.status(404).send("契約が見つかりません。");
 
-    const typeColor = CONTRACT_TYPE_COLOR[contract.contractType] || "#6b7280";
+    const typeConfigs = await getTypeConfigs();
+    const { labelMap: CONTRACT_TYPE_LABEL, colorMap: CONTRACT_TYPE_COLOR_DYN } =
+      buildTypeMaps(typeConfigs);
+    const typeConfig = typeConfigs.find((c) => c.key === contract.contractType);
+    const enabledFields = typeConfig
+      ? (typeConfig.fields || [])
+          .filter((f) => f.enabled !== false)
+          .sort((a, b) => (a.order || 0) - (b.order || 0))
+      : [];
+
+    const typeColor =
+      CONTRACT_TYPE_COLOR_DYN[contract.contractType] || "#6b7280";
     const stColor = STATUS_COLOR[contract.status] || "#6b7280";
     const stBg = STATUS_BG[contract.status] || "#f3f4f6";
     const stLabel = STATUS_LABEL[contract.status] || contract.status;
+    const customFields =
+      contract.customFields instanceof Map
+        ? Object.fromEntries(contract.customFields)
+        : contract.customFields || {};
 
     renderPage(
       req,
@@ -1008,6 +1387,24 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
                     <div class="ct-info-label">登録日時</div>
                     <div class="ct-info-val" style="font-size:12px;color:#9ca3af">${moment.tz(contract.createdAt, "Asia/Tokyo").format("YYYY年MM月DD日 HH:mm")} ${contract.createdBy ? `by ${escapeHtml(contract.createdBy.username)}` : ""}</div>
                   </div>
+                  ${
+                    enabledFields.length > 0
+                      ? `<div class="ct-info-item" style="padding-top:16px;border-top:2px solid #e5e7eb;margin-top:4px">
+                        <div style="font-size:13px;font-weight:800;color:#0b2540;margin-bottom:10px">📌 種別固有情報（${CONTRACT_TYPE_LABEL[contract.contractType] || contract.contractType}）</div>
+                        ${enabledFields
+                          .map((f) => {
+                            const val = customFields[f.key];
+                            if (!val && val !== 0) return "";
+                            return `<div style="display:flex;gap:12px;padding:6px 0;border-bottom:1px solid #f1f5f9">
+                            <div style="font-size:11px;font-weight:700;color:#9ca3af;min-width:140px;text-transform:uppercase;letter-spacing:.04em">${escapeHtml(f.label)}</div>
+                            <div style="font-size:13px;color:#1f2937;font-weight:500;white-space:pre-wrap">${escapeHtml(String(val))}</div>
+                          </div>`;
+                          })
+                          .filter(Boolean)
+                          .join("")}
+                      </div>`
+                      : ""
+                  }
                 </div>
               </div>
             </div>
@@ -1185,10 +1582,12 @@ router.get("/contracts/:id/edit", requireLogin, isAdmin, async (req, res) => {
   try {
     const contract = await Contract.findById(req.params.id).lean();
     if (!contract) return res.status(404).send("契約が見つかりません。");
-    const [users, employees] = await Promise.all([
+    const [users, employees, typeConfigs] = await Promise.all([
       User.find().sort({ username: 1 }).lean(),
       Employee.find().sort({ name: 1 }).lean(),
+      getTypeConfigs(),
     ]);
+    const activeTypes = typeConfigs.filter((c) => c.isActive !== false);
     const nameSuggestions = employees.map((e) => ({
       name: e.name || "",
       dept: e.department || "",
@@ -1200,6 +1599,10 @@ router.get("/contracts/:id/edit", requireLogin, isAdmin, async (req, res) => {
     }));
     const currentName = escapeHtml(contract.name);
     const currentRespName = escapeHtml(contract.responsibleUser || "");
+    const customFields =
+      contract.customFields instanceof Map
+        ? Object.fromEntries(contract.customFields)
+        : contract.customFields || {};
 
     renderPage(
       req,
@@ -1257,11 +1660,11 @@ router.get("/contracts/:id/edit", requireLogin, isAdmin, async (req, res) => {
                 </div>
                 <div class="ct-form-group">
                   <label>契約種別<span class="req">*</span></label>
-                  <select name="contractType" required>
-                    ${Object.entries(CONTRACT_TYPE_LABEL)
+                  <select name="contractType" id="contractTypeSelect" required onchange="updateDynamicFields(this.value)">
+                    ${activeTypes
                       .map(
-                        ([v, l]) =>
-                          `<option value="${v}" ${contract.contractType === v ? "selected" : ""}>${l}</option>`,
+                        (t) =>
+                          `<option value="${t.key}" ${contract.contractType === t.key ? "selected" : ""}>${t.label}</option>`,
                       )
                       .join("")}
                   </select>
@@ -1318,6 +1721,46 @@ router.get("/contracts/:id/edit", requireLogin, isAdmin, async (req, res) => {
                   <label>備考・メモ</label>
                   <textarea name="notes" rows="3">${escapeHtml(contract.notes || "")}</textarea>
                 </div>
+
+                <!-- 契約種別ごとの動的フィールド（編集） -->
+                <div id="dynamicFieldsSection" class="ct-form-group full" style="${typeConfigs.find((t) => t.key === contract.contractType)?.fields?.filter((f) => f.enabled !== false).length > 0 ? "display:block" : "display:none"}">
+                  <div style="border-top:2px solid #e5e7eb;padding-top:16px;margin-bottom:4px">
+                    <div style="font-size:13px;font-weight:800;color:#0b2540;margin-bottom:12px">📌 契約種別固有の情報</div>
+                    <div id="dynamicFieldsContainer" class="ct-form-grid">
+                      ${
+                        typeConfigs.find((t) => t.key === contract.contractType)
+                          ? (
+                              typeConfigs.find(
+                                (t) => t.key === contract.contractType,
+                              ).fields || []
+                            )
+                              .filter((f) => f.enabled !== false)
+                              .sort((a, b) => (a.order || 0) - (b.order || 0))
+                              .map((f) => {
+                                const val =
+                                  customFields[f.key] != null
+                                    ? String(customFields[f.key])
+                                    : "";
+                                const reqMark = f.required
+                                  ? '<span class="req">*</span>'
+                                  : "";
+                                let input = "";
+                                if (f.fieldType === "select") {
+                                  input = `<select name="customFields[${f.key}]"${f.required ? " required" : ""}><option value="">-- 選択 --</option>${(f.options || []).map((o) => `<option value="${escapeHtml(o)}"${val === o ? " selected" : ""}>${escapeHtml(o)}</option>`).join("")}</select>`;
+                                } else if (f.fieldType === "textarea") {
+                                  input = `<textarea name="customFields[${f.key}]" rows="2"${f.required ? " required" : ""}>${escapeHtml(val)}</textarea>`;
+                                } else {
+                                  input = `<input type="${f.fieldType || "text"}" name="customFields[${f.key}]"${f.required ? " required" : ""} value="${escapeHtml(val)}" placeholder="${escapeHtml(f.label)}">`;
+                                }
+                                return `<div class="ct-form-group"><label>${escapeHtml(f.label)}${reqMark}</label>${input}</div>`;
+                              })
+                              .join("")
+                          : ""
+                      }
+                    </div>
+                  </div>
+                </div>
+
                 <div class="ct-form-group full">
                   <label>ファイル追加（既存ファイルはそのまま保持されます）</label>
                   <div class="ct-upload-zone" onclick="document.getElementById('editFileInput').click()">
@@ -1463,6 +1906,33 @@ router.get("/contracts/:id/edit", requireLogin, isAdmin, async (req, res) => {
           prev.appendChild(d);
         });
       });
+
+      // ── 契約種別ごとの動的フィールド ──
+      var TYPE_CONFIGS = ${JSON.stringify(activeTypes.map((t) => ({ key: t.key, fields: (t.fields || []).filter((f) => f.enabled !== false).sort((a, b) => (a.order || 0) - (b.order || 0)) })))};
+      var CURRENT_CUSTOM = ${JSON.stringify(customFields)};
+      function updateDynamicFields(typeKey) {
+        var cfg = TYPE_CONFIGS.find(function(t){ return t.key === typeKey; });
+        var section = document.getElementById('dynamicFieldsSection');
+        var container = document.getElementById('dynamicFieldsContainer');
+        if(!cfg || !cfg.fields || cfg.fields.length === 0){ section.style.display='none'; container.innerHTML=''; return; }
+        section.style.display='block';
+        container.innerHTML = cfg.fields.map(function(f){
+          var existing = CURRENT_CUSTOM[f.key] != null ? String(CURRENT_CUSTOM[f.key]) : '';
+          var reqMark = f.required ? '<span class="req">*</span>' : '';
+          var input = '';
+          if(f.fieldType === 'select'){
+            input = '<select name="customFields['+f.key+']"'+(f.required?' required':'')+'>'+
+              '<option value="">-- 選択 --</option>'+
+              (f.options||[]).map(function(o){ return '<option value="'+o.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')+'"'+(existing===o?' selected':'')+'>'+o.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</option>'; }).join('')+
+              '</select>';
+          } else if(f.fieldType === 'textarea'){
+            input = '<textarea name="customFields['+f.key+']" rows="2"'+(f.required?' required':'')+'>'+(existing.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'))+'</textarea>';
+          } else {
+            input = '<input type="'+(f.fieldType||'text')+'" name="customFields['+f.key+']"'+(f.required?' required':'')+' value="'+(existing.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'))+'" placeholder="'+f.label.replace(/"/g,'&quot;')+'">';
+          }
+          return '<div class="ct-form-group"><label>'+f.label.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+reqMark+'</label>'+input+'</div>';
+        }).join('');
+      }
       </script>
       `,
     );
@@ -1512,6 +1982,10 @@ router.post(
       contract.department = department ? department.trim() : "";
       contract.status = status || "active";
       contract.notes = notes ? notes.trim() : "";
+      // カスタムフィールド更新（種別変更時は上書き）
+      if (req.body.customFields && typeof req.body.customFields === "object") {
+        contract.customFields = req.body.customFields;
+      }
 
       // 新規ファイル追加（既存は保持）
       if (req.files && req.files.length > 0) {
@@ -1681,5 +2155,606 @@ router.post("/contracts/:id/renew", requireLogin, isAdmin, async (req, res) => {
     res.status(500).send("更新記録に失敗しました");
   }
 });
+
+// =====================================================================
+// 管理者向け：契約種別管理（/admin/contract-types）
+// =====================================================================
+
+const ADMIN_CT_STYLE = `
+<style>
+.adct{max-width:1100px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans',sans-serif}
+.adct-hero{background:linear-gradient(135deg,#0f2244,#1d4ed8);border-radius:16px;padding:28px 32px;color:#fff;margin-bottom:24px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.adct-hero-title{font-size:20px;font-weight:900;margin:0 0 4px}
+.adct-hero-sub{font-size:12px;opacity:.7}
+.adct-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;border:none;text-decoration:none;transition:.15s}
+.adct-btn-primary{background:#fff;color:#1e3a5f}
+.adct-btn-primary:hover{background:#e0e7ff}
+.adct-btn-secondary{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3)}
+.adct-btn-secondary:hover{background:rgba(255,255,255,.25)}
+.adct-btn-outline{background:#fff;color:#374151;border:1px solid #e5e7eb}
+.adct-btn-outline:hover{background:#f3f4f6}
+.adct-btn-danger{background:#ef4444;color:#fff}
+.adct-btn-danger:hover{background:#dc2626}
+.adct-btn-sm{padding:5px 10px;font-size:12px;border-radius:6px}
+.adct-card{background:#fff;border-radius:14px;box-shadow:0 2px 10px rgba(0,0,0,.07);margin-bottom:20px;overflow:hidden}
+.adct-card-head{padding:16px 20px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.adct-card-title{font-size:15px;font-weight:800;color:#0b2540;display:flex;align-items:center;gap:8px}
+.adct-card-body{padding:20px}
+.adct-type-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.adct-type-card{border:1.5px solid #e5e7eb;border-radius:12px;padding:16px;transition:.15s;background:#fff}
+.adct-type-card:hover{border-color:#3b82f6;box-shadow:0 4px 12px rgba(59,130,246,.1)}
+.adct-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+.adct-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.adct-form-group{display:flex;flex-direction:column;gap:4px}
+.adct-form-group.full{grid-column:1/-1}
+.adct-form-group label{font-size:12px;font-weight:700;color:#374151}
+.adct-form-group input,.adct-form-group select,.adct-form-group textarea{padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;color:#1f2937;background:#f9fafb;font-family:inherit}
+.adct-form-group input:focus,.adct-form-group select:focus,.adct-form-group textarea:focus{outline:none;border-color:#3b82f6;background:#fff}
+.adct-field-row{display:flex;gap:8px;align-items:center;padding:10px 12px;background:#f8fafc;border-radius:8px;border:1px solid #e5e7eb;margin-bottom:8px;flex-wrap:wrap}
+.adct-field-row input,.adct-field-row select{padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:7px;font-size:12px;background:#fff}
+.adct-form-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;padding-top:14px;border-top:1px solid #f1f5f9}
+.adct-alert-ok{background:#f0fdf4;border:1px solid #86efac;color:#15803d;padding:10px 14px;border-radius:9px;font-size:13px;margin-bottom:14px}
+@media(max-width:640px){.adct-form-grid{grid-template-columns:1fr}}
+</style>
+`;
+
+// GET /admin/contract-types - 種別一覧
+router.get("/admin/contract-types", requireLogin, isAdmin, async (req, res) => {
+  try {
+    const typeConfigs = await getTypeConfigs();
+    renderPage(
+      req,
+      res,
+      "契約種別管理",
+      "契約管理",
+      `${ADMIN_CT_STYLE}
+      <style>
+        .adct-sort-list{display:flex;flex-direction:column;gap:8px}
+        .adct-sort-item{display:flex;align-items:center;gap:12px;padding:12px 16px;background:#fff;border:1.5px solid #e5e7eb;border-radius:10px;cursor:grab;transition:.15s;user-select:none}
+        .adct-sort-item:hover{border-color:#93c5fd;box-shadow:0 2px 8px rgba(59,130,246,.1)}
+        .adct-sort-item.dragging{opacity:.4;border-color:#3b82f6}
+        .adct-sort-item.drag-over{border-color:#3b82f6;background:#eff6ff;box-shadow:0 0 0 2px #bfdbfe}
+        .adct-drag-handle{font-size:18px;color:#cbd5e1;cursor:grab;flex-shrink:0;line-height:1}
+        .adct-sort-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;white-space:nowrap}
+        .adct-sort-meta{font-size:11px;color:#9ca3af;margin-top:1px}
+        .adct-sort-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+        .adct-sort-tag{font-size:10px;padding:2px 7px;background:#f1f5f9;color:#374151;border-radius:4px}
+        .adct-save-bar{position:sticky;bottom:16px;left:0;right:0;background:#1d4ed8;color:#fff;border-radius:12px;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 4px 16px rgba(29,78,216,.3);margin-top:16px;display:none}
+        .adct-save-bar.visible{display:flex}
+      </style>
+      <div class="adct">
+        ${req.query.saved ? `<div class="adct-alert-ok">✅ 保存しました。</div>` : ""}
+        ${req.query.deleted ? `<div class="adct-alert-ok">✅ 削除しました。</div>` : ""}
+        <div class="adct-hero">
+          <div>
+            <div class="adct-hero-title">⚙️ 契約種別管理</div>
+            <div class="adct-hero-sub">ドラッグで順番を変更できます</div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <a href="/contracts" class="adct-btn adct-btn-secondary">← 契約一覧</a>
+            <a href="/admin/contract-types/new" class="adct-btn adct-btn-primary">＋ 種別を追加</a>
+          </div>
+        </div>
+
+        <div class="adct-card">
+          <div class="adct-card-head">
+            <div class="adct-card-title">📋 登録済み種別 <span style="font-size:12px;font-weight:500;color:#9ca3af;margin-left:4px">ドラッグで並び替え</span></div>
+          </div>
+          <div class="adct-card-body">
+            <div class="adct-sort-list" id="sortList">
+              ${typeConfigs
+                .map(
+                  (t) => `
+              <div class="adct-sort-item" draggable="true" data-key="${escapeHtml(t.key)}">
+                <span class="adct-drag-handle" title="ドラッグして並び替え">⠿</span>
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    <span class="adct-sort-badge" style="background:${t.color || "#6b7280"}20;color:${t.color || "#6b7280"}">${escapeHtml(t.label)}</span>
+                    ${t.isBuiltin ? `<span style="font-size:10px;color:#9ca3af">組み込み</span>` : ""}
+                    ${!t.isActive ? `<span style="font-size:10px;color:#ef4444">無効</span>` : ""}
+                    <span style="font-size:11px;color:#cbd5e1">|</span>
+                    <span style="font-size:11px;color:#9ca3af">キー: <code>${escapeHtml(t.key)}</code></span>
+                    <span style="font-size:11px;color:#9ca3af">項目: ${(t.fields || []).filter((f) => f.enabled !== false).length}個</span>
+                  </div>
+                  <div class="adct-sort-tags">
+                    ${(t.fields || [])
+                      .filter((f) => f.enabled !== false)
+                      .slice(0, 5)
+                      .map(
+                        (f) =>
+                          `<span class="adct-sort-tag">${escapeHtml(f.label)}</span>`,
+                      )
+                      .join("")}
+                    ${(t.fields || []).filter((f) => f.enabled !== false).length > 5 ? `<span style="font-size:10px;color:#9ca3af">+${(t.fields || []).filter((f) => f.enabled !== false).length - 5}...</span>` : ""}
+                  </div>
+                </div>
+                <a href="/admin/contract-types/${encodeURIComponent(t.key)}/edit" class="adct-btn adct-btn-outline adct-btn-sm" style="flex-shrink:0">✏️ 編集</a>
+              </div>`,
+                )
+                .join("")}
+            </div>
+
+            <!-- 順番変更後の保存バー -->            
+            <div class="adct-save-bar" id="saveBar">
+              <span>📌 並び順が変更されました</span>
+              <div style="display:flex;gap:8px">
+                <button onclick="resetOrder()" class="adct-btn adct-btn-secondary adct-btn-sm">元に戻す</button>
+                <button onclick="saveOrder()" class="adct-btn adct-btn-primary adct-btn-sm" id="saveBtn">💾 順番を保存</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <script>
+      var originalOrder = ${JSON.stringify(typeConfigs.map((t) => t.key))};
+      var list = document.getElementById('sortList');
+      var saveBar = document.getElementById('saveBar');
+      var dragSrc = null;
+
+      list.addEventListener('dragstart', function(e) {
+        dragSrc = e.target.closest('.adct-sort-item');
+        if (!dragSrc) return;
+        setTimeout(function(){ dragSrc.classList.add('dragging'); }, 0);
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      list.addEventListener('dragend', function(e) {
+        var item = e.target.closest('.adct-sort-item');
+        if (item) item.classList.remove('dragging');
+        list.querySelectorAll('.adct-sort-item').forEach(function(el){ el.classList.remove('drag-over'); });
+        checkChanged();
+      });
+      list.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        var target = e.target.closest('.adct-sort-item');
+        if (!target || target === dragSrc) return;
+        list.querySelectorAll('.adct-sort-item').forEach(function(el){ el.classList.remove('drag-over'); });
+        target.classList.add('drag-over');
+        var rect = target.getBoundingClientRect();
+        var mid = rect.top + rect.height / 2;
+        if (e.clientY < mid) {
+          list.insertBefore(dragSrc, target);
+        } else {
+          list.insertBefore(dragSrc, target.nextSibling);
+        }
+      });
+      list.addEventListener('drop', function(e) { e.preventDefault(); });
+
+      function getCurrentOrder() {
+        return Array.from(list.querySelectorAll('.adct-sort-item')).map(function(el){ return el.dataset.key; });
+      }
+      function checkChanged() {
+        var cur = getCurrentOrder();
+        var changed = cur.some(function(k, i){ return k !== originalOrder[i]; });
+        saveBar.classList.toggle('visible', changed);
+      }
+      function resetOrder() {
+        var items = {};
+        list.querySelectorAll('.adct-sort-item').forEach(function(el){ items[el.dataset.key] = el; });
+        originalOrder.forEach(function(k){ if(items[k]) list.appendChild(items[k]); });
+        saveBar.classList.remove('visible');
+      }
+      function saveOrder() {
+        var btn = document.getElementById('saveBtn');
+        btn.disabled = true; btn.textContent = '保存中...';
+        fetch('/admin/contract-types/reorder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order: getCurrentOrder() })
+        }).then(function(r){
+          if (r.ok) {
+            originalOrder = getCurrentOrder();
+            saveBar.classList.remove('visible');
+            btn.disabled = false; btn.textContent = '💾 順番を保存';
+            var msg = document.createElement('div');
+            msg.className = 'adct-alert-ok';
+            msg.textContent = '✅ 並び順を保存しました。';
+            document.querySelector('.adct').insertBefore(msg, document.querySelector('.adct-hero'));
+            setTimeout(function(){ msg.remove(); }, 3000);
+          } else {
+            alert('保存に失敗しました'); btn.disabled = false; btn.textContent = '💾 順番を保存';
+          }
+        }).catch(function(){ alert('通信エラー'); btn.disabled = false; btn.textContent = '💾 順番を保存'; });
+      }
+      </script>
+      `,
+    );
+  } catch (e) {
+    console.error("[contract-types] 一覧エラー:", e);
+    res.status(500).send("エラーが発生しました");
+  }
+});
+
+// POST /admin/contract-types/reorder - 並び順保存（JSON API）
+router.post(
+  "/admin/contract-types/reorder",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const { order } = req.body;
+      if (!Array.isArray(order))
+        return res.status(400).json({ error: "invalid" });
+      const ops = order.map((key, idx) => ({
+        updateOne: { filter: { key }, update: { $set: { sortOrder: idx } } },
+      }));
+      await ContractTypeConfig.bulkWrite(ops);
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[contract-types] 並び替えエラー:", e);
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
+// GET /admin/contract-types/new - 新規種別追加フォーム
+router.get("/admin/contract-types/new", requireLogin, isAdmin, (req, res) => {
+  renderPage(
+    req,
+    res,
+    "契約種別追加",
+    "契約管理",
+    `${ADMIN_CT_STYLE}
+    <div class="adct">
+      <div class="adct-hero">
+        <div>
+          <div class="adct-hero-title">＋ 契約種別を追加</div>
+          <div class="adct-hero-sub">新しい契約種別と入力項目を定義します</div>
+        </div>
+        <a href="/admin/contract-types" class="adct-btn adct-btn-secondary">← 種別一覧</a>
+      </div>
+      <div class="adct-card">
+        <div class="adct-card-head"><div class="adct-card-title">種別情報</div></div>
+        <div class="adct-card-body">
+          <form method="post" action="/admin/contract-types" id="typeForm">
+            <div class="adct-form-grid">
+              <div class="adct-form-group">
+                <label>種別キー（英数字・アンダースコア）<span style="color:#ef4444">*</span></label>
+                <input type="text" name="key" required pattern="[a-zA-Z0-9_]+" placeholder="例：service_agreement" maxlength="50">
+              </div>
+              <div class="adct-form-group">
+                <label>表示名<span style="color:#ef4444">*</span></label>
+                <input type="text" name="label" required placeholder="例：サービス契約" maxlength="50">
+              </div>
+              <div class="adct-form-group">
+                <label>バッジ色</label>
+                <input type="color" name="color" value="#6b7280">
+              </div>
+              <div class="adct-form-group">
+                <label>有効・無効</label>
+                <select name="isActive">
+                  <option value="true">有効</option>
+                  <option value="false">無効</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="margin-top:20px;border-top:1px solid #f1f5f9;padding-top:16px">
+              <div style="font-size:14px;font-weight:800;color:#0b2540;margin-bottom:12px">入力項目の定義</div>
+              <div id="fieldsContainer"></div>
+              <button type="button" onclick="addField()" class="adct-btn adct-btn-outline" style="margin-top:8px">＋ 項目を追加</button>
+            </div>
+
+            <div class="adct-form-actions">
+              <a href="/admin/contract-types" class="adct-btn adct-btn-outline">キャンセル</a>
+              <button type="submit" class="adct-btn adct-btn-primary" style="background:#2563eb;color:#fff">💾 保存</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    <script>
+    var fieldIdx = 0;
+    function addField(data) {
+      data = data || {};
+      var i = fieldIdx++;
+      var d = document.createElement('div');
+      d.className = 'adct-field-row';
+      d.id = 'field-'+i;
+      d.innerHTML =
+        '<input type="text" name="fields['+i+'][key]" placeholder="キー(英数字)" required pattern="[a-zA-Z0-9_]+" style="width:120px" value="'+(data.key||'')+'">' +
+        '<input type="text" name="fields['+i+'][label]" placeholder="ラベル(日本語)" required style="flex:1;min-width:100px" value="'+(data.label||'')+'">' +
+        '<select name="fields['+i+'][fieldType]" style="width:100px">' +
+          ['text','number','date','select','textarea'].map(function(t){ return '<option value="'+t+'"'+(data.fieldType===t?' selected':'')+'>'+t+'</option>'; }).join('') +
+        '</select>' +
+        '<label style="font-size:11px;color:#6b7280;display:flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" name="fields['+i+'][required]" value="1"'+(data.required?' checked':'')+'> 必須</label>' +
+        '<input type="text" name="fields['+i+'][options]" placeholder="選択肢(カンマ区切り)" style="width:160px" value="'+(data.options||[]).join(',').replace(/"/g,'&quot;')+'">' +
+        '<button type="button" onclick="document.getElementById(\'field-'+i+'\').remove()" style="background:#fee2e2;color:#ef4444;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px">✕</button>';
+      document.getElementById('fieldsContainer').appendChild(d);
+    }
+    </script>
+    `,
+  );
+});
+
+// POST /admin/contract-types - 新規種別保存
+router.post(
+  "/admin/contract-types",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const { key, label, color, isActive } = req.body;
+      if (!key || !label) return res.status(400).send("キーと表示名は必須です");
+      if (!/^[a-zA-Z0-9_]+$/.test(key))
+        return res
+          .status(400)
+          .send("キーは英数字・アンダースコアのみ使用できます");
+
+      // フィールドをパース
+      const fields = parseFieldsFromBody(req.body.fields || {});
+
+      const existing = await ContractTypeConfig.findOne({ key });
+      if (existing)
+        return res
+          .status(400)
+          .send(`キー「${escapeHtml(key)}」は既に存在します`);
+
+      await ContractTypeConfig.create({
+        key,
+        label,
+        color: color || "#6b7280",
+        isBuiltin: false,
+        isActive: isActive !== "false",
+        fields,
+      });
+      res.redirect(`/admin/contract-types?saved=1`);
+    } catch (e) {
+      console.error("[contract-types] 保存エラー:", e);
+      res.status(500).send("保存に失敗しました: " + escapeHtml(e.message));
+    }
+  },
+);
+
+// GET /admin/contract-types/:key/edit - 種別編集フォーム
+router.get(
+  "/admin/contract-types/:key/edit",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const typeConfigs = await getTypeConfigs();
+      const t = typeConfigs.find((c) => c.key === req.params.key);
+      if (!t) return res.status(404).send("契約種別が見つかりません");
+
+      renderPage(
+        req,
+        res,
+        `契約種別編集 - ${t.label}`,
+        "契約管理",
+        `${ADMIN_CT_STYLE}
+      <style>
+        /* adct-fi: 入力欄ラベル付き縦スタック（.adct-field-rowのCSSは変更しない） */
+        .adct-fi{display:flex;flex-direction:column;gap:3px}
+        .adct-fi-lbl{font-size:10px;font-weight:700;color:#374151;white-space:nowrap;line-height:1.4}
+        .adct-fi-hint{font-weight:400;color:#9ca3af}
+        .adct-field-row input[type=checkbox]{width:auto;padding:0;border:none;background:none;cursor:pointer;accent-color:#3b82f6}
+      </style>
+      <div class="adct">
+        <div class="adct-hero">
+          <div>
+            <div class="adct-hero-title">✏️ 種別編集：${escapeHtml(t.label)}</div>
+            <div class="adct-hero-sub">入力項目・設定を変更します</div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <a href="/admin/contract-types" class="adct-btn adct-btn-secondary">← 種別一覧</a>
+            ${
+              !t.isBuiltin
+                ? `
+            <form method="post" action="/admin/contract-types/${encodeURIComponent(t.key)}/delete" style="display:inline" onsubmit="return confirm('「${escapeHtml(t.label)}」を削除しますか？既存契約データには影響しません。')">
+              <button type="submit" class="adct-btn adct-btn-danger">🗑 削除</button>
+            </form>`
+                : ""
+            }
+          </div>
+        </div>
+        <div class="adct-card">
+          <div class="adct-card-head"><div class="adct-card-title">種別情報</div></div>
+          <div class="adct-card-body">
+            <form method="post" action="/admin/contract-types/${encodeURIComponent(t.key)}/edit" id="typeForm">
+              <div class="adct-form-grid">
+                <div class="adct-form-group">
+                  <label>種別キー</label>
+                  <input type="text" value="${escapeHtml(t.key)}" disabled style="background:#f3f4f6;color:#9ca3af">
+                </div>
+                <div class="adct-form-group">
+                  <label>表示名<span style="color:#ef4444">*</span></label>
+                  <input type="text" name="label" required value="${escapeHtml(t.label)}" maxlength="50">
+                </div>
+                <div class="adct-form-group">
+                  <label>バッジ色</label>
+                  <input type="color" name="color" value="${escapeHtml(t.color || "#6b7280")}">
+                </div>
+                <div class="adct-form-group">
+                  <label>有効・無効</label>
+                  <select name="isActive">
+                    <option value="true" ${t.isActive !== false ? "selected" : ""}>有効</option>
+                    <option value="false" ${t.isActive === false ? "selected" : ""}>無効</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="margin-top:20px;border-top:1px solid #f1f5f9;padding-top:16px">
+                <div style="font-size:14px;font-weight:800;color:#0b2540;margin-bottom:4px">入力項目の定義</div>
+                <div style="font-size:12px;color:#9ca3af;margin-bottom:12px">項目の追加・削除・並び替えができます。「有効」のチェックを外すと非表示になります。</div>
+                <div id="fieldsContainer">
+                  ${(t.fields || [])
+                    .sort((a, b) => (a.order || 0) - (b.order || 0))
+                    .map(
+                      (f, i) => `
+                  <div class="adct-field-row" id="field-${i}">
+                    <div class="adct-fi">
+                      <div class="adct-fi-lbl">キー <span class="adct-fi-hint">英数字・_のみ</span></div>
+                      <input type="text" name="fields[${i}][key]" value="${escapeHtml(f.key)}" placeholder="例: amount" required pattern="[a-zA-Z0-9_]+" style="width:120px">
+                    </div>
+                    <div class="adct-fi" style="width:160px">
+                      <div class="adct-fi-lbl">表示ラベル <span class="adct-fi-hint">画面に表示される名前</span></div>
+                      <input type="text" name="fields[${i}][label]" value="${escapeHtml(f.label)}" placeholder="例: 契約金額" required>
+                    </div>
+                    <div class="adct-fi">
+                      <div class="adct-fi-lbl">入力種別 <span class="adct-fi-hint">フォームの形式</span></div>
+                      <select name="fields[${i}][fieldType]" style="width:175px">
+                        ${["text", "number", "date", "select", "textarea"].map((ft) => `<option value="${ft}" ${f.fieldType === ft ? "selected" : ""}>` + { text: "text（テキスト）", number: "number（数値）", date: "date（日付）", select: "select（プルダウン）", textarea: "textarea（複数行）" }[ft] + `</option>`).join("")}
+                      </select>
+                    </div>
+                    <div class="adct-fi" style="flex:1;min-width:100px">
+                      <div class="adct-fi-lbl">選択肢 <span class="adct-fi-hint">select型のみ・カンマ区切り</span></div>
+                      <input type="text" name="fields[${i}][options]" placeholder="例: 選択肢A,選択肢B" value="${escapeHtml((f.options || []).join(","))}">
+                    </div>
+                    <div class="adct-fi" style="align-items:center">
+                      <div class="adct-fi-lbl">必須</div>
+                      <input type="checkbox" name="fields[${i}][required]" value="1" ${f.required ? "checked" : ""} style="width:auto;cursor:pointer;accent-color:#3b82f6;margin:4px 0">
+                    </div>
+                    <div class="adct-fi" style="align-items:center">
+                      <div class="adct-fi-lbl">有効</div>
+                      <input type="checkbox" name="fields[${i}][enabled]" value="1" ${f.enabled !== false ? "checked" : ""} style="width:auto;cursor:pointer;accent-color:#3b82f6;margin:4px 0">
+                    </div>
+                    <div style="align-self:flex-end">
+                      <button type="button" onclick="document.getElementById('field-${i}').remove()" class="adct-btn adct-btn-danger adct-btn-sm">✕</button>
+                    </div>
+                  </div>`,
+                    )
+                    .join("")}
+                </div>
+                <button type="button" onclick="addField()" class="adct-btn adct-btn-outline" style="margin-top:8px">＋ 項目を追加</button>
+              </div>
+
+              <div class="adct-form-actions">
+                <a href="/admin/contract-types" class="adct-btn adct-btn-outline">キャンセル</a>
+                <button type="submit" class="adct-btn adct-btn-primary" style="background:#2563eb;color:#fff">💾 保存</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      <script>
+      var fieldIdx = ${(t.fields || []).length};
+      function addField() {
+        var i = fieldIdx++;
+        var d = document.createElement('div');
+        d.className = 'adct-field-row';
+        d.id = 'field-'+i;
+        var typeOpts = [
+          {v:'text',     l:'text（テキスト）'},
+          {v:'number',   l:'number（数値）'},
+          {v:'date',     l:'date（日付）'},
+          {v:'select',   l:'select（プルダウン）'},
+          {v:'textarea', l:'textarea（複数行）'}
+        ].map(function(o){ return '<option value="'+o.v+'">'+o.l+'</option>'; }).join('');
+        d.innerHTML =
+          '<div class="adct-fi">' +
+            '<div class="adct-fi-lbl">キー <span class="adct-fi-hint">英数字・_のみ</span></div>' +
+            '<input type="text" name="fields['+i+'][key]" placeholder="例: my_field" required pattern="[a-zA-Z0-9_]+" style="width:120px">' +
+          '</div>' +
+          '<div class="adct-fi" style="width:160px">' +
+            '<div class="adct-fi-lbl">表示ラベル <span class="adct-fi-hint">画面に表示される名前</span></div>' +
+            '<input type="text" name="fields['+i+'][label]" placeholder="例: 担当者名" required>' +
+          '</div>' +
+          '<div class="adct-fi">' +
+            '<div class="adct-fi-lbl">入力種別 <span class="adct-fi-hint">フォームの形式</span></div>' +
+            '<select name="fields['+i+'][fieldType]" style="width:175px">' + typeOpts + '</select>' +
+          '</div>' +
+          '<div class="adct-fi" style="flex:1;min-width:100px">' +
+            '<div class="adct-fi-lbl">選択肢 <span class="adct-fi-hint">select型のみ・カンマ区切り</span></div>' +
+            '<input type="text" name="fields['+i+'][options]" placeholder="例: 選択肢A,選択肢B">' +
+          '</div>' +
+          '<div class="adct-fi" style="align-items:center">' +
+            '<div class="adct-fi-lbl">必須</div>' +
+            '<input type="checkbox" name="fields['+i+'][required]" value="1" style="width:auto;cursor:pointer;accent-color:#3b82f6;margin:4px 0">' +
+          '</div>' +
+          '<div class="adct-fi" style="align-items:center">' +
+            '<div class="adct-fi-lbl">有効</div>' +
+            '<input type="checkbox" name="fields['+i+'][enabled]" value="1" checked style="width:auto;cursor:pointer;accent-color:#3b82f6;margin:4px 0">' +
+          '</div>' +
+          '<div style="align-self:flex-end">' +
+            '<button type="button" onclick="document.getElementById(\'field-'+i+'\').remove()" class="adct-btn adct-btn-danger adct-btn-sm">✕</button>' +
+          '</div>';
+        document.getElementById('fieldsContainer').appendChild(d);
+      }
+      </script>
+      `,
+      );
+    } catch (e) {
+      console.error("[contract-types] 編集フォームエラー:", e);
+      res.status(500).send("エラーが発生しました");
+    }
+  },
+);
+
+// POST /admin/contract-types/:key/edit - 種別更新
+router.post(
+  "/admin/contract-types/:key/edit",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const { label, color, isActive } = req.body;
+      if (!label) return res.status(400).send("表示名は必須です");
+
+      const fields = parseFieldsFromBody(req.body.fields || {});
+
+      await ContractTypeConfig.findOneAndUpdate(
+        { key: req.params.key },
+        {
+          label,
+          color: color || "#6b7280",
+          isActive: isActive !== "false",
+          fields,
+        },
+        { upsert: true, new: true },
+      );
+      res.redirect(`/admin/contract-types?saved=1`);
+    } catch (e) {
+      console.error("[contract-types] 更新エラー:", e);
+      res.status(500).send("更新に失敗しました: " + escapeHtml(e.message));
+    }
+  },
+);
+
+// POST /admin/contract-types/:key/delete - 種別削除（カスタムのみ）
+router.post(
+  "/admin/contract-types/:key/delete",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const t = await ContractTypeConfig.findOne({ key: req.params.key });
+      if (!t) return res.status(404).send("見つかりません");
+      if (t.isBuiltin)
+        return res.status(403).send("組み込み種別は削除できません");
+      await ContractTypeConfig.deleteOne({ key: req.params.key });
+      res.redirect("/admin/contract-types?deleted=1");
+    } catch (e) {
+      console.error("[contract-types] 削除エラー:", e);
+      res.status(500).send("削除に失敗しました");
+    }
+  },
+);
+
+// ── フォームボディからフィールド配列をパース ──────────────────────
+function parseFieldsFromBody(fieldsObj) {
+  if (!fieldsObj || typeof fieldsObj !== "object") return [];
+  return Object.values(fieldsObj)
+    .filter((f) => f.key && f.label)
+    .map((f, idx) => ({
+      key: String(f.key).replace(/[^a-zA-Z0-9_]/g, "_"),
+      label: String(f.label).trim(),
+      fieldType: ["text", "number", "date", "select", "textarea"].includes(
+        f.fieldType,
+      )
+        ? f.fieldType
+        : "text",
+      required: f.required === "1" || f.required === true,
+      enabled:
+        f.enabled === "1" || f.enabled === true || f.enabled === undefined,
+      options: f.options
+        ? String(f.options)
+            .split(",")
+            .map((o) => o.trim())
+            .filter(Boolean)
+        : [],
+      order: idx,
+    }));
+}
 
 module.exports = router;
