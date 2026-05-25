@@ -1391,6 +1391,7 @@ const ContractTypeConfigSchema = new mongoose.Schema(
         options: [{ type: String }], // select型の選択肢
         enabled: { type: Boolean, default: true },
         order: { type: Number, default: 0 },
+        systemField: { type: String }, // 標準フィールドのスキーマキー（例: "counterparty", "status"）
       },
     ],
   },

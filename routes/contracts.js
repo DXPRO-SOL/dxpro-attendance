@@ -367,13 +367,35 @@ async function getTypeConfigs() {
     .sort({ sortOrder: 1, createdAt: 1 })
     .lean();
   if (dbConfigs.length === 0) {
-    // 初回：デフォルト設定を一括登録（sortOrderを付与）
+    // 初回：デフォルト設定を一括登録（sortOrderを付与、標準フィールドを追加）
     const withOrder = DEFAULT_TYPE_CONFIGS.map((c, i) => ({
       ...c,
       sortOrder: i,
+      fields: [...STANDARD_FIELDS, ...(c.fields || [])],
     }));
     await ContractTypeConfig.insertMany(withOrder);
     return withOrder;
+  }
+  // マイグレーション：標準フィールドが未登録のレコードに追加
+  const stdKeys = new Set(STANDARD_FIELDS.map((f) => f.key));
+  const ops = [];
+  for (const cfg of dbConfigs) {
+    const existingKeys = new Set((cfg.fields || []).map((f) => f.key));
+    const missing = STANDARD_FIELDS.filter((f) => !existingKeys.has(f.key));
+    if (missing.length > 0) {
+      ops.push({
+        updateOne: {
+          filter: { key: cfg.key },
+          update: { $push: { fields: { $each: missing } } },
+        },
+      });
+    }
+  }
+  if (ops.length > 0) {
+    await ContractTypeConfig.bulkWrite(ops);
+    return await ContractTypeConfig.find()
+      .sort({ sortOrder: 1, createdAt: 1 })
+      .lean();
   }
   return dbConfigs;
 }
@@ -412,6 +434,91 @@ const STATUS_BG = {
   renewed: "#dbeafe",
   canceled: "#f3f4f6",
 };
+
+// ── 標準フィールド定義（スキーマ直結フィールド、全種別に追加される）────────
+const STANDARD_FIELDS = [
+  {
+    key: "_sf_counterparty",
+    systemField: "counterparty",
+    label: "契約先",
+    fieldType: "text",
+    required: true,
+    enabled: true,
+    order: 1010,
+  },
+  {
+    key: "_sf_status",
+    systemField: "status",
+    label: "ステータス",
+    fieldType: "select",
+    required: false,
+    enabled: true,
+    order: 1020,
+    options: [
+      "draft",
+      "active",
+      "expiring_soon",
+      "expired",
+      "renewed",
+      "canceled",
+    ],
+  },
+  {
+    key: "_sf_startDate",
+    systemField: "startDate",
+    label: "契約開始日",
+    fieldType: "date",
+    required: false,
+    enabled: true,
+    order: 1030,
+  },
+  {
+    key: "_sf_endDate",
+    systemField: "endDate",
+    label: "契約終了日",
+    fieldType: "date",
+    required: false,
+    enabled: true,
+    order: 1040,
+  },
+  {
+    key: "_sf_autoRenew",
+    systemField: "autoRenew",
+    label: "自動更新",
+    fieldType: "select",
+    required: false,
+    enabled: true,
+    order: 1050,
+    options: ["false", "true"],
+  },
+  {
+    key: "_sf_renewalPeriodMonths",
+    systemField: "renewalPeriodMonths",
+    label: "更新周期（月）",
+    fieldType: "number",
+    required: false,
+    enabled: true,
+    order: 1060,
+  },
+  {
+    key: "_sf_department",
+    systemField: "department",
+    label: "部署",
+    fieldType: "text",
+    required: false,
+    enabled: true,
+    order: 1070,
+  },
+  {
+    key: "_sf_notes",
+    systemField: "notes",
+    label: "備考・メモ",
+    fieldType: "textarea",
+    required: false,
+    enabled: true,
+    order: 1080,
+  },
+];
 
 function fileIcon(mimetype = "") {
   if (mimetype.includes("pdf")) return "📄";
@@ -477,10 +584,10 @@ const COMMON_STYLE = `
 .ct-card-body{padding:22px}
 
 /* フィルターバー */
-.ct-filter{background:#fff;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,.06);padding:16px 20px;margin-bottom:20px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
-.ct-filter-item{display:flex;flex-direction:column;gap:4px}
-.ct-filter-item label{font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.05em}
-.ct-filter-item select,.ct-filter-item input{padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;color:#374151;background:#f9fafb;min-width:140px}
+.ct-filter{background:#fff;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,.06);padding:14px 18px;margin-bottom:20px;display:flex;flex-wrap:nowrap;gap:8px;align-items:flex-end;overflow-x:auto}
+.ct-filter-item{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
+.ct-filter-item label{font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+.ct-filter-item select,.ct-filter-item input{padding:7px 8px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12.5px;color:#374151;background:#f9fafb;width:100%;min-width:0}
 .ct-filter-item select:focus,.ct-filter-item input:focus{outline:none;border-color:#3b82f6;background:#fff}
 
 /* テーブル */
@@ -742,8 +849,10 @@ router.get("/contracts", requireLogin, async (req, res) => {
               <option value="desc" ${q.dir === "desc" ? "selected" : ""}>降順</option>
             </select>
           </div>
-          <button type="submit" class="ct-btn ct-btn-outline" style="margin-top:auto">🔍 絞り込む</button>
-          <a href="/contracts" class="ct-btn ct-btn-outline" style="margin-top:auto">リセット</a>
+          <div style="display:flex;gap:8px;margin-top:auto;align-items:flex-end">
+            <button type="submit" class="ct-btn ct-btn-primary">🔍 絞り込む</button>
+            <a href="/contracts" class="ct-btn ct-btn-outline">リセット</a>
+          </div>
         </form>
 
         <!-- 一覧テーブル -->
@@ -915,40 +1024,6 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
                   </select>
                 </div>
                 <div class="ct-form-group">
-                  <label>契約先<span class="req">*</span></label>
-                  <input type="text" name="counterparty" required placeholder="例：株式会社〇〇" maxlength="200">
-                </div>
-                <div class="ct-form-group">
-                  <label>ステータス</label>
-                  <select name="status">
-                    ${Object.entries(STATUS_LABEL)
-                      .map(
-                        ([v, l]) =>
-                          `<option value="${v}" ${v === "active" ? "selected" : ""}>${l}</option>`,
-                      )
-                      .join("")}
-                  </select>
-                </div>
-                <div class="ct-form-group">
-                  <label>契約開始日</label>
-                  <input type="date" name="startDate">
-                </div>
-                <div class="ct-form-group">
-                  <label>契約終了日</label>
-                  <input type="date" name="endDate">
-                </div>
-                <div class="ct-form-group">
-                  <label>自動更新</label>
-                  <select name="autoRenew">
-                    <option value="false">なし</option>
-                    <option value="true">あり</option>
-                  </select>
-                </div>
-                <div class="ct-form-group">
-                  <label>更新周期（月）</label>
-                  <input type="number" name="renewalPeriodMonths" value="12" min="1" max="120">
-                </div>
-                <div class="ct-form-group">
                   <label>契約担当者</label>
                   <div class="ct-combo" id="respCombo">
                     <div class="ct-combo-input-wrap">
@@ -958,21 +1033,10 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
                     <div class="ct-combo-dropdown" id="respDropdown"></div>
                   </div>
                 </div>
-                <div class="ct-form-group">
-                  <label>部署</label>
-                  <input type="text" name="department" placeholder="例：営業部、総務部" maxlength="100">
-                </div>
-                <div class="ct-form-group full">
-                  <label>備考・メモ</label>
-                  <textarea name="notes" rows="3" placeholder="特記事項や補足情報を入力..."></textarea>
-                </div>
 
                 <!-- 契約種別ごとの動的フィールド -->
                 <div id="dynamicFieldsSection" class="ct-form-group full" style="display:none">
-                  <div style="border-top:2px solid #e5e7eb;padding-top:16px;margin-bottom:4px">
-                    <div style="font-size:13px;font-weight:800;color:#0b2540;margin-bottom:12px">📌 契約種別固有の情報</div>
-                    <div id="dynamicFieldsContainer" class="ct-form-grid"></div>
-                  </div>
+                  <div id="dynamicFieldsContainer" class="ct-form-grid"></div>
                 </div>
 
                 <div class="ct-form-group full">
@@ -1157,7 +1221,24 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
       }
 
       // ── 契約種別ごとの動的フィールド ──
-      var TYPE_CONFIGS = ${JSON.stringify(activeTypes.map((t) => ({ key: t.key, fields: (t.fields || []).filter((f) => f.enabled !== false).sort((a, b) => (a.order || 0) - (b.order || 0)) })))};
+      var TYPE_CONFIGS = ${JSON.stringify(
+        activeTypes.map((t) => ({
+          key: t.key,
+          fields: (t.fields || [])
+            .filter((f) => f.enabled !== false)
+            .sort((a, b) => (a.order || 0) - (b.order || 0))
+            .map((f) => ({
+              key: f.key,
+              label: f.label,
+              fieldType: f.fieldType,
+              required: f.required || false,
+              options: f.options || [],
+              systemField: f.systemField || null,
+            })),
+        })),
+      )};
+      var STATUS_LABELS = ${JSON.stringify(STATUS_LABEL)};
+      var CURRENT_VALS = { status: 'active', autoRenew: 'false', renewalPeriodMonths: '12' };
       function updateDynamicFields(typeKey) {
         var cfg = TYPE_CONFIGS.find(function(t){ return t.key === typeKey; });
         var section = document.getElementById('dynamicFieldsSection');
@@ -1166,18 +1247,28 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
         section.style.display='block';
         container.innerHTML = cfg.fields.map(function(f){
           var reqMark = f.required ? '<span class="req">*</span>' : '';
+          var fieldName = f.systemField ? f.systemField : 'customFields['+f.key+']';
+          var curVal = f.systemField ? (CURRENT_VALS[f.systemField] !== undefined ? CURRENT_VALS[f.systemField] : '') : '';
           var input = '';
           if(f.fieldType === 'select'){
-            input = '<select name="customFields['+f.key+']"'+(f.required?' required':'')+'>'+
-              '<option value="">-- 選択 --</option>'+
-              (f.options||[]).map(function(o){ return '<option value="'+o.replace(/"/g,'&quot;')+'">'+o+'</option>'; }).join('')+
-              '</select>';
+            var opts = '';
+            if(f.systemField === 'status'){
+              opts = Object.keys(STATUS_LABELS).map(function(v){ return '<option value="'+v+'"'+(curVal===v?' selected':'')+'>'+STATUS_LABELS[v]+'</option>'; }).join('');
+            } else if(f.systemField === 'autoRenew'){
+              opts = '<option value="false"'+(curVal!=='true'?' selected':'')+'>なし</option><option value="true"'+(curVal==='true'?' selected':'')+'>あり</option>';
+            } else {
+              opts = '<option value="">-- 選択 --</option>'+(f.options||[]).map(function(o){ var oe=o.replace(/&/g,'&amp;').replace(/"/g,'&quot;'); return '<option value="'+oe+'"'+(curVal===o?' selected':'')+'>'+(oe)+'</option>'; }).join('');
+            }
+            input = '<select name="'+fieldName+'"'+(f.required?' required':'')+'>'+opts+'</select>';
           } else if(f.fieldType === 'textarea'){
-            input = '<textarea name="customFields['+f.key+']" rows="2"'+(f.required?' required':'')+'></textarea>';
+            input = '<textarea name="'+fieldName+'" rows="3"'+(f.required?' required':'')+'>'+(curVal||'')+'</textarea>';
           } else {
-            input = '<input type="'+(f.fieldType||'text')+'" name="customFields['+f.key+']"'+(f.required?' required':'')+' placeholder="'+f.label+'">';
+            var extra = f.systemField === 'renewalPeriodMonths' ? ' min="1" max="120"' : '';
+            var ph = f.label.replace(/"/g,'&quot;');
+            input = '<input type="'+(f.fieldType||'text')+'" name="'+fieldName+'"'+(f.required?' required':'')+' value="'+(curVal||'')+'" placeholder="'+ph+'"'+extra+'>';
           }
-          return '<div class="ct-form-group"><label>'+f.label+reqMark+'</label>'+input+'</div>';
+          var isFull = f.fieldType === 'textarea' ? ' full' : '';
+          return '<div class="ct-form-group'+isFull+'"><label>'+f.label+reqMark+'</label>'+input+'</div>';
         }).join('');
       }
       </script>
@@ -1328,10 +1419,11 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
           <div class="ct-hero-actions">
             <a href="/contracts" class="ct-btn ct-btn-secondary">← 一覧に戻る</a>
             ${isAdminUser ? `<a href="/contracts/${contract._id}/edit" class="ct-btn ct-btn-primary">✏️ 編集</a>` : ""}
+            ${isAdminUser ? `<form method="post" action="/contracts/${contract._id}/delete" onsubmit="return confirm('「${escapeHtml(contract.name)}」を完全に削除しますか？この操作は取り消せません。')" style="display:inline;margin:0"><button type="submit" class="ct-btn ct-btn-danger">🗑 削除</button></form>` : ""}
           </div>
         </div>
 
-        <div class="ct-detail-grid">
+        <div class="ct-detail-grid" style="grid-template-columns:1fr">
           <!-- 左カラム: 基本情報 -->
           <div>
             <div class="ct-card">
@@ -1488,83 +1580,8 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
             </div>
           </div>
 
-          <!-- 右カラム: 更新履歴・アクション -->
-          <div>
-            ${
-              isAdminUser
-                ? `
-            <!-- 契約更新アクション -->
-            <div class="ct-card" style="border:2px solid #dbeafe">
-              <div class="ct-card-head" style="background:#eff6ff">
-                <div class="ct-card-title" style="color:#2563eb">🔄 契約更新を記録</div>
-              </div>
-              <div class="ct-card-body">
-                <form method="post" action="/contracts/${contract._id}/renew">
-                  <div style="display:flex;flex-direction:column;gap:10px">
-                    <div>
-                      <label style="font-size:11px;font-weight:700;color:#6b7280;display:block;margin-bottom:4px">新しい終了日<span style="color:#ef4444">*</span></label>
-                      <input type="date" name="newEndDate" required style="padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;width:100%">
-                    </div>
-                    <div>
-                      <label style="font-size:11px;font-weight:700;color:#6b7280;display:block;margin-bottom:4px">更新備考</label>
-                      <textarea name="renewNotes" rows="2" placeholder="更新に関するメモ..." style="padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;width:100%;resize:none"></textarea>
-                    </div>
-                    <button type="submit" class="ct-btn" style="background:#2563eb;color:#fff;width:100%;justify-content:center">✅ 更新を記録する</button>
-                  </div>
-                </form>
-              </div>
-            </div>`
-                : ""
-            }
-
-            <!-- 更新履歴 -->
-            <div class="ct-card">
-              <div class="ct-card-head">
-                <div class="ct-card-title">📅 更新履歴</div>
-              </div>
-              <div class="ct-card-body" style="padding-top:10px">
-                ${
-                  contract.renewalHistory.length === 0
-                    ? `
-                <div style="text-align:center;padding:16px;color:#9ca3af;font-size:13px">更新履歴がありません</div>`
-                    : `
-                <div class="ct-timeline">
-                  ${[...contract.renewalHistory]
-                    .reverse()
-                    .map(
-                      (r) => `
-                  <div class="ct-timeline-item">
-                    <div class="ct-timeline-dot"></div>
-                    <div class="ct-timeline-body">
-                      <div class="ct-timeline-date">${r.renewedAt ? moment.tz(r.renewedAt, "Asia/Tokyo").format("YYYY/MM/DD HH:mm") : "—"}</div>
-                      <div class="ct-timeline-text">
-                        <strong>新終了日:</strong> ${r.newEndDate ? moment.tz(r.newEndDate, "Asia/Tokyo").format("YYYY年MM月DD日") : "—"}
-                        ${r.previousEndDate ? `<br><span style="font-size:11px;color:#9ca3af">旧: ${moment.tz(r.previousEndDate, "Asia/Tokyo").format("YYYY年MM月DD日")}</span>` : ""}
-                        ${r.notes ? `<br><span style="font-size:12px;color:#6b7280">${escapeHtml(r.notes)}</span>` : ""}
-                      </div>
-                    </div>
-                  </div>`,
-                    )
-                    .join("")}
-                </div>`
-                }
-              </div>
-            </div>
-
-            ${
-              isAdminUser
-                ? `
-            <!-- 削除 -->
-            <div class="ct-card" style="border:1px solid #fecaca">
-              <div class="ct-card-body">
-                <form method="post" action="/contracts/${contract._id}/delete" onsubmit="return confirm('「${escapeHtml(contract.name)}」を完全に削除しますか？この操作は取り消せません。')">
-                  <button type="submit" class="ct-btn ct-btn-danger" style="width:100%;justify-content:center">🗑 この契約を削除</button>
-                </form>
-              </div>
-            </div>`
-                : ""
-            }
-          </div>
+          <!-- 右カラム（予備） -->
+          <div style="display:none"></div>
         </div>
       </div>
       `,
@@ -1670,40 +1687,6 @@ router.get("/contracts/:id/edit", requireLogin, isAdmin, async (req, res) => {
                   </select>
                 </div>
                 <div class="ct-form-group">
-                  <label>契約先<span class="req">*</span></label>
-                  <input type="text" name="counterparty" required value="${escapeHtml(contract.counterparty)}" maxlength="200">
-                </div>
-                <div class="ct-form-group">
-                  <label>ステータス</label>
-                  <select name="status">
-                    ${Object.entries(STATUS_LABEL)
-                      .map(
-                        ([v, l]) =>
-                          `<option value="${v}" ${contract.status === v ? "selected" : ""}>${l}</option>`,
-                      )
-                      .join("")}
-                  </select>
-                </div>
-                <div class="ct-form-group">
-                  <label>契約開始日</label>
-                  <input type="date" name="startDate" value="${contract.startDate ? moment.tz(contract.startDate, "Asia/Tokyo").format("YYYY-MM-DD") : ""}">
-                </div>
-                <div class="ct-form-group">
-                  <label>契約終了日</label>
-                  <input type="date" name="endDate" value="${contract.endDate ? moment.tz(contract.endDate, "Asia/Tokyo").format("YYYY-MM-DD") : ""}">
-                </div>
-                <div class="ct-form-group">
-                  <label>自動更新</label>
-                  <select name="autoRenew">
-                    <option value="false" ${!contract.autoRenew ? "selected" : ""}>なし</option>
-                    <option value="true" ${contract.autoRenew ? "selected" : ""}>あり</option>
-                  </select>
-                </div>
-                <div class="ct-form-group">
-                  <label>更新周期（月）</label>
-                  <input type="number" name="renewalPeriodMonths" value="${contract.renewalPeriodMonths || 12}" min="1" max="120">
-                </div>
-                <div class="ct-form-group">
                   <label>契約担当者</label>
                   <div class="ct-combo" id="respCombo">
                     <div class="ct-combo-input-wrap">
@@ -1713,51 +1696,91 @@ router.get("/contracts/:id/edit", requireLogin, isAdmin, async (req, res) => {
                     <div class="ct-combo-dropdown" id="respDropdown"></div>
                   </div>
                 </div>
-                <div class="ct-form-group">
-                  <label>部署</label>
-                  <input type="text" name="department" value="${escapeHtml(contract.department || "")}" maxlength="100">
-                </div>
-                <div class="ct-form-group full">
-                  <label>備考・メモ</label>
-                  <textarea name="notes" rows="3">${escapeHtml(contract.notes || "")}</textarea>
-                </div>
 
                 <!-- 契約種別ごとの動的フィールド（編集） -->
-                <div id="dynamicFieldsSection" class="ct-form-group full" style="${typeConfigs.find((t) => t.key === contract.contractType)?.fields?.filter((f) => f.enabled !== false).length > 0 ? "display:block" : "display:none"}">
-                  <div style="border-top:2px solid #e5e7eb;padding-top:16px;margin-bottom:4px">
-                    <div style="font-size:13px;font-weight:800;color:#0b2540;margin-bottom:12px">📌 契約種別固有の情報</div>
-                    <div id="dynamicFieldsContainer" class="ct-form-grid">
-                      ${
-                        typeConfigs.find((t) => t.key === contract.contractType)
-                          ? (
-                              typeConfigs.find(
-                                (t) => t.key === contract.contractType,
-                              ).fields || []
-                            )
-                              .filter((f) => f.enabled !== false)
-                              .sort((a, b) => (a.order || 0) - (b.order || 0))
-                              .map((f) => {
-                                const val =
-                                  customFields[f.key] != null
-                                    ? String(customFields[f.key])
-                                    : "";
-                                const reqMark = f.required
-                                  ? '<span class="req">*</span>'
-                                  : "";
-                                let input = "";
-                                if (f.fieldType === "select") {
-                                  input = `<select name="customFields[${f.key}]"${f.required ? " required" : ""}><option value="">-- 選択 --</option>${(f.options || []).map((o) => `<option value="${escapeHtml(o)}"${val === o ? " selected" : ""}>${escapeHtml(o)}</option>`).join("")}</select>`;
-                                } else if (f.fieldType === "textarea") {
-                                  input = `<textarea name="customFields[${f.key}]" rows="2"${f.required ? " required" : ""}>${escapeHtml(val)}</textarea>`;
-                                } else {
-                                  input = `<input type="${f.fieldType || "text"}" name="customFields[${f.key}]"${f.required ? " required" : ""} value="${escapeHtml(val)}" placeholder="${escapeHtml(f.label)}">`;
-                                }
-                                return `<div class="ct-form-group"><label>${escapeHtml(f.label)}${reqMark}</label>${input}</div>`;
-                              })
-                              .join("")
-                          : ""
-                      }
-                    </div>
+                <div id="dynamicFieldsSection" class="ct-form-group full" style="${(() => {
+                  const tc = typeConfigs.find(
+                    (t) => t.key === contract.contractType,
+                  );
+                  return tc &&
+                    (tc.fields || []).filter((f) => f.enabled !== false)
+                      .length > 0
+                    ? "display:block"
+                    : "display:none";
+                })()}">
+                  <div id="dynamicFieldsContainer" class="ct-form-grid">
+                    ${(() => {
+                      const tc = typeConfigs.find(
+                        (t) => t.key === contract.contractType,
+                      );
+                      if (!tc) return "";
+                      const stdVals = {
+                        counterparty: contract.counterparty || "",
+                        status: contract.status || "active",
+                        startDate: contract.startDate
+                          ? moment
+                              .tz(contract.startDate, "Asia/Tokyo")
+                              .format("YYYY-MM-DD")
+                          : "",
+                        endDate: contract.endDate
+                          ? moment
+                              .tz(contract.endDate, "Asia/Tokyo")
+                              .format("YYYY-MM-DD")
+                          : "",
+                        autoRenew: contract.autoRenew ? "true" : "false",
+                        renewalPeriodMonths: String(
+                          contract.renewalPeriodMonths || 12,
+                        ),
+                        department: contract.department || "",
+                        notes: contract.notes || "",
+                      };
+                      return (tc.fields || [])
+                        .filter((f) => f.enabled !== false)
+                        .sort((a, b) => (a.order || 0) - (b.order || 0))
+                        .map((f) => {
+                          const isStd = !!f.systemField;
+                          const val = isStd
+                            ? stdVals[f.systemField] || ""
+                            : customFields[f.key] != null
+                              ? String(customFields[f.key])
+                              : "";
+                          const fieldName = isStd
+                            ? f.systemField
+                            : `customFields[${f.key}]`;
+                          const reqMark = f.required
+                            ? '<span class="req">*</span>'
+                            : "";
+                          let input = "";
+                          if (f.fieldType === "select") {
+                            let opts = "";
+                            if (f.systemField === "status") {
+                              opts = Object.entries(STATUS_LABEL)
+                                .map(
+                                  ([v, l]) =>
+                                    `<option value="${v}"${val === v ? " selected" : ""}>${escapeHtml(l)}</option>`,
+                                )
+                                .join("");
+                            } else if (f.systemField === "autoRenew") {
+                              opts = `<option value="false"${val !== "true" ? " selected" : ""}>なし</option><option value="true"${val === "true" ? " selected" : ""}>あり</option>`;
+                            } else {
+                              opts = `<option value="">-- 選択 --</option>${(f.options || []).map((o) => `<option value="${escapeHtml(o)}"${val === o ? " selected" : ""}>${escapeHtml(o)}</option>`).join("")}`;
+                            }
+                            input = `<select name="${fieldName}"${f.required ? " required" : ""}>${opts}</select>`;
+                          } else if (f.fieldType === "textarea") {
+                            input = `<textarea name="${fieldName}" rows="3"${f.required ? " required" : ""}>${escapeHtml(val)}</textarea>`;
+                          } else {
+                            const extra =
+                              f.systemField === "renewalPeriodMonths"
+                                ? ' min="1" max="120"'
+                                : "";
+                            input = `<input type="${f.fieldType || "text"}" name="${fieldName}"${f.required ? " required" : ""} value="${escapeHtml(val)}" placeholder="${escapeHtml(f.label)}"${extra}>`;
+                          }
+                          const isFull =
+                            f.fieldType === "textarea" ? " full" : "";
+                          return `<div class="ct-form-group${isFull}"><label>${escapeHtml(f.label)}${reqMark}</label>${input}</div>`;
+                        })
+                        .join("");
+                    })()}
                   </div>
                 </div>
 
@@ -1908,8 +1931,40 @@ router.get("/contracts/:id/edit", requireLogin, isAdmin, async (req, res) => {
       });
 
       // ── 契約種別ごとの動的フィールド ──
-      var TYPE_CONFIGS = ${JSON.stringify(activeTypes.map((t) => ({ key: t.key, fields: (t.fields || []).filter((f) => f.enabled !== false).sort((a, b) => (a.order || 0) - (b.order || 0)) })))};
-      var CURRENT_CUSTOM = ${JSON.stringify(customFields)};
+      var TYPE_CONFIGS = ${JSON.stringify(
+        activeTypes.map((t) => ({
+          key: t.key,
+          fields: (t.fields || [])
+            .filter((f) => f.enabled !== false)
+            .sort((a, b) => (a.order || 0) - (b.order || 0))
+            .map((f) => ({
+              key: f.key,
+              label: f.label,
+              fieldType: f.fieldType,
+              required: f.required || false,
+              options: f.options || [],
+              systemField: f.systemField || null,
+            })),
+        })),
+      )};
+      var STATUS_LABELS = ${JSON.stringify(STATUS_LABEL)};
+      var CURRENT_VALS = ${JSON.stringify({
+        counterparty: contract.counterparty || "",
+        status: contract.status || "active",
+        startDate: contract.startDate
+          ? moment.tz(contract.startDate, "Asia/Tokyo").format("YYYY-MM-DD")
+          : "",
+        endDate: contract.endDate
+          ? moment.tz(contract.endDate, "Asia/Tokyo").format("YYYY-MM-DD")
+          : "",
+        autoRenew: contract.autoRenew ? "true" : "false",
+        renewalPeriodMonths: String(contract.renewalPeriodMonths || 12),
+        department: contract.department || "",
+        notes: contract.notes || "",
+        ...Object.fromEntries(
+          Object.entries(customFields).map(([k, v]) => ["cf_" + k, String(v)]),
+        ),
+      })};
       function updateDynamicFields(typeKey) {
         var cfg = TYPE_CONFIGS.find(function(t){ return t.key === typeKey; });
         var section = document.getElementById('dynamicFieldsSection');
@@ -1917,20 +1972,31 @@ router.get("/contracts/:id/edit", requireLogin, isAdmin, async (req, res) => {
         if(!cfg || !cfg.fields || cfg.fields.length === 0){ section.style.display='none'; container.innerHTML=''; return; }
         section.style.display='block';
         container.innerHTML = cfg.fields.map(function(f){
-          var existing = CURRENT_CUSTOM[f.key] != null ? String(CURRENT_CUSTOM[f.key]) : '';
           var reqMark = f.required ? '<span class="req">*</span>' : '';
+          var fieldName = f.systemField ? f.systemField : 'customFields['+f.key+']';
+          var curVal = f.systemField ? (CURRENT_VALS[f.systemField] !== undefined ? CURRENT_VALS[f.systemField] : '') : (CURRENT_VALS['cf_'+f.key] || '');
           var input = '';
           if(f.fieldType === 'select'){
-            input = '<select name="customFields['+f.key+']"'+(f.required?' required':'')+'>'+
-              '<option value="">-- 選択 --</option>'+
-              (f.options||[]).map(function(o){ return '<option value="'+o.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')+'"'+(existing===o?' selected':'')+'>'+o.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</option>'; }).join('')+
-              '</select>';
+            var opts = '';
+            if(f.systemField === 'status'){
+              opts = Object.keys(STATUS_LABELS).map(function(v){ return '<option value="'+v+'"'+(curVal===v?' selected':'')+'>'+STATUS_LABELS[v]+'</option>'; }).join('');
+            } else if(f.systemField === 'autoRenew'){
+              opts = '<option value="false"'+(curVal!=='true'?' selected':'')+'>なし</option><option value="true"'+(curVal==='true'?' selected':'')+'>あり</option>';
+            } else {
+              opts = '<option value="">-- 選択 --</option>'+(f.options||[]).map(function(o){ var oe=o.replace(/&/g,'&amp;').replace(/"/g,'&quot;'); return '<option value="'+oe+'"'+(curVal===o?' selected':'')+'>'+(oe)+'</option>'; }).join('');
+            }
+            input = '<select name="'+fieldName+'"'+(f.required?' required':'')+'>'+opts+'</select>';
           } else if(f.fieldType === 'textarea'){
-            input = '<textarea name="customFields['+f.key+']" rows="2"'+(f.required?' required':'')+'>'+(existing.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'))+'</textarea>';
+            var tv = curVal.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            input = '<textarea name="'+fieldName+'" rows="3"'+(f.required?' required':'')+'>'+(tv)+'</textarea>';
           } else {
-            input = '<input type="'+(f.fieldType||'text')+'" name="customFields['+f.key+']"'+(f.required?' required':'')+' value="'+(existing.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'))+'" placeholder="'+f.label.replace(/"/g,'&quot;')+'">';
+            var extra = f.systemField === 'renewalPeriodMonths' ? ' min="1" max="120"' : '';
+            var ev = curVal.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            var ph = f.label.replace(/"/g,'&quot;');
+            input = '<input type="'+(f.fieldType||'text')+'" name="'+fieldName+'"'+(f.required?' required':'')+' value="'+ev+'" placeholder="'+ph+'"'+extra+'>';
           }
-          return '<div class="ct-form-group"><label>'+f.label.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+reqMark+'</label>'+input+'</div>';
+          var isFull = f.fieldType === 'textarea' ? ' full' : '';
+          return '<div class="ct-form-group'+isFull+'"><label>'+f.label.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+reqMark+'</label>'+input+'</div>';
         }).join('');
       }
       </script>
@@ -2105,56 +2171,6 @@ router.post(
     }
   },
 );
-
-// =====================================================================
-// POST /contracts/:id/renew - 更新記録（管理者のみ）
-// =====================================================================
-router.post("/contracts/:id/renew", requireLogin, isAdmin, async (req, res) => {
-  try {
-    const contract = await Contract.findById(req.params.id);
-    if (!contract) return res.status(404).send("契約が見つかりません。");
-
-    const { newEndDate, renewNotes } = req.body;
-    if (!newEndDate)
-      return res.status(400).send("新しい終了日を入力してください。");
-
-    contract.renewalHistory.push({
-      renewedAt: new Date(),
-      previousEndDate: contract.endDate,
-      newEndDate: new Date(newEndDate),
-      renewedBy: req.session.userId,
-      notes: renewNotes ? renewNotes.trim() : "",
-    });
-
-    contract.endDate = new Date(newEndDate);
-    contract.status = "renewed";
-    contract.notificationsSent = []; // 通知フラグリセット（新期限で再通知）
-    await contract.save();
-
-    // 担当者に通知（ユーザー名で検索）
-    if (contract.responsibleUser) {
-      const respUser = await User.findOne({
-        username: contract.responsibleUser,
-      }).lean();
-      if (respUser) {
-        await createNotification({
-          userId: respUser._id,
-          type: "contract_renewed",
-          title: `🔄 契約が更新されました`,
-          body: `「${contract.name}」新終了日: ${moment.tz(contract.endDate, "Asia/Tokyo").format("YYYY年MM月DD日")}`,
-          link: `/contracts/${contract._id}`,
-          fromUserId: req.session.userId,
-          meta: { contractId: contract._id },
-        });
-      }
-    }
-
-    res.redirect(`/contracts/${contract._id}?updated=1`);
-  } catch (e) {
-    console.error("[contracts] 更新記録エラー:", e);
-    res.status(500).send("更新記録に失敗しました");
-  }
-});
 
 // =====================================================================
 // 管理者向け：契約種別管理（/admin/contract-types）
@@ -2582,10 +2598,11 @@ router.get(
                     .sort((a, b) => (a.order || 0) - (b.order || 0))
                     .map(
                       (f, i) => `
-                  <div class="adct-field-row" id="field-${i}">
+                  <div class="adct-field-row" id="field-${i}"${f.systemField ? ' style="background:#fefce8;border-color:#fde68a"' : ""}>
+                    ${f.systemField ? `<input type="hidden" name="fields[${i}][systemField]" value="${escapeHtml(f.systemField)}">` : ""}
                     <div class="adct-fi">
-                      <div class="adct-fi-lbl">キー <span class="adct-fi-hint">英数字・_のみ</span></div>
-                      <input type="text" name="fields[${i}][key]" value="${escapeHtml(f.key)}" placeholder="例: amount" required pattern="[a-zA-Z0-9_]+" style="width:120px">
+                      <div class="adct-fi-lbl">${f.systemField ? '🔒 キー <span class="adct-fi-hint">標準フィールド</span>' : 'キー <span class="adct-fi-hint">英数字・_のみ</span>'}</div>
+                      <input type="text" name="fields[${i}][key]" value="${escapeHtml(f.key)}" placeholder="例: amount" required pattern="[a-zA-Z0-9_]+" style="width:120px${f.systemField ? ";background:#f3f4f6;color:#6b7280" : ""}"${f.systemField ? " readonly" : ""}>
                     </div>
                     <div class="adct-fi" style="width:160px">
                       <div class="adct-fi-lbl">表示ラベル <span class="adct-fi-hint">画面に表示される名前</span></div>
@@ -2754,6 +2771,9 @@ function parseFieldsFromBody(fieldsObj) {
             .filter(Boolean)
         : [],
       order: idx,
+      ...(f.systemField
+        ? { systemField: String(f.systemField).replace(/[^a-zA-Z0-9_]/g, "") }
+        : {}),
     }));
 }
 

@@ -398,6 +398,33 @@ router.get("/hr", requireLogin, async (req, res) => {
                 /* ── 管理者向けKPI行 ── */
                 .hrp-admin-kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px}
 
+                /* ── 機能ナビゲーショングリッド ── */
+                .hrp-nav-section{margin-bottom:28px}
+                .hrp-nav-grid{
+                    display:grid;
+                    grid-template-columns:repeat(auto-fill,minmax(130px,1fr));
+                    gap:12px;
+                }
+                .hrp-nav-card{
+                    display:flex;flex-direction:column;align-items:center;justify-content:center;
+                    gap:10px;padding:18px 12px;border-radius:14px;text-decoration:none;
+                    background:#fff;border:1.5px solid #e8edf7;
+                    box-shadow:0 1px 4px rgba(11,36,80,.06);
+                    transition:box-shadow .18s,border-color .18s,transform .15s;
+                    cursor:pointer;text-align:center;
+                }
+                .hrp-nav-card:hover{
+                    box-shadow:0 4px 20px rgba(11,95,255,.13);
+                    border-color:#0b5fff;transform:translateY(-2px)
+                }
+                .hrp-nav-icon{
+                    width:52px;height:52px;border-radius:14px;
+                    display:flex;align-items:center;justify-content:center;
+                    font-size:24px;flex-shrink:0
+                }
+                .hrp-nav-label{font-size:12.5px;font-weight:700;color:#1e293b;line-height:1.3}
+                .hrp-nav-desc{font-size:10.5px;color:#94a3b8;margin-top:2px;font-weight:500}
+
                 /* ── タブ（管理者用） ── */
                 .hrp-tab-bar{
                     display:flex;gap:2px;padding:14px 22px 0;
@@ -452,13 +479,13 @@ router.get("/hr", requireLogin, async (req, res) => {
                 <div class="hrp-hero">
                     <div class="hrp-hero-left">
                         <div class="hrp-hero-eyebrow">Human Resources Portal</div>
-                        <div class="hrp-hero-name">👋 ${escapeHtml(employee.name)} さん</div>
+                        <div class="hrp-hero-name">人事管理ダッシュボード</div>
                         <div class="hrp-hero-meta">
+                            <span><i class="fa-solid fa-user" style="margin-right:4px;opacity:.7"></i>${escapeHtml(employee.name)}</span>
+                            <span class="hrp-hero-meta-sep">|</span>
                             <span>${escapeHtml(employee.department || "—")}</span>
                             <span class="hrp-hero-meta-sep">|</span>
                             <span>${escapeHtml(employee.position || "—")}</span>
-                            <span class="hrp-hero-meta-sep">|</span>
-                            <span>ID: ${escapeHtml(employee.employeeId || "—")}</span>
                         </div>
                     </div>
                     <div class="hrp-hero-stats">
@@ -474,6 +501,89 @@ router.get("/hr", requireLogin, async (req, res) => {
                             <div class="hrp-hero-stat-val">${myOvertimeHours}</div>
                             <div class="hrp-hero-stat-lbl">直近残業（h）</div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- ═══ 機能メニュー ═══ -->
+                <div class="hrp-nav-section">
+                    <div class="hrp-section-label">機能メニュー</div>
+                    <div class="hrp-nav-grid">
+                        ${
+                          isAdminUser
+                            ? `
+                        <a href="/hr" class="hrp-nav-card">
+                            <div class="hrp-nav-icon" style="background:#eff6ff;color:#0b5fff"><i class="fa-solid fa-users"></i></div>
+                            <div>
+                                <div class="hrp-nav-label">社員管理</div>
+                                <div class="hrp-nav-desc">社員一覧・追加</div>
+                            </div>
+                        </a>
+                        <a href="/hr/payroll/admin" class="hrp-nav-card">
+                            <div class="hrp-nav-icon" style="background:#e8faf0;color:#16a34a"><i class="fa-solid fa-coins"></i></div>
+                            <div>
+                                <div class="hrp-nav-label">給与管理</div>
+                                <div class="hrp-nav-desc">給与計算・確定</div>
+                            </div>
+                        </a>
+                        <a href="/admin/leave-requests" class="hrp-nav-card">
+                            <div class="hrp-nav-icon" style="background:#fef9c3;color:#ca8a04"><i class="fa-solid fa-check-to-slot"></i></div>
+                            <div>
+                                <div class="hrp-nav-label">休暇承認</div>
+                                <div class="hrp-nav-desc">申請レビュー${allPendingLeaves > 0 ? ` <span style="color:#ef4444;font-weight:800">(${allPendingLeaves})</span>` : ""}</div>
+                            </div>
+                        </a>
+                        <a href="/contracts" class="hrp-nav-card">
+                            <div class="hrp-nav-icon" style="background:#fdf4ff;color:#9333ea"><i class="fa-solid fa-file-contract"></i></div>
+                            <div>
+                                <div class="hrp-nav-label">契約管理</div>
+                                <div class="hrp-nav-desc">契約書・更新</div>
+                            </div>
+                        </a>
+                        `
+                            : ""
+                        }
+                        <a href="/hr/daily-report" class="hrp-nav-card">
+                            <div class="hrp-nav-icon" style="background:#f0f4ff;color:#4f46e5"><i class="fa-solid fa-clipboard-list"></i></div>
+                            <div>
+                                <div class="hrp-nav-label">日報管理</div>
+                                <div class="hrp-nav-desc">日報・提出</div>
+                            </div>
+                        </a>
+                        <a href="/hr/payroll" class="hrp-nav-card">
+                            <div class="hrp-nav-icon" style="background:#fffbeb;color:#d97706"><i class="fa-solid fa-yen-sign"></i></div>
+                            <div>
+                                <div class="hrp-nav-label">給与明細</div>
+                                <div class="hrp-nav-desc">明細確認</div>
+                            </div>
+                        </a>
+                        <a href="/leave/apply" class="hrp-nav-card">
+                            <div class="hrp-nav-icon" style="background:#f0fdf4;color:#16a34a"><i class="fa-solid fa-plane-departure"></i></div>
+                            <div>
+                                <div class="hrp-nav-label">休暇申請</div>
+                                <div class="hrp-nav-desc">申請・履歴</div>
+                            </div>
+                        </a>
+                        <a href="/overtime" class="hrp-nav-card">
+                            <div class="hrp-nav-icon" style="background:#fff1f2;color:#ef4444"><i class="fa-solid fa-clock"></i></div>
+                            <div>
+                                <div class="hrp-nav-label">残業申請</div>
+                                <div class="hrp-nav-desc">残業登録</div>
+                            </div>
+                        </a>
+                        <a href="/goals" class="hrp-nav-card">
+                            <div class="hrp-nav-icon" style="background:#fdf4ff;color:#9333ea"><i class="fa-solid fa-bullseye"></i></div>
+                            <div>
+                                <div class="hrp-nav-label">目標管理</div>
+                                <div class="hrp-nav-desc">目標・進捗</div>
+                            </div>
+                        </a>
+                        <a href="/workflow" class="hrp-nav-card">
+                            <div class="hrp-nav-icon" style="background:#ecfdf5;color:#059669"><i class="fa-solid fa-diagram-project"></i></div>
+                            <div>
+                                <div class="hrp-nav-label">ワークフロー</div>
+                                <div class="hrp-nav-desc">申請フロー</div>
+                            </div>
+                        </a>
                     </div>
                 </div>
 
