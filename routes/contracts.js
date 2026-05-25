@@ -413,6 +413,7 @@ function buildTypeMaps(configs) {
 const STATUS_LABEL = {
   draft: "下書き",
   active: "有効",
+  pending_approval: "承認中",
   expiring_soon: "期限切れ間近",
   expired: "期限切れ",
   renewed: "更新済み",
@@ -421,6 +422,7 @@ const STATUS_LABEL = {
 const STATUS_COLOR = {
   draft: "#9ca3af",
   active: "#16a34a",
+  pending_approval: "#7c3aed",
   expiring_soon: "#ea580c",
   expired: "#ef4444",
   renewed: "#2563eb",
@@ -429,6 +431,7 @@ const STATUS_COLOR = {
 const STATUS_BG = {
   draft: "#f3f4f6",
   active: "#dcfce7",
+  pending_approval: "#f3e8ff",
   expiring_soon: "#ffedd5",
   expired: "#fee2e2",
   renewed: "#dbeafe",
@@ -940,11 +943,17 @@ router.get("/contracts", requireLogin, async (req, res) => {
 // =====================================================================
 router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
   try {
-    const [users, employees, typeConfigs] = await Promise.all([
-      User.find().sort({ username: 1 }).lean(),
-      Employee.find().sort({ name: 1 }).lean(),
-      getTypeConfigs(),
-    ]);
+    const [users, employees, typeConfigs, approverCandidates] =
+      await Promise.all([
+        User.find().sort({ username: 1 }).lean(),
+        Employee.find().sort({ name: 1 }).lean(),
+        getTypeConfigs(),
+        User.find({
+          $or: [{ isAdmin: true }, { role: { $in: ["admin", "manager"] } }],
+        })
+          .sort({ username: 1 })
+          .lean(),
+      ]);
     const activeTypes = typeConfigs.filter((c) => c.isActive !== false);
     // コンボボックス候補：社員名＋部署のオブジェクト配列（JSONとしてページに埋め込む）
     const nameSuggestions = employees.map((e) => ({
@@ -982,6 +991,15 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
         .ct-combo-dept{font-size:.71rem;color:#9ca3af;margin-top:1px}
         .ct-combo-item:hover .ct-combo-name,.ct-combo-item.active .ct-combo-name{color:#2563eb}
         .ct-combo-empty{padding:9px 14px;font-size:12px;color:#9ca3af;font-style:italic}
+        /* ── 承認フロー選択UI ── */
+        .ct-approver-cand{display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;transition:.1s;border-bottom:1px solid #f1f5f9}
+        .ct-approver-cand:last-child{border-bottom:none}
+        .ct-approver-cand:hover{background:#eff6ff}
+        .ct-approver-cand.added{background:#f0fdf4;cursor:default;opacity:.8}
+        .ct-approver-add-icon{font-size:15px;color:#2563eb;font-weight:700;flex-shrink:0;transition:.1s}
+        .ct-approver-cand.added .ct-approver-add-icon{color:#16a34a}
+        .ct-approver-sel-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid #f1f5f9}
+        .ct-approver-sel-item:last-child{border-bottom:none}
       </style>
       <div class="ct">
         <div class="ct-hero">
@@ -1039,6 +1057,47 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
                   <div id="dynamicFieldsContainer" class="ct-form-grid"></div>
                 </div>
 
+                <!-- ── 承認フロー設定 ── -->
+                <div class="ct-form-group full" style="border-top:2px solid #e5e7eb;padding-top:16px">
+                  <label style="font-size:14px;font-weight:800;color:#0b2540;margin-bottom:10px">
+                    ✅ 承認フロー設定
+                    <span style="font-size:11px;font-weight:400;color:#9ca3af;margin-left:8px">承認者を設定すると、登録後「承認中」ステータスになります</span>
+                  </label>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                    <!-- 承認者候補 -->
+                    <div>
+                      <div style="font-size:11px;font-weight:700;color:#6b7280;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">承認者候補（部門長・管理者）</div>
+                      <div id="approver-candidates" style="border:1.5px solid #e5e7eb;border-radius:10px;max-height:220px;overflow-y:auto;background:#f9fafb">
+                        ${
+                          approverCandidates.length === 0
+                            ? `<div style="padding:16px;text-align:center;color:#9ca3af;font-size:12px">承認可能なユーザーがいません</div>`
+                            : approverCandidates
+                                .map(
+                                  (u) => `
+                        <div class="ct-approver-cand" data-id="${u._id}" data-name="${escapeHtml(u.username)}">
+                          <div class="ct-combo-av" style="width:28px;height:28px;font-size:.7rem;flex-shrink:0">${u.username.charAt(0).toUpperCase()}</div>
+                          <div style="flex:1;min-width:0">
+                            <div style="font-size:13px;font-weight:600;color:#374151">${escapeHtml(u.username)}</div>
+                            <div style="font-size:11px;color:#9ca3af">${u.role === "admin" ? "管理者" : "部門長"}</div>
+                          </div>
+                          <div class="ct-approver-add-icon">＋</div>
+                        </div>`,
+                                )
+                                .join("")
+                        }
+                      </div>
+                    </div>
+                    <!-- 選択済み承認者（順番） -->
+                    <div>
+                      <div style="font-size:11px;font-weight:700;color:#6b7280;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">承認順序（上から順に承認）</div>
+                      <div id="approver-selected" style="border:1.5px solid #e5e7eb;border-radius:10px;min-height:80px;background:#fff;padding:6px">
+                        <div id="approver-empty-msg" style="text-align:center;color:#9ca3af;font-size:12px;padding:20px 0">左から承認者を選んでください</div>
+                      </div>
+                      <div id="approver-inputs"></div>
+                    </div>
+                  </div>
+                </div>
+
                 <div class="ct-form-group full">
                   <label>契約書ファイル（PDF/Word/Excel/画像、最大30MB、複数可）</label>
                   <div class="ct-upload-zone" id="drop-zone" onclick="document.getElementById('fileInput').click()">
@@ -1061,10 +1120,11 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
       <script>
       // ── 契約名コンボボックス ──
       (function(){
-        var SUGGESTIONS = ${JSON.stringify(nameSuggestions)};
+        var SUGGESTIONS = ${JSON.stringify(userSuggestions)};
         var input = document.getElementById('nameInput');
         var dropdown = document.getElementById('nameDropdown');
         var arrow = document.getElementById('nameArrow');
+        if (!input || !dropdown || !arrow) return;
         var activeIdx = -1;
 
         function renderDropdown(filter) {
@@ -1143,10 +1203,11 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
 
       // ── 契約担当者コンボボックス ──
       (function(){
-        var USERS = ${JSON.stringify(nameSuggestions)};
+        var USERS = ${JSON.stringify(userSuggestions)};
         var input = document.getElementById('respInput');
         var dropdown = document.getElementById('respDropdown');
         var arrow = document.getElementById('respArrow');
+        if (!input || !dropdown || !arrow) return;
         var activeIdx = -1;
         function renderDropdown(filter) {
           var q = filter ? filter.toLowerCase() : '';
@@ -1271,6 +1332,48 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
           return '<div class="ct-form-group'+isFull+'"><label>'+f.label+reqMark+'</label>'+input+'</div>';
         }).join('');
       }
+
+      // ── 承認フロー選択 ──
+      var selectedApprovers = [];
+      document.getElementById('approver-candidates').addEventListener('click', function(e) {
+        var cand = e.target.closest('.ct-approver-cand');
+        if (cand && !cand.classList.contains('added')) addApprover(cand);
+      });
+      function addApprover(el) {
+        if (el.classList.contains('added')) return;
+        var id = el.dataset.id;
+        var name = el.dataset.name;
+        selectedApprovers.push({ id: id, name: name });
+        el.classList.add('added');
+        el.querySelector('.ct-approver-add-icon').textContent = '✓';
+        renderSelected();
+      }
+      function removeApprover(id) {
+        selectedApprovers = selectedApprovers.filter(function(a){ return a.id !== id; });
+        var cand = document.querySelector('#approver-candidates [data-id="' + id + '"]');
+        if (cand) { cand.classList.remove('added'); cand.querySelector('.ct-approver-add-icon').textContent = '＋'; }
+        renderSelected();
+      }
+      function renderSelected() {
+        var sel = document.getElementById('approver-selected');
+        var inp = document.getElementById('approver-inputs');
+        if (selectedApprovers.length === 0) {
+          sel.innerHTML = '<div id="approver-empty-msg" style="text-align:center;color:#9ca3af;font-size:12px;padding:20px 0">左から承認者を選んでください</div>';
+          inp.innerHTML = '';
+          return;
+        }
+        sel.innerHTML = selectedApprovers.map(function(a, i) {
+          var n = a.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+          return '<div class="ct-approver-sel-item">' +
+            '<span style="width:22px;height:22px;border-radius:50%;background:#2563eb;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">' + (i+1) + '</span>' +
+            '<div style="flex:1;font-size:13px;font-weight:600;color:#374151">' + n + '</div>' +
+            '<button type="button" onclick="removeApprover(\'' + a.id + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;padding:0 4px;line-height:1" title="削除">×</button>' +
+            '</div>';
+        }).join('');
+        inp.innerHTML = selectedApprovers.map(function(a) {
+          return '<input type="hidden" name="approvers" value="' + a.id + '">';
+        }).join('');
+      }
       </script>
       `,
     );
@@ -1315,6 +1418,42 @@ router.post(
         isCurrent: true,
       }));
 
+      // ── 承認フロー組み立て ──
+      const approversRaw = req.body.approvers || [];
+      const approverIds = (
+        Array.isArray(approversRaw) ? approversRaw : [approversRaw]
+      ).filter(Boolean);
+
+      let approvalFlow = [];
+      let approvalStatus = "none";
+      let contractStatus = status || "active";
+
+      if (approverIds.length > 0) {
+        const approverUsers = await User.find({
+          _id: { $in: approverIds },
+          role: { $in: ["admin", "manager"] },
+        }).lean();
+        // Preserve the order chosen in the form
+        approvalFlow = approverIds
+          .map((id, idx) => {
+            const u = approverUsers.find((u) => String(u._id) === String(id));
+            if (!u) return null;
+            return {
+              userId: u._id,
+              username: u.username,
+              order: idx + 1,
+              status: "pending",
+              comment: "",
+              actedAt: null,
+            };
+          })
+          .filter(Boolean);
+        if (approvalFlow.length > 0) {
+          contractStatus = "pending_approval";
+          approvalStatus = "pending";
+        }
+      }
+
       const contract = await Contract.create({
         name: name.trim(),
         contractType,
@@ -1327,11 +1466,13 @@ router.post(
           : 12,
         responsibleUser: responsibleUser ? responsibleUser.trim() : "",
         department: department ? department.trim() : "",
-        status: status || "active",
+        status: contractStatus,
         notes: notes ? notes.trim() : "",
         attachments,
         customFields: req.body.customFields || {},
         createdBy: req.session.userId,
+        approvalFlow,
+        approvalStatus,
       });
 
       // 担当者に通知（ユーザー名で検索）
@@ -1355,12 +1496,152 @@ router.post(
         }
       }
 
+      // 最初の承認者に通知
+      if (approvalFlow.length > 0) {
+        await createNotification({
+          userId: approvalFlow[0].userId,
+          type: "contract_approval_requested",
+          title: `📋 契約の承認依頼が届きました`,
+          body: `「${name.trim()}」の承認をお願いします（第1承認者）`,
+          link: `/contracts/${contract._id}`,
+          fromUserId: req.session.userId,
+          meta: { contractId: contract._id },
+        });
+      }
+
       res.redirect(`/contracts/${contract._id}?created=1`);
     } catch (e) {
       console.error("[contracts] 登録エラー:", e);
       res.status(500).send("登録に失敗しました: " + escapeHtml(e.message));
     }
   },
+);
+
+// =====================================================================
+// 承認フロー アクションルート（承認・却下・差し戻し）
+// =====================================================================
+
+// ── 承認フロー共通ヘルパー ──
+async function processApprovalAction(req, res, action) {
+  try {
+    const contract = await Contract.findById(req.params.id);
+    if (!contract) return res.status(404).send("契約が見つかりません。");
+    if (contract.approvalStatus !== "pending") {
+      return res.redirect(
+        `/contracts/${contract._id}?err=${encodeURIComponent("承認フローが進行中ではありません")}`,
+      );
+    }
+
+    const currentUserId = String(req.session.userId);
+    // 順番通りに最初の「pending」承認者を探す
+    const sorted = [...contract.approvalFlow].sort((a, b) => a.order - b.order);
+    const currentStep = sorted.find((s) => s.status === "pending");
+    if (!currentStep) {
+      return res.redirect(
+        `/contracts/${contract._id}?err=${encodeURIComponent("承認待ちのステップがありません")}`,
+      );
+    }
+    if (String(currentStep.userId) !== currentUserId) {
+      return res.redirect(
+        `/contracts/${contract._id}?err=${encodeURIComponent("あなたの承認番が来ていません")}`,
+      );
+    }
+
+    const comment = (req.body.comment || "").trim();
+    const stepIdx = contract.approvalFlow.findIndex(
+      (s) => String(s.userId) === currentUserId && s.status === "pending",
+    );
+    contract.approvalFlow[stepIdx].status = action;
+    contract.approvalFlow[stepIdx].comment = comment;
+    contract.approvalFlow[stepIdx].actedAt = new Date();
+
+    if (action === "approved") {
+      // 次の承認者がいるか確認
+      const nextStep = sorted.find(
+        (s) => s.order > currentStep.order && s.status === "pending",
+      );
+      if (nextStep) {
+        // 次の承認者に通知
+        await createNotification({
+          userId: nextStep.userId,
+          type: "contract_approval_requested",
+          title: `📋 契約の承認依頼が届きました`,
+          body: `「${contract.name}」の承認をお願いします（第${nextStep.order}承認者）`,
+          link: `/contracts/${contract._id}`,
+          fromUserId: req.session.userId,
+          meta: { contractId: contract._id },
+        });
+      } else {
+        // 全員承認完了 → 有効契約へ
+        contract.status = "active";
+        contract.approvalStatus = "approved";
+        // 登録者に完了通知
+        if (contract.createdBy) {
+          await createNotification({
+            userId: contract.createdBy,
+            type: "contract_approval_completed",
+            title: `✅ 契約が承認されました`,
+            body: `「${contract.name}」がすべての承認者に承認され、有効契約になりました`,
+            link: `/contracts/${contract._id}`,
+            fromUserId: req.session.userId,
+            meta: { contractId: contract._id },
+          });
+        }
+      }
+    } else if (action === "rejected") {
+      contract.status = "canceled";
+      contract.approvalStatus = "rejected";
+      if (contract.createdBy) {
+        await createNotification({
+          userId: contract.createdBy,
+          type: "contract_approval_rejected",
+          title: `❌ 契約が却下されました`,
+          body: `「${contract.name}」が却下されました${comment ? `：${comment}` : ""}`,
+          link: `/contracts/${contract._id}`,
+          fromUserId: req.session.userId,
+          meta: { contractId: contract._id },
+        });
+      }
+    } else if (action === "returned") {
+      contract.status = "draft";
+      contract.approvalStatus = "returned";
+      // 承認フローをリセット（再提出に備えて）
+      contract.approvalFlow.forEach((s) => {
+        s.status = "pending";
+        s.comment = "";
+        s.actedAt = null;
+      });
+      if (contract.createdBy) {
+        await createNotification({
+          userId: contract.createdBy,
+          type: "contract_approval_returned",
+          title: `🔄 契約が差し戻されました`,
+          body: `「${contract.name}」が差し戻されました${comment ? `：${comment}` : ""}。内容を修正して再提出してください`,
+          link: `/contracts/${contract._id}`,
+          fromUserId: req.session.userId,
+          meta: { contractId: contract._id },
+        });
+      }
+    }
+
+    await contract.save();
+    res.redirect(`/contracts/${contract._id}?action=${action}`);
+  } catch (e) {
+    console.error("[contracts] 承認アクションエラー:", e);
+    res.status(500).send("処理に失敗しました: " + escapeHtml(e.message));
+  }
+}
+
+router.post("/contracts/:id/approve", requireLogin, async (req, res) =>
+  processApprovalAction(req, res, "approved"),
+);
+
+router.post("/contracts/:id/reject", requireLogin, async (req, res) =>
+  processApprovalAction(req, res, "rejected"),
+);
+
+router.post("/contracts/:id/return", requireLogin, async (req, res) =>
+  processApprovalAction(req, res, "returned"),
 );
 
 // =====================================================================
@@ -1378,6 +1659,21 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
       .populate("createdBy", "username")
       .lean();
     if (!contract) return res.status(404).send("契約が見つかりません。");
+
+    // 承認フローのユーザー情報を補完
+    if ((contract.approvalFlow || []).length > 0) {
+      const approverIds = contract.approvalFlow.map((a) => a.userId);
+      const approverUsers = await User.find({ _id: { $in: approverIds } })
+        .select("username")
+        .lean();
+      const uMap = Object.fromEntries(
+        approverUsers.map((u) => [String(u._id), u]),
+      );
+      contract.approvalFlow = contract.approvalFlow.map((a) => ({
+        ...a,
+        userInfo: uMap[String(a.userId)] || null,
+      }));
+    }
 
     const typeConfigs = await getTypeConfigs();
     const { labelMap: CONTRACT_TYPE_LABEL, colorMap: CONTRACT_TYPE_COLOR_DYN } =
@@ -1406,7 +1702,7 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
       "契約管理",
       `${COMMON_STYLE}
       <div class="ct">
-        ${req.query.created ? `<div class="ct-alert ct-alert-warn" style="background:#f0fdf4;border-color:#86efac;color:#15803d">✅ 契約を登録しました。</div>` : ""}
+        ${req.query.created ? `<div class="ct-alert ct-alert-warn" style="background:#f0fdf4;border-color:#86efac;color:#15803d">✅ 契約を登録しました。${contract.approvalStatus === "pending" ? " 承認者に通知を送りました。" : ""}</div>` : ""}
         ${req.query.updated ? `<div class="ct-alert ct-alert-warn" style="background:#f0fdf4;border-color:#86efac;color:#15803d">✅ 契約情報を更新しました。</div>` : ""}
 
         <!-- ヒーロー -->
@@ -1578,6 +1874,153 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
                 }
               </div>
             </div>
+
+            ${
+              (contract.approvalFlow || []).length > 0
+                ? (() => {
+                    const flow = [...contract.approvalFlow].sort(
+                      (a, b) => a.order - b.order,
+                    );
+                    const currentUserId = String(req.session.userId);
+                    const currentStep = flow.find(
+                      (s) => s.status === "pending",
+                    );
+                    const isMyTurn =
+                      currentStep &&
+                      String(currentStep.userId) === currentUserId;
+
+                    const ASTATUS_LABEL = {
+                      pending: "⏳ 承認待ち",
+                      approved: "✅ 承認済み",
+                      rejected: "❌ 却下",
+                      returned: "🔄 差し戻し",
+                    };
+                    const ASTATUS_COLOR = {
+                      pending: "#9ca3af",
+                      approved: "#16a34a",
+                      rejected: "#ef4444",
+                      returned: "#ea580c",
+                    };
+                    const ASTATUS_BG = {
+                      pending: "#f3f4f6",
+                      approved: "#dcfce7",
+                      rejected: "#fee2e2",
+                      returned: "#ffedd5",
+                    };
+
+                    const overallLabel =
+                      {
+                        pending: "承認進行中",
+                        approved: "承認完了",
+                        rejected: "却下",
+                        returned: "差し戻し",
+                        none: "",
+                      }[contract.approvalStatus] || "";
+                    const overallColor =
+                      {
+                        pending: "#7c3aed",
+                        approved: "#16a34a",
+                        rejected: "#ef4444",
+                        returned: "#ea580c",
+                      }[contract.approvalStatus] || "#9ca3af";
+                    const overallBg =
+                      {
+                        pending: "#f3e8ff",
+                        approved: "#dcfce7",
+                        rejected: "#fee2e2",
+                        returned: "#ffedd5",
+                      }[contract.approvalStatus] || "#f3f4f6";
+
+                    const actionMsg =
+                      req.query.action === "approved"
+                        ? "承認しました"
+                        : req.query.action === "rejected"
+                          ? "却下しました"
+                          : req.query.action === "returned"
+                            ? "差し戻しました"
+                            : "";
+                    const errMsg = req.query.err
+                      ? decodeURIComponent(req.query.err)
+                      : "";
+
+                    return `
+            <div class="ct-card">
+              <div class="ct-card-head">
+                <div class="ct-card-title">✅ 承認フロー</div>
+                <span style="background:${overallBg};color:${overallColor};padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700">${overallLabel}</span>
+              </div>
+              <div class="ct-card-body">
+                ${actionMsg ? `<div class="ct-alert" style="background:#f0fdf4;border-color:#86efac;color:#15803d;margin-bottom:14px">✅ ${escapeHtml(actionMsg)}</div>` : ""}
+                ${errMsg ? `<div class="ct-alert ct-alert-warn" style="margin-bottom:14px">⚠️ ${escapeHtml(errMsg)}</div>` : ""}
+
+                <!-- ステップ一覧 -->
+                <div style="display:flex;flex-direction:column;gap:0;margin-bottom:${isMyTurn ? "20px" : "0"}">
+                  ${flow
+                    .map((step, i) => {
+                      const sLabel = ASTATUS_LABEL[step.status] || step.status;
+                      const sColor = ASTATUS_COLOR[step.status] || "#9ca3af";
+                      const sBg = ASTATUS_BG[step.status] || "#f3f4f6";
+                      const displayName = step.userInfo
+                        ? escapeHtml(step.userInfo.username)
+                        : escapeHtml(step.username || "不明");
+                      const actedStr = step.actedAt
+                        ? moment
+                            .tz(step.actedAt, "Asia/Tokyo")
+                            .format("YYYY/MM/DD HH:mm")
+                        : "";
+                      const isActive =
+                        currentStep &&
+                        String(step.userId) === String(currentStep.userId) &&
+                        step.status === "pending";
+                      return `
+                  <div style="display:flex;gap:14px;padding:14px 0;border-bottom:1px solid #f1f5f9;${i === flow.length - 1 ? "border-bottom:none" : ""}">
+                    <div style="display:flex;flex-direction:column;align-items:center;gap:0">
+                      <div style="width:32px;height:32px;border-radius:50%;background:${isActive ? "#2563eb" : sBg};color:${isActive ? "#fff" : sColor};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;border:2px solid ${isActive ? "#2563eb" : "#e5e7eb"}">${step.order}</div>
+                      ${i < flow.length - 1 ? `<div style="width:2px;flex:1;background:#e5e7eb;margin:4px 0;min-height:16px"></div>` : ""}
+                    </div>
+                    <div style="flex:1;padding-top:4px">
+                      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                        <span style="font-size:14px;font-weight:700;color:#0b2540">${displayName}</span>
+                        <span style="background:${sBg};color:${sColor};padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">${sLabel}</span>
+                        ${isActive ? `<span style="background:#eff6ff;color:#2563eb;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">← 現在の承認者</span>` : ""}
+                      </div>
+                      ${actedStr ? `<div style="font-size:11px;color:#9ca3af;margin-top:3px">${actedStr}</div>` : ""}
+                      ${step.comment ? `<div style="font-size:12px;color:#6b7280;margin-top:4px;background:#f8fafc;padding:6px 10px;border-radius:6px;border-left:3px solid #e5e7eb">${escapeHtml(step.comment)}</div>` : ""}
+                    </div>
+                  </div>`;
+                    })
+                    .join("")}
+                </div>
+
+                ${
+                  isMyTurn
+                    ? `
+                <!-- 承認アクションフォーム -->
+                <div style="background:#f0f9ff;border:1.5px solid #bae6fd;border-radius:12px;padding:18px">
+                  <div style="font-size:13px;font-weight:700;color:#0369a1;margin-bottom:12px">📝 あなたの番です — 承認・却下・差し戻しを選択してください</div>
+                  <textarea id="approval-comment" placeholder="コメント（任意）" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;resize:vertical;min-height:70px;font-family:inherit;margin-bottom:12px"></textarea>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <form method="post" action="/contracts/${contract._id}/approve" style="display:contents">
+                      <input type="hidden" name="comment" id="comment-approve">
+                      <button type="submit" onclick="document.getElementById('comment-approve').value=document.getElementById('approval-comment').value" class="ct-btn" style="background:#16a34a;color:#fff;padding:10px 20px">✅ 承認する</button>
+                    </form>
+                    <form method="post" action="/contracts/${contract._id}/reject" style="display:contents" onsubmit="return confirm('却下しますか？この操作は取り消せません。')">
+                      <input type="hidden" name="comment" id="comment-reject">
+                      <button type="submit" onclick="document.getElementById('comment-reject').value=document.getElementById('approval-comment').value" class="ct-btn ct-btn-danger" style="padding:10px 20px">❌ 却下する</button>
+                    </form>
+                    <form method="post" action="/contracts/${contract._id}/return" style="display:contents" onsubmit="return confirm('差し戻しますか？')">
+                      <input type="hidden" name="comment" id="comment-return">
+                      <button type="submit" onclick="document.getElementById('comment-return').value=document.getElementById('approval-comment').value" class="ct-btn" style="background:#ea580c;color:#fff;padding:10px 20px">🔄 差し戻す</button>
+                    </form>
+                  </div>
+                </div>`
+                    : ""
+                }
+              </div>
+            </div>`;
+                  })()
+                : ""
+            }
           </div>
 
           <!-- 右カラム（予備） -->

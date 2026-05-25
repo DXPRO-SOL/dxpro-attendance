@@ -1317,12 +1317,33 @@ const ContractSchema = new mongoose.Schema(
       enum: [
         "draft",
         "active",
+        "pending_approval",
         "expiring_soon",
         "expired",
         "renewed",
         "canceled",
       ],
       default: "active",
+    },
+    // 承認フロー
+    approvalFlow: [
+      {
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        username: { type: String, default: "" },
+        order: { type: Number },
+        status: {
+          type: String,
+          enum: ["pending", "approved", "rejected", "returned"],
+          default: "pending",
+        },
+        comment: { type: String, default: "" },
+        actedAt: { type: Date, default: null },
+      },
+    ],
+    approvalStatus: {
+      type: String,
+      enum: ["none", "pending", "approved", "rejected", "returned"],
+      default: "none",
     },
     // メモ・備考
     notes: { type: String, default: "" },
