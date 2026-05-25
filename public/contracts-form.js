@@ -147,42 +147,54 @@ function removeApprover(id) {
 function renderSelected() {
   var sel = document.getElementById("approver-selected");
   var inp = document.getElementById("approver-inputs");
+  var dropdown = document.getElementById("approver-select");
   if (!sel || !inp) return;
   if (selectedApprovers.length === 0) {
     sel.innerHTML =
       '<div style="text-align:center;color:#9ca3af;font-size:12px;padding:20px 0">左から承認者を選んでください</div>';
     inp.innerHTML = "";
-    return;
+  } else {
+    sel.innerHTML = selectedApprovers
+      .map(function (a, i) {
+        var n = a.name
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+        return (
+          '<div class="ct-approver-sel-item">' +
+          '<span style="width:22px;height:22px;border-radius:50%;background:#2563eb;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">' +
+          (i + 1) +
+          "</span>" +
+          '<div style="flex:1;font-size:13px;font-weight:600;color:#374151">' +
+          n +
+          "</div>" +
+          '<button type="button" onclick="removeApprover(\'' +
+          a.id +
+          '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;padding:0 4px;line-height:1" title="削除">\u00d7</button>' +
+          "</div>"
+        );
+      })
+      .join("");
+    inp.innerHTML = selectedApprovers
+      .map(function (a) {
+        return '<input type="hidden" name="approvers" value="' + a.id + '">';
+      })
+      .join("");
   }
-  sel.innerHTML = selectedApprovers
-    .map(function (a, i) {
-      var n = a.name
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      return (
-        '<div class="ct-approver-sel-item">' +
-        '<span style="width:22px;height:22px;border-radius:50%;background:#2563eb;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">' +
-        (i + 1) +
-        "</span>" +
-        '<div style="flex:1;font-size:13px;font-weight:600;color:#374151">' +
-        n +
-        "</div>" +
-        '<button type="button" onclick="removeApprover(\'' +
-        a.id +
-        '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;padding:0 4px;line-height:1" title="削除">\u00d7</button>' +
-        "</div>"
-      );
-    })
-    .join("");
-  inp.innerHTML = selectedApprovers
-    .map(function (a) {
-      return '<input type="hidden" name="approvers" value="' + a.id + '">';
-    })
-    .join("");
+  // ドロップダウンの選択済み項目を無効化
+  if (dropdown) {
+    Array.from(dropdown.options).forEach(function (opt) {
+      if (!opt.value) return;
+      var already = selectedApprovers.some(function (a) {
+        return a.id === opt.value;
+      });
+      opt.disabled = already;
+    });
+    // 現在選択中の値が無効化されたらプレースホルダーに戻す
+    var cur = dropdown.options[dropdown.selectedIndex];
+    if (cur && cur.disabled) dropdown.value = "";
+  }
 }
-
-// ドラッグ&ドロップ
 (function () {
   var dz = document.getElementById("drop-zone");
   var fi = document.getElementById("fileInput");

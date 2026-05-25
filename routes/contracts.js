@@ -1058,6 +1058,9 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
                       <select id="approver-select" style="width:100%;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;background:#fff;color:#374151;outline:none;box-sizing:border-box">
                         <option value="">-- 承認者を選択 --</option>
                         ${approverCandidates
+                          .filter(
+                            (u) => String(u._id) !== String(req.session.userId),
+                          )
                           .map(
                             (u) =>
                               `<option value="${u._id}" data-name="${escapeHtml(u.username)}">${escapeHtml(u.username)}（${u.role === "admin" ? "管理者" : "部門長"}）</option>`,
@@ -2814,6 +2817,7 @@ router.get(
                     </div>
                     <div class="adct-fi" style="align-items:center">
                       <div class="adct-fi-lbl">有効</div>
+                      <input type="hidden" name="fields[${i}][enabled]" value="0">
                       <input type="checkbox" name="fields[${i}][enabled]" value="1" ${f.enabled !== false ? "checked" : ""} style="width:auto;cursor:pointer;accent-color:#3b82f6;margin:4px 0">
                     </div>
                     <div style="align-self:flex-end">
@@ -2871,6 +2875,7 @@ router.get(
           '</div>' +
           '<div class="adct-fi" style="align-items:center">' +
             '<div class="adct-fi-lbl">有効</div>' +
+            '<input type="hidden" name="fields['+i+'][enabled]" value="0">' +
             '<input type="checkbox" name="fields['+i+'][enabled]" value="1" checked style="width:auto;cursor:pointer;accent-color:#3b82f6;margin:4px 0">' +
           '</div>' +
           '<div style="align-self:flex-end">' +
@@ -2953,7 +2958,9 @@ function parseFieldsFromBody(fieldsObj) {
         : "text",
       required: f.required === "1" || f.required === true,
       enabled:
-        f.enabled === "1" || f.enabled === true || f.enabled === undefined,
+        f.enabled === "1" ||
+        f.enabled === true ||
+        (Array.isArray(f.enabled) && f.enabled.includes("1")),
       options: f.options
         ? String(f.options)
             .split(",")
