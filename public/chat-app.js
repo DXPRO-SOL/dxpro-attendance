@@ -173,12 +173,12 @@
       '<div class="sc-no-msg" style="padding:2rem;text-align:center;color:#aaa;">チャット履歴がクリアされました</div>';
   });
 
-  socket.on("msg_reaction", ({ _id, reactions }) => {
+  socket.on("msg_reaction", ({ _id, reactions, stampReactions }) => {
     const wrap = document.querySelector(
       '.sc-reactions[data-mid="' + _id + '"]',
     );
     if (!wrap) return;
-    wrap.innerHTML = reactions
+    const emojiHtml = (reactions || [])
       .filter((r) => r.count > 0)
       .map(
         (r) =>
@@ -197,6 +197,35 @@
           "</span></button>",
       )
       .join("");
+    const stampHtml = (stampReactions || [])
+      .filter((r) => r.count > 0)
+      .map((r) => {
+        const safeUrl = (r.stampUrl || "").replace(/'/g, "%27");
+        const safeName = (r.stampName || "")
+          .replace(/'/g, "&#39;")
+          .replace(/"/g, "&quot;");
+        return (
+          '<button class="sc-react-chip sc-react-stamp-chip' +
+          (r.mine ? " mine" : "") +
+          '" title="' +
+          safeName +
+          '" onclick="chatApp.toggleStampReact(\'' +
+          _id +
+          "','" +
+          safeUrl +
+          "','" +
+          safeName +
+          '\')"><img src="' +
+          r.stampUrl +
+          '" alt="' +
+          safeName +
+          '"><span class="sc-react-n">' +
+          r.count +
+          "</span></button>"
+        );
+      })
+      .join("");
+    wrap.innerHTML = emojiHtml + stampHtml;
   });
 
   socket.on("read_receipt", ({ msgId, count }) => {
@@ -361,6 +390,9 @@
         '</span><span class="sc-ts">' +
         timeStrS +
         "</span></div>" +
+        (msg.content && msg.content.trim()
+          ? '<div class="sc-msg-text">' + esc(msg.content) + "</div>"
+          : "") +
         '<div class="sc-sticker-wrap"><img class="sc-sticker-img" src="' +
         esc(msg.stickerUrl) +
         '" alt="' +
@@ -441,7 +473,7 @@
         '<div class="sc-msg-text" data-mid="' +
         msg._id +
         '">' +
-        esc(msg.content || "") +
+        renderWithStamps(msg.content || "") +
         "</div>" +
         attachHtml +
         '<div class="sc-reactions" data-mid="' +
@@ -467,7 +499,7 @@
         '<div class="sc-msg-text" data-mid="' +
         msg._id +
         '">' +
-        esc(msg.content || "") +
+        renderWithStamps(msg.content || "") +
         "</div>" +
         attachHtml +
         '<div class="sc-reactions" data-mid="' +
@@ -586,11 +618,12 @@
     const input = document.getElementById("sc-msg-input");
     const sendBtn = document.getElementById("sc-send-btn");
     if (!input) return;
-    const content = input.value.trim();
+
+    const content = serializeInput(input);
+
     if (!content && !pendingFiles.length) return;
 
-    input.value = "";
-    input.style.height = "auto";
+    input.innerHTML = "";
     if (sendBtn) sendBtn.disabled = true;
 
     // ファイルアップロード
@@ -659,14 +692,9 @@
     const ta = document.getElementById("sc-msg-input");
     const btn = document.getElementById("sc-send-btn");
     if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = Math.min(ta.scrollHeight, 160) + "px";
+    const hasStamp = !!ta.querySelector("img[data-stamp-url]");
     if (btn)
-      btn.disabled = !(
-        ta.value.trim() ||
-        pendingFiles.length ||
-        pendingSticker
-      );
+      btn.disabled = !(ta.innerText.trim() || pendingFiles.length || hasStamp);
     // タイピング通知
     if (MODE === "dm" || MODE === "room") {
       socket.emit("typing", {
@@ -771,6 +799,14 @@
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ msgId, emoji }),
+    });
+  }
+
+  function toggleStampReact(msgId, stampUrl, stampName) {
+    fetch("/api/chat/stamp-react", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ msgId, stampUrl, stampName }),
     });
   }
 
@@ -895,8 +931,14 @@
   function pickStampFromPicker(url, name) {
     const picker = document.getElementById("sc-emoji-picker");
     if (picker) picker.style.display = "none";
-    emojiForMsgId = null;
-    pickStamp(url, name);
+    if (emojiForMsgId) {
+      // リアクションモード：スタンプをリアクションとして付ける
+      toggleStampReact(emojiForMsgId, url, name);
+      emojiForMsgId = null;
+    } else {
+      // 通常モード：絵文字と同様にプレビューエリアへ入力
+      pickStamp(url, name);
+    }
   }
 
   function pickEmoji(emoji) {
@@ -908,11 +950,10 @@
     } else {
       const ta = document.getElementById("sc-msg-input");
       if (ta) {
-        const pos = ta.selectionStart;
-        ta.value = ta.value.slice(0, pos) + emoji + ta.value.slice(pos);
-        ta.selectionStart = ta.selectionEnd = pos + emoji.length;
-        document.getElementById("sc-send-btn").disabled = false;
         ta.focus();
+        document.execCommand("insertText", false, emoji);
+        const btn = document.getElementById("sc-send-btn");
+        if (btn) btn.disabled = false;
       }
     }
   }
@@ -1006,7 +1047,13 @@
     if (el) el.remove();
     const btn = document.getElementById("sc-send-btn");
     const ta = document.getElementById("sc-msg-input");
-    if (btn) btn.disabled = !(pendingFiles.length || (ta && ta.value.trim()));
+    const hasStamp = ta && !!ta.querySelector("img[data-stamp-url]");
+    if (btn)
+      btn.disabled = !(
+        pendingFiles.length ||
+        (ta && ta.innerText.trim()) ||
+        hasStamp
+      );
   }
 
   // ── 検索 ──────────────────────────────────────────────────
@@ -1417,20 +1464,34 @@
 
   function pickStamp(url, name) {
     closeModal("sc-modal-stamp-picker");
-    pendingSticker = { url, name };
-    const area = document.getElementById("sc-file-preview");
-    if (area) {
-      area.innerHTML =
-        '<div class="sc-fp-sticker">' +
-        '<img src="' +
-        esc(url) +
-        '" alt="' +
-        esc(name) +
-        '" title="' +
-        esc(name) +
-        '">' +
-        '<button class="sc-fp-rm" onclick="chatApp.removeSticker()" title="\u524a\u9664">\u00d7</button>' +
-        "</div>";
+    const ta = document.getElementById("sc-msg-input");
+    if (!ta) return;
+    // inline stamp img を生成
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = name;
+    img.title = name;
+    img.className = "sc-input-stamp-inline";
+    img.dataset.stampUrl = url;
+    img.dataset.stampName = name;
+    img.contentEditable = "false";
+    // カーソル位置に挿入
+    ta.focus();
+    const sel = window.getSelection();
+    if (
+      sel &&
+      sel.rangeCount > 0 &&
+      ta.contains(sel.getRangeAt(0).commonAncestorContainer)
+    ) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(img);
+      range.setStartAfter(img);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } else {
+      ta.appendChild(img);
     }
     const btn = document.getElementById("sc-send-btn");
     if (btn) btn.disabled = false;
@@ -1438,11 +1499,16 @@
 
   function removeSticker() {
     pendingSticker = null;
-    const area = document.getElementById("sc-file-preview");
-    if (area) area.innerHTML = "";
-    const btn = document.getElementById("sc-send-btn");
     const ta = document.getElementById("sc-msg-input");
-    if (btn) btn.disabled = !(pendingFiles.length || (ta && ta.value.trim()));
+    if (ta) {
+      const img = ta.querySelector("img[data-stamp-url]");
+      if (img) img.remove();
+    }
+    const btn = document.getElementById("sc-send-btn");
+    if (btn) {
+      const hasContent = (ta && ta.innerText.trim()) || pendingFiles.length;
+      btn.disabled = !hasContent;
+    }
   }
 
   function openStampManager() {
@@ -1508,6 +1574,54 @@
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  }
+
+  // [stamp:URL:NAME] をインライン <img> に変換（絵文字と同じインライン表示）
+  function renderWithStamps(text) {
+    if (!text) return "";
+    const parts = text.split(/(\[stamp:[^\]]+\])/g);
+    return parts
+      .map(function (part) {
+        const m = part.match(/^\[stamp:([^:\]]+):([^\]]*)\]$/);
+        if (m) {
+          const url = m[1];
+          const name = m[2];
+          return (
+            '<img class="sc-inline-stamp" src="' +
+            esc(url) +
+            '" alt="' +
+            esc(name || "スタンプ") +
+            '" title="' +
+            esc(name || "スタンプ") +
+            '" loading="lazy">'
+          );
+        }
+        return esc(part);
+      })
+      .join("");
+  }
+
+  // contenteditable の内容をシリアライズ（img[data-stamp-url] は [stamp:URL:NAME] に変換）
+  function serializeInput(el) {
+    let result = "";
+    for (const node of el.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        result += node.textContent;
+      } else if (
+        node.nodeName === "IMG" &&
+        node.dataset &&
+        node.dataset.stampUrl
+      ) {
+        const url = node.dataset.stampUrl;
+        const name = (node.dataset.stampName || "").replace(/\]/g, "");
+        result += "[stamp:" + url + ":" + name + "]";
+      } else if (node.nodeName === "BR") {
+        result += "\n";
+      } else {
+        result += node.innerText || node.textContent || "";
+      }
+    }
+    return result.trim();
   }
 
   function getUserName(userId) {
@@ -3958,6 +4072,7 @@
     startEdit,
     deleteMsg,
     toggleReact,
+    toggleStampReact,
     pickEmoji,
     switchEmojiTab,
     toggleInputEmoji,

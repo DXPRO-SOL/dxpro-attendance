@@ -106,6 +106,14 @@ const ChatMessageSchema = new mongoose.Schema(
         userIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
       },
     ],
+    // スタンプリアクション
+    stampReactions: [
+      {
+        stampUrl: { type: String },
+        stampName: { type: String },
+        userIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+      },
+    ],
     // 削除・編集
     deleted: { type: Boolean, default: false },
     deletedAt: { type: Date },

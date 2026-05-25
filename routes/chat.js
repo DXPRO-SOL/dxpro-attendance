@@ -82,6 +82,31 @@ function escHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
+// [stamp:URL:NAME] をインライン <img> に変換（絵文字と同じインライン表示）
+function renderWithStamps(text) {
+  if (!text) return "";
+  const parts = text.split(/(\[stamp:[^\]]+\])/g);
+  return parts
+    .map(function (part) {
+      const m = part.match(/^\[stamp:([^:\]]+):([^\]]*)\]$/);
+      if (m) {
+        const url = m[1];
+        const name = m[2];
+        return (
+          '<img class="sc-inline-stamp" src="' +
+          escHtml(url) +
+          '" alt="' +
+          escHtml(name || "スタンプ") +
+          '" title="' +
+          escHtml(name || "スタンプ") +
+          '" loading="lazy">'
+        );
+      }
+      return escHtml(part);
+    })
+    .join("");
+}
+
 function mimeToType(mime) {
   mime = mime || "";
   if (/^image\//.test(mime)) return "image";
@@ -923,7 +948,65 @@ router.post("/api/chat/react", requireLogin, async (req, res) => {
       count: r.userIds.length,
       mine: r.userIds.some((id) => String(id) === String(uid)),
     }));
-    const payload = { _id: String(msgId), reactions };
+    const stampReactions = (msg.stampReactions || []).map((r) => ({
+      stampUrl: r.stampUrl,
+      stampName: r.stampName,
+      count: r.userIds.length,
+      mine: r.userIds.some((id) => String(id) === String(uid)),
+    }));
+    const payload = { _id: String(msgId), reactions, stampReactions };
+    if (msg.toUserId && global.io)
+      global.io
+        .to("u_" + String(msg.toUserId))
+        .to("u_" + String(msg.fromUserId))
+        .emit("msg_reaction", payload);
+    if (msg.roomId && global.io)
+      global.io.to("r_" + String(msg.roomId)).emit("msg_reaction", payload);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post("/api/chat/stamp-react", requireLogin, async (req, res) => {
+  try {
+    const { msgId, stampUrl, stampName } = req.body;
+    if (!msgId || !stampUrl)
+      return res.status(400).json({ error: "パラメータ不足" });
+    const msg = await ChatMessage.findById(msgId);
+    if (!msg || msg.deleted)
+      return res.status(404).json({ error: "見つかりません" });
+    const uid = req.session.userId;
+    if (!msg.stampReactions) msg.stampReactions = [];
+    let sr = msg.stampReactions.find((r) => r.stampUrl === stampUrl);
+    if (sr) {
+      const idx = sr.userIds.findIndex((id) => String(id) === String(uid));
+      if (idx >= 0) sr.userIds.splice(idx, 1);
+      else sr.userIds.push(uid);
+      if (sr.userIds.length === 0)
+        msg.stampReactions = msg.stampReactions.filter(
+          (r) => r.stampUrl !== stampUrl,
+        );
+    } else {
+      msg.stampReactions.push({
+        stampUrl,
+        stampName: stampName || "",
+        userIds: [uid],
+      });
+    }
+    await msg.save();
+    const reactions = msg.reactions.map((r) => ({
+      emoji: r.emoji,
+      count: r.userIds.length,
+      mine: r.userIds.some((id) => String(id) === String(uid)),
+    }));
+    const stampReactions = msg.stampReactions.map((r) => ({
+      stampUrl: r.stampUrl,
+      stampName: r.stampName,
+      count: r.userIds.length,
+      mine: r.userIds.some((id) => String(id) === String(uid)),
+    }));
+    const payload = { _id: String(msgId), reactions, stampReactions };
     if (msg.toUserId && global.io)
       global.io
         .to("u_" + String(msg.toUserId))
@@ -2076,7 +2159,7 @@ function buildMainHtml(data) {
         ondragover="event.preventDefault();this.classList.add('drag-over')"
         ondragleave="this.classList.remove('drag-over')"
         ondrop="chatApp.handleDrop(event)">
-        <textarea id="sc-msg-input" placeholder="${isRoom ? escHtml(data.roomName) : escHtml(data.targetName || "")} へメッセージを送る..." rows="1" maxlength="4000" oninput="chatApp.onInput()" onkeydown="if(event.key==='Enter'&&event.shiftKey){event.preventDefault();chatApp.send();}"></textarea>
+        <div id="sc-msg-input" contenteditable="true" role="textbox" data-placeholder="${isRoom ? escHtml(data.roomName) : escHtml(data.targetName || "")} へメッセージを送る..." oninput="chatApp.onInput()" onkeydown="if(event.key==='Enter'&&event.shiftKey){event.preventDefault();chatApp.send();}"></div>
         <button class="sc-send-btn" id="sc-send-btn" disabled onclick="chatApp.send()"><i class="fa-solid fa-paper-plane"></i></button>
     </div>
     <div class="sc-input-hint">Shift+Enter で送信 · Enter で改行 · ファイルをドロップで添付</div>
@@ -2243,6 +2326,9 @@ function buildMessagesHtml(data) {
         '</span><span class="sc-ts">' +
         timeStr +
         "</span></div>" +
+        (m.content && m.content.trim()
+          ? '<div class="sc-msg-text">' + escHtml(m.content) + "</div>"
+          : "") +
         '<div class="sc-sticker-wrap"><img class="sc-sticker-img" src="' +
         escHtml(m.stickerUrl) +
         '" alt="' +
@@ -2322,7 +2408,7 @@ function buildMessagesHtml(data) {
         '<div class="sc-msg-text" data-mid="' +
         m._id +
         '">' +
-        escHtml(m.content || "") +
+        renderWithStamps(m.content || "") +
         "</div>" +
         editedBadge +
         attachHtml +
@@ -2351,7 +2437,7 @@ function buildMessagesHtml(data) {
         '<div class="sc-msg-text" data-mid="' +
         m._id +
         '">' +
-        escHtml(m.content || "") +
+        renderWithStamps(m.content || "") +
         "</div>" +
         editedBadge +
         attachHtml +
@@ -2461,31 +2547,75 @@ function buildAttachmentsHtml(attachments, msgId) {
 }
 
 function buildReactHtml(m, myId) {
-  if (!m.reactions || !m.reactions.length)
+  const hasEmoji = m.reactions && m.reactions.length;
+  const hasStamp = m.stampReactions && m.stampReactions.length;
+  if (!hasEmoji && !hasStamp)
     return '<div class="sc-reactions" data-mid="' + m._id + '"></div>';
-  const chips = m.reactions
-    .map((r) => {
-      const mine = (r.userIds || []).some((id) => String(id) === String(myId));
-      const count = (r.userIds || []).length;
-      return (
-        '<button class="sc-react-chip' +
-        (mine ? " mine" : "") +
-        '" data-emoji="' +
-        r.emoji +
-        '" onclick="chatApp.toggleReact(\'' +
-        m._id +
-        "','" +
-        r.emoji +
-        "',this)\">" +
-        r.emoji +
-        ' <span class="sc-react-n">' +
-        count +
-        "</span></button>"
-      );
-    })
-    .join("");
+  const emojiChips = hasEmoji
+    ? m.reactions
+        .map((r) => {
+          const mine = (r.userIds || []).some(
+            (id) => String(id) === String(myId),
+          );
+          const count = (r.userIds || []).length;
+          return (
+            '<button class="sc-react-chip' +
+            (mine ? " mine" : "") +
+            '" data-emoji="' +
+            r.emoji +
+            '" onclick="chatApp.toggleReact(\'' +
+            m._id +
+            "','" +
+            r.emoji +
+            "',this)\">" +
+            r.emoji +
+            ' <span class="sc-react-n">' +
+            count +
+            "</span></button>"
+          );
+        })
+        .join("")
+    : "";
+  const stampChips = hasStamp
+    ? m.stampReactions
+        .map((r) => {
+          const mine = (r.userIds || []).some(
+            (id) => String(id) === String(myId),
+          );
+          const count = (r.userIds || []).length;
+          const safeUrl = (r.stampUrl || "").replace(/'/g, "%27");
+          const safeName = (r.stampName || "")
+            .replace(/'/g, "&#39;")
+            .replace(/"/g, "&quot;");
+          return (
+            '<button class="sc-react-chip sc-react-stamp-chip' +
+            (mine ? " mine" : "") +
+            '" title="' +
+            safeName +
+            '" onclick="chatApp.toggleStampReact(\'' +
+            m._id +
+            "','" +
+            safeUrl +
+            "','" +
+            safeName +
+            '\')"><img src="' +
+            r.stampUrl +
+            '" alt="' +
+            safeName +
+            '"><span class="sc-react-n">' +
+            count +
+            "</span></button>"
+          );
+        })
+        .join("")
+    : "";
   return (
-    '<div class="sc-reactions" data-mid="' + m._id + '">' + chips + "</div>"
+    '<div class="sc-reactions" data-mid="' +
+    m._id +
+    '">' +
+    emojiChips +
+    stampChips +
+    "</div>"
   );
 }
 
@@ -2734,6 +2864,8 @@ html, body { overflow: hidden !important; }
 .sc-react-chip:hover{background:#e0e7ff;border-color:var(--c-accent-light)}
 .sc-react-chip.mine{background:#e0e7ff;border-color:var(--c-accent);color:var(--c-accent-dark)}
 .sc-react-n{font-size:.69rem;color:var(--c-text-secondary);font-weight:600}
+.sc-react-stamp-chip{padding:2px 7px}
+.sc-react-stamp-chip img{width:24px;height:24px;object-fit:contain;border-radius:4px;vertical-align:middle}
 
 /* ── Message toolbar ── */
 .sc-toolbar{position:absolute;top:-16px;right:20px;display:flex;gap:1px;background:#fff;border:1px solid var(--c-border);border-radius:var(--radius-md);padding:3px 4px;box-shadow:var(--shadow-md);opacity:0;pointer-events:none;z-index:10;transition:opacity .12s}
@@ -2747,7 +2879,7 @@ html, body { overflow: hidden !important; }
 .sc-reply-close:hover{color:var(--c-text-primary);background:var(--c-border)}
 
 /* ── Emoji picker ── */
-.sc-emoji-picker{position:fixed;z-index:9999;background:#fff;border:1px solid var(--c-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);display:none;flex-direction:column;width:300px;max-height:360px;overflow:hidden}
+.sc-emoji-picker{position:fixed;z-index:9999;background:#fff;border:1px solid var(--c-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);display:none;flex-direction:column;width:320px;max-height:460px;overflow:hidden}
 .sc-ep-tabs{display:flex;border-bottom:1px solid var(--c-border);background:#f8fafc;flex-shrink:0}
 .sc-ep-tab{flex:1;padding:7px 6px;font-size:.75rem;font-weight:600;border:none;background:transparent;cursor:pointer;color:var(--c-text-secondary);border-bottom:2px solid transparent;transition:.12s;white-space:nowrap}
 .sc-ep-tab.active{color:var(--c-accent);border-bottom-color:var(--c-accent);background:#fff}
@@ -2757,19 +2889,20 @@ html, body { overflow: hidden !important; }
 .sc-ep-panel.sc-ep-hidden{display:none!important}
 .sc-emoji-btn{border:none;background:transparent;border-radius:var(--radius-sm);font-size:.82rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.12s;padding:4px 5px;min-width:32px;height:32px;white-space:nowrap;line-height:1.2}
 .sc-emoji-btn:hover{background:var(--c-main-surface);transform:scale(1.08)}
-.sc-ep-stamp-panel{padding:8px;overflow-y:auto;width:100%;box-sizing:border-box}
+.sc-ep-stamp-panel{padding:0;width:100%;box-sizing:border-box}
 .sc-ep-panel.sc-ep-stamp-panel{display:block}
-.sc-ep-stamp-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:3px}
-.sc-ep-stamp-item{display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer;border-radius:4px;padding:2px 1px;border:1.5px solid transparent;transition:.15s}
-.sc-ep-stamp-item:hover{background:var(--c-main-surface);border-color:var(--c-accent)}
-.sc-ep-stamp-item img{width:28px;height:28px;object-fit:contain;border-radius:3px}
-.sc-ep-stamp-item span{font-size:.5rem;color:var(--c-text-muted);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;max-width:36px;text-align:center}
+.sc-ep-stamp-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:2px 0 6px}
+.sc-ep-stamp-item{display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;border-radius:8px;padding:6px 4px;border:2px solid transparent;transition:all .15s}
+.sc-ep-stamp-item:hover{background:var(--c-main-surface);border-color:var(--c-accent);transform:scale(1.06)}
+.sc-ep-stamp-item img{width:52px;height:52px;object-fit:contain;border-radius:6px}
+.sc-ep-stamp-item span{font-size:.6rem;color:var(--c-text-muted);text-overflow:ellipsis;overflow:hidden;white-space:nowrap;max-width:62px;text-align:center}
 .sc-ep-stamp-loading{text-align:center;color:#9ca3af;font-size:.8rem;padding:20px}
 .sc-ep-stamp-add{border:1px dashed var(--c-border);background:transparent;border-radius:var(--radius-md);padding:3px 8px;font-size:.64rem;cursor:pointer;color:var(--c-text-secondary);margin-bottom:4px}
 .sc-ep-stamp-add:hover{border-color:var(--c-accent);color:var(--c-accent);background:#f0f1f8}
 .sc-ep-stamp-scope{font-size:.44rem;line-height:1;opacity:.7;margin-top:0}
-.sc-ep-stamp-section-label{font-size:.6rem;font-weight:700;color:var(--c-text-secondary);padding:4px 2px 2px;letter-spacing:.03em}
-.sc-ep-stamp-cat-label{font-size:.55rem;color:var(--c-text-muted);padding:3px 2px 1px;border-bottom:1px solid var(--c-border);margin-bottom:2px}
+.sc-ep-stamp-section-label{font-size:.68rem;font-weight:700;color:var(--c-text-secondary);padding:8px 2px 4px;letter-spacing:.03em;display:flex;align-items:center;gap:4px}
+.sc-ep-stamp-section-label:first-child{padding-top:2px}
+.sc-ep-stamp-cat-label{font-size:.58rem;font-weight:600;color:var(--c-text-muted);padding:4px 2px 2px;border-bottom:1px solid var(--c-border);margin-bottom:3px;margin-top:2px}
 
 /* ── Input area ── */
 .sc-input-area{padding:10px 20px 14px;flex-shrink:0;background:#fff;border-top:1px solid var(--c-border)}
@@ -2784,8 +2917,10 @@ html, body { overflow: hidden !important; }
 .sc-input-box{display:flex;align-items:flex-end;border:1.5px solid var(--c-input-border);border-radius:var(--radius-lg);overflow:hidden;background:#fff;transition:border-color .2s,box-shadow .2s}
 .sc-input-box.drag-over{border-color:var(--c-accent);box-shadow:0 0 0 3px rgba(99,102,241,.15)}
 .sc-input-box:focus-within{border-color:var(--c-accent);box-shadow:0 0 0 3px rgba(99,102,241,.12)}
-.sc-input-box textarea{flex:1;padding:10px 12px;border:none;outline:none;resize:none;font-size:.875rem;font-family:inherit;line-height:1.5;max-height:160px;background:transparent;color:var(--c-text-primary)}
-.sc-input-box textarea::placeholder{color:var(--c-text-muted)}
+.sc-input-box #sc-msg-input{flex:1;padding:10px 12px;border:none;outline:none;font-size:.875rem;font-family:inherit;line-height:1.5;min-height:38px;max-height:160px;overflow-y:auto;background:transparent;color:var(--c-text-primary);white-space:pre-wrap;word-break:break-word;cursor:text}
+.sc-input-box #sc-msg-input:empty::before{content:attr(data-placeholder);color:var(--c-text-muted);pointer-events:none}
+.sc-input-stamp-inline{width:32px;height:32px;object-fit:contain;vertical-align:middle;border-radius:4px;margin:0 2px;cursor:default}
+.sc-inline-stamp{width:36px;height:36px;object-fit:contain;vertical-align:middle;border-radius:4px;margin:0 2px}
 .sc-send-btn{width:36px;height:36px;margin:5px;border-radius:var(--radius-md);border:none;background:var(--c-accent);color:#fff;cursor:pointer;font-size:.82rem;display:flex;align-items:center;justify-content:center;transition:.15s;flex-shrink:0}
 .sc-send-btn:disabled{background:#d1d5db;cursor:default}.sc-send-btn:not(:disabled):hover{background:var(--c-accent-dark);transform:scale(1.05)}
 .sc-input-hint{font-size:.67rem;color:var(--c-text-muted);text-align:right;padding-top:4px}
@@ -3174,8 +3309,9 @@ router.get("/chat/stamps", requireLogin, async (req, res) => {
 .smp-file-label{font-size:.88rem;color:#78716c}
 .smp-preview{margin-top:10px;display:flex;justify-content:center}
 .smp-preview img{max-width:120px;max-height:120px;border-radius:10px;border:2px solid #6366f1;object-fit:contain}
-.smp-radio-row{display:flex;gap:20px;margin-top:4px}
-.smp-radio-row label{font-weight:400;display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.9rem}
+.smp-radio-row{display:flex;gap:20px;margin-top:4px;flex-wrap:wrap}
+.smp-radio-row label{font-weight:400;display:inline-block;cursor:pointer;font-size:.9rem;margin-bottom:0!important;white-space:nowrap}
+.smp-radio-row input[type=radio]{display:inline!important;width:auto!important;padding:0!important;border:none!important;box-shadow:none!important;vertical-align:middle;margin:0 4px 0 0;cursor:pointer;accent-color:#6366f1}
 .smp-submit-btn{background:#6366f1;color:#fff;border:none;border-radius:8px;padding:10px 28px;font-size:.95rem;font-weight:700;cursor:pointer;transition:.15s;margin-top:4px}
 .smp-submit-btn:hover{background:#4f46e5}
 .smp-submit-btn:disabled{opacity:.55;cursor:not-allowed}
