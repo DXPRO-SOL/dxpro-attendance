@@ -1248,9 +1248,14 @@
       (document.getElementById("room-desc").value = "");
     document.getElementById("room-icon") &&
       (document.getElementById("room-icon").value = "💬");
+    document.getElementById("modal-user-search") &&
+      (document.getElementById("modal-user-search").value = "");
     document
-      .querySelectorAll('#sc-modal-user-list input[name="member"]')
+      .querySelectorAll("#sc-modal-user-list .sc-member-cb")
       .forEach((cb) => (cb.checked = false));
+    const cnt = document.getElementById("sc-sel-count");
+    if (cnt) cnt.style.display = "none";
+    filterModalUsers("");
     openModal("sc-modal-create");
   }
 
@@ -1286,11 +1291,32 @@
 
   function filterModalUsers(q) {
     q = (q || "").toLowerCase();
-    document.querySelectorAll(".sc-modal-user-row").forEach((row) => {
+    document.querySelectorAll(".sc-member-row").forEach((row) => {
       const name =
-        (row.querySelector(".sc-modal-uname") || {}).textContent || "";
-      row.style.display = !q || name.toLowerCase().includes(q) ? "" : "none";
+        (row.querySelector(".sc-member-name") || {}).textContent || "";
+      const dept =
+        (row.querySelector(".sc-member-dept") || {}).textContent || "";
+      row.style.display =
+        !q || name.toLowerCase().includes(q) || dept.toLowerCase().includes(q)
+          ? ""
+          : "none";
     });
+  }
+
+  function updateSelCount() {
+    setTimeout(() => {
+      const count = document.querySelectorAll(
+        "#sc-modal-user-list .sc-member-cb:checked",
+      ).length;
+      const el = document.getElementById("sc-sel-count");
+      if (!el) return;
+      if (count > 0) {
+        el.style.display = "inline";
+        el.textContent = count + "人を選択中";
+      } else {
+        el.style.display = "none";
+      }
+    }, 0);
   }
 
   // ── グループ設定 ──────────────────────────────────────────
@@ -4087,6 +4113,7 @@
     openCreateRoom,
     createRoom,
     filterModalUsers,
+    updateSelCount,
     openRoomSettings,
     saveRoomSettings,
     toggleMemberPanel,

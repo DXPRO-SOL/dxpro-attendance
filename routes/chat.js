@@ -2624,36 +2624,64 @@ function buildGroupCreateModal(allUsers) {
     .map((u) => {
       const name = u.emp ? u.emp.name : u.username;
       const dept = u.emp ? u.emp.department || "" : "";
+      const initial = (name || "?").charAt(0).toUpperCase();
       return (
-        '<label class="sc-modal-user-row"><input type="checkbox" name="member" value="' +
+        '<label class="sc-member-row" onclick="chatApp.updateSelCount()">' +
+        '<input type="checkbox" name="member" value="' +
         u._id +
-        '"><div class="sc-av sm2">' +
-        name.charAt(0).toUpperCase() +
-        '</div><div><div class="sc-modal-uname">' +
+        '" class="sc-member-cb">' +
+        '<div class="sc-av sm2 sc-member-av">' +
+        initial +
+        "</div>" +
+        '<div class="sc-member-info">' +
+        '<div class="sc-member-name">' +
         escHtml(name) +
         "</div>" +
         (dept
-          ? '<div class="sc-modal-udept">' + escHtml(dept) + "</div>"
+          ? '<div class="sc-member-dept">' + escHtml(dept) + "</div>"
           : "") +
-        "</div></label>"
+        "</div>" +
+        '<span class="sc-member-check"><i class="fa-solid fa-check"></i></span>' +
+        "</label>"
       );
     })
     .join("");
   return `<div class="sc-overlay" id="sc-modal-create" style="display:none" onclick="if(event.target===this)chatApp.closeModal('sc-modal-create')">
-    <div class="sc-modal">
-        <div class="sc-modal-hd"><h3>グループチャットを作成</h3><button onclick="chatApp.closeModal('sc-modal-create')">×</button></div>
+    <div class="sc-modal sc-modal-create-w">
+        <div class="sc-modal-hd">
+            <div class="sc-modal-hd-inner"><span class="sc-modal-hd-icon">👥</span><h3>グループチャットを作成</h3></div>
+            <button class="sc-modal-close" onclick="chatApp.closeModal('sc-modal-create')"><i class="fa-solid fa-xmark"></i></button>
+        </div>
         <div class="sc-modal-body">
-            <div class="sc-form-row"><label>グループ名 <span style="color:red">*</span></label><input type="text" id="room-name" placeholder="例: プロジェクトチーム" maxlength="50"></div>
-            <div class="sc-form-row"><label>説明（任意）</label><input type="text" id="room-desc" placeholder="グループの説明" maxlength="200"></div>
-            <div class="sc-form-row"><label>アイコン絵文字</label><input type="text" id="room-icon" value="💬" maxlength="4" style="width:60px"></div>
-            <div class="sc-form-row"><label>メンバーを追加</label>
-                <input type="text" id="modal-user-search" placeholder="🔍 メンバーを検索..." oninput="chatApp.filterModalUsers(this.value)" style="margin-bottom:8px">
+            <div class="sc-form-row-inline">
+                <div class="sc-form-row sc-form-icon-col">
+                    <label>アイコン</label>
+                    <input type="text" id="room-icon" value="💬" maxlength="4" class="sc-icon-input">
+                </div>
+                <div class="sc-form-row" style="flex:1">
+                    <label>グループ名 <span class="sc-required">*</span></label>
+                    <input type="text" id="room-name" placeholder="例: プロジェクトチーム" maxlength="50">
+                </div>
+            </div>
+            <div class="sc-form-row">
+                <label>説明（任意）</label>
+                <input type="text" id="room-desc" placeholder="グループの説明を入力..." maxlength="200">
+            </div>
+            <div class="sc-form-row">
+                <div class="sc-members-hd">
+                    <label>メンバーを追加</label>
+                    <span class="sc-sel-count" id="sc-sel-count" style="display:none">0人を選択中</span>
+                </div>
+                <div class="sc-search-field-wrap">
+                    <i class="fa-solid fa-magnifying-glass sc-search-ico"></i>
+                    <input type="text" id="modal-user-search" class="sc-member-search" placeholder="名前・部署で検索..." oninput="chatApp.filterModalUsers(this.value)">
+                </div>
                 <div class="sc-modal-user-list" id="sc-modal-user-list">${opts}</div>
             </div>
         </div>
         <div class="sc-modal-ft">
             <button class="sc-btn-cancel" onclick="chatApp.closeModal('sc-modal-create')">キャンセル</button>
-            <button class="sc-btn-primary" onclick="chatApp.createRoom()">作成する</button>
+            <button class="sc-btn-primary sc-btn-create" onclick="chatApp.createRoom()"><i class="fa-solid fa-plus"></i> 作成する</button>
         </div>
     </div>
 </div>`;
@@ -2940,25 +2968,47 @@ html, body { overflow: hidden !important; }
 .sc-add-btn:hover{border-color:var(--c-accent);color:var(--c-accent);background:#f0f1f8}
 
 /* ── Modals ── */
-.sc-overlay{position:fixed;inset:0;background:rgba(17,24,39,.5);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px)}
+.sc-overlay{position:fixed;inset:0;background:rgba(17,24,39,.5);z-index:9500;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px)}
 .sc-modal{background:#fff;border-radius:var(--radius-xl);width:100%;max-width:496px;max-height:82vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.sc-modal-create-w{max-width:520px}
 .sc-modal-hd{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--c-border)}
 .sc-modal-hd h3{margin:0;font-size:1rem;color:var(--c-text-primary);font-weight:700;letter-spacing:-.01em}
-.sc-modal-hd button{background:none;border:none;cursor:pointer;color:var(--c-text-muted);font-size:1.1rem;padding:4px 6px;border-radius:4px}
-.sc-modal-hd button:hover{background:var(--c-main-surface);color:var(--c-text-primary)}
+.sc-modal-hd-inner{display:flex;align-items:center;gap:10px}
+.sc-modal-hd-icon{font-size:1.2rem;line-height:1}
+.sc-modal-close{background:none;border:none;cursor:pointer;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:var(--c-text-muted);font-size:.85rem;transition:.15s;flex-shrink:0}
+.sc-modal-close:hover{background:#f3f4f6;color:var(--c-text-primary)}
 .sc-modal-body{flex:1;overflow-y:auto;padding:18px 22px;display:flex;flex-direction:column;gap:16px}
 .sc-modal-ft{display:flex;justify-content:flex-end;gap:10px;padding:16px 22px;border-top:1px solid var(--c-border)}
 .sc-form-row{display:flex;flex-direction:column;gap:6px}.sc-form-row label{font-size:.8rem;font-weight:600;color:#374151}
+.sc-form-row-inline{display:flex;gap:12px;align-items:flex-start}
+.sc-form-icon-col{flex-shrink:0;width:80px}
+.sc-icon-input{width:100%!important;text-align:center;font-size:1.4rem!important;padding:8px 6px!important;cursor:pointer}
+.sc-required{color:#ef4444}
 .sc-form-row input[type=text]{padding:9px 12px;border:1.5px solid var(--c-input-border);border-radius:var(--radius-md);font-size:.875rem;outline:none;transition:.2s;color:var(--c-text-primary)}
 .sc-form-row input[type=text]:focus{border-color:var(--c-accent);box-shadow:0 0 0 3px rgba(99,102,241,.1)}
-.sc-modal-user-list{max-height:200px;overflow-y:auto;border:1px solid var(--c-border);border-radius:var(--radius-md);padding:4px;display:flex;flex-direction:column;gap:1px}
-.sc-modal-user-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius-sm);cursor:pointer}
-.sc-modal-user-row:hover{background:var(--c-main-surface)}.sc-modal-user-row input{cursor:pointer;accent-color:var(--c-accent)}
-.sc-modal-uname{font-size:.84rem;font-weight:600;color:var(--c-text-primary)}.sc-modal-udept{font-size:.71rem;color:var(--c-text-muted)}
+.sc-members-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.sc-sel-count{font-size:.72rem;font-weight:600;color:var(--c-accent);background:rgba(99,102,241,.1);padding:2px 10px;border-radius:20px}
+.sc-search-field-wrap{position:relative;margin-bottom:8px}
+.sc-search-ico{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9ca3af;font-size:.73rem;pointer-events:none}
+.sc-member-search{width:100%;box-sizing:border-box;padding:8px 12px 8px 30px;border:1.5px solid var(--c-input-border);border-radius:var(--radius-md);font-size:.84rem;outline:none;transition:.2s;color:var(--c-text-primary)}
+.sc-member-search:focus{border-color:var(--c-accent);box-shadow:0 0 0 3px rgba(99,102,241,.1)}
+.sc-modal-user-list{max-height:240px;overflow-y:auto;border:1.5px solid var(--c-border);border-radius:var(--radius-md);padding:6px;display:flex;flex-direction:column;gap:2px}
+.sc-modal-user-list::-webkit-scrollbar{width:4px}.sc-modal-user-list::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:4px}
+.sc-member-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--radius-sm);cursor:pointer;border:1.5px solid transparent;transition:background .12s,border-color .12s;user-select:none}
+.sc-member-row:hover{background:#f5f3ff;border-color:#ede9fe}
+.sc-member-cb{display:none}
+.sc-member-info{flex:1;min-width:0}
+.sc-member-name{font-size:.84rem;font-weight:600;color:var(--c-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sc-member-dept{font-size:.71rem;color:var(--c-text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+.sc-member-check{width:20px;height:20px;border:1.5px solid #d1d5db;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.58rem;color:transparent;flex-shrink:0;transition:all .15s}
+.sc-member-row:has(.sc-member-cb:checked){background:rgba(99,102,241,.07);border-color:rgba(99,102,241,.3)}
+.sc-member-row:has(.sc-member-cb:checked) .sc-member-check{background:var(--c-accent);border-color:var(--c-accent);color:#fff}
+.sc-member-row:has(.sc-member-cb:checked) .sc-member-av{background:#4f46e5!important;color:#e0e7ff!important}
 .sc-btn-cancel{padding:8px 18px;border:1.5px solid var(--c-border);background:transparent;border-radius:var(--radius-md);cursor:pointer;font-size:.84rem;color:var(--c-text-secondary);transition:.15s;font-weight:500}
 .sc-btn-cancel:hover{background:var(--c-main-surface);border-color:#9ca3af}
 .sc-btn-primary{padding:8px 20px;background:var(--c-accent);color:#fff;border:none;border-radius:var(--radius-md);cursor:pointer;font-size:.84rem;font-weight:600;transition:.15s;letter-spacing:.01em}
 .sc-btn-primary:hover{background:var(--c-accent-dark);transform:translateY(-1px);box-shadow:0 4px 12px rgba(99,102,241,.35)}
+.sc-btn-create{display:inline-flex;align-items:center;gap:6px}
 
 /* ── System messages ── */
 .sc-missed-call{display:flex;align-items:center;gap:8px;padding:6px 20px;color:var(--c-text-muted);font-size:.8rem;font-style:italic}

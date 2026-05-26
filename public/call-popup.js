@@ -66,6 +66,103 @@
   let mediaRecorder = null;
   let recordChunks = [];
 
+  // ── AI議事録（文字起こし）────────────────────────────────────────
+  let transcriptUtterances = [];
+  let transcriptionSessionId = null;
+  let transcriptionRecorderId = null;
+  let speechRecognizer = null;
+  let speechRecognizerStopRequested = false;
+
+  function startSpeechRecognitionForRecording(mode, recorderUserId) {
+    try {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) return;
+      stopSpeechRecognitionForRecording();
+      speechRecognizerStopRequested = false;
+      const rec = new SR();
+      rec.lang = "ja-JP";
+      rec.continuous = true;
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
+      rec.onresult = (e) => {
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i];
+          if (!r.isFinal) continue;
+          const txt = ((r[0] && r[0].transcript) || "").trim();
+          if (!txt) continue;
+          const ts = Date.now();
+          if (mode === "recorder") {
+            transcriptUtterances.push({
+              ts,
+              userId: String(MY_ID),
+              name: MY_NAME || "自分",
+              text: txt,
+            });
+          } else if (mode === "participant" && recorderUserId) {
+            socket.emit("transcription_utterance", {
+              sessionId: transcriptionSessionId,
+              toUserId: recorderUserId,
+              fromUserId: String(MY_ID),
+              fromName: MY_NAME || "参加者",
+              ts,
+              text: txt,
+            });
+          }
+        }
+      };
+      rec.onerror = (ev) => {
+        if (
+          ev &&
+          ev.error &&
+          ev.error !== "no-speech" &&
+          ev.error !== "aborted"
+        )
+          console.warn("[SR] error:", ev.error);
+      };
+      rec.onend = () => {
+        if (speechRecognizerStopRequested) return;
+        const active =
+          mode === "recorder"
+            ? mediaRecorder && mediaRecorder.state === "recording"
+            : transcriptionRecorderId != null;
+        if (active) {
+          try {
+            rec.start();
+          } catch (_) {}
+        }
+      };
+      try {
+        rec.start();
+      } catch (_) {}
+      speechRecognizer = rec;
+    } catch (_) {}
+  }
+
+  function stopSpeechRecognitionForRecording() {
+    speechRecognizerStopRequested = true;
+    if (speechRecognizer) {
+      try {
+        speechRecognizer.stop();
+      } catch (_) {}
+      speechRecognizer = null;
+    }
+  }
+
+  function buildTranscriptText() {
+    if (!transcriptUtterances.length) return "";
+    return transcriptUtterances
+      .slice()
+      .sort((a, b) => a.ts - b.ts)
+      .map((u) => {
+        const d = new Date(u.ts);
+        const hh = String(d.getHours()).padStart(2, "0");
+        const mm = String(d.getMinutes()).padStart(2, "0");
+        const ss = String(d.getSeconds()).padStart(2, "0");
+        return `[${hh}:${mm}:${ss}] ${u.name}: ${u.text}`;
+      })
+      .join("\n");
+  }
+
   // ── BroadcastChannel（メインページとの通信）─────────────────
   const bc = new BroadcastChannel("dxpro_call");
 
@@ -807,6 +904,13 @@ body { background: #0f172a; color: #f1f5f9;
     let recTimerInterval = null;
     mediaRecorder.onstop = async () => {
       clearInterval(recTimerInterval);
+      // 文字起こし停止 → 参加者にも通知
+      stopSpeechRecognitionForRecording();
+      if (socket && callTargetId)
+        socket.emit("transcription_stop", {
+          sessionId: transcriptionSessionId,
+          toUserId: callTargetId,
+        });
       if (socket && callTargetId)
         socket.emit("recording_stopped", {
           toUserId: callTargetId,
@@ -828,10 +932,16 @@ body { background: #0f172a; color: #f1f5f9;
       recordChunks = [];
       mediaRecorder = null;
       if (blob.size === 0) return;
+      // 遅れて届く参加者の発言を待つ
+      await new Promise((r) => setTimeout(r, 800));
       const fd = new FormData();
       fd.append("recording", blob, `recording_${Date.now()}.webm`);
       fd.append("duration", recSeconds);
       fd.append("toUserId", callTargetId);
+      const transcriptText = buildTranscriptText();
+      if (transcriptText) fd.append("transcript", transcriptText);
+      transcriptUtterances = [];
+      transcriptionSessionId = null;
       try {
         const res = await fetch("/api/chat/recording", {
           method: "POST",
@@ -851,6 +961,18 @@ body { background: #0f172a; color: #f1f5f9;
       }
     };
     mediaRecorder.start(1000);
+    // 文字起こし開始
+    transcriptUtterances = [];
+    transcriptionSessionId =
+      "tr_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+    startSpeechRecognitionForRecording("recorder");
+    if (socket && callTargetId)
+      socket.emit("transcription_start", {
+        sessionId: transcriptionSessionId,
+        recorderUserId: String(MY_ID),
+        recorderName: MY_NAME || "",
+        toUserId: callTargetId,
+      });
     if (socket && callTargetId)
       socket.emit("recording_started", {
         toUserId: callTargetId,
@@ -1024,6 +1146,47 @@ body { background: #0f172a; color: #f1f5f9;
     socket.on("recording_stopped", () => {
       const el = document.getElementById("popup-rec-indicator");
       if (el) el.style.display = "none";
+    });
+    // AI議事録：参加者から文字起こし結果を受信して蓄積
+    socket.on("transcription_utterance", (data) => {
+      if (!data || !data.fromUserId) return;
+      if (
+        transcriptionSessionId &&
+        data.sessionId &&
+        data.sessionId !== transcriptionSessionId
+      )
+        return;
+      transcriptUtterances.push({
+        ts: Number(data.ts) || Date.now(),
+        userId: String(data.fromUserId),
+        name: data.fromName || "参加者",
+        text: String(data.text || ""),
+      });
+    });
+    // AI議事録：相手が録画開始 → 自分のマイクも認識して送信（participant モード）
+    socket.on("transcription_start", (data) => {
+      if (!data || !data.recorderUserId) return;
+      if (String(data.recorderUserId) === String(MY_ID)) return;
+      transcriptionSessionId = data.sessionId || null;
+      transcriptionRecorderId = String(data.recorderUserId);
+      startSpeechRecognitionForRecording(
+        "participant",
+        transcriptionRecorderId,
+      );
+    });
+    // AI議事録：相手が録画停止 → 自分の認識も止める
+    socket.on("transcription_stop", (data) => {
+      if (transcriptionRecorderId == null) return;
+      if (
+        data &&
+        data.sessionId &&
+        transcriptionSessionId &&
+        data.sessionId !== transcriptionSessionId
+      )
+        return;
+      stopSpeechRecognitionForRecording();
+      transcriptionRecorderId = null;
+      transcriptionSessionId = null;
     });
   }
 
