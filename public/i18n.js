@@ -50,6 +50,7 @@
         workflow: "ワークフロー",
         cloud: "クラウド",
         integrations: "連携",
+        contracts: "契約管理",
         admin_section: "管理者",
       },
       topbar: {
@@ -155,6 +156,7 @@
         workflow: "Workflow",
         cloud: "Cloud",
         integrations: "Integrations",
+        contracts: "Contract Management",
         admin_section: "Admin",
       },
       topbar: {
@@ -260,6 +262,7 @@
         workflow: "Quy trình",
         cloud: "Đám mây",
         integrations: "Tích hợp",
+        contracts: "Quản lý hợp đồng",
         admin_section: "Quản trị",
       },
       topbar: {
@@ -368,6 +371,7 @@
           workflow: "워크플로우",
           cloud: "클라우드",
           integrations: "연동",
+          contracts: "계약 관리",
           admin_section: "관리자",
         },
         topbar: {
@@ -473,6 +477,7 @@
           workflow: "工作流程",
           cloud: "云盘",
           integrations: "集成",
+          contracts: "合同管理",
           admin_section: "管理员",
         },
         topbar: {

@@ -1321,6 +1321,138 @@ const CallSummarySchema = new mongoose.Schema(
 );
 const CallSummary = mongoose.model("CallSummary", CallSummarySchema);
 
+// ==============================
+// 契約管理スキーマ
+// ==============================
+const ContractSchema = new mongoose.Schema(
+  {
+    // 基本情報
+    name: { type: String, required: true }, // 契約名
+    contractType: {
+      // 契約種別（管理者が追加可能なため enum なし）
+      type: String,
+      required: true,
+    },
+    counterparty: { type: String, required: true }, // 契約先
+    startDate: { type: Date }, // 契約開始日
+    endDate: { type: Date }, // 契約終了日
+    autoRenew: { type: Boolean, default: false }, // 自動更新有無
+    renewalPeriodMonths: { type: Number, default: 12 }, // 更新周期（月）
+    // 担当・部署
+    responsibleUser: { type: String, default: "" }, // 契約担当者名
+    department: { type: String, default: "" }, // 部署別アクセス制御用
+    // ステータス
+    status: {
+      type: String,
+      enum: [
+        "draft",
+        "active",
+        "pending_approval",
+        "expiring_soon",
+        "expired",
+        "renewed",
+        "canceled",
+      ],
+      default: "active",
+    },
+    // 承認フロー
+    approvalFlow: [
+      {
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        username: { type: String, default: "" },
+        order: { type: Number },
+        status: {
+          type: String,
+          enum: ["pending", "approved", "rejected", "returned"],
+          default: "pending",
+        },
+        comment: { type: String, default: "" },
+        actedAt: { type: Date, default: null },
+      },
+    ],
+    approvalStatus: {
+      type: String,
+      enum: ["none", "pending", "approved", "rejected", "returned"],
+      default: "none",
+    },
+    // メモ・備考
+    notes: { type: String, default: "" },
+    // 添付ファイル（PDF等・複数・バージョン管理）
+    attachments: [
+      {
+        originalName: { type: String },
+        filename: { type: String },
+        mimetype: { type: String },
+        size: { type: Number },
+        uploadedAt: { type: Date, default: Date.now },
+        uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        version: { type: Number, default: 1 },
+        isCurrent: { type: Boolean, default: true },
+        label: { type: String, default: "" }, // ファイルラベル（例：「最新版」「旧版」）
+      },
+    ],
+    // 更新履歴
+    renewalHistory: [
+      {
+        renewedAt: { type: Date, default: Date.now },
+        previousEndDate: { type: Date },
+        newEndDate: { type: Date },
+        renewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        notes: { type: String, default: "" },
+      },
+    ],
+    // 通知管理（何日前に通知済みか記録）
+    notificationsSent: [{ type: Number }], // 例: [30, 14, 7, 0]
+    // 作成者
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    // 契約種別ごとの動的カスタムフィールド値
+    customFields: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} },
+  },
+  { timestamps: true },
+);
+ContractSchema.index({ endDate: 1, status: 1 });
+ContractSchema.index({ counterparty: "text", name: "text" });
+const Contract = mongoose.model("Contract", ContractSchema);
+
+// ==============================
+// 契約種別設定スキーマ（管理者が項目を管理）
+// ==============================
+const ContractTypeConfigSchema = new mongoose.Schema(
+  {
+    key: { type: String, required: true, unique: true }, // 種別キー
+    label: { type: String, required: true }, // 表示名
+    color: { type: String, default: "#6b7280" }, // バッジ色
+    isBuiltin: { type: Boolean, default: false }, // 組み込み種別（削除不可）
+    isActive: { type: Boolean, default: true }, // 有効/無効
+    sortOrder: { type: Number, default: 9999 }, // 表示順
+    fields: [
+      {
+        key: { type: String, required: true }, // フィールドキー
+        label: { type: String, required: true }, // 表示ラベル
+        fieldType: {
+          type: String,
+          enum: ["text", "number", "date", "select", "textarea"],
+          default: "text",
+        },
+        required: { type: Boolean, default: false },
+        options: [{ type: String }], // select型の選択肢
+        enabled: { type: Boolean, default: true },
+        order: { type: Number, default: 0 },
+        systemField: { type: String }, // 標準フィールドのスキーマキー（例: "counterparty", "status"）
+      },
+    ],
+  },
+  { timestamps: true },
+);
+const ContractTypeConfig = mongoose.model(
+  "ContractTypeConfig",
+  ContractTypeConfigSchema,
+);
+
 module.exports = {
   ChatRoom,
   ChatMessage,
@@ -1360,5 +1492,7 @@ module.exports = {
   Schedule,
   ScheduleComment,
   ScheduleCommentRead,
+  Contract,
+  ContractTypeConfig,
   Stamp,
 };
