@@ -106,6 +106,14 @@ const ChatMessageSchema = new mongoose.Schema(
         userIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
       },
     ],
+    // スタンプリアクション
+    stampReactions: [
+      {
+        stampUrl: { type: String },
+        stampName: { type: String },
+        userIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+      },
+    ],
     // 削除・編集
     deleted: { type: Boolean, default: false },
     deletedAt: { type: Date },
@@ -116,6 +124,10 @@ const ChatMessageSchema = new mongoose.Schema(
     // 通話履歴
     isCallHistory: { type: Boolean, default: false },
     callDuration: { type: Number, default: 0 }, // 秒
+    // スタンプ（スティッカー）
+    isSticker: { type: Boolean, default: false },
+    stickerUrl: { type: String, default: null },
+    stickerName: { type: String, default: null },
   },
   { timestamps: true },
 );
@@ -804,6 +816,24 @@ const IntegrationConfig = mongoose.model(
 const ChatRoom = mongoose.model("ChatRoom", ChatRoomSchema);
 const ChatMessage = mongoose.model("ChatMessage", ChatMessageSchema);
 
+// ─── チャット用スタンプ ─────────────────────────────────────────────────────
+const StampSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    category: { type: String, default: "その他", trim: true },
+    gridfsId: { type: mongoose.Types.ObjectId, required: true },
+    mimeType: { type: String, required: true },
+    scope: { type: String, enum: ["personal", "team"], default: "team" },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+  },
+  { timestamps: true },
+);
+const Stamp = mongoose.model("Stamp", StampSchema);
+
 // ─── ユーザー別タスク接続設定 ──────────────────────────────────────────────
 const UserTaskConfigSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -1464,4 +1494,5 @@ module.exports = {
   ScheduleCommentRead,
   Contract,
   ContractTypeConfig,
+  Stamp,
 };
