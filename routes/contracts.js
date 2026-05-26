@@ -2392,7 +2392,7 @@ const ADMIN_CT_STYLE = `
 .adct-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .adct-form-group{display:flex;flex-direction:column;gap:4px}
 .adct-form-group.full{grid-column:1/-1}
-.adct-form-group label{font-size:12px;font-weight:700;color:#374151}
+.adct-form-group label{font-size:12px;font-weight:700;color:#374151;display:flex;flex-direction:row;align-items:center;gap:2px}
 .adct-form-group input,.adct-form-group select,.adct-form-group textarea{padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;color:#1f2937;background:#f9fafb;font-family:inherit}
 .adct-form-group input:focus,.adct-form-group select:focus,.adct-form-group textarea:focus{outline:none;border-color:#3b82f6;background:#fff}
 .adct-field-row{display:flex;gap:8px;align-items:center;padding:10px 12px;background:#f8fafc;border-radius:8px;border:1px solid #e5e7eb;margin-bottom:8px;flex-wrap:wrap}
@@ -2807,14 +2807,14 @@ router.get(
                       <div class="adct-fi-lbl">選択肢 <span class="adct-fi-hint">select型のみ・カンマ区切り</span></div>
                       <input type="text" name="fields[${i}][options]" placeholder="例: 選択肢A,選択肢B" value="${escapeHtml((f.options || []).join(","))}">
                     </div>
-                    <div class="adct-fi" style="align-items:center">
+                    <div class="adct-fi" style="flex-direction:row;align-items:center;gap:6px;padding-top:16px">
+                      <input type="checkbox" name="fields[${i}][required]" value="1" ${f.required ? "checked" : ""} style="width:auto;cursor:pointer;accent-color:#3b82f6;margin:0">
                       <div class="adct-fi-lbl">必須</div>
-                      <input type="checkbox" name="fields[${i}][required]" value="1" ${f.required ? "checked" : ""} style="width:auto;cursor:pointer;accent-color:#3b82f6;margin:4px 0">
                     </div>
-                    <div class="adct-fi" style="align-items:center">
-                      <div class="adct-fi-lbl">有効</div>
+                    <div class="adct-fi" style="flex-direction:row;align-items:center;gap:6px;padding-top:16px">
                       <input type="hidden" name="fields[${i}][enabled]" value="0">
-                      <input type="checkbox" name="fields[${i}][enabled]" value="1" ${f.enabled !== false ? "checked" : ""} style="width:auto;cursor:pointer;accent-color:#3b82f6;margin:4px 0">
+                      <input type="checkbox" name="fields[${i}][enabled]" value="1" ${f.enabled !== false ? "checked" : ""} style="width:auto;cursor:pointer;accent-color:#3b82f6;margin:0">
+                      <div class="adct-fi-lbl">有効</div>
                     </div>
                     <div style="align-self:flex-end">
                       <button type="button" onclick="document.getElementById('field-${i}').remove()" class="adct-btn adct-btn-danger adct-btn-sm">✕</button>
@@ -2865,14 +2865,14 @@ router.get(
             '<div class="adct-fi-lbl">選択肢 <span class="adct-fi-hint">select型のみ・カンマ区切り</span></div>' +
             '<input type="text" name="fields['+i+'][options]" placeholder="例: 選択肢A,選択肢B">' +
           '</div>' +
-          '<div class="adct-fi" style="align-items:center">' +
+          '<div class="adct-fi" style="flex-direction:row;align-items:center;gap:6px;padding-top:16px">' +
+            '<input type="checkbox" name="fields['+i+'][required]" value="1" style="width:auto;cursor:pointer;accent-color:#3b82f6;margin:0">' +
             '<div class="adct-fi-lbl">必須</div>' +
-            '<input type="checkbox" name="fields['+i+'][required]" value="1" style="width:auto;cursor:pointer;accent-color:#3b82f6;margin:4px 0">' +
           '</div>' +
-          '<div class="adct-fi" style="align-items:center">' +
-            '<div class="adct-fi-lbl">有効</div>' +
+          '<div class="adct-fi" style="flex-direction:row;align-items:center;gap:6px;padding-top:16px">' +
             '<input type="hidden" name="fields['+i+'][enabled]" value="0">' +
-            '<input type="checkbox" name="fields['+i+'][enabled]" value="1" checked style="width:auto;cursor:pointer;accent-color:#3b82f6;margin:4px 0">' +
+            '<input type="checkbox" name="fields['+i+'][enabled]" value="1" checked style="width:auto;cursor:pointer;accent-color:#3b82f6;margin:0">' +
+            '<div class="adct-fi-lbl">有効</div>' +
           '</div>' +
           '<div style="align-self:flex-end">' +
             '<button type="button" onclick="document.getElementById(\'field-'+i+'\').remove()" class="adct-btn adct-btn-danger adct-btn-sm">✕</button>' +
