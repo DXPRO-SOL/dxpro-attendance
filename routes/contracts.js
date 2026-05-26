@@ -853,7 +853,7 @@ router.get("/contracts", requireLogin, async (req, res) => {
             </select>
           </div>
           <div style="display:flex;gap:8px;margin-top:auto;align-items:flex-end">
-            <button type="submit" class="ct-btn ct-btn-primary">🔍 絞り込む</button>
+            <button type="submit" class="ct-btn ct-btn-outline">🔍 絞り込む</button>
             <a href="/contracts" class="ct-btn ct-btn-outline">リセット</a>
           </div>
         </form>
@@ -1055,19 +1055,10 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
                     <!-- 承認者候補 -->
                     <div>
                       <div style="font-size:11px;font-weight:700;color:#6b7280;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">承認者候補（部門長・管理者）</div>
-                      <select id="approver-select" style="width:100%;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;background:#fff;color:#374151;outline:none;box-sizing:border-box">
-                        <option value="">-- 承認者を選択 --</option>
-                        ${approverCandidates
-                          .filter(
-                            (u) => String(u._id) !== String(req.session.userId),
-                          )
-                          .map(
-                            (u) =>
-                              `<option value="${u._id}" data-name="${escapeHtml(u.username)}">${escapeHtml(u.username)}（${u.role === "admin" ? "管理者" : "部門長"}）</option>`,
-                          )
-                          .join("")}
-                      </select>
-                      <button type="button" onclick="addApproverFromSelect()" id="approver-add-btn" style="margin-top:8px;width:100%;padding:8px 0;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">＋ 承認者を追加</button>
+                      <div style="position:relative">
+                        <input type="text" id="approver-filter" placeholder="名前を入力して候補を選択..." oninput="filterApproverOptions()" onfocus="showApproverSuggestions()" onblur="hideApproverSuggestions()" autocomplete="off" style="width:100%;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;background:#fff;color:#374151;outline:none;box-sizing:border-box">
+                        <div id="approver-suggestions" style="display:none;position:absolute;top:calc(100% + 2px);left:0;right:0;z-index:200;background:#fff;border:1.5px solid #e5e7eb;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.1);max-height:200px;overflow-y:auto"></div>
+                      </div>
                     </div>
                     <!-- 選択済み承認者（順番） -->
                     <div>
@@ -1118,6 +1109,11 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
       ).replace(/</g, "\\u003c")};
       var STATUS_LABELS = ${JSON.stringify(STATUS_LABEL).replace(/</g, "\\u003c")};
       var CURRENT_VALS = { status: 'active', autoRenew: 'false', renewalPeriodMonths: '12' };
+      var APPROVER_CANDIDATES = ${JSON.stringify(
+        approverCandidates
+          .filter((u) => String(u._id) !== String(req.session.userId))
+          .map((u) => ({ id: String(u._id), name: u.username, role: u.role })),
+      ).replace(/</g, "\\u003c")};
       var selectedApprovers = [];
       </script>
       <script src="/contracts-form.js"></script>

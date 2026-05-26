@@ -118,23 +118,82 @@ function updateDynamicFields(typeKey) {
     .join("");
 }
 
-function addApproverFromSelect() {
-  var sel = document.getElementById("approver-select");
-  if (!sel) return;
-  var opt = sel.options[sel.selectedIndex];
-  if (!opt || !opt.value) return;
+function showApproverSuggestions() {
+  filterApproverOptions();
+}
+
+function hideApproverSuggestions() {
+  // mousedownで候補クリック後にblurが来るので少し遅らせる
+  setTimeout(function () {
+    var box = document.getElementById("approver-suggestions");
+    if (box) box.style.display = "none";
+  }, 150);
+}
+
+function filterApproverOptions() {
+  var filter = document.getElementById("approver-filter");
+  var box = document.getElementById("approver-suggestions");
+  if (!filter || !box || typeof APPROVER_CANDIDATES === "undefined") return;
+  var keyword = filter.value.trim().toLowerCase();
+  var matched = APPROVER_CANDIDATES.filter(function (c) {
+    if (
+      selectedApprovers.some(function (a) {
+        return a.id === c.id;
+      })
+    )
+      return false;
+    if (!keyword) return true;
+    return c.name.toLowerCase().indexOf(keyword) !== -1;
+  });
+  if (matched.length === 0) {
+    box.style.display = "none";
+    return;
+  }
+  box.innerHTML = matched
+    .map(function (c) {
+      var role = c.role === "admin" ? "管理者" : "部門長";
+      var n = c.name
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      return (
+        "<div onmousedown=\"addApproverById('" +
+        c.id +
+        "','" +
+        c.name.replace(/'/g, "\\'") +
+        "')\" " +
+        'style="padding:9px 12px;cursor:pointer;font-size:13px;color:#374151;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:8px" ' +
+        "onmouseover=\"this.style.background='#eff6ff'\" onmouseout=\"this.style.background=''\">" +
+        '<span style="flex:1;font-weight:600">' +
+        n +
+        "</span>" +
+        '<span style="font-size:11px;color:#6b7280;background:#f1f5f9;padding:2px 6px;border-radius:4px">' +
+        role +
+        "</span>" +
+        "</div>"
+      );
+    })
+    .join("");
+  box.style.display = "block";
+}
+
+function addApproverById(id, name) {
   if (
     selectedApprovers.some(function (a) {
-      return a.id === opt.value;
+      return a.id === id;
     })
   )
     return;
-  selectedApprovers.push({
-    id: opt.value,
-    name: opt.getAttribute("data-name"),
-  });
+  selectedApprovers.push({ id: id, name: name });
+  var filter = document.getElementById("approver-filter");
+  var box = document.getElementById("approver-suggestions");
+  if (filter) filter.value = "";
+  if (box) box.style.display = "none";
   renderSelected();
-  sel.value = "";
+}
+
+function addApproverFromSelect() {
+  /* legacy: no-op */
 }
 
 function removeApprover(id) {
@@ -147,7 +206,6 @@ function removeApprover(id) {
 function renderSelected() {
   var sel = document.getElementById("approver-selected");
   var inp = document.getElementById("approver-inputs");
-  var dropdown = document.getElementById("approver-select");
   if (!sel || !inp) return;
   if (selectedApprovers.length === 0) {
     sel.innerHTML =
@@ -181,19 +239,9 @@ function renderSelected() {
       })
       .join("");
   }
-  // ドロップダウンの選択済み項目を無効化
-  if (dropdown) {
-    Array.from(dropdown.options).forEach(function (opt) {
-      if (!opt.value) return;
-      var already = selectedApprovers.some(function (a) {
-        return a.id === opt.value;
-      });
-      opt.disabled = already;
-    });
-    // 現在選択中の値が無効化されたらプレースホルダーに戻す
-    var cur = dropdown.options[dropdown.selectedIndex];
-    if (cur && cur.disabled) dropdown.value = "";
-  }
+  // フィルター入力が残っていたら候補を再描画
+  var filterEl = document.getElementById("approver-filter");
+  if (filterEl && filterEl.value !== undefined) filterApproverOptions();
 }
 (function () {
   var dz = document.getElementById("drop-zone");
