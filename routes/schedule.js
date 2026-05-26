@@ -818,7 +818,7 @@ var _schI18n = {
   respondFailed:     ${JSON.stringify(t("schedule.respond_failed", lang))},
 };
 function _schTpl(tpl, vars) {
-  return tpl.replace(/{{(w+)}}/g, function(m, k) { return vars[k] !== undefined ? String(vars[k]) : m; });
+  return tpl.replace(/{{(\\w+)}}/g, function(m, k) { return vars[k] !== undefined ? String(vars[k]) : m; });
 }
 (function(){
     const MY_ID = '${myId}';
@@ -3376,6 +3376,7 @@ router.put("/api/schedule/:id", requireLogin, async (req, res) => {
       type,
       attendees,
       color,
+      useAppCall,
       tags: rawTags,
       visibility: rawVisibility,
     } = req.body;
@@ -3434,6 +3435,30 @@ router.put("/api/schedule/:id", requireLogin, async (req, res) => {
         $addToSet: { members: { $each: addedAttendees } },
       });
     }
+
+    // useAppCall=ON かつ未作成の場合、会議室を新規生成
+    if (useAppCall && !schedule.chatRoomId && newAttendeeIds.length > 0) {
+      const allMembers = [myId, ...newAttendeeIds];
+      const room = await ChatRoom.create({
+        name: `${schedule.title} 会議室`,
+        description: `${fmtJST(schedule.startAt)} のスケジュール会議`,
+        icon: "📅",
+        members: allMembers,
+        admins: [myId],
+        createdBy: myId,
+      });
+      schedule.chatRoomId = room._id;
+      if (global.io) {
+        allMembers.forEach((uid) => {
+          global.io.to("u_" + String(uid)).emit("chat_room_joined", {
+            roomId: room._id,
+            roomName: room.name,
+            scheduleId: schedule._id,
+          });
+        });
+      }
+    }
+
     await schedule.save();
 
     const updaterEmp = await Employee.findOne({ userId: myId }).lean();
@@ -3645,6 +3670,51 @@ router.put("/api/schedule/:id/series-bulk", requireLogin, async (req, res) => {
         });
     }
 
+    // useAppCall=ON かつ未作成の場合、シリーズ共通の会議室を1つ生成
+    let sharedChatRoomId = null;
+    const { useAppCall } = req.body;
+    if (useAppCall && newAttendeeIds.length > 0) {
+      // 対象スケジュールの中で既存の会議室があればそれを使う
+      const existingRoom = targets.find((t) => t.chatRoomId);
+      if (existingRoom) {
+        sharedChatRoomId = existingRoom.chatRoomId;
+        // 新規参加者をルームに追加
+        const prevMembers = [];
+        await ChatRoom.findById(sharedChatRoomId).then((r) => {
+          if (r) r.members.forEach((m) => prevMembers.push(String(m)));
+        });
+        const toAdd = [myId, ...newAttendeeIds].filter(
+          (id) => !prevMembers.includes(String(id)),
+        );
+        if (toAdd.length > 0) {
+          await ChatRoom.findByIdAndUpdate(sharedChatRoomId, {
+            $addToSet: { members: { $each: toAdd } },
+          });
+        }
+      } else {
+        // 新規作成
+        const allMembers = [myId, ...newAttendeeIds];
+        const room = await ChatRoom.create({
+          name: `${title.trim()} 会議室`,
+          description: `${fmtJST(new Date(startAt))} のスケジュール会議`,
+          icon: "📅",
+          members: allMembers,
+          admins: [myId],
+          createdBy: myId,
+        });
+        sharedChatRoomId = room._id;
+        if (global.io) {
+          allMembers.forEach((uid) => {
+            global.io.to("u_" + String(uid)).emit("chat_room_joined", {
+              roomId: room._id,
+              roomName: room.name,
+              scheduleId: refSchedule._id,
+            });
+          });
+        }
+      }
+    }
+
     // 一括更新
     for (const sch of targets) {
       // 日付は保持、時刻のみ新しい値に更新
@@ -3680,6 +3750,7 @@ router.put("/api/schedule/:id/series-bulk", requireLogin, async (req, res) => {
           ? rawVisibility
           : sch.visibility;
       sch.attendees = newAttendeeIds;
+      if (sharedChatRoomId) sch.chatRoomId = sharedChatRoomId;
       for (const uid of addedAttendees) {
         const exists = sch.attendeeStatus.some((s) => String(s.userId) === uid);
         if (!exists)
