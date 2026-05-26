@@ -52,7 +52,8 @@
     "schedule": "日程安排",
     "workflow": "工作流",
     "cloud": "云盘",
-    "integrations": "外部API集成设置"
+    "integrations": "外部API集成设置",
+    "contracts": "合同管理"
   },
   "topbar": {
     "admin_badge": "管理员",

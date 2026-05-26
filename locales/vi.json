@@ -52,7 +52,8 @@
     "schedule": "Lịch trình",
     "workflow": "Quy trình làm việc",
     "cloud": "Ổ đĩa đám mây",
-    "integrations": "Cài đặt tích hợp API"
+    "integrations": "Cài đặt tích hợp API",
+    "contracts": "Quản lý hợp đồng"
   },
   "topbar": {
     "admin_badge": "Quản trị viên",
