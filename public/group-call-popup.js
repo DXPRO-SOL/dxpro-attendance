@@ -38,6 +38,103 @@
   const _recordingPeers = new Set(); // 録画中のピアID
   let spotlightTileId = null; // スポットライト表示中のタイルID（null = グリッド表示）
 
+  // ── AI議事録（文字起こし）────────────────────────────────────────
+  let gcTranscriptUtterances = [];
+  let gcTranscriptionSessionId = null;
+  let gcTranscriptionRecorderId = null;
+  let gcSpeechRecognizer = null;
+  let gcSpeechRecognizerStopRequested = false;
+
+  function gcStartSpeechRecognition(mode, recorderUserId) {
+    try {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) return;
+      gcStopSpeechRecognition();
+      gcSpeechRecognizerStopRequested = false;
+      const rec = new SR();
+      rec.lang = "ja-JP";
+      rec.continuous = true;
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
+      rec.onresult = (e) => {
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i];
+          if (!r.isFinal) continue;
+          const txt = ((r[0] && r[0].transcript) || "").trim();
+          if (!txt) continue;
+          const ts = Date.now();
+          if (mode === "recorder") {
+            gcTranscriptUtterances.push({
+              ts,
+              userId: String(MY_ID),
+              name: MY_NAME || "自分",
+              text: txt,
+            });
+          } else if (mode === "participant" && recorderUserId) {
+            socket.emit("transcription_utterance", {
+              sessionId: gcTranscriptionSessionId,
+              toUserId: recorderUserId,
+              fromUserId: String(MY_ID),
+              fromName: MY_NAME || "参加者",
+              ts,
+              text: txt,
+            });
+          }
+        }
+      };
+      rec.onerror = (ev) => {
+        if (
+          ev &&
+          ev.error &&
+          ev.error !== "no-speech" &&
+          ev.error !== "aborted"
+        )
+          console.warn("[GC-SR] error:", ev.error);
+      };
+      rec.onend = () => {
+        if (gcSpeechRecognizerStopRequested) return;
+        const active =
+          mode === "recorder"
+            ? gcMediaRecorder && gcMediaRecorder.state === "recording"
+            : gcTranscriptionRecorderId != null;
+        if (active) {
+          try {
+            rec.start();
+          } catch (_) {}
+        }
+      };
+      try {
+        rec.start();
+      } catch (_) {}
+      gcSpeechRecognizer = rec;
+    } catch (_) {}
+  }
+
+  function gcStopSpeechRecognition() {
+    gcSpeechRecognizerStopRequested = true;
+    if (gcSpeechRecognizer) {
+      try {
+        gcSpeechRecognizer.stop();
+      } catch (_) {}
+      gcSpeechRecognizer = null;
+    }
+  }
+
+  function gcBuildTranscriptText() {
+    if (!gcTranscriptUtterances.length) return "";
+    return gcTranscriptUtterances
+      .slice()
+      .sort((a, b) => a.ts - b.ts)
+      .map((u) => {
+        const d = new Date(u.ts);
+        const hh = String(d.getHours()).padStart(2, "0");
+        const mm = String(d.getMinutes()).padStart(2, "0");
+        const ss = String(d.getSeconds()).padStart(2, "0");
+        return `[${hh}:${mm}:${ss}] ${u.name}: ${u.text}`;
+      })
+      .join("\n");
+  }
+
   // ── Socket.IO ────────────────────────────────────────────────────
   const socket = io({ transports: ["websocket", "polling"] });
 
@@ -701,6 +798,12 @@
     };
 
     gcMediaRecorder.onstop = async () => {
+      // 文字起こし停止 → 参加者にも通知
+      gcStopSpeechRecognition();
+      socket.emit("transcription_stop", {
+        sessionId: gcTranscriptionSessionId,
+        roomId: ROOM_ID,
+      });
       socket.emit("gc_status", {
         roomId: ROOM_ID,
         userId: MY_ID,
@@ -722,11 +825,17 @@
       gcRecordChunks = [];
       gcMediaRecorder = null;
       if (blob.size === 0) return;
+      // 遅れて届く参加者の発言を待つ
+      await new Promise((r) => setTimeout(r, 800));
+      const transcriptText = gcBuildTranscriptText();
+      gcTranscriptUtterances = [];
+      gcTranscriptionSessionId = null;
 
       const fd = new FormData();
       fd.append("recording", blob, `recording_${Date.now()}.webm`);
       fd.append("duration", recSeconds);
       if (ROOM_ID) fd.append("roomId", ROOM_ID);
+      if (transcriptText) fd.append("transcript", transcriptText);
 
       try {
         const res = await fetch("/api/chat/recording", {
@@ -750,6 +859,17 @@
     };
 
     gcMediaRecorder.start(1000);
+    // 文字起こし開始
+    gcTranscriptUtterances = [];
+    gcTranscriptionSessionId =
+      "tr_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+    gcStartSpeechRecognition("recorder");
+    socket.emit("transcription_start", {
+      sessionId: gcTranscriptionSessionId,
+      recorderUserId: String(MY_ID),
+      recorderName: MY_NAME || "",
+      roomId: ROOM_ID,
+    });
     socket.emit("gc_status", {
       roomId: ROOM_ID,
       userId: MY_ID,
@@ -910,6 +1030,46 @@
     const name = participants[userId] ? participants[userId].name : userId;
     showCallAlert(name + " が退場しました", false);
     removePeer(userId);
+  });
+
+  // ── AI議事録：他の参加者から文字起こし協力依頼を受信 ────────────
+  // グループ通話の録画者が transcription_start を送ってきた場合
+  socket.on("transcription_start", (data) => {
+    if (!data || !data.recorderUserId) return;
+    if (String(data.recorderUserId) === String(MY_ID)) return;
+    gcTranscriptionSessionId = data.sessionId || null;
+    gcTranscriptionRecorderId = String(data.recorderUserId);
+    gcStartSpeechRecognition("participant", gcTranscriptionRecorderId);
+  });
+  // 参加者から文字起こし結果を受信して蓄積（自分が録画者の場合）
+  socket.on("transcription_utterance", (data) => {
+    if (!data || !data.fromUserId) return;
+    if (
+      gcTranscriptionSessionId &&
+      data.sessionId &&
+      data.sessionId !== gcTranscriptionSessionId
+    )
+      return;
+    gcTranscriptUtterances.push({
+      ts: Number(data.ts) || Date.now(),
+      userId: String(data.fromUserId),
+      name: data.fromName || "参加者",
+      text: String(data.text || ""),
+    });
+  });
+  // 録画者から停止指示
+  socket.on("transcription_stop", (data) => {
+    if (gcTranscriptionRecorderId == null) return;
+    if (
+      data &&
+      data.sessionId &&
+      gcTranscriptionSessionId &&
+      data.sessionId !== gcTranscriptionSessionId
+    )
+      return;
+    gcStopSpeechRecognition();
+    gcTranscriptionRecorderId = null;
+    gcTranscriptionSessionId = null;
   });
 
   // ── 起動 ─────────────────────────────────────────────────────────
