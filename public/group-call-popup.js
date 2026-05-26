@@ -76,6 +76,20 @@
       }
     };
 
+    // ICE 接続状態の監視 → 失敗時に再起動（1on1通話と同等の回復ロジック）
+    let _iceRestartCount = 0;
+    pc.oniceconnectionstatechange = () => {
+      const s = pc.iceConnectionState;
+      if (s === "failed") {
+        if (_iceRestartCount < 2) {
+          _iceRestartCount++;
+          try {
+            pc.restartIce();
+          } catch (_) {}
+        }
+      }
+    };
+
     // リモートトラック受信
     pc.ontrack = (e) => {
       const stream = e.streams[0] || new MediaStream([e.track]);
@@ -83,12 +97,21 @@
       updateVideoTile(peerId);
     };
 
+    // 接続状態の監視（disconnected は一時的なので削除しない）
     pc.onconnectionstatechange = () => {
-      if (
-        pc.connectionState === "disconnected" ||
-        pc.connectionState === "failed" ||
-        pc.connectionState === "closed"
-      ) {
+      const s = pc.connectionState;
+      if (s === "failed") {
+        // ICE 再起動を試みた後、5秒以内に回復しなければ削除
+        setTimeout(() => {
+          if (
+            pcs[peerId] === pc &&
+            (pc.connectionState === "failed" ||
+              pc.connectionState === "disconnected")
+          ) {
+            removePeer(peerId);
+          }
+        }, 5000);
+      } else if (s === "closed") {
         removePeer(peerId);
       }
     };
@@ -907,6 +930,13 @@
         });
       } catch (_) {
         localStream = null;
+        // マイク・カメラへのアクセス失敗を通知
+        const errBox = document.createElement("div");
+        errBox.style.cssText =
+          "position:fixed;top:12px;left:50%;transform:translateX(-50%);background:#c0392b;color:#fff;padding:10px 18px;border-radius:6px;z-index:9999;font-size:13px;text-align:center;";
+        errBox.textContent =
+          "マイク・カメラへのアクセスが許可されていません。ブラウザのアドレスバー横のアイコンから許可してください。";
+        document.body.appendChild(errBox);
       }
     }
     // getUserMedia 解決後に既存 PC（競合で先に作られたもの）へトラックを追加
