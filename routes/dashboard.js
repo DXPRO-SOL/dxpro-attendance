@@ -24,6 +24,7 @@ const {
 } = require("../lib/helpers");
 const { renderPage } = require("../lib/renderPage");
 const { t } = require("../lib/i18n");
+const { getPersonalizedLayout } = require("../services/uiOptimizer");
 
 // 勤怠ステータス（日本語DB値 → i18nスラグ）マッピング
 const ATTENDANCE_STATUS_KEY = {
@@ -354,6 +355,9 @@ router.get("/dashboard", requireLogin, async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(6)
       .lean();
+
+    // AI操作学習・個人最適化レイアウト取得
+    const aiLayout = await getPersonalizedLayout(user._id);
 
     renderPage(
       req,
@@ -692,6 +696,123 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             .kpi-grid { grid-template-columns: 1fr !important; }
             .kpi-card { padding: 14px 16px !important; }
         }
+
+        /* ── AI最適化ホームセクション ── */
+        .ai-home-section { margin-bottom: 20px; }
+        .ai-home-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 12px; flex-wrap: wrap; gap: 8px;
+        }
+        .ai-home-title {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 13px; font-weight: 700; color: var(--c-text);
+        }
+        .ai-brain-badge {
+            display: inline-flex; align-items: center; gap: 5px;
+            background: linear-gradient(135deg,#ede9fe,#faf5ff);
+            border: 1px solid #ddd6fe; border-radius: 999px;
+            padding: 3px 10px; font-size: 11px; font-weight: 700; color: #7c3aed;
+        }
+        .ai-home-actions { display: flex; align-items: center; gap: 8px; }
+        .ai-home-toggle-btn {
+            font-size: 11px; color: var(--c-muted); background: none; border: 1px solid var(--c-border);
+            border-radius: 6px; padding: 3px 10px; cursor: pointer; transition: all .15s;
+        }
+        .ai-home-toggle-btn:hover { border-color: var(--c-primary); color: var(--c-primary); }
+        .ai-settings-link { font-size: 11px; color: var(--c-muted); text-decoration: none; }
+        .ai-settings-link:hover { color: var(--c-primary); }
+
+        /* よく使う機能ショートカット */
+        .ai-freq-grid {
+            display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;
+        }
+        .ai-freq-btn {
+            display: flex; align-items: center; gap: 8px;
+            padding: 9px 16px; border-radius: 10px;
+            background: var(--c-surface); border: 1px solid var(--c-border);
+            color: var(--c-text); text-decoration: none; font-size: 12px; font-weight: 600;
+            box-shadow: 0 1px 4px rgba(0,0,0,.05);
+            transition: transform .18s, box-shadow .18s;
+        }
+        .ai-freq-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(0,0,0,.1); text-decoration: none; color: var(--c-text); }
+        .ai-freq-icon {
+            width: 28px; height: 28px; border-radius: 7px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px; color: #fff; flex-shrink: 0;
+        }
+        .ai-freq-count { font-size: 10px; color: var(--c-sub); font-weight: 500; }
+
+        /* ユーザータイプパネル */
+        .ai-type-panel {
+            display: flex; align-items: center; gap: 14px;
+            padding: 14px 18px; border-radius: 12px;
+            border: 1.5px solid; margin-bottom: 14px;
+            flex-wrap: wrap; gap: 12px;
+        }
+        .ai-type-icon {
+            width: 40px; height: 40px; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 17px; flex-shrink: 0;
+        }
+        .ai-type-content { flex: 1; min-width: 0; }
+        .ai-type-title { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+        .ai-type-msg { font-size: 12px; }
+        .ai-type-link {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 6px 14px; border-radius: 7px;
+            font-size: 12px; font-weight: 700; color: #fff;
+            text-decoration: none; transition: opacity .15s; flex-shrink: 0;
+        }
+        .ai-type-link:hover { opacity: .88; color: #fff; }
+
+        /* AIおすすめ提案 */
+        .ai-suggestion-grid {
+            display: grid; grid-template-columns: repeat(4,1fr); gap: 10px;
+        }
+        @media(max-width:900px){ .ai-suggestion-grid { grid-template-columns: repeat(2,1fr); } }
+        @media(max-width:500px){ .ai-suggestion-grid { grid-template-columns: 1fr; } }
+        .ai-suggest-card {
+            background: var(--c-surface); border: 1px solid var(--c-border);
+            border-radius: 11px; padding: 12px 14px;
+            box-shadow: 0 1px 4px rgba(0,0,0,.05);
+            display: flex; flex-direction: column; gap: 6px;
+            position: relative;
+        }
+        .ai-suggest-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.09); }
+        .ai-suggest-icon-row { display: flex; align-items: center; justify-content: space-between; }
+        .ai-suggest-icon {
+            width: 32px; height: 32px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px; flex-shrink: 0;
+        }
+        .ai-suggest-dismiss {
+            background: none; border: none; color: var(--c-sub); font-size: 12px;
+            cursor: pointer; padding: 2px 4px; border-radius: 4px; transition: color .15s;
+        }
+        .ai-suggest-dismiss:hover { color: var(--c-danger); }
+        .ai-suggest-title { font-size: 12px; font-weight: 700; color: var(--c-text); }
+        .ai-suggest-desc { font-size: 11px; color: var(--c-muted); line-height: 1.4; }
+        .ai-suggest-link {
+            display: inline-flex; align-items: center; gap: 4px;
+            font-size: 11px; font-weight: 600; color: var(--c-primary);
+            text-decoration: none; margin-top: 2px;
+        }
+        .ai-suggest-link:hover { text-decoration: underline; }
+
+        /* 業務傾向サマリー */
+        .ai-trend-bar {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 16px; background: linear-gradient(135deg,#f5f3ff,#ede9fe);
+            border: 1px solid #ddd6fe; border-radius: 10px; margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+        .ai-trend-bar i { color: #7c3aed; font-size: 14px; flex-shrink: 0; }
+        .ai-trend-text { font-size: 12px; color: #5b21b6; flex: 1; }
+        .ai-trend-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+        .ai-trend-tag {
+            background: #fff; border: 1px solid #ddd6fe; border-radius: 999px;
+            padding: 2px 10px; font-size: 11px; font-weight: 600; color: #7c3aed;
+        }
         </style>
 
         <canvas id="db-bg-canvas"></canvas>
@@ -734,6 +855,130 @@ router.get("/dashboard", requireLogin, async (req, res) => {
         </div>
         `
             : ""
+        }
+
+        <!-- ── AI最適化ホームセクション ── -->
+        ${
+          aiLayout.enabled
+            ? `
+        <div class="ai-home-section" id="aiHomeSection">
+          <div class="ai-home-header">
+            <div class="ai-home-title">
+              <span class="ai-brain-badge"><i class="fa-solid fa-brain"></i> AI最適化ホーム</span>
+              <span style="font-size:12px;color:var(--c-muted);font-weight:500">あなたの利用傾向から最適化されています</span>
+            </div>
+            <div class="ai-home-actions">
+              <button class="ai-home-toggle-btn" onclick="toggleAiSection()" id="aiToggleBtn">
+                <i class="fa-solid fa-chevron-up" id="aiToggleIcon"></i> 折りたたむ
+              </button>
+              <a href="/ai-home-settings" class="ai-settings-link"><i class="fa-solid fa-gear"></i> 設定</a>
+            </div>
+          </div>
+          <div id="aiHomeSectionBody">
+
+            ${
+              /* 業務傾向サマリー */ aiLayout.trendSummary
+                ? `
+            <div class="ai-trend-bar">
+              <i class="fa-solid fa-chart-line"></i>
+              <span class="ai-trend-text">最近よく使っている機能:</span>
+              <div class="ai-trend-tags">
+                ${aiLayout.trendSummary.topFeatureNames.map((n) => `<span class="ai-trend-tag">${n}</span>`).join("")}
+              </div>
+              ${aiLayout.trendSummary.peakLabel ? `<span style="font-size:11px;color:#7c3aed;font-weight:500;margin-left:4px">利用時間帯: ${aiLayout.trendSummary.peakLabel}</span>` : ""}
+            </div>
+            `
+                : ""
+            }
+
+            ${
+              /* ユーザータイプ別パネル */ aiLayout.typePanel
+                ? `
+            <div class="ai-type-panel" style="background:${aiLayout.typePanel.accentBg};border-color:${aiLayout.typePanel.accentColor}40;">
+              <div class="ai-type-icon" style="background:${aiLayout.typePanel.accentColor}20;color:${aiLayout.typePanel.accentColor}">
+                <i class="fa-solid ${aiLayout.typePanel.icon}"></i>
+              </div>
+              <div class="ai-type-content">
+                <div class="ai-type-title" style="color:${aiLayout.typePanel.accentColor}">${aiLayout.typePanel.title}</div>
+                <div class="ai-type-msg" style="color:${aiLayout.typePanel.accentColor}99">${aiLayout.typePanel.message}</div>
+              </div>
+              <a href="${aiLayout.typePanel.link}" class="ai-type-link" style="background:${aiLayout.typePanel.accentColor}">
+                <i class="fa-solid fa-arrow-right"></i> ${aiLayout.typePanel.linkLabel}
+              </a>
+            </div>
+            `
+                : ""
+            }
+
+            ${
+              /* よく使う機能ショートカット */ aiLayout.topFeatures.length > 0
+                ? `
+            <div style="font-size:11px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+              <i class="fa-solid fa-star" style="color:#d97706"></i> よく使う機能
+            </div>
+            <div class="ai-freq-grid">
+              ${aiLayout.topFeatures
+                .map(
+                  (f) => `
+              <a href="${f.url}" class="ai-freq-btn" data-feature="${f.feature}" onclick="logBehavior('feature_use','${f.feature}')">
+                <div class="ai-freq-icon" style="background:${f.bg};box-shadow:0 3px 8px ${f.shadow}">
+                  <i class="fa-solid ${f.icon}"></i>
+                </div>
+                <div>
+                  <div>${f.label}</div>
+                  <div class="ai-freq-count">${f.count} 回利用</div>
+                </div>
+              </a>`,
+                )
+                .join("")}
+            </div>
+            `
+                : ""
+            }
+
+            ${
+              /* AIおすすめ提案 */ aiLayout.suggestions.length > 0
+                ? `
+            <div style="font-size:11px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;margin-top:4px">
+              <i class="fa-solid fa-lightbulb" style="color:#d97706"></i> AIおすすめ操作
+            </div>
+            <div class="ai-suggestion-grid">
+              ${aiLayout.suggestions
+                .map(
+                  (s) => `
+              <div class="ai-suggest-card" id="suggest-${s.id}">
+                <div class="ai-suggest-icon-row">
+                  <div class="ai-suggest-icon" style="background:${s.bgColor};color:${s.color}">
+                    <i class="fa-solid ${s.icon}"></i>
+                  </div>
+                  <button class="ai-suggest-dismiss" title="非表示にする" onclick="dismissSuggestion('${s.id}')">
+                    <i class="fa-solid fa-xmark"></i>
+                  </button>
+                </div>
+                <div class="ai-suggest-title">${s.title}</div>
+                <div class="ai-suggest-desc">${s.desc}</div>
+                <a href="${s.link}" class="ai-suggest-link">
+                  <i class="fa-solid fa-arrow-right" style="font-size:10px"></i> 確認する
+                </a>
+              </div>`,
+                )
+                .join("")}
+            </div>
+            `
+                : ""
+            }
+
+          </div><!-- /aiHomeSectionBody -->
+        </div>
+        `
+            : `
+        <!-- AI学習OFF状態: 軽量リンク表示 -->
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:#f9fafb;border:1px solid var(--c-border);border-radius:10px;margin-bottom:16px;font-size:12px;color:var(--c-muted)">
+          <i class="fa-solid fa-brain" style="color:var(--c-sub)"></i>
+          AI最適化ホームはオフです。
+          <a href="/ai-home-settings" style="color:var(--c-primary);font-weight:600">設定でオンにする</a>
+        </div>
+        `
         }
 
         <!-- ── KPI Row ── -->
@@ -1963,6 +2208,66 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             window.addEventListener('resize', resize);
             resize();
             draw();
+        })();
+
+        // ── AI最適化ホーム: 行動ログ送信 ────────────────────────────────────
+        function logBehavior(action, feature, target) {
+            try {
+                fetch('/api/behavior-log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action, feature, target: target || window.location.pathname }),
+                }).catch(() => {});
+            } catch(e) {}
+        }
+
+        // ページ訪問ログ（ダッシュボード）
+        logBehavior('page_visit', 'dashboard', '/dashboard');
+
+        // クイックアクションボタンへのクリックログ追跡
+        document.querySelectorAll('.qa-btn[data-feature]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const f = btn.getAttribute('data-feature');
+                if (f) logBehavior('feature_use', f, btn.href || '');
+            });
+        });
+
+        // ── AI最適化ホーム: AIおすすめ非表示 ───────────────────────────────
+        function dismissSuggestion(id) {
+            document.getElementById('suggest-' + id)?.remove();
+            fetch('/api/ui-preference/dismiss', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ suggestionId: id }),
+            }).catch(() => {});
+        }
+
+        // ── AI最適化ホーム: 折りたたみ ──────────────────────────────────────
+        function toggleAiSection() {
+            const body = document.getElementById('aiHomeSectionBody');
+            const icon = document.getElementById('aiToggleIcon');
+            const btn  = document.getElementById('aiToggleBtn');
+            if (!body) return;
+            if (body.style.display === 'none') {
+                body.style.display = '';
+                icon.className = 'fa-solid fa-chevron-up';
+                btn.innerHTML = '<i class="fa-solid fa-chevron-up" id="aiToggleIcon"></i> 折りたたむ';
+                localStorage.removeItem('aiSectionCollapsed');
+            } else {
+                body.style.display = 'none';
+                icon.className = 'fa-solid fa-chevron-down';
+                btn.innerHTML = '<i class="fa-solid fa-chevron-down" id="aiToggleIcon"></i> 展開する';
+                localStorage.setItem('aiSectionCollapsed', '1');
+            }
+        }
+        // 前回の折りたたみ状態を復元
+        (function(){
+            if (localStorage.getItem('aiSectionCollapsed') === '1') {
+                const body = document.getElementById('aiHomeSectionBody');
+                const btn  = document.getElementById('aiToggleBtn');
+                if (body) body.style.display = 'none';
+                if (btn)  btn.innerHTML = '<i class="fa-solid fa-chevron-down" id="aiToggleIcon"></i> 展開する';
+            }
         })();
         </script>
     `,
