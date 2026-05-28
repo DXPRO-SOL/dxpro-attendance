@@ -1453,6 +1453,86 @@ const ContractTypeConfig = mongoose.model(
   ContractTypeConfigSchema,
 );
 
+// ─── AI操作学習: ユーザー行動ログ ─────────────────────────────────────────────
+const UserBehaviorLogSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    // 操作種別
+    action: {
+      type: String,
+      enum: ["page_visit", "feature_use", "click", "search"],
+      required: true,
+    },
+    // 機能名（'attendance','leave','goals','payroll','chat','board',
+    //         'approval','skillsheet','schedule','tasks','chatbot','hr','dashboard'）
+    feature: { type: String, required: true },
+    // 具体的な操作対象（URL、ボタン名など）※最大200文字
+    target: { type: String, default: "" },
+    // 追加メタ情報
+    metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
+    // 時間帯・曜日（分析用）
+    hour: { type: Number, min: 0, max: 23 },
+    dayOfWeek: { type: Number, min: 0, max: 6 },
+  },
+  { timestamps: true },
+);
+UserBehaviorLogSchema.index({ userId: 1, createdAt: -1 });
+UserBehaviorLogSchema.index({ userId: 1, feature: 1, createdAt: -1 });
+const UserBehaviorLog = mongoose.model(
+  "UserBehaviorLog",
+  UserBehaviorLogSchema,
+);
+
+// ─── AI操作学習: ユーザーUI設定・学習結果 ────────────────────────────────────
+const UserUIPreferenceSchema = new mongoose.Schema({
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+    unique: true,
+  },
+  // AI学習ON/OFF
+  aiLearningEnabled: { type: Boolean, default: true },
+  // 手動カスタマイズ
+  pinnedCards: [{ type: String }],
+  hiddenCards: [{ type: String }],
+  cardOrder: [{ type: String }],
+  // AI学習結果（analyzeAndUpdatePreference で自動更新）
+  frequentFeatures: [
+    {
+      feature: { type: String },
+      count: { type: Number, default: 0 },
+      lastUsed: { type: Date },
+    },
+  ],
+  peakHours: [{ type: Number }], // よく利用する時間帯（0–23）
+  userType: {
+    type: String,
+    enum: [
+      "approver",
+      "attendance_fixer",
+      "project_manager",
+      "chatbot_user",
+      "general",
+    ],
+    default: "general",
+  },
+  // 通知最適化
+  suppressedNotificationTypes: [{ type: String }],
+  // 非表示にしたAIおすすめ
+  dismissedSuggestions: [{ type: String }],
+  lastAnalyzedAt: { type: Date },
+  updatedAt: { type: Date, default: Date.now },
+});
+const UserUIPreference = mongoose.model(
+  "UserUIPreference",
+  UserUIPreferenceSchema,
+);
+
 module.exports = {
   ChatRoom,
   ChatMessage,
@@ -1495,4 +1575,6 @@ module.exports = {
   Contract,
   ContractTypeConfig,
   Stamp,
+  UserBehaviorLog,
+  UserUIPreference,
 };
