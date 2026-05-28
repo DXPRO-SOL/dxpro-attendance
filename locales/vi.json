@@ -54,7 +54,20 @@
     "workflow": "Quy trình làm việc",
     "cloud": "Ổ đĩa đám mây",
     "integrations": "Cài đặt tích hợp API",
-    "contracts": "Quản lý hợp đồng"
+    "contracts": "Quản lý hợp đồng",
+    "admin_monthly_attendance": "Chấm công tháng",
+    "admin_approval_requests": "Danh sách phê duyệt",
+    "admin_departments": "Quản lý phòng ban",
+    "admin_org_roles": "Vai trò & Điều chuyển",
+    "admin_payroll_master": "Quản lý lương master",
+    "admin_contract_types": "Loại hợp đồng",
+    "admin_locations": "Quản lý địa điểm GPS",
+    "admin_skillmap": "Bản đồ kỹ năng",
+    "admin_daily_summary": "Tóm tắt AI nhật ký",
+    "admin_semi_assessments": "Báo cáo đánh giá AI",
+    "admin_audit_log": "Nhật ký kiểm tra",
+    "admin_chat_management": "Quản lý chat",
+    "admin_ui_analytics": "Phân tích UI"
   },
   "topbar": {
     "admin_badge": "Quản trị viên",

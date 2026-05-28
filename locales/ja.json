@@ -54,7 +54,20 @@
     "workflow": "ワークフロー",
     "cloud": "クラウドドライブ",
     "integrations": "外部API連携設定",
-    "contracts": "契約管理"
+    "contracts": "契約管理",
+    "admin_monthly_attendance": "月別勤怠照会",
+    "admin_approval_requests": "承認リクエスト一覧",
+    "admin_departments": "部署管理",
+    "admin_org_roles": "ロール・人事異動",
+    "admin_payroll_master": "給与マスター管理",
+    "admin_contract_types": "契約タイプ管理",
+    "admin_locations": "GPS場所管理",
+    "admin_skillmap": "スキルマップ",
+    "admin_daily_summary": "日報AI要約",
+    "admin_semi_assessments": "AI評価レポート",
+    "admin_audit_log": "監査ログ",
+    "admin_chat_management": "チャット管理",
+    "admin_ui_analytics": "UIアナリティクス"
   },
   "topbar": {
     "admin_badge": "管理者",
