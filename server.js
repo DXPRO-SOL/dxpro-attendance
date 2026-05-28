@@ -458,6 +458,59 @@ app.get("/health", (req, res) => {
   res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// ── AI操作ログ: ページ訪問を自動記録するミドルウェア ─────────────────────────
+{
+  const { UserBehaviorLog, UserUIPreference } = require("./models");
+  const { analyzeAndUpdatePreference } = require("./services/uiOptimizer");
+  const PAGE_FEATURE_MAP = [
+    { path: "/attendance-main", feature: "attendance" },
+    { path: "/leave", feature: "leave" },
+    { path: "/goals", feature: "goals" },
+    { path: "/chat", feature: "chat" },
+    { path: "/board", feature: "board" },
+    { path: "/skillsheet", feature: "skillsheet" },
+    { path: "/schedule", feature: "schedule" },
+    { path: "/tasks", feature: "tasks" },
+    { path: "/hr/daily-report", feature: "hr" },
+    { path: "/hr/payroll", feature: "payroll" },
+  ];
+  app.use(async (req, res, next) => {
+    if (req.method === "GET" && req.session && req.session.userId) {
+      const matched = PAGE_FEATURE_MAP.find(
+        (m) => req.path === m.path || req.path.startsWith(m.path + "/"),
+      );
+      if (matched) {
+        try {
+          const pref = await UserUIPreference.findOne(
+            { userId: req.session.userId },
+            { aiLearningEnabled: 1 },
+          ).lean();
+          if (!pref || pref.aiLearningEnabled !== false) {
+            const now = new Date();
+            await UserBehaviorLog.create({
+              userId: req.session.userId,
+              action: "page_visit",
+              feature: matched.feature,
+              target: req.path,
+              hour: now.getHours(),
+              dayOfWeek: now.getDay(),
+            });
+            const totalCount = await UserBehaviorLog.countDocuments({
+              userId: req.session.userId,
+            });
+            if (totalCount % 30 === 0) {
+              setImmediate(() =>
+                analyzeAndUpdatePreference(req.session.userId),
+              );
+            }
+          }
+        } catch (_) {}
+      }
+    }
+    next();
+  });
+}
+
 // ルート登録
 app.use("/", require("./routes/auth"));
 app.use("/", require("./routes/attendance"));
@@ -485,6 +538,8 @@ app.use("/", require("./routes/schedule"));
 app.use("/", require("./routes/email").router);
 app.use("/", require("./routes/auditlog"));
 app.use("/", require("./routes/contracts"));
+app.use("/", require("./routes/ui_optimizer"));
+app.use("/", require("./routes/ai_home_settings"));
 
 // ── グローバルエラーハンドラー（500エラーでプロセスをクラッシュさせない） ─
 app.use((err, req, res, next) => {
