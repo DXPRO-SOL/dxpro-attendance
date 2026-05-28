@@ -10,6 +10,7 @@ const {
   Attendance,
   Goal,
   LeaveRequest,
+  LeaveBalance,
   PayrollSlip,
   ApprovalRequest,
   CompanyRule,
@@ -19,6 +20,9 @@ const {
   BoardPost,
   OvertimeRequest,
   Notification,
+  ApprovedLocation,
+  SkillSheet,
+  BoardComment,
 } = require("../models");
 const { computeSemiAnnualGrade } = require("../lib/helpers");
 const { createNotification } = require("./notifications");
@@ -1986,15 +1990,25 @@ async function executePendingAction(pa, userId, employee, now) {
       }
 
       case "leave_apply": {
+        const HALF_TYPES = new Set(["午前休", "午後休", "早退"]);
+        const halfDayFlag =
+          data.leaveType === "午前休"
+            ? "AM"
+            : data.leaveType === "午後休"
+              ? "PM"
+              : null;
         const newLeave = await LeaveRequest.create({
           userId,
           employeeId: employee.employeeId,
           name: employee.name,
           department: employee.department,
           leaveType: data.leaveType,
+          halfDay: halfDayFlag,
+          earlyLeaveTime:
+            data.leaveType === "早退" ? data.earlyLeaveTime || null : null,
           startDate: new Date(data.startDate),
-          endDate: new Date(data.endDate),
-          days: data.days,
+          endDate: new Date(data.endDate || data.startDate),
+          days: HALF_TYPES.has(data.leaveType) ? 0.5 : data.days,
           reason: data.reason,
           status: "pending",
         });
@@ -2132,6 +2146,90 @@ async function executePendingAction(pa, userId, employee, now) {
             "**\n\n掲示板ページで確認できます。",
           links: [{ label: "掲示板を確認", url: "/board" }],
           quickReplies: ["掲示板を見る", "今日の状況は？"],
+        };
+      }
+
+      case "goal_create": {
+        const newGoal = await Goal.create({
+          title: data.title,
+          description: data.description || "",
+          ownerId: employee._id,
+          ownerName: employee.name,
+          createdBy: employee._id,
+          createdByName: employee.name,
+          deadline: data.deadline ? new Date(data.deadline) : undefined,
+          goalLevel: data.goalLevel || "中",
+          actionPlan: data.actionPlan || "",
+          status: "draft",
+          progress: 0,
+          history: [{ action: "create", by: employee._id, date: new Date() }],
+        });
+        await createNotification({
+          userId,
+          type: "ai_action",
+          title: "🎯 目標を作成しました",
+          body: "「" + newGoal.title + "」を作成しました",
+          link: "/goals",
+        });
+        return {
+          text:
+            "✅ **目標を作成しました！**\n\n" +
+            "• タイトル：**" +
+            newGoal.title +
+            "**\n" +
+            "• 難易度：" +
+            (data.goalLevel || "中") +
+            (data.deadline
+              ? "\n• 期限：" + moment(data.deadline).format("YYYY年M月D日")
+              : "") +
+            "\n\n📝 ステータスは『draft』です。目標ページから申請提出できます。",
+          links: [{ label: "目標を確認する", url: "/goals" }],
+          quickReplies: ["目標の状況を確認", "今日の状況は？"],
+        };
+      }
+
+      case "daily_report_create": {
+        // 同日に既に提出済かチェック
+        const rdStart = moment(data.reportDate).startOf("day").toDate();
+        const rdEnd = moment(data.reportDate).endOf("day").toDate();
+        const existing = await DailyReport.findOne({
+          userId,
+          reportDate: { $gte: rdStart, $lte: rdEnd },
+        });
+        if (existing) {
+          return {
+            text: `⚠️ **${moment(data.reportDate).format("M月D日")}}の日報は既に提出済みです。**\n\n日報ページから編集してください。`,
+            links: [{ label: "日報ページ", url: "/daily-report" }],
+            quickReplies: ["今日の状況は？"],
+          };
+        }
+        const newReport = await DailyReport.create({
+          employeeId: employee._id,
+          userId,
+          reportDate: new Date(data.reportDate),
+          content: data.content,
+          achievements: data.achievements || "",
+          issues: data.issues || "",
+          tomorrow: data.tomorrow || "",
+        });
+        await createNotification({
+          userId,
+          type: "ai_action",
+          title: "📝 日報を提出しました",
+          body: moment(data.reportDate).format("M/D") + "の日報を提出しました",
+          link: "/daily-report",
+        });
+        return {
+          text:
+            "✅ **日報を提出しました！**\n\n" +
+            "• 対象日：**" +
+            moment(data.reportDate).format("YYYY年M月D日(ddd)") +
+            "**\n" +
+            "• 内容：" +
+            data.content.substring(0, 60) +
+            (data.content.length > 60 ? "…" : ""),
+          links: [{ label: "日報を確認", url: "/daily-report" }],
+          quickReplies: ["今日の状況は？", "目標の状況を確認"],
         };
       }
 
@@ -2293,6 +2391,388 @@ async function executePendingAction(pa, userId, employee, now) {
             "\n\n申請者に通知を送りました。",
           links: [{ label: "ワークフロー一覧", url: "/workflow" }],
           quickReplies: ["承認待ちを確認", "今日の状況は？"],
+        };
+      }
+
+      case "attendance_checkin": {
+        const now2 = new Date();
+        const todayJST = moment.tz(now2, "Asia/Tokyo").startOf("day").toDate();
+        const tomorrowJST = moment
+          .tz(now2, "Asia/Tokyo")
+          .add(1, "day")
+          .startOf("day")
+          .toDate();
+        const existing = await Attendance.findOne({
+          userId,
+          date: { $gte: todayJST, $lt: tomorrowJST },
+          checkIn: { $exists: true },
+        });
+        if (existing)
+          return {
+            text: `⚠️ 既に出勤打刻済みです（${moment(existing.checkIn).tz("Asia/Tokyo").format("HH:mm")}）。`,
+            links: [],
+          };
+        const att = new Attendance({
+          userId,
+          date: todayJST,
+          checkIn: now2,
+          status:
+            now2.getHours() > 9 ||
+            (now2.getHours() === 9 && now2.getMinutes() > 0)
+              ? "遅刻"
+              : "正常",
+          notes: "AIアシスタントより打刻",
+        });
+        await att.save();
+        return {
+          text: `✅ **出勤打刻しました！**\n\n• 打刻時刻：**${moment(now2).tz("Asia/Tokyo").format("HH:mm")}**\n• ステータス：${att.status}`,
+          links: [{ label: "勤怠ページで確認", url: "/attendance-main" }],
+          quickReplies: ["今日の勤怠状況", "今日の予定は？"],
+        };
+      }
+
+      case "attendance_checkout": {
+        const now3 = new Date();
+        const todayJST3 = moment.tz(now3, "Asia/Tokyo").startOf("day").toDate();
+        const tomorrowJST3 = moment
+          .tz(now3, "Asia/Tokyo")
+          .add(1, "day")
+          .startOf("day")
+          .toDate();
+        const attRec = await Attendance.findOne({
+          userId,
+          date: { $gte: todayJST3, $lt: tomorrowJST3 },
+        });
+        if (!attRec || !attRec.checkIn)
+          return { text: "⚠️ 出勤打刻が見つかりません。", links: [] };
+        if (attRec.checkOut)
+          return {
+            text: `⚠️ 既に退勤打刻済みです（${moment(attRec.checkOut).tz("Asia/Tokyo").format("HH:mm")}）。`,
+            links: [],
+          };
+        attRec.checkOut = now3;
+        const workMins = Math.round((now3 - attRec.checkIn) / 60000);
+        const lunchMins =
+          attRec.lunchStart && attRec.lunchEnd
+            ? Math.round((attRec.lunchEnd - attRec.lunchStart) / 60000)
+            : 0;
+        attRec.workMinutes = workMins - lunchMins;
+        await attRec.save();
+        const workH = Math.floor(attRec.workMinutes / 60);
+        const workM = attRec.workMinutes % 60;
+        return {
+          text: `✅ **退勤打刻しました！**\n\n• 退勤時刻：**${moment(now3).tz("Asia/Tokyo").format("HH:mm")}**\n• 勤務時間：${workH}時間${workM}分`,
+          links: [{ label: "勤怠ページで確認", url: "/attendance-main" }],
+          quickReplies: ["今月の勤怠サマリー", "今日の状況は？"],
+        };
+      }
+
+      case "attendance_lunch_start": {
+        const nowL = new Date();
+        const todayL = moment.tz(nowL, "Asia/Tokyo").startOf("day").toDate();
+        const tomorrowL = moment
+          .tz(nowL, "Asia/Tokyo")
+          .add(1, "day")
+          .startOf("day")
+          .toDate();
+        const recL = await Attendance.findOne({
+          userId,
+          date: { $gte: todayL, $lt: tomorrowL },
+        });
+        if (!recL || !recL.checkIn)
+          return { text: "⚠️ 出勤打刻がありません。", links: [] };
+        if (recL.lunchStart)
+          return {
+            text: `⚠️ 昼休みは既に開始済みです（${moment(recL.lunchStart).tz("Asia/Tokyo").format("HH:mm")}）。`,
+            links: [],
+          };
+        recL.lunchStart = nowL;
+        await recL.save();
+        return {
+          text: `✅ **昼休み開始を打刻しました！**\n\n• 開始時刻：**${moment(nowL).tz("Asia/Tokyo").format("HH:mm")}**`,
+          links: [{ label: "勤怠ページで確認", url: "/attendance-main" }],
+          quickReplies: ["昼休み終わり", "今日の勤怠状況"],
+        };
+      }
+
+      case "attendance_lunch_end": {
+        const nowLe = new Date();
+        const todayLe = moment.tz(nowLe, "Asia/Tokyo").startOf("day").toDate();
+        const tomorrowLe = moment
+          .tz(nowLe, "Asia/Tokyo")
+          .add(1, "day")
+          .startOf("day")
+          .toDate();
+        const recLe = await Attendance.findOne({
+          userId,
+          date: { $gte: todayLe, $lt: tomorrowLe },
+        });
+        if (!recLe || !recLe.lunchStart)
+          return { text: "⚠️ 昼休み開始打刻がありません。", links: [] };
+        if (recLe.lunchEnd)
+          return {
+            text: `⚠️ 昼休みは既に終了済みです（${moment(recLe.lunchEnd).tz("Asia/Tokyo").format("HH:mm")}）。`,
+            links: [],
+          };
+        recLe.lunchEnd = nowLe;
+        const lunchDuration = Math.round((nowLe - recLe.lunchStart) / 60000);
+        await recLe.save();
+        return {
+          text: `✅ **昼休み終了を打刻しました！**\n\n• 終了時刻：**${moment(nowLe).tz("Asia/Tokyo").format("HH:mm")}**\n• 昼休み時間：${lunchDuration}分`,
+          links: [{ label: "勤怠ページで確認", url: "/attendance-main" }],
+          quickReplies: ["今日の勤怠状況", "今日の予定は？"],
+        };
+      }
+
+      case "notifications_read_all": {
+        const result = await Notification.updateMany(
+          { userId, isRead: false },
+          { isRead: true },
+        );
+        return {
+          text: `✅ **通知を全て既読にしました！**\n\n• 既読にした件数：**${result.modifiedCount}件**`,
+          links: [{ label: "通知一覧", url: "/notifications" }],
+          quickReplies: ["今日の状況は？"],
+        };
+      }
+
+      case "leave_cancel": {
+        const lr = await LeaveRequest.findById(data.requestId);
+        if (!lr) return { text: "⚠️ 申請が見つかりませんでした。", links: [] };
+        if (String(lr.userId) !== String(userId))
+          return {
+            text: "⚠️ この申請はあなたのものではありません。",
+            links: [],
+          };
+        if (lr.status !== "pending")
+          return {
+            text: `⚠️ この申請は「${lr.status}」状態のためキャンセルできません。`,
+            links: [],
+          };
+        lr.status = "canceled";
+        await lr.save();
+        return {
+          text: `✅ **休暇申請をキャンセルしました！**\n\n• 種別：**${lr.leaveType}**\n• 期間：${moment(lr.startDate).format("M月D日")}〜${moment(lr.endDate).format("M月D日")}`,
+          links: [{ label: "申請状況を確認", url: "/leave/my-requests" }],
+          quickReplies: ["休暇残日数を確認", "今日の状況は？"],
+        };
+      }
+
+      case "overtime_cancel": {
+        const ot = await OvertimeRequest.findById(data.requestId);
+        if (!ot) return { text: "⚠️ 申請が見つかりませんでした。", links: [] };
+        if (String(ot.userId) !== String(userId))
+          return {
+            text: "⚠️ この申請はあなたのものではありません。",
+            links: [],
+          };
+        if (ot.status !== "pending")
+          return {
+            text: `⚠️ この申請は「${ot.status}」状態のためキャンセルできません。`,
+            links: [],
+          };
+        ot.status = "canceled";
+        await ot.save();
+        return {
+          text: `✅ **残業申請をキャンセルしました！**\n\n• 日付：**${moment(ot.date).tz("Asia/Tokyo").format("M月D日")}**\n• 時間：${ot.startTime}〜${ot.endTime}（${ot.hours}時間）`,
+          links: [{ label: "残業申請一覧", url: "/overtime" }],
+          quickReplies: ["残業申請一覧を確認", "今日の状況は？"],
+        };
+      }
+
+      case "goal_progress_update": {
+        const goal = await Goal.findById(data.goalId);
+        if (!goal)
+          return { text: "⚠️ 目標が見つかりませんでした。", links: [] };
+        const oldProgress = goal.progress;
+        goal.progress = data.progress;
+        if (data.comment) {
+          goal.history.push({
+            action: "evaluate",
+            by: employee._id,
+            date: new Date(),
+            comment: data.comment,
+          });
+        }
+        await goal.save();
+        await createNotification({
+          userId,
+          type: "ai_action",
+          title: "🎯 目標の進捗を更新しました",
+          body: `「${goal.title}」 ${oldProgress}% → ${data.progress}%`,
+          link: "/goals",
+        });
+        return {
+          text:
+            `✅ **目標の進捗を更新しました！**\n\n` +
+            `• タイトル：**${goal.title}**\n` +
+            `• 進捗：${oldProgress}% → **${data.progress}%**` +
+            (data.comment ? `\n• コメント：${data.comment}` : ""),
+          links: [{ label: "目標を確認する", url: "/goals" }],
+          quickReplies: ["目標の状況を確認", "今日の状況は？"],
+        };
+      }
+
+      case "daily_report_update": {
+        const report = await DailyReport.findById(data.reportId);
+        if (!report)
+          return { text: "⚠️ 日報が見つかりませんでした。", links: [] };
+        if (String(report.userId) !== String(userId))
+          return {
+            text: "⚠️ この日報はあなたのものではありません。",
+            links: [],
+          };
+        if (data.content !== undefined) report.content = data.content;
+        if (data.achievements !== undefined)
+          report.achievements = data.achievements;
+        if (data.issues !== undefined) report.issues = data.issues;
+        if (data.tomorrow !== undefined) report.tomorrow = data.tomorrow;
+        await report.save();
+        return {
+          text:
+            `✅ **日報を更新しました！**\n\n` +
+            `• 対象日：**${moment(report.reportDate).tz("Asia/Tokyo").format("YYYY年M月D日(ddd)")}**`,
+          links: [{ label: "日報を確認", url: "/daily-report" }],
+          quickReplies: ["今日の状況は？"],
+        };
+      }
+
+      case "board_comment": {
+        await BoardComment.create({
+          postId: data.postId,
+          authorId: userId,
+          content: data.content,
+          mentions: [],
+        });
+        return {
+          text:
+            `✅ **コメントを投稿しました！**\n\n` +
+            `• 内容：${data.content.substring(0, 80)}${data.content.length > 80 ? "…" : ""}`,
+          links: [{ label: "掲示板を確認", url: `/board/${data.postId}` }],
+          quickReplies: ["掲示板を見る"],
+        };
+      }
+
+      case "board_like": {
+        await BoardPost.findByIdAndUpdate(data.postId, {
+          $inc: { likes: 1 },
+        });
+        return {
+          text: `✅ **いいね！しました！**`,
+          links: [{ label: "掲示板を確認", url: `/board/${data.postId}` }],
+          quickReplies: ["掲示板を見る"],
+        };
+      }
+
+      case "schedule_respond": {
+        const sc = await Schedule.findById(data.scheduleId);
+        if (!sc)
+          return {
+            text: "⚠️ スケジュールが見つかりませんでした。",
+            links: [],
+          };
+        const entry = sc.attendeeStatus
+          ? sc.attendeeStatus.find((s) => String(s.userId) === String(userId))
+          : null;
+        if (entry) {
+          entry.status = data.response;
+          entry.updatedAt = new Date();
+        } else {
+          if (!sc.attendeeStatus) sc.attendeeStatus = [];
+          sc.attendeeStatus.push({
+            userId,
+            status: data.response,
+            updatedAt: new Date(),
+          });
+        }
+        await sc.save();
+        const respLabel = data.response === "accepted" ? "参加" : "辞退";
+        if (String(sc.createdBy) !== String(userId)) {
+          await createNotification({
+            userId: sc.createdBy,
+            type: "schedule_response",
+            title: `スケジュール返答（${respLabel}）`,
+            body: `${employee.name} さんが「${sc.title}」への招待に${respLabel}しました`,
+            link: "/schedule",
+          });
+        }
+        return {
+          text: `✅ **「${sc.title}」に${respLabel}で返答しました！**`,
+          links: [{ label: "スケジュールを確認", url: "/schedule" }],
+          quickReplies: ["今週の予定を確認", "今日の状況は？"],
+        };
+      }
+
+      case "workflow_create": {
+        const {
+          resolveApprovers,
+          generateSerialNo,
+        } = require("../services/workflow-engine");
+        const approvers = await resolveApprovers({
+          applicationType: data.applicationType,
+          applicantDept: employee.department || "",
+          formData: {},
+          userId,
+        }).catch(() => []);
+        const now2 = new Date();
+        const wf = new Workflow({
+          title: data.title.trim(),
+          applicationType: data.applicationType,
+          description: data.description.trim(),
+          formId: null,
+          formData: {},
+          applicantId: userId,
+          applicantDept: employee.department || "",
+          applicantRole: employee.position || "",
+          approvers,
+          status: approvers.length > 0 ? "submitted" : "draft",
+          currentStep:
+            approvers.length > 0
+              ? approvers.reduce((min, a) => Math.min(min, a.step), Infinity)
+              : 0,
+          submittedAt: approvers.length > 0 ? now2 : null,
+          histories: [
+            {
+              action: "created",
+              actedBy: userId,
+              actedByName: employee.name,
+              step: 0,
+              comment: "",
+              actedAt: now2,
+            },
+          ],
+        });
+        if (approvers.length > 0) {
+          wf.serialNo = await generateSerialNo();
+          wf.histories.push({
+            action: "submitted",
+            actedBy: userId,
+            actedByName: employee.name,
+            step: 0,
+            comment: "",
+            actedAt: now2,
+          });
+        }
+        await wf.save();
+        await createNotification({
+          userId,
+          type: "ai_action",
+          title: "📋 ワークフロー申請を作成しました",
+          body: data.title,
+          link: "/workflow",
+        });
+        const statusMsg =
+          approvers.length > 0
+            ? "提出済み（承認者へ通知されました）"
+            : "下書き保存（承認者が未設定）";
+        return {
+          text:
+            `✅ **ワークフロー申請を作成しました！**\n\n` +
+            `• 件名：**${data.title}**\n` +
+            `• 種別：${data.applicationType}\n` +
+            `• ステータス：${statusMsg}`,
+          links: [{ label: "申請一覧を確認", url: "/workflow" }],
+          quickReplies: ["ワークフロー一覧を確認", "今日の状況は？"],
         };
       }
 
@@ -2542,21 +3022,28 @@ const CHATBOT_TOOLS = [
     type: "function",
     function: {
       name: "apply_leave",
-      description: "休暇を申請する（有給・特別休暇など）。確認後に実行する。",
+      description:
+        "休暇を申請する。有給・特別休暇・午前休・午後休・早退も対応。確認後に実行する。",
       parameters: {
         type: "object",
         properties: {
           leaveType: {
             type: "string",
-            description: "休暇種別（有給休暇・特別休暇・慶弔休暇など）",
+            description:
+              "休暇種別: 有給 / 病欠 / 慶弔 / その他 / 午前休 / 午後休 / 早退",
           },
           startDate: { type: "string", description: "開始日 YYYY-MM-DD" },
           endDate: {
             type: "string",
-            description: "終了日 YYYY-MM-DD（1日の場合はstartDateと同じ）",
+            description:
+              "終了日 YYYY-MM-DD（1日・半日の場合はstartDateと同じ）",
           },
-          days: { type: "number", description: "日数（整数）" },
+          days: { type: "number", description: "日数（半日は0.5, 1日は1）" },
           reason: { type: "string", description: "理由（任意）" },
+          earlyLeaveTime: {
+            type: "string",
+            description: "早退時刻 HH:mm（早退の場合のみ）",
+          },
         },
         required: ["leaveType", "startDate", "endDate", "days"],
       },
@@ -2665,6 +3152,375 @@ const CHATBOT_TOOLS = [
           content: { type: "string", description: "投稿内容（本文）" },
         },
         required: ["title", "content"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_goal",
+      description:
+        "目標を新規作成する。確認後に実行する。スケジュールではなく目標管理の機能である。",
+      parameters: {
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+            description: "目標のタイトル（例: 営業割当達成）",
+          },
+          description: {
+            type: "string",
+            description: "目標の詳細説明（任意）",
+          },
+          deadline: {
+            type: "string",
+            description: "期限日 YYYY-MM-DD（任意）",
+          },
+          goalLevel: {
+            type: "string",
+            description: "目標の難易度: 低 / 中 / 高（デフォルト: 中）",
+          },
+          actionPlan: { type: "string", description: "実行計画（任意）" },
+        },
+        required: ["title"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_daily_report",
+      description:
+        "日報を新規作成・提出する。確認後に実行する。日報管理の機能でありスケジュールとは異なる。",
+      parameters: {
+        type: "object",
+        properties: {
+          reportDate: {
+            type: "string",
+            description: "日報の対象日 YYYY-MM-DD（省略時は今日）",
+          },
+          content: {
+            type: "string",
+            description: "日報本文（今日の業務内容）",
+          },
+          achievements: {
+            type: "string",
+            description: "成果・達成事項（任意）",
+          },
+          issues: { type: "string", description: "課題・問題点（任意）" },
+          tomorrow: { type: "string", description: "明日の予定（任意）" },
+        },
+        required: ["content"],
+      },
+    },
+  },
+  // ─ 勤怠打刻系 ─
+  {
+    type: "function",
+    function: {
+      name: "checkin",
+      description: "今日の出勤打刻を行う。まだ出勤していない場合に使用する。",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "checkout",
+      description:
+        "今日の退勤打刻を行う。出勤済みでまだ退勤していない場合に使用する。",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "lunch_start",
+      description:
+        "昼休み開始を打刻する。出勤済みで昼休みがまだ始まっていない場合に使用する。",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "lunch_end",
+      description:
+        "昼休み終了を打刻する。昼休みが開始済みで終了していない場合に使用する。",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  // ─ 通知 ─
+  {
+    type: "function",
+    function: {
+      name: "get_notifications",
+      description: "自分の通知一覧（未読・既読）を取得する",
+      parameters: {
+        type: "object",
+        properties: {
+          unreadOnly: {
+            type: "boolean",
+            description: "trueの場合は未読のみ取得（デフォルトfalse）",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "mark_notifications_read",
+      description: "全ての通知を既読にする",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  // ─ 休暇申請管理 ─
+  {
+    type: "function",
+    function: {
+      name: "get_leave_requests",
+      description:
+        "自分の休暇申請一覧を取得する（キャンセル前にIDを確認するためにも使う）",
+      parameters: {
+        type: "object",
+        properties: {
+          status: {
+            type: "string",
+            description:
+              "絞り込みステータス: pending / approved / all（デフォルト: all）",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "cancel_leave_request",
+      description:
+        "承認待ち（pending）の休暇申請をキャンセルする。事前にget_leave_requestsで申請IDを確認すること。",
+      parameters: {
+        type: "object",
+        properties: {
+          requestId: { type: "string", description: "キャンセルする申請のID" },
+          leaveType: { type: "string", description: "休暇種別（確認用）" },
+          startDate: { type: "string", description: "開始日（確認用）" },
+        },
+        required: ["requestId", "leaveType", "startDate"],
+      },
+    },
+  },
+  // ─ 残業申請管理 ─
+  {
+    type: "function",
+    function: {
+      name: "get_overtime_requests",
+      description:
+        "自分の残業申請一覧を取得する（キャンセル前にIDを確認するためにも使う）",
+      parameters: {
+        type: "object",
+        properties: {
+          status: {
+            type: "string",
+            description:
+              "絞り込みステータス: pending / approved / all（デフォルト: pending）",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "cancel_overtime_request",
+      description:
+        "承認待ち（pending）の残業申請をキャンセルする。事前にget_overtime_requestsで申請IDを確認すること。",
+      parameters: {
+        type: "object",
+        properties: {
+          requestId: { type: "string", description: "キャンセルする申請のID" },
+          date: { type: "string", description: "残業日（確認用）" },
+          startTime: { type: "string", description: "開始時刻（確認用）" },
+          endTime: { type: "string", description: "終了時刻（確認用）" },
+        },
+        required: ["requestId", "date"],
+      },
+    },
+  },
+  // ── スキルシート ──────────────────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "get_skillsheet",
+      description: "自分のスキルシート（スキル・資格・職務経歴）を取得する",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  // ── 目標進捗更新 ──────────────────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "update_goal_progress",
+      description:
+        "既存の目標の進捗率を更新する。事前にget_goalsで目標IDを確認すること。",
+      parameters: {
+        type: "object",
+        properties: {
+          goalId: {
+            type: "string",
+            description: "更新する目標のID（get_goalsで取得）",
+          },
+          title: { type: "string", description: "目標タイトル（確認用）" },
+          progress: {
+            type: "number",
+            description: "進捗率 0〜100（%）",
+          },
+          comment: { type: "string", description: "進捗コメント（任意）" },
+        },
+        required: ["goalId", "title", "progress"],
+      },
+    },
+  },
+  // ── 日報編集 ──────────────────────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "update_daily_report",
+      description:
+        "提出済みの日報を編集する。事前にget_daily_reportsでIDを確認すること。",
+      parameters: {
+        type: "object",
+        properties: {
+          reportId: {
+            type: "string",
+            description: "編集する日報のID（get_daily_reportsで取得）",
+          },
+          content: {
+            type: "string",
+            description: "日報本文（更新する場合）",
+          },
+          achievements: {
+            type: "string",
+            description: "成果・達成事項（更新する場合）",
+          },
+          issues: {
+            type: "string",
+            description: "課題・問題点（更新する場合）",
+          },
+          tomorrow: {
+            type: "string",
+            description: "明日の予定（更新する場合）",
+          },
+        },
+        required: ["reportId", "content"],
+      },
+    },
+  },
+  // ── 掲示板詳細・コメント・いいね ─────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "get_board_post_detail",
+      description:
+        "掲示板の投稿詳細とコメント一覧を取得する。事前にget_board_postsで投稿IDを確認すること。",
+      parameters: {
+        type: "object",
+        properties: {
+          postId: {
+            type: "string",
+            description: "投稿ID（get_board_postsで取得）",
+          },
+        },
+        required: ["postId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_board_comment",
+      description: "掲示板の投稿にコメントを追加する。確認後に実行する。",
+      parameters: {
+        type: "object",
+        properties: {
+          postId: { type: "string", description: "コメントする投稿のID" },
+          postTitle: {
+            type: "string",
+            description: "投稿タイトル（確認用）",
+          },
+          content: { type: "string", description: "コメント内容" },
+        },
+        required: ["postId", "postTitle", "content"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "like_board_post",
+      description: "掲示板の投稿にいいね！をする",
+      parameters: {
+        type: "object",
+        properties: {
+          postId: { type: "string", description: "いいねする投稿のID" },
+          postTitle: {
+            type: "string",
+            description: "投稿タイトル（確認用）",
+          },
+        },
+        required: ["postId", "postTitle"],
+      },
+    },
+  },
+  // ── スケジュール返答 ──────────────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "respond_to_schedule",
+      description:
+        "スケジュール招待に参加（accepted）または辞退（declined）で返答する。事前にget_schedulesでIDを確認すること。",
+      parameters: {
+        type: "object",
+        properties: {
+          scheduleId: {
+            type: "string",
+            description: "返答するスケジュールのID",
+          },
+          title: {
+            type: "string",
+            description: "スケジュールタイトル（確認用）",
+          },
+          response: {
+            type: "string",
+            description: "返答: accepted（参加）または declined（辞退）",
+          },
+        },
+        required: ["scheduleId", "title", "response"],
+      },
+    },
+  },
+  // ── ワークフロー申請作成 ──────────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "create_workflow",
+      description:
+        "ワークフロー（稟議・経費申請など）を新規作成して提出する。確認後に実行する。",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "申請件名" },
+          applicationType: {
+            type: "string",
+            description: "申請種別（例: 経費申請、稟議、備品購入、その他）",
+          },
+          description: {
+            type: "string",
+            description: "申請内容・詳細",
+          },
+        },
+        required: ["title", "applicationType", "description"],
       },
     },
   },
@@ -2873,6 +3729,131 @@ async function executeToolCall(toolName, toolArgs, userId, employee, now) {
       };
     }
 
+    case "get_notifications": {
+      const filter = { userId };
+      if (toolArgs.unreadOnly) filter.isRead = false;
+      const notifs = await Notification.find(filter)
+        .sort({ createdAt: -1 })
+        .limit(15)
+        .lean();
+      if (!notifs.length) return { result: "通知はありません。" };
+      return {
+        result: notifs.map((n) => ({
+          id: String(n._id),
+          title: n.title,
+          body: n.body || "",
+          isRead: !!n.isRead,
+          createdAt: moment(n.createdAt).tz("Asia/Tokyo").format("M/D HH:mm"),
+          link: n.link || "",
+        })),
+      };
+    }
+
+    case "get_leave_requests": {
+      const statusFilter = toolArgs.status || "all";
+      const q = { userId };
+      if (statusFilter !== "all") q.status = statusFilter;
+      const leaves = await LeaveRequest.find(q)
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .lean();
+      if (!leaves.length) return { result: "休暇申請の記録がありません。" };
+      return {
+        result: leaves.map((l) => ({
+          id: String(l._id),
+          leaveType: l.leaveType,
+          startDate: moment(l.startDate).format("M/D"),
+          endDate: moment(l.endDate).format("M/D"),
+          days: l.days,
+          status: l.status,
+          reason: l.reason || "",
+        })),
+      };
+    }
+
+    case "get_overtime_requests": {
+      const stFilter = toolArgs.status || "pending";
+      const oq = { userId };
+      if (stFilter !== "all") oq.status = stFilter;
+      const overtimes = await OvertimeRequest.find(oq)
+        .sort({ date: -1 })
+        .limit(10)
+        .lean();
+      if (!overtimes.length) return { result: "残業申請の記録がありません。" };
+      return {
+        result: overtimes.map((o) => ({
+          id: String(o._id),
+          date: moment(o.date).tz("Asia/Tokyo").format("M/D"),
+          startTime: o.startTime,
+          endTime: o.endTime,
+          hours: o.hours,
+          reason: o.reason || "",
+          status: o.status,
+          timing: o.requestTiming === "post" ? "事後" : "事前",
+        })),
+      };
+    }
+
+    case "get_skillsheet": {
+      const ss = await SkillSheet.findOne({ employeeId: employee._id }).lean();
+      if (!ss)
+        return {
+          result:
+            "スキルシートが登録されていません。スキルシートページから登録してください。",
+        };
+      const fmt = (arr) =>
+        (arr || []).map((s) => `${s.name}(★${s.level})`).join(", ");
+      const certs = (ss.certifications || []).map((c) => c.name).join(", ");
+      const projects = (ss.projects || []).slice(0, 5).map((p) => ({
+        name: p.projectName,
+        period: `${p.periodFrom || ""}〜${p.periodTo || ""}`,
+        role: p.role || "",
+        tech: (p.techStack || "").substring(0, 80),
+      }));
+      return {
+        result: {
+          experience: ss.experience || 0,
+          selfPR: (ss.selfPR || "").substring(0, 200),
+          skills: {
+            languages: fmt(ss.skills && ss.skills.languages),
+            frameworks: fmt(ss.skills && ss.skills.frameworks),
+            databases: fmt(ss.skills && ss.skills.databases),
+            infra: fmt(ss.skills && ss.skills.infra),
+            tools: fmt(ss.skills && ss.skills.tools),
+          },
+          certifications: certs,
+          projects,
+        },
+      };
+    }
+
+    case "get_board_post_detail": {
+      const post = await BoardPost.findById(toolArgs.postId).lean();
+      if (!post)
+        return {
+          result:
+            "投稿が見つかりませんでした。get_board_postsで再確認してください。",
+        };
+      const comments = await BoardComment.find({ postId: post._id })
+        .sort({ createdAt: 1 })
+        .limit(20)
+        .lean();
+      return {
+        result: {
+          id: String(post._id),
+          title: post.title,
+          content: (post.content || "").substring(0, 500),
+          likes: post.likes || 0,
+          commentCount: comments.length,
+          comments: comments.map((c) => ({
+            id: String(c._id),
+            content: (c.content || "").substring(0, 200),
+            createdAt: moment(c.createdAt).tz("Asia/Tokyo").format("M/D HH:mm"),
+          })),
+        },
+      };
+    }
+
     // ── WRITE TOOLS（pendingAction を組み立てて返す）────────────────────
     case "create_schedule": {
       const startAt = new Date(toolArgs.startAt);
@@ -3071,6 +4052,353 @@ async function executeToolCall(toolName, toolArgs, userId, employee, now) {
       };
     }
 
+    case "create_goal": {
+      const validLevels = ["低", "中", "高"];
+      const level = validLevels.includes(toolArgs.goalLevel)
+        ? toolArgs.goalLevel
+        : "中";
+      const pa = {
+        type: "goal_create",
+        data: {
+          title: toolArgs.title,
+          description: toolArgs.description || "",
+          deadline: toolArgs.deadline || null,
+          goalLevel: level,
+          actionPlan: toolArgs.actionPlan || "",
+        },
+      };
+      const summary =
+        `タイトル：${toolArgs.title}\n` +
+        `難易度：${level}` +
+        (toolArgs.deadline
+          ? `\n期限：${moment(toolArgs.deadline).format("YYYY年M月D日")}`
+          : "") +
+        (toolArgs.description
+          ? `\n説明：${toolArgs.description.substring(0, 60)}`
+          : "");
+      return {
+        needsConfirmation: true,
+        pendingAction: pa,
+        confirmSummary: summary,
+      };
+    }
+
+    case "create_daily_report": {
+      const reportDate = toolArgs.reportDate || now.format("YYYY-MM-DD");
+      const pa = {
+        type: "daily_report_create",
+        data: {
+          reportDate,
+          content: toolArgs.content,
+          achievements: toolArgs.achievements || "",
+          issues: toolArgs.issues || "",
+          tomorrow: toolArgs.tomorrow || "",
+        },
+      };
+      const summary =
+        `対象日：${moment(reportDate).format("M月D日(ddd)")}\n` +
+        `内容：${toolArgs.content.substring(0, 80)}${toolArgs.content.length > 80 ? "…" : ""}` +
+        (toolArgs.achievements
+          ? `\n成果：${toolArgs.achievements.substring(0, 60)}`
+          : "") +
+        (toolArgs.issues ? `\n課題：${toolArgs.issues.substring(0, 60)}` : "");
+      return {
+        needsConfirmation: true,
+        pendingAction: pa,
+        confirmSummary: summary,
+      };
+    }
+
+    case "checkin": {
+      // GPS設定確認
+      const gpsLocations = await ApprovedLocation.countDocuments({
+        isActive: true,
+      });
+      if (gpsLocations > 0) {
+        return {
+          result:
+            "⚠️ このシステムではGPS打刻が必須です。チャットボットからの打刻はGPS情報を送信できないため、勤怠ページから打刻してください。",
+        };
+      }
+      // 既打刻チェック
+      const todayStart = now.clone().startOf("day").toDate();
+      const todayEnd = now.clone().endOf("day").toDate();
+      const todayRec = await Attendance.findOne({
+        userId,
+        date: { $gte: todayStart, $lte: todayEnd },
+      }).lean();
+      if (todayRec && todayRec.checkIn) {
+        return {
+          result: `既に出勤打刻済みです（${moment(todayRec.checkIn).tz("Asia/Tokyo").format("HH:mm")}）。`,
+        };
+      }
+      return {
+        needsConfirmation: true,
+        pendingAction: { type: "attendance_checkin", data: {} },
+        confirmSummary: `現在時刻 ${now.format("HH:mm")} で出勤打刻`,
+      };
+    }
+
+    case "checkout": {
+      const gpsLocations2 = await ApprovedLocation.countDocuments({
+        isActive: true,
+      });
+      if (gpsLocations2 > 0) {
+        return {
+          result: "⚠️ GPS打刻が必須です。勤怠ページから退勤打刻してください。",
+        };
+      }
+      const todayStart2 = now.clone().startOf("day").toDate();
+      const todayEnd2 = now.clone().endOf("day").toDate();
+      const todayRec2 = await Attendance.findOne({
+        userId,
+        date: { $gte: todayStart2, $lte: todayEnd2 },
+      }).lean();
+      if (!todayRec2 || !todayRec2.checkIn) {
+        return {
+          result: "出勤打刻が見つかりません。先に出勤打刻を行ってください。",
+        };
+      }
+      if (todayRec2.checkOut) {
+        return {
+          result: `既に退勤打刻済みです（${moment(todayRec2.checkOut).tz("Asia/Tokyo").format("HH:mm")}）。`,
+        };
+      }
+      return {
+        needsConfirmation: true,
+        pendingAction: { type: "attendance_checkout", data: {} },
+        confirmSummary: `現在時刻 ${now.format("HH:mm")} で退勤打刻`,
+      };
+    }
+
+    case "lunch_start": {
+      const todayS = now.clone().startOf("day").toDate();
+      const todayE = now.clone().endOf("day").toDate();
+      const rec = await Attendance.findOne({
+        userId,
+        date: { $gte: todayS, $lte: todayE },
+      }).lean();
+      if (!rec || !rec.checkIn)
+        return { result: "出勤打刻がないため昼休み打刻できません。" };
+      if (rec.lunchStart) {
+        return {
+          result: `昼休みは既に開始済みです（${moment(rec.lunchStart).tz("Asia/Tokyo").format("HH:mm")}）。`,
+        };
+      }
+      return {
+        needsConfirmation: true,
+        pendingAction: { type: "attendance_lunch_start", data: {} },
+        confirmSummary: `現在時刻 ${now.format("HH:mm")} で昼休み開始打刻`,
+      };
+    }
+
+    case "lunch_end": {
+      const todaySe = now.clone().startOf("day").toDate();
+      const todayEe = now.clone().endOf("day").toDate();
+      const recE = await Attendance.findOne({
+        userId,
+        date: { $gte: todaySe, $lte: todayEe },
+      }).lean();
+      if (!recE || !recE.lunchStart)
+        return {
+          result:
+            "昼休み開始打刻がありません。先に昼休み開始を打刻してください。",
+        };
+      if (recE.lunchEnd) {
+        return {
+          result: `昼休みは既に終了済みです（${moment(recE.lunchEnd).tz("Asia/Tokyo").format("HH:mm")}）。`,
+        };
+      }
+      return {
+        needsConfirmation: true,
+        pendingAction: { type: "attendance_lunch_end", data: {} },
+        confirmSummary: `現在時刻 ${now.format("HH:mm")} で昼休み終了打刻`,
+      };
+    }
+
+    case "mark_notifications_read": {
+      const unreadCount = await Notification.countDocuments({
+        userId,
+        isRead: false,
+      });
+      if (unreadCount === 0) return { result: "未読通知はありません。" };
+      return {
+        needsConfirmation: true,
+        pendingAction: { type: "notifications_read_all", data: {} },
+        confirmSummary: `未読通知 ${unreadCount}件 を全て既読にする`,
+      };
+    }
+
+    case "cancel_leave_request": {
+      const lr = await LeaveRequest.findById(toolArgs.requestId).lean();
+      if (!lr)
+        return {
+          result:
+            "申請が見つかりませんでした。get_leave_requestsで再確認してください。",
+        };
+      if (String(lr.userId) !== String(userId))
+        return { result: "この申請はあなたのものではありません。" };
+      if (lr.status !== "pending")
+        return {
+          result: `この申請はすでに「${lr.status}」状態のためキャンセルできません。`,
+        };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "leave_cancel",
+          data: { requestId: toolArgs.requestId },
+        },
+        confirmSummary: `${toolArgs.leaveType} ${moment(toolArgs.startDate).format("M月D日")} の申請をキャンセル`,
+      };
+    }
+
+    case "cancel_overtime_request": {
+      const ot = await OvertimeRequest.findById(toolArgs.requestId).lean();
+      if (!ot)
+        return {
+          result:
+            "申請が見つかりませんでした。get_overtime_requestsで再確認してください。",
+        };
+      if (String(ot.userId) !== String(userId))
+        return { result: "この申請はあなたのものではありません。" };
+      if (ot.status !== "pending")
+        return {
+          result: `この申請はすでに「${ot.status}」状態のためキャンセルできません。`,
+        };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "overtime_cancel",
+          data: { requestId: toolArgs.requestId },
+        },
+        confirmSummary: `${moment(toolArgs.date).format("M月D日")} ${toolArgs.startTime || ot.startTime}〜${toolArgs.endTime || ot.endTime} の残業申請をキャンセル`,
+      };
+    }
+
+    case "update_goal_progress": {
+      const g = await Goal.findById(toolArgs.goalId).lean();
+      if (!g)
+        return {
+          result: "目標が見つかりません。get_goalsで再確認してください。",
+        };
+      const progress = Math.max(0, Math.min(100, Number(toolArgs.progress)));
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "goal_progress_update",
+          data: {
+            goalId: toolArgs.goalId,
+            progress,
+            comment: toolArgs.comment || "",
+          },
+        },
+        confirmSummary:
+          `「${toolArgs.title}」の進捗を ${progress}% に更新` +
+          (toolArgs.comment ? `\nコメント: ${toolArgs.comment}` : ""),
+      };
+    }
+
+    case "update_daily_report": {
+      const dr = await DailyReport.findById(toolArgs.reportId).lean();
+      if (!dr)
+        return {
+          result:
+            "日報が見つかりません。get_daily_reportsで再確認してください。",
+        };
+      if (String(dr.userId) !== String(userId))
+        return { result: "この日報はあなたのものではありません。" };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "daily_report_update",
+          data: {
+            reportId: toolArgs.reportId,
+            content: toolArgs.content,
+            achievements: toolArgs.achievements,
+            issues: toolArgs.issues,
+            tomorrow: toolArgs.tomorrow,
+          },
+        },
+        confirmSummary:
+          `${moment(dr.reportDate).format("M月D日")}の日報を更新\n` +
+          `内容: ${toolArgs.content.substring(0, 60)}${toolArgs.content.length > 60 ? "…" : ""}`,
+      };
+    }
+
+    case "add_board_comment": {
+      const bp = await BoardPost.findById(toolArgs.postId).lean();
+      if (!bp)
+        return {
+          result: "投稿が見つかりません。get_board_postsで再確認してください。",
+        };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "board_comment",
+          data: { postId: toolArgs.postId, content: toolArgs.content },
+        },
+        confirmSummary:
+          `「${toolArgs.postTitle}」にコメントを投稿:\n` +
+          `${toolArgs.content.substring(0, 80)}${toolArgs.content.length > 80 ? "…" : ""}`,
+      };
+    }
+
+    case "like_board_post": {
+      const bp2 = await BoardPost.findById(toolArgs.postId).lean();
+      if (!bp2) return { result: "投稿が見つかりません。" };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "board_like",
+          data: { postId: toolArgs.postId },
+        },
+        confirmSummary: `「${toolArgs.postTitle}」にいいね！する`,
+      };
+    }
+
+    case "respond_to_schedule": {
+      const sc = await Schedule.findOne({
+        _id: toolArgs.scheduleId,
+        isDeleted: { $ne: true },
+      }).lean();
+      if (!sc)
+        return {
+          result:
+            "スケジュールが見つかりません。get_schedulesで再確認してください。",
+        };
+      const isInvited = sc.attendees.some((a) => String(a) === String(userId));
+      if (!isInvited)
+        return { result: "このスケジュールの招待者ではありません。" };
+      const resp = toolArgs.response === "declined" ? "declined" : "accepted";
+      const respLabel = resp === "accepted" ? "参加" : "辞退";
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "schedule_respond",
+          data: { scheduleId: toolArgs.scheduleId, response: resp },
+        },
+        confirmSummary: `「${toolArgs.title}」に${respLabel}で返答`,
+      };
+    }
+
+    case "create_workflow": {
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "workflow_create",
+          data: {
+            title: toolArgs.title,
+            applicationType: toolArgs.applicationType,
+            description: toolArgs.description,
+          },
+        },
+        confirmSummary:
+          `件名: ${toolArgs.title}\n` +
+          `種別: ${toolArgs.applicationType}\n` +
+          `内容: ${toolArgs.description.substring(0, 80)}${toolArgs.description.length > 80 ? "…" : ""}`,
+      };
+    }
+
     default:
       return { result: `不明なツール: ${toolName}` };
   }
@@ -3089,20 +4417,32 @@ async function aiChatHandler(message, userId, employee, sessionContext) {
     `- get_schedules: 予定の照会（変更・削除の前にも呼び出してIDを確認する）\n` +
     `- create_schedule / update_schedule / delete_schedule: 予定の登録・変更・削除\n` +
     `- get_attendance_today / get_attendance_month: 勤怠確認\n` +
-    `- get_leave_status / apply_leave: 休暇の確認・申請\n` +
+    `- checkin / checkout: 出退勤打刻（GPS設定がある場合は勤怠ページを案内）\n` +
+    `- lunch_start / lunch_end: 昼休み開始・終了打刻\n` +
+    `- get_leave_status / apply_leave: 休暇の確認・申請（午前休/午後休/早退も対応）\n` +
+    `- get_leave_requests / cancel_leave_request: 休暇申請の一覧・キャンセル\n` +
     `- apply_overtime: 残業申請\n` +
+    `- get_overtime_requests / cancel_overtime_request: 残業申請の一覧・キャンセル\n` +
     `- apply_stamp_fix: 打刻修正申請\n` +
-    `- get_goals: 目標確認\n` +
+    `- get_notifications / mark_notifications_read: 通知確認・既読化\n` +
+    `- get_skillsheet: スキルシート確認\n` +
+    `- update_goal_progress: 目標の進捗率更新\n` +
+    `- update_daily_report: 日報の編集\n` +
+    `- get_board_post_detail / add_board_comment / like_board_post: 掲示板の詳細・コメント・いいね\n` +
+    `- respond_to_schedule: スケジュール招待への参加/辞退\n` +
+    `- create_workflow: ワークフロー申請の新規作成\n` +
+    `- get_goals / create_goal: 目標の確認・新規作成（スケジュールとは別機能）\n` +
     `- get_payroll: 給与確認\n` +
     `- get_pending_workflows / approve_workflow / return_workflow: ワークフロー承認\n` +
     `- get_board_posts / post_to_board: 掲示板の確認・投稿\n` +
     `- search_company_rules: 就業規則の検索\n` +
-    `- get_daily_reports: 日報確認\n\n` +
+    `- get_daily_reports / create_daily_report: 日報の確認・提出（スケジュールとは別機能）\n\n` +
     `【重要なルール】\n` +
     `1. データを変更・作成・削除するツール（create/update/delete/apply/post/approve/return）は必ずツール経由で実行し、実行結果はユーザーに確認を求めてください。\n` +
     `2. 予定の変更・削除をする場合は、必ず先にget_schedulesで予定を検索してIDを取得してから、update_schedule/delete_scheduleを呼んでください。\n` +
-    `3. ツールを呼ばずに勝手に「〇〇しました」と言わないでください。\n` +
-    `4. 日本語で丁寧かつ簡潔に回答してください。マークダウン（**太字**、箇条書き）を使って見やすく。`;
+    `3. 目標作成はcreate_goal、日報作成はcreate_daily_reportを使用してください。スケジュール（create_schedule）と間違えないよう注意してください。\n` +
+    `4. ツールを呼ばずに勝手に「〇〇しました」と言わないでください。\n` +
+    `5. 日本語で丁寧かつ簡潔に回答してください。マークダウン（**太字**、箇条書き）を使って見やすく。`;
 
   // メッセージ履歴を構築
   const messages = [{ role: "system", content: systemPrompt }];
