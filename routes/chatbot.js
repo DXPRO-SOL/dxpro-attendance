@@ -2308,6 +2308,897 @@ async function executePendingAction(pa, userId, employee, now) {
   }
 }
 
+// ══════════════════════════════════════════════════════════════════
+// OpenAI Function Calling ベース AIチャット
+// OPENAI_API_KEY が設定されている場合に使用
+// OPENAI_API_KEY 未設定時・エラー時はルールベースにフォールバック
+// ══════════════════════════════════════════════════════════════════
+
+let _openaiChatClient = null;
+function getChatOpenAI() {
+  if (!_openaiChatClient) {
+    const { default: OpenAI } = require("openai");
+    _openaiChatClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return _openaiChatClient;
+}
+
+function hasOpenAIKey() {
+  return (
+    !!process.env.OPENAI_API_KEY &&
+    process.env.OPENAI_API_KEY !== "your_openai_api_key_here"
+  );
+}
+
+// ── ツール定義 ─────────────────────────────────────────────────────────────
+const CHATBOT_TOOLS = [
+  // ─ 読み取り系 ─
+  {
+    type: "function",
+    function: {
+      name: "get_schedules",
+      description:
+        "指定した期間のスケジュール（予定）一覧を取得する。変更・削除前にも呼び出してIDを確認する。",
+      parameters: {
+        type: "object",
+        properties: {
+          from: {
+            type: "string",
+            description: "開始日時 ISO8601 例: 2026-05-28T00:00:00+09:00",
+          },
+          to: {
+            type: "string",
+            description: "終了日時 ISO8601 例: 2026-06-03T23:59:59+09:00",
+          },
+        },
+        required: ["from", "to"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_attendance_today",
+      description: "今日の出勤・退勤の打刻状況を確認する",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_attendance_month",
+      description: "今月の勤怠サマリー（出勤日数・残業時間・遅刻等）を取得する",
+      parameters: {
+        type: "object",
+        properties: {
+          month: {
+            type: "string",
+            description: "対象月 YYYY-MM 形式（省略時は今月）",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_leave_status",
+      description: "有給休暇の残日数と休暇申請の状況を取得する",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_goals",
+      description: "目標の一覧と進捗状況を取得する",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_payroll",
+      description: "最新の給与明細情報を取得する",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_pending_workflows",
+      description: "承認待ちのワークフロー一覧を取得する",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_board_posts",
+      description: "掲示板の最新投稿を取得する",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "取得件数（省略時5件）" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_company_rules",
+      description: "就業規則・社内規定をキーワードで検索する",
+      parameters: {
+        type: "object",
+        properties: {
+          keyword: {
+            type: "string",
+            description: "検索キーワード（例: 有給、残業、ハラスメント）",
+          },
+        },
+        required: ["keyword"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_daily_reports",
+      description: "自分の日報一覧を取得する",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "取得件数（省略時5件）" },
+        },
+      },
+    },
+  },
+  // ─ 書き込み系（確認後実行）─
+  {
+    type: "function",
+    function: {
+      name: "create_schedule",
+      description:
+        "新しい予定・スケジュールを登録する。ユーザーに確認してから実行する。",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "予定のタイトル" },
+          startAt: { type: "string", description: "開始日時 ISO8601" },
+          endAt: {
+            type: "string",
+            description: "終了日時 ISO8601（省略時は1時間後）",
+          },
+          location: { type: "string", description: "場所（任意）" },
+          description: { type: "string", description: "説明・メモ（任意）" },
+          allDay: {
+            type: "boolean",
+            description: "終日イベントか（デフォルトfalse）",
+          },
+        },
+        required: ["title", "startAt"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_schedule",
+      description:
+        "既存の予定の日時・タイトル・場所を変更する。事前にget_schedulesでIDを確認すること。",
+      parameters: {
+        type: "object",
+        properties: {
+          scheduleId: {
+            type: "string",
+            description: "変更する予定のID（get_schedulesで取得）",
+          },
+          oldTitle: {
+            type: "string",
+            description: "変更前のタイトル（確認メッセージ用）",
+          },
+          newStartAt: { type: "string", description: "新しい開始日時 ISO8601" },
+          newEndAt: {
+            type: "string",
+            description: "新しい終了日時 ISO8601（省略時は元の時間幅を維持）",
+          },
+          newTitle: {
+            type: "string",
+            description: "新しいタイトル（変更する場合のみ）",
+          },
+          newLocation: {
+            type: "string",
+            description: "新しい場所（変更する場合のみ）",
+          },
+        },
+        required: ["scheduleId", "oldTitle"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_schedule",
+      description:
+        "既存の予定を削除する。事前にget_schedulesでIDを確認すること。",
+      parameters: {
+        type: "object",
+        properties: {
+          scheduleId: {
+            type: "string",
+            description: "削除する予定のID（get_schedulesで取得）",
+          },
+          title: {
+            type: "string",
+            description: "削除する予定のタイトル（確認用）",
+          },
+        },
+        required: ["scheduleId", "title"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "apply_leave",
+      description: "休暇を申請する（有給・特別休暇など）。確認後に実行する。",
+      parameters: {
+        type: "object",
+        properties: {
+          leaveType: {
+            type: "string",
+            description: "休暇種別（有給休暇・特別休暇・慶弔休暇など）",
+          },
+          startDate: { type: "string", description: "開始日 YYYY-MM-DD" },
+          endDate: {
+            type: "string",
+            description: "終了日 YYYY-MM-DD（1日の場合はstartDateと同じ）",
+          },
+          days: { type: "number", description: "日数（整数）" },
+          reason: { type: "string", description: "理由（任意）" },
+        },
+        required: ["leaveType", "startDate", "endDate", "days"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "apply_overtime",
+      description: "残業申請をする。確認後に実行する。",
+      parameters: {
+        type: "object",
+        properties: {
+          date: { type: "string", description: "残業する日付 YYYY-MM-DD" },
+          startTime: {
+            type: "string",
+            description: "残業開始時間 HH:mm（例: 18:00）",
+          },
+          endTime: {
+            type: "string",
+            description: "残業終了時間 HH:mm（例: 21:00）",
+          },
+          reason: { type: "string", description: "残業理由" },
+        },
+        required: ["date", "startTime", "endTime", "reason"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "apply_stamp_fix",
+      description: "打刻漏れ・打刻ミスの修正申請をする。確認後に実行する。",
+      parameters: {
+        type: "object",
+        properties: {
+          date: { type: "string", description: "対象日 YYYY-MM-DD" },
+          stampType: {
+            type: "string",
+            description: "打刻種別: 出勤 または 退勤",
+          },
+          time: {
+            type: "string",
+            description: "正しい打刻時刻 HH:mm（わかる場合）",
+          },
+          reason: { type: "string", description: "理由（例: 打刻漏れ）" },
+        },
+        required: ["date", "stampType"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "approve_workflow",
+      description:
+        "指定したワークフローを承認する。事前にget_pending_workflowsでIDを確認すること。",
+      parameters: {
+        type: "object",
+        properties: {
+          workflowId: {
+            type: "string",
+            description: "承認するワークフローのID",
+          },
+          title: {
+            type: "string",
+            description: "ワークフローのタイトル（確認用）",
+          },
+        },
+        required: ["workflowId", "title"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "return_workflow",
+      description:
+        "指定したワークフローを差し戻す。事前にget_pending_workflowsでIDを確認すること。",
+      parameters: {
+        type: "object",
+        properties: {
+          workflowId: {
+            type: "string",
+            description: "差し戻すワークフローのID",
+          },
+          title: {
+            type: "string",
+            description: "ワークフローのタイトル（確認用）",
+          },
+          reason: { type: "string", description: "差し戻し理由" },
+        },
+        required: ["workflowId", "title", "reason"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "post_to_board",
+      description: "掲示板に新しい投稿を作成する。確認後に実行する。",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "投稿タイトル" },
+          content: { type: "string", description: "投稿内容（本文）" },
+        },
+        required: ["title", "content"],
+      },
+    },
+  },
+];
+
+// ── ツール実行（Read系は直接実行・Write系はpendingAction返却）─────────────
+async function executeToolCall(toolName, toolArgs, userId, employee, now) {
+  switch (toolName) {
+    // ── READ TOOLS ──────────────────────────────────────────────────────
+    case "get_schedules": {
+      const scheds = await Schedule.find({
+        $or: [{ createdBy: userId }, { attendees: userId }],
+        isDeleted: { $ne: true },
+        startAt: { $gte: new Date(toolArgs.from), $lte: new Date(toolArgs.to) },
+      })
+        .sort({ startAt: 1 })
+        .limit(20)
+        .lean();
+      if (!scheds.length) return { result: "この期間の予定はありません。" };
+      return {
+        result: scheds.map((s) => ({
+          id: String(s._id),
+          title: s.title,
+          startAt: moment(s.startAt)
+            .tz("Asia/Tokyo")
+            .format("YYYY-MM-DD HH:mm"),
+          endAt: moment(s.endAt).tz("Asia/Tokyo").format("YYYY-MM-DD HH:mm"),
+          location: s.location || "",
+          allDay: !!s.allDay,
+        })),
+      };
+    }
+
+    case "get_attendance_today": {
+      const todayStart = now.clone().startOf("day").toDate();
+      const todayEnd = now.clone().endOf("day").toDate();
+      const att = await Attendance.findOne({
+        userId,
+        date: { $gte: todayStart, $lte: todayEnd },
+      }).lean();
+      if (!att) return { result: "本日の打刻記録はまだありません。" };
+      return {
+        result: {
+          checkIn: att.checkIn
+            ? moment(att.checkIn).tz("Asia/Tokyo").format("HH:mm")
+            : null,
+          checkOut: att.checkOut
+            ? moment(att.checkOut).tz("Asia/Tokyo").format("HH:mm")
+            : null,
+          status: att.status || "出勤中",
+        },
+      };
+    }
+
+    case "get_attendance_month": {
+      const target = toolArgs.month
+        ? moment(toolArgs.month + "-01").tz("Asia/Tokyo")
+        : now.clone();
+      const mStart = target.clone().startOf("month").toDate();
+      const mEnd = target.clone().endOf("month").toDate();
+      const recs = await Attendance.find({
+        userId,
+        date: { $gte: mStart, $lte: mEnd },
+      }).lean();
+      return {
+        result: {
+          month: target.format("YYYY年M月"),
+          workDays: recs.filter((r) => r.checkIn).length,
+          lateDays: recs.filter((r) => r.lateMinutes > 0).length,
+          absentDays: recs.filter((r) => r.status === "absent").length,
+          overtimeHours:
+            Math.round(
+              (recs.reduce((a, r) => a + (r.overtimeMinutes || 0), 0) / 60) *
+                10,
+            ) / 10,
+        },
+      };
+    }
+
+    case "get_leave_status": {
+      const pending = await LeaveRequest.countDocuments({
+        userId,
+        status: "pending",
+      });
+      const approved = await LeaveRequest.countDocuments({
+        userId,
+        status: "approved",
+      });
+      const remaining =
+        employee.remainingLeaveDays ?? employee.annualLeaveDays ?? 0;
+      return {
+        result: {
+          pendingCount: pending,
+          approvedCount: approved,
+          remainingDays: remaining,
+        },
+      };
+    }
+
+    case "get_goals": {
+      const goals = await Goal.find({ ownerId: employee._id })
+        .sort({ deadline: 1 })
+        .limit(10)
+        .lean();
+      if (!goals.length) return { result: "登録済みの目標はありません。" };
+      return {
+        result: goals.map((g) => ({
+          title: g.title,
+          progress: g.progress || 0,
+          status: g.status || "進行中",
+          deadline: g.deadline ? moment(g.deadline).format("YYYY-MM-DD") : null,
+        })),
+      };
+    }
+
+    case "get_payroll": {
+      const slip = await PayrollSlip.findOne({ userId })
+        .sort({ year: -1, month: -1 })
+        .lean();
+      if (!slip) return { result: "給与明細がまだ登録されていません。" };
+      return {
+        result: {
+          period: `${slip.year}年${slip.month}月`,
+          netPay: slip.netPay || slip.totalNet || 0,
+          grossPay: slip.grossPay || slip.totalGross || 0,
+          deductions: slip.totalDeductions || 0,
+        },
+      };
+    }
+
+    case "get_pending_workflows": {
+      const wfs = await Workflow.find({
+        approvers: { $elemMatch: { approverId: userId, status: "pending" } },
+        status: "submitted",
+        isDeleted: { $ne: true },
+      })
+        .sort({ submittedAt: -1 })
+        .limit(10)
+        .lean();
+      if (!wfs.length)
+        return { result: "承認待ちのワークフローはありません。" };
+      return {
+        result: wfs.map((w) => ({
+          id: String(w._id),
+          title: w.title,
+          type: w.type || "",
+          submittedAt: moment(w.submittedAt).format("YYYY-MM-DD"),
+        })),
+      };
+    }
+
+    case "get_board_posts": {
+      const limit = Math.min(toolArgs.limit || 5, 10);
+      const posts = await BoardPost.find({ isDeleted: { $ne: true } })
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean();
+      if (!posts.length) return { result: "掲示板の投稿はありません。" };
+      return {
+        result: posts.map((p) => ({
+          title: p.title,
+          createdAt: moment(p.createdAt).format("M/D"),
+          content: (p.content || "").substring(0, 120),
+        })),
+      };
+    }
+
+    case "search_company_rules": {
+      const kw = (toolArgs.keyword || "").replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&",
+      );
+      const regex = new RegExp(kw, "i");
+      const rules = await CompanyRule.find({
+        $or: [{ title: regex }, { content: regex }],
+        isDeleted: { $ne: true },
+      })
+        .limit(3)
+        .lean();
+      if (!rules.length)
+        return {
+          result: `「${toolArgs.keyword}」に関する規定は見つかりませんでした。`,
+        };
+      return {
+        result: rules.map((r) => ({
+          title: r.title,
+          summary: (r.content || "").substring(0, 300),
+        })),
+      };
+    }
+
+    case "get_daily_reports": {
+      const limit = Math.min(toolArgs.limit || 5, 10);
+      const reports = await DailyReport.find({ userId })
+        .sort({ reportDate: -1 })
+        .limit(limit)
+        .lean();
+      if (!reports.length) return { result: "日報の記録がありません。" };
+      return {
+        result: reports.map((r) => ({
+          date: moment(r.reportDate).format("M/D"),
+          content: (r.content || "").substring(0, 100),
+          achievements: (r.achievements || "").substring(0, 80),
+          issues: (r.issues || "").substring(0, 80),
+        })),
+      };
+    }
+
+    // ── WRITE TOOLS（pendingAction を組み立てて返す）────────────────────
+    case "create_schedule": {
+      const startAt = new Date(toolArgs.startAt);
+      const endAt = toolArgs.endAt
+        ? new Date(toolArgs.endAt)
+        : new Date(startAt.getTime() + 60 * 60 * 1000); // デフォルト1時間後
+      const pa = {
+        type: "schedule_create",
+        data: {
+          title: toolArgs.title,
+          startAt: startAt.toISOString(),
+          endAt: endAt.toISOString(),
+          location: toolArgs.location || "",
+          description: toolArgs.description || "",
+          allDay: toolArgs.allDay || false,
+        },
+      };
+      const summary =
+        `タイトル：${toolArgs.title}\n` +
+        `日時：${moment(startAt).tz("Asia/Tokyo").format("M月D日(ddd) HH:mm")}〜${moment(endAt).tz("Asia/Tokyo").format("HH:mm")}` +
+        (toolArgs.location ? `\n場所：${toolArgs.location}` : "");
+      return {
+        needsConfirmation: true,
+        pendingAction: pa,
+        confirmSummary: summary,
+      };
+    }
+
+    case "update_schedule": {
+      const sc = await Schedule.findOne({
+        _id: toolArgs.scheduleId,
+        isDeleted: { $ne: true },
+      }).lean();
+      if (!sc)
+        return {
+          result:
+            "指定した予定が見つかりませんでした。get_schedulesで再確認してください。",
+        };
+      const newStartAt = toolArgs.newStartAt
+        ? new Date(toolArgs.newStartAt).toISOString()
+        : new Date(sc.startAt).toISOString();
+      const pa = {
+        type: "schedule_update",
+        data: {
+          scheduleId: toolArgs.scheduleId,
+          newStartAt,
+          title: toolArgs.newTitle || sc.title,
+        },
+      };
+      const summary =
+        `「${toolArgs.oldTitle}」を変更\n` +
+        `新しい日時：${moment(newStartAt).tz("Asia/Tokyo").format("M月D日(ddd) HH:mm")}` +
+        (toolArgs.newTitle && toolArgs.newTitle !== sc.title
+          ? `\n新しいタイトル：${toolArgs.newTitle}`
+          : "") +
+        (toolArgs.newLocation ? `\n新しい場所：${toolArgs.newLocation}` : "");
+      return {
+        needsConfirmation: true,
+        pendingAction: pa,
+        confirmSummary: summary,
+      };
+    }
+
+    case "delete_schedule": {
+      const sc = await Schedule.findOne({
+        _id: toolArgs.scheduleId,
+        isDeleted: { $ne: true },
+      }).lean();
+      if (!sc)
+        return {
+          result:
+            "指定した予定が見つかりませんでした。get_schedulesで再確認してください。",
+        };
+      const pa = {
+        type: "schedule_delete",
+        data: {
+          scheduleId: toolArgs.scheduleId,
+          title: toolArgs.title || sc.title,
+        },
+      };
+      const summary =
+        `「${toolArgs.title || sc.title}」\n` +
+        `日時：${moment(sc.startAt).tz("Asia/Tokyo").format("M/D HH:mm")}〜${moment(sc.endAt).tz("Asia/Tokyo").format("HH:mm")}`;
+      return {
+        needsConfirmation: true,
+        pendingAction: pa,
+        confirmSummary: summary,
+      };
+    }
+
+    case "apply_leave": {
+      const days =
+        toolArgs.days ||
+        moment(toolArgs.endDate).diff(moment(toolArgs.startDate), "days") + 1;
+      const pa = {
+        type: "leave_apply",
+        data: {
+          leaveType: toolArgs.leaveType,
+          startDate: toolArgs.startDate,
+          endDate: toolArgs.endDate,
+          days,
+          reason: toolArgs.reason || "",
+        },
+      };
+      const summary =
+        `種別：${toolArgs.leaveType}\n` +
+        `期間：${moment(toolArgs.startDate).format("M月D日(ddd)")}〜${moment(toolArgs.endDate).format("M月D日(ddd)")}（${days}日間）`;
+      return {
+        needsConfirmation: true,
+        pendingAction: pa,
+        confirmSummary: summary,
+      };
+    }
+
+    case "apply_overtime": {
+      const sm = moment(`${toolArgs.date}T${toolArgs.startTime}`);
+      const em = moment(`${toolArgs.date}T${toolArgs.endTime}`);
+      const hours = Math.round((em.diff(sm, "minutes") / 60) * 10) / 10;
+      const pa = {
+        type: "overtime_apply",
+        data: {
+          date: toolArgs.date,
+          startTime: toolArgs.startTime,
+          endTime: toolArgs.endTime,
+          hours,
+          reason: toolArgs.reason,
+        },
+      };
+      const summary =
+        `日付：${moment(toolArgs.date).format("M月D日(ddd)")}\n` +
+        `時間：${toolArgs.startTime}〜${toolArgs.endTime}（${hours}時間）\n理由：${toolArgs.reason}`;
+      return {
+        needsConfirmation: true,
+        pendingAction: pa,
+        confirmSummary: summary,
+      };
+    }
+
+    case "apply_stamp_fix": {
+      const pa = {
+        type: "stamp_fix",
+        data: {
+          date: toolArgs.date,
+          stampType: toolArgs.stampType,
+          time: toolArgs.time || "",
+          reason: toolArgs.reason || "打刻漏れ",
+        },
+      };
+      const summary =
+        `対象日：${moment(toolArgs.date).format("M月D日(ddd)")}\n` +
+        `種別：${toolArgs.stampType}打刻漏れ` +
+        (toolArgs.time ? `\n時刻：${toolArgs.time}` : "");
+      return {
+        needsConfirmation: true,
+        pendingAction: pa,
+        confirmSummary: summary,
+      };
+    }
+
+    case "approve_workflow": {
+      const pa = {
+        type: "workflow_approve",
+        data: { workflowId: toolArgs.workflowId },
+      };
+      return {
+        needsConfirmation: true,
+        pendingAction: pa,
+        confirmSummary: `「${toolArgs.title}」を承認`,
+      };
+    }
+
+    case "return_workflow": {
+      const pa = {
+        type: "workflow_return",
+        data: { workflowId: toolArgs.workflowId, reason: toolArgs.reason },
+      };
+      return {
+        needsConfirmation: true,
+        pendingAction: pa,
+        confirmSummary: `「${toolArgs.title}」を差し戻し\n理由：${toolArgs.reason}`,
+      };
+    }
+
+    case "post_to_board": {
+      const pa = {
+        type: "board_post",
+        data: { title: toolArgs.title, content: toolArgs.content },
+      };
+      const summary =
+        `タイトル：${toolArgs.title}\n` +
+        `内容：${toolArgs.content.substring(0, 100)}${toolArgs.content.length > 100 ? "…" : ""}`;
+      return {
+        needsConfirmation: true,
+        pendingAction: pa,
+        confirmSummary: summary,
+      };
+    }
+
+    default:
+      return { result: `不明なツール: ${toolName}` };
+  }
+}
+
+// ── AIチャットハンドラー（OpenAI Function Calling）──────────────────────────
+async function aiChatHandler(message, userId, employee, sessionContext) {
+  const now = jst();
+  const ai = getChatOpenAI();
+
+  const systemPrompt =
+    `あなたは「DXPRO AIアシスタント」です。社内勤怠・業務管理システムの日本語AIアシスタントです。\n\n` +
+    `現在日時: ${now.format("YYYY年MM月DD日(ddd) HH:mm")} (JST)\n` +
+    `担当ユーザー: ${employee.name}（${employee.department || ""}）\n\n` +
+    `【利用可能なツール】\n` +
+    `- get_schedules: 予定の照会（変更・削除の前にも呼び出してIDを確認する）\n` +
+    `- create_schedule / update_schedule / delete_schedule: 予定の登録・変更・削除\n` +
+    `- get_attendance_today / get_attendance_month: 勤怠確認\n` +
+    `- get_leave_status / apply_leave: 休暇の確認・申請\n` +
+    `- apply_overtime: 残業申請\n` +
+    `- apply_stamp_fix: 打刻修正申請\n` +
+    `- get_goals: 目標確認\n` +
+    `- get_payroll: 給与確認\n` +
+    `- get_pending_workflows / approve_workflow / return_workflow: ワークフロー承認\n` +
+    `- get_board_posts / post_to_board: 掲示板の確認・投稿\n` +
+    `- search_company_rules: 就業規則の検索\n` +
+    `- get_daily_reports: 日報確認\n\n` +
+    `【重要なルール】\n` +
+    `1. データを変更・作成・削除するツール（create/update/delete/apply/post/approve/return）は必ずツール経由で実行し、実行結果はユーザーに確認を求めてください。\n` +
+    `2. 予定の変更・削除をする場合は、必ず先にget_schedulesで予定を検索してIDを取得してから、update_schedule/delete_scheduleを呼んでください。\n` +
+    `3. ツールを呼ばずに勝手に「〇〇しました」と言わないでください。\n` +
+    `4. 日本語で丁寧かつ簡潔に回答してください。マークダウン（**太字**、箇条書き）を使って見やすく。`;
+
+  // メッセージ履歴を構築
+  const messages = [{ role: "system", content: systemPrompt }];
+  const prevHistory = (sessionContext && sessionContext.chatHistory) || [];
+  for (const h of prevHistory.slice(-6)) {
+    messages.push({ role: h.role, content: h.content });
+  }
+  messages.push({ role: "user", content: message });
+
+  let response = await ai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages,
+    tools: CHATBOT_TOOLS,
+    tool_choice: "auto",
+    max_tokens: 1000,
+    temperature: 0.3,
+  });
+
+  let toolCallPendingAction = null;
+  // ツール呼び出しループ（最大3回まで）
+  let loopCount = 0;
+  while (response.choices[0].finish_reason === "tool_calls" && loopCount < 3) {
+    loopCount++;
+    const assistantMsg = response.choices[0].message;
+    messages.push(assistantMsg);
+
+    const toolResults = [];
+    for (const toolCall of assistantMsg.tool_calls) {
+      let toolArgs;
+      try {
+        toolArgs = JSON.parse(toolCall.function.arguments);
+      } catch (_) {
+        toolArgs = {};
+      }
+      const toolResult = await executeToolCall(
+        toolCall.function.name,
+        toolArgs,
+        userId,
+        employee,
+        now,
+      );
+
+      if (toolResult.needsConfirmation) {
+        // 書き込み系ツール → pendingActionを保存してAIに「確認待ち」を伝える
+        if (!toolCallPendingAction)
+          toolCallPendingAction = toolResult.pendingAction;
+        toolResults.push({
+          tool_call_id: toolCall.id,
+          role: "tool",
+          content: JSON.stringify({
+            status: "awaiting_confirmation",
+            summary: toolResult.confirmSummary,
+          }),
+        });
+      } else {
+        toolResults.push({
+          tool_call_id: toolCall.id,
+          role: "tool",
+          content: JSON.stringify(toolResult.result),
+        });
+      }
+    }
+
+    messages.push(...toolResults);
+
+    response = await ai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages,
+      tools: CHATBOT_TOOLS,
+      // 確認待ち中は追加のツール呼び出しをさせない
+      tool_choice: toolCallPendingAction ? "none" : "auto",
+      max_tokens: 800,
+      temperature: 0.3,
+    });
+  }
+
+  const finalText =
+    response.choices[0].message?.content || "応答を生成できませんでした。";
+
+  // 会話履歴を更新（最大6メッセージ = 3往復）
+  const newHistory = [
+    ...prevHistory.slice(-4),
+    { role: "user", content: message },
+    { role: "assistant", content: finalText },
+  ].slice(-6);
+
+  return {
+    text: finalText,
+    links: [],
+    quickReplies: toolCallPendingAction ? ["はい", "キャンセル"] : [],
+    pendingAction: toolCallPendingAction || undefined,
+    chatHistory: newHistory,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 router.post("/api/chatbot", requireLogin, async (req, res) => {
   try {
     const { message, context: sessionContext } = req.body;
@@ -2323,22 +3214,40 @@ router.post("/api/chatbot", requireLogin, async (req, res) => {
     const employee = await Employee.findOne({ userId: user._id });
     if (!employee)
       return res.json({ ok: false, error: "従業員情報が見つかりません" });
-    const intent = classifyIntent(text);
-    const reply = await generateReply(
-      intent,
-      user._id,
-      employee,
-      text,
-      sessionContext || {},
-    );
-    // pendingActionをレスポンスに含める（フロントエンドで次のリクエスト時にcontextとして返す）
+
+    const ctx = sessionContext || {};
+    const hasPendingAction = !!ctx.pendingAction;
+
+    let reply;
+
+    if (!hasPendingAction && hasOpenAIKey()) {
+      // ── OpenAI Function Calling ──────────────────────────────────────
+      try {
+        reply = await aiChatHandler(text, user._id, employee, ctx);
+      } catch (aiErr) {
+        console.error(
+          "[chatbot] OpenAI error, falling back to rule-based:",
+          aiErr.message,
+        );
+        // フォールバック: ルールベース
+        const intent = classifyIntent(text);
+        reply = await generateReply(intent, user._id, employee, text, ctx);
+      }
+    } else {
+      // ── ルールベース（pendingAction確認中 or API未設定）────────────────
+      const intent = classifyIntent(text);
+      reply = await generateReply(intent, user._id, employee, text, ctx);
+    }
+
     const responseReply = {
       text: reply.text,
       links: reply.links || [],
       quickReplies: reply.quickReplies || [],
     };
     if (reply.pendingAction) responseReply.pendingAction = reply.pendingAction;
-    return res.json({ ok: true, reply: responseReply, intent });
+    if (reply.chatHistory) responseReply.chatHistory = reply.chatHistory;
+
+    return res.json({ ok: true, reply: responseReply });
   } catch (err) {
     console.error("chatbot error:", err);
     return res.status(500).json({ ok: false, error: "サーバーエラー" });

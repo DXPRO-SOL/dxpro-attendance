@@ -12,6 +12,8 @@
 
   // 確認待ちアクション（2ステップ確認フロー）
   var pendingAction = null;
+  // 会話履歴（OpenAIコンテキスト用、最大6メッセージ）
+  var chatHistory = [];
 
   if (!fab || !panel) {
     console.error("[Chatbot] #cb-fab or #cb-panel not found in DOM");
@@ -115,6 +117,7 @@
   function resetChat() {
     msgs.innerHTML = "";
     pendingAction = null;
+    chatHistory = [];
     var sa = document.getElementById("cb-suggestions");
     if (sa) sa.style.display = "";
     appendMsg("bot", WELCOME_TEXT, [], WELCOME_QR);
@@ -136,8 +139,10 @@
     var sa = document.getElementById("cb-suggestions");
     if (sa) sa.style.display = "none";
     showTyping();
-    // pendingActionをcontextとして渡す（確認フロー）
-    var ctx = pendingAction ? { pendingAction: pendingAction } : {};
+    // pendingAction・chatHistoryをcontextとして渡す
+    var ctx = {};
+    if (pendingAction) ctx.pendingAction = pendingAction;
+    if (chatHistory.length) ctx.chatHistory = chatHistory;
     pendingAction = null; // 送信時にリセット
     fetch("/api/chatbot", {
       method: "POST",
@@ -158,9 +163,12 @@
       .then(function (d) {
         hideTyping();
         if (d.ok) {
-          // pendingActionがあれば保存（次の送信時に渡す）
+          // pendingAction・chatHistoryを保存
           if (d.reply.pendingAction) {
             pendingAction = d.reply.pendingAction;
+          }
+          if (d.reply.chatHistory) {
+            chatHistory = d.reply.chatHistory;
           }
           appendMsg("bot", d.reply.text, d.reply.links, d.reply.quickReplies);
         } else {
