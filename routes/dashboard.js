@@ -698,7 +698,13 @@ router.get("/dashboard", requireLogin, async (req, res) => {
         }
 
         /* ── AI最適化ホームセクション ── */
-        .ai-home-section { margin-bottom: 20px; }
+        .ai-home-section {
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #faf5ff 0%, #eff6ff 100%);
+            border: 1.5px solid #ddd6fe;
+            border-radius: 16px;
+            padding: 16px 20px 18px;
+        }
         .ai-home-header {
             display: flex; align-items: center; justify-content: space-between;
             margin-bottom: 12px; flex-wrap: wrap; gap: 8px;
@@ -721,6 +727,37 @@ router.get("/dashboard", requireLogin, async (req, res) => {
         .ai-home-toggle-btn:hover { border-color: var(--c-primary); color: var(--c-primary); }
         .ai-settings-link { font-size: 11px; color: var(--c-muted); text-decoration: none; }
         .ai-settings-link:hover { color: var(--c-primary); }
+        .ai-notif-area { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+        .ai-notif-area:empty { display: none; }
+        .ai-notif-card {
+            display: flex; align-items: center; gap: 10px;
+            border-radius: 10px; padding: 10px 12px;
+            border: 1px solid var(--card-border);
+            background: var(--card-bg);
+            animation: notifFadeIn .3s ease;
+        }
+        @keyframes notifFadeIn { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
+        .ai-notif-icon {
+            width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 15px;
+        }
+        .ai-notif-body { flex: 1; min-width: 0; }
+        .ai-notif-msg { font-size: 13px; font-weight: 700; color: var(--c-text); }
+        .ai-notif-sub { font-size: 11px; color: var(--c-muted); margin-top: 1px; }
+        .ai-notif-action {
+            font-size: 11px; font-weight: 600; border-radius: 7px;
+            padding: 5px 12px; text-decoration: none; flex-shrink: 0;
+            border: none; cursor: pointer; transition: opacity .15s;
+            color: #fff;
+        }
+        .ai-notif-action:hover { opacity: .85; color: #fff; }
+        .ai-notif-dismiss {
+            font-size: 13px; color: var(--c-muted); background: none; border: none;
+            cursor: pointer; padding: 2px 4px; flex-shrink: 0;
+            line-height: 1; border-radius: 4px; transition: color .15s;
+        }
+        .ai-notif-dismiss:hover { color: var(--c-text); }
 
         /* よく使う機能ショートカット */
         .ai-freq-grid {
@@ -875,6 +912,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             </div>
           </div>
           <div id="aiHomeSectionBody">
+            <div id="aiNotifArea" class="ai-notif-area"></div>
 
             ${
               /* 業務傾向サマリー */ aiLayout.trendSummary
@@ -975,7 +1013,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
         <!-- AI学習OFF状態: 軽量リンク表示 -->
         <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:#f9fafb;border:1px solid var(--c-border);border-radius:10px;margin-bottom:16px;font-size:12px;color:var(--c-muted)">
           <i class="fa-solid fa-brain" style="color:var(--c-sub)"></i>
-          AI最適化ホームはオフです。
+          現在AI操作学習がOFFになっています。
           <a href="/ai-home-settings" style="color:var(--c-primary);font-weight:600">設定でオンにする</a>
         </div>
         `
@@ -2223,6 +2261,54 @@ router.get("/dashboard", requireLogin, async (req, res) => {
 
         // ページ訪問ログ（ダッシュボード）
         logBehavior('page_visit', 'dashboard', '/dashboard');
+
+        // ── AI通知 ──────────────────────────────────────────────────────────
+        (function loadAINotifications() {
+            const area = document.getElementById('aiNotifArea');
+            if (!area) return;
+
+            // 当日の非表示済みIDをlocalStorageから取得
+            const today = new Date().toISOString().slice(0, 10);
+            const storageKey = 'aiNotifDismissed_' + today;
+            let dismissed = [];
+            try { dismissed = JSON.parse(localStorage.getItem(storageKey) || '[]'); } catch(e) {}
+
+            fetch('/api/ai-notifications')
+                .then(r => r.json())
+                .then(({ notifications }) => {
+                    if (!notifications || !notifications.length) return;
+                    notifications
+                        .filter(n => !dismissed.includes(n.id))
+                        .forEach(n => {
+                            const card = document.createElement('div');
+                            card.className = 'ai-notif-card';
+                            card.id = 'aiNotif-' + n.id;
+                            card.style.cssText = 'background:' + n.bg + ';border-color:' + n.border + ';';
+                            card.innerHTML =
+                                '<div class="ai-notif-icon" style="background:' + n.color + '20;color:' + n.color + '">' +
+                                    '<i class="fa-solid ' + n.icon + '"></i>' +
+                                '</div>' +
+                                '<div class="ai-notif-body">' +
+                                    '<div class="ai-notif-msg">' + n.message + '</div>' +
+                                    '<div class="ai-notif-sub">' + n.sub + '</div>' +
+                                '</div>' +
+                                '<a href="' + n.action + '" class="ai-notif-action" style="background:' + n.color + '">' + n.actionLabel + '</a>' +
+                                '<button class="ai-notif-dismiss" onclick="dismissAINotif(\'' + n.id + '\')" title="\u975e\u8868\u793a">\u00d7</button>';
+                            area.appendChild(card);
+                        });
+                })
+                .catch(() => {});
+        })();
+
+        function dismissAINotif(id) {
+            document.getElementById('aiNotif-' + id)?.remove();
+            const today = new Date().toISOString().slice(0, 10);
+            const storageKey = 'aiNotifDismissed_' + today;
+            let dismissed = [];
+            try { dismissed = JSON.parse(localStorage.getItem(storageKey) || '[]'); } catch(e) {}
+            if (!dismissed.includes(id)) dismissed.push(id);
+            try { localStorage.setItem(storageKey, JSON.stringify(dismissed)); } catch(e) {}
+        }
 
         // クイックアクションボタンへのクリックログ追跡
         document.querySelectorAll('.qa-btn[data-feature]').forEach(btn => {

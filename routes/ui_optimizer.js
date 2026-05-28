@@ -4,8 +4,14 @@
 "use strict";
 
 const router = require("express").Router();
+const mongoose = require("mongoose");
 const { requireLogin, isAdmin } = require("../middleware/auth");
-const { UserBehaviorLog, UserUIPreference } = require("../models");
+const {
+  UserBehaviorLog,
+  UserUIPreference,
+  Attendance,
+  DailyReport,
+} = require("../models");
 const {
   FEATURE_META,
   VALID_FEATURES,
@@ -46,11 +52,11 @@ router.post("/api/behavior-log", requireLogin, async (req, res) => {
       dayOfWeek: now.getDay(),
     });
 
-    // 非同期で分析更新（50件ごとに実施してDB負荷を抑制）
+    // 非同期で分析更新（30件ごとに実施してDB負荷を抑制）
     const recentCount = await UserBehaviorLog.countDocuments({
       userId: req.session.userId,
     });
-    if (recentCount % 50 === 0) {
+    if (recentCount % 30 === 0) {
       setImmediate(() => analyzeAndUpdatePreference(req.session.userId));
     }
 
@@ -415,6 +421,130 @@ router.get("/admin/ui-analytics", requireLogin, isAdmin, async (req, res) => {
   } catch (e) {
     console.error("[ui_optimizer] admin analytics:", e.message);
     res.status(500).send("エラーが発生しました");
+  }
+});
+
+// ── AIコンテキスト通知 ──────────────────────────────────────────────────────
+router.get("/api/ai-notifications", requireLogin, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    const userObjId = new mongoose.Types.ObjectId(userId);
+    const now = new Date();
+    const currentHour = now.getHours();
+    const todayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
+    const since30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    // AI学習がOFFなら通知なし
+    const pref = await UserUIPreference.findOne(
+      { userId },
+      { aiLearningEnabled: 1 },
+    ).lean();
+    if (pref && pref.aiLearningEnabled === false) {
+      return res.json({ notifications: [] });
+    }
+
+    // 過去30日のfeature×hour集計
+    const featureHourAgg = await UserBehaviorLog.aggregate([
+      { $match: { userId: userObjId, createdAt: { $gte: since30 } } },
+      {
+        $group: {
+          _id: { feature: "$feature", hour: "$hour" },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // featureごとに多い順にhourを並べる
+    const featurePeakMap = {};
+    featureHourAgg.forEach(({ _id: { feature, hour }, count }) => {
+      if (!featurePeakMap[feature]) featurePeakMap[feature] = [];
+      featurePeakMap[feature].push({ hour, count });
+    });
+    Object.keys(featurePeakMap).forEach((f) => {
+      featurePeakMap[f].sort((a, b) => b.count - a.count);
+    });
+
+    // currentHourがfeatureのピーク時間帯(±1h, 指定範囲内)に近いか
+    const isNearPeak = (feature, hourMin, hourMax) => {
+      const peaks = (featurePeakMap[feature] || []).slice(0, 3);
+      return peaks.some((p) => {
+        if (p.count < 2) return false;
+        if (p.hour < hourMin || p.hour > hourMax) return false;
+        return Math.abs(p.hour - currentHour) <= 1;
+      });
+    };
+
+    const notifications = [];
+
+    // 今日の勤怠レコード確認
+    const todayAtt = await Attendance.findOne(
+      { userId, date: { $gte: todayStart } },
+      { checkIn: 1, checkOut: 1 },
+    ).lean();
+
+    // 1. 出勤打刻リマインダー（朝6〜11時のピークに近く、まだ出勤していない）
+    if (isNearPeak("attendance", 6, 11) && !todayAtt?.checkIn) {
+      notifications.push({
+        id: "clock_in",
+        icon: "fa-right-to-bracket",
+        color: "#2563eb",
+        bg: "#eff6ff",
+        border: "#93c5fd",
+        message: "出勤打刻の時間ではないですか？",
+        sub: `いつも${currentHour}時頃に出勤されています`,
+        action: "/attendance-main",
+        actionLabel: "打刻する",
+      });
+    }
+
+    // 2. 退勤打刻リマインダー（午後14〜22時のピークに近く、出勤済み・退勤未）
+    if (
+      isNearPeak("attendance", 14, 22) &&
+      todayAtt?.checkIn &&
+      !todayAtt?.checkOut
+    ) {
+      notifications.push({
+        id: "clock_out",
+        icon: "fa-right-from-bracket",
+        color: "#ea580c",
+        bg: "#fff7ed",
+        border: "#fdba74",
+        message: "退勤打刻の時間ではないですか？",
+        sub: `いつも${currentHour}時頃に退勤されています`,
+        action: "/attendance-main",
+        actionLabel: "打刻する",
+      });
+    }
+
+    // 3. 日報リマインダー（hrのピーク時間に近く、今日の日報未提出）
+    if (isNearPeak("hr", 14, 22)) {
+      const todayReport = await DailyReport.findOne(
+        { userId, reportDate: { $gte: todayStart } },
+        { _id: 1 },
+      ).lean();
+      if (!todayReport) {
+        notifications.push({
+          id: "daily_report",
+          icon: "fa-clipboard-list",
+          color: "#16a34a",
+          bg: "#f0fdf4",
+          border: "#86efac",
+          message: "本日の日報は書きましたか？",
+          sub: `いつも${currentHour}時頃に日報を作成されています`,
+          action: "/hr/daily-report/new",
+          actionLabel: "日報を書く",
+        });
+      }
+    }
+
+    res.json({ notifications });
+  } catch (e) {
+    console.error("[ai-notifications]", e.message);
+    res.json({ notifications: [] });
   }
 });
 
