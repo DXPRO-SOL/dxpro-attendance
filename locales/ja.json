@@ -54,7 +54,8 @@
     "workflow": "ワークフロー",
     "cloud": "クラウドドライブ",
     "integrations": "外部API連携設定",
-    "contracts": "契約管理"
+    "contracts": "契約管理",
+    "analytics": "BI・分析"
   },
   "topbar": {
     "admin_badge": "管理者",

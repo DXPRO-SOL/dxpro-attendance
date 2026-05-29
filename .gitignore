@@ -1,3 +1,5 @@
-ÿþ.env
-
-.env
+ï»¿.env
+*.log
+logs/
+uploads/
+node_modules/
