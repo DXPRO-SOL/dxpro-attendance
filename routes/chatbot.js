@@ -12,6 +12,8 @@ const {
   LeaveRequest,
   LeaveBalance,
   PayrollSlip,
+  PayrollRun,
+  PayrollMaster,
   ApprovalRequest,
   CompanyRule,
   DailyReport,
@@ -23,8 +25,11 @@ const {
   ApprovedLocation,
   SkillSheet,
   BoardComment,
+  Contract,
 } = require("../models");
+const bcrypt = require("bcryptjs");
 const { computeSemiAnnualGrade } = require("../lib/helpers");
+const { calcPayroll, aggregateAttendance } = require("../lib/payrollEngine");
 const { createNotification } = require("./notifications");
 
 function jst() {
@@ -1957,6 +1962,11 @@ async function executePendingAction(pa, userId, employee, now) {
       case "schedule_update": {
         const sc = await Schedule.findById(data.scheduleId);
         if (!sc) return { text: "⚠️ 予定が見つかりませんでした。", links: [] };
+        if (String(sc.createdBy) !== String(userId))
+          return {
+            text: "⚠️ この予定はあなたが作成したものではないため変更できません。",
+            links: [],
+          };
         const duration = moment(sc.endAt).diff(moment(sc.startAt), "minutes");
         const newStart = new Date(data.newStartAt);
         const newEnd = moment(newStart).add(duration, "minutes").toDate();
@@ -1981,7 +1991,16 @@ async function executePendingAction(pa, userId, employee, now) {
       }
 
       case "schedule_delete": {
-        await Schedule.findByIdAndUpdate(data.scheduleId, { isDeleted: true });
+        const scDel = await Schedule.findById(data.scheduleId);
+        if (!scDel)
+          return { text: "⚠️ 予定が見つかりませんでした。", links: [] };
+        if (String(scDel.createdBy) !== String(userId))
+          return {
+            text: "⚠️ この予定はあなたが作成したものではないため削除できません。",
+            links: [],
+          };
+        scDel.isDeleted = true;
+        await scDel.save();
         return {
           text: "✅ **スケジュール「" + data.title + "」を削除しました。**",
           links: [{ label: "スケジュールを確認", url: "/schedule" }],
@@ -2776,6 +2795,1094 @@ async function executePendingAction(pa, userId, employee, now) {
         };
       }
 
+      // ── 目標承認フロー ─────────────────────────────────────────────────
+      case "goal_submit": {
+        const goalSub = await Goal.findById(data.goalId);
+        if (!goalSub)
+          return { text: "⚠️ 目標が見つかりませんでした。", links: [] };
+        const isOwnerSub =
+          (goalSub.createdBy &&
+            String(goalSub.createdBy) === String(employee._id)) ||
+          (goalSub.ownerId && String(goalSub.ownerId) === String(employee._id));
+        if (!isOwnerSub)
+          return {
+            text: "⚠️ この目標はあなたのものではありません。",
+            links: [],
+          };
+        if (data.submitType === "submit2") {
+          if (data.approverId) {
+            const apprEmp = await Employee.findById(data.approverId);
+            if (apprEmp) {
+              goalSub.currentApprover = apprEmp._id;
+              if (apprEmp.userId) {
+                await createNotification({
+                  userId: apprEmp.userId,
+                  type: "goal_approval",
+                  title: "📋 目標の2次承認依頼が届きました",
+                  body: `${employee.name} さんの目標「${(goalSub.title || "").substring(0, 40)}」`,
+                  link: "/goals/approval",
+                });
+              }
+            }
+          } else if (goalSub.currentApprover) {
+            const apprEmp2 = await Employee.findById(goalSub.currentApprover);
+            if (apprEmp2 && apprEmp2.userId) {
+              await createNotification({
+                userId: apprEmp2.userId,
+                type: "goal_approval",
+                title: "📋 目標の2次承認依頼が届きました",
+                body: `${employee.name} さんの目標「${(goalSub.title || "").substring(0, 40)}」`,
+                link: "/goals/approval",
+              });
+            }
+          }
+          goalSub.status = "pending2";
+          goalSub.history.push({
+            action: "submit2",
+            by: employee._id,
+            date: new Date(),
+          });
+        } else {
+          goalSub.status = "pending1";
+          goalSub.history.push({
+            action: "submit1",
+            by: employee._id,
+            date: new Date(),
+          });
+          if (goalSub.currentApprover) {
+            const apprEmpFirst = await Employee.findById(
+              goalSub.currentApprover,
+            );
+            if (apprEmpFirst && apprEmpFirst.userId) {
+              await createNotification({
+                userId: apprEmpFirst.userId,
+                type: "goal_approval",
+                title: "📋 目標の1次承認依頼が届きました",
+                body: `${employee.name} さんの目標「${(goalSub.title || "").substring(0, 40)}」`,
+                link: "/goals/approval",
+              });
+            }
+          }
+        }
+        await goalSub.save();
+        return {
+          text:
+            `✅ **目標を${data.submitType === "submit2" ? "2次" : "1次"}承認へ提出しました！**\n\n` +
+            `• タイトル：**${goalSub.title}**`,
+          links: [{ label: "目標を確認", url: "/goals" }],
+          quickReplies: ["目標の状況を確認", "今日の状況は？"],
+        };
+      }
+
+      case "goal_approve": {
+        const goalApp = await Goal.findById(data.goalId);
+        if (!goalApp)
+          return { text: "⚠️ 目標が見つかりませんでした。", links: [] };
+        if (
+          !goalApp.currentApprover ||
+          String(goalApp.currentApprover) !== String(employee._id)
+        )
+          return {
+            text: "⚠️ この目標の承認権限がありません。",
+            links: [],
+          };
+        if (data.approveType === "approve2") {
+          goalApp.status = "completed";
+          goalApp.history.push({
+            action: "approve2",
+            by: employee._id,
+            date: new Date(),
+          });
+        } else {
+          goalApp.status = "approved1";
+          goalApp.history.push({
+            action: "approve1",
+            by: employee._id,
+            date: new Date(),
+          });
+        }
+        await goalApp.save();
+        if (goalApp.createdBy) {
+          const creatorEmpApp = await Employee.findById(goalApp.createdBy);
+          if (creatorEmpApp && creatorEmpApp.userId) {
+            await createNotification({
+              userId: creatorEmpApp.userId,
+              type: "goal_approval",
+              title:
+                data.approveType === "approve2"
+                  ? "🎉 目標が最終承認されました"
+                  : "✅ 目標が1次承認されました",
+              body: `「${(goalApp.title || "").substring(0, 40)}」が承認されました`,
+              link: "/goals",
+            });
+          }
+        }
+        const approveLabel =
+          data.approveType === "approve2" ? "最終承認（完了）" : "1次承認";
+        return {
+          text:
+            `✅ **目標を${approveLabel}しました！**\n\n` +
+            `• タイトル：**${goalApp.title}**`,
+          links: [{ label: "承認一覧", url: "/goals/approval" }],
+          quickReplies: ["承認待ちの目標を確認", "今日の状況は？"],
+        };
+      }
+
+      case "goal_reject": {
+        const goalRej = await Goal.findById(data.goalId);
+        if (!goalRej)
+          return { text: "⚠️ 目標が見つかりませんでした。", links: [] };
+        if (
+          !goalRej.currentApprover ||
+          String(goalRej.currentApprover) !== String(employee._id)
+        )
+          return {
+            text: "⚠️ この目標の承認権限がありません。",
+            links: [],
+          };
+        goalRej.status = "rejected";
+        goalRej.history.push({
+          action: data.rejectType || "reject1",
+          by: employee._id,
+          comment: data.comment || "",
+          date: new Date(),
+        });
+        await goalRej.save();
+        if (goalRej.createdBy) {
+          const creatorEmpRej = await Employee.findById(goalRej.createdBy);
+          if (creatorEmpRej && creatorEmpRej.userId) {
+            await createNotification({
+              userId: creatorEmpRej.userId,
+              type: "goal_approval",
+              title: "↩ 目標が差し戻されました",
+              body: `「${(goalRej.title || "").substring(0, 40)}」${data.comment ? " - " + data.comment.substring(0, 60) : ""}`,
+              link: "/goals",
+            });
+          }
+        }
+        return {
+          text:
+            `✅ **目標を差し戻しました。**\n\n` +
+            `• タイトル：**${goalRej.title}**` +
+            (data.comment ? `\n• 理由：${data.comment}` : ""),
+          links: [{ label: "承認一覧", url: "/goals/approval" }],
+          quickReplies: ["承認待ちの目標を確認", "今日の状況は？"],
+        };
+      }
+
+      case "goal_delete": {
+        const goalDel = await Goal.findById(data.goalId);
+        if (!goalDel)
+          return { text: "⚠️ 目標が見つかりませんでした。", links: [] };
+        const isOwnerDel =
+          (goalDel.createdBy &&
+            String(goalDel.createdBy) === String(employee._id)) ||
+          (goalDel.ownerId && String(goalDel.ownerId) === String(employee._id));
+        if (!isOwnerDel)
+          return {
+            text: "⚠️ この目標はあなたのものではありません。",
+            links: [],
+          };
+        await Goal.deleteOne({ _id: data.goalId });
+        return {
+          text: `✅ **目標を削除しました。**\n\n• タイトル：**${data.goalTitle}**`,
+          links: [{ label: "目標一覧", url: "/goals" }],
+          quickReplies: ["目標の状況を確認"],
+        };
+      }
+
+      // ── 日報追加操作 ───────────────────────────────────────────────────
+      case "daily_report_delete": {
+        const rptDel = await DailyReport.findById(data.reportId);
+        if (!rptDel)
+          return { text: "⚠️ 日報が見つかりませんでした。", links: [] };
+        if (String(rptDel.userId) !== String(userId))
+          return {
+            text: "⚠️ この日報はあなたのものではありません。",
+            links: [],
+          };
+        await DailyReport.findByIdAndDelete(data.reportId);
+        return {
+          text: `✅ **日報を削除しました。**`,
+          links: [{ label: "日報一覧", url: "/hr/daily-report" }],
+          quickReplies: ["今日の状況は？"],
+        };
+      }
+
+      case "daily_report_reaction": {
+        if (data.alreadyReacted) {
+          await DailyReport.findByIdAndUpdate(data.reportId, {
+            $pull: { reactions: { emoji: data.emoji, userId } },
+          });
+          return {
+            text: `✅ **${data.emoji} リアクションを取り消しました。**`,
+            links: [
+              {
+                label: "日報を確認",
+                url: `/hr/daily-report/${data.reportId}`,
+              },
+            ],
+            quickReplies: [],
+          };
+        }
+        await DailyReport.findByIdAndUpdate(data.reportId, {
+          $push: {
+            reactions: { emoji: data.emoji, userId, userName: employee.name },
+          },
+        });
+        if (
+          data.reportOwnerId &&
+          String(data.reportOwnerId) !== String(userId)
+        ) {
+          await createNotification({
+            userId: data.reportOwnerId,
+            type: "reaction",
+            title: `${employee.name} さんが ${data.emoji} を押しました`,
+            body: "",
+            link: `/hr/daily-report/${data.reportId}`,
+          });
+        }
+        return {
+          text: `✅ **${data.emoji} リアクションを追加しました！**`,
+          links: [
+            {
+              label: "日報を確認",
+              url: `/hr/daily-report/${data.reportId}`,
+            },
+          ],
+          quickReplies: [],
+        };
+      }
+
+      // ── 給与明細確認 ───────────────────────────────────────────────────
+      case "payroll_confirm": {
+        const slipConf = await PayrollSlip.findById(data.slipId);
+        if (!slipConf || String(slipConf.employeeId) !== String(employee._id))
+          return {
+            text: "⚠️ 給与明細が見つかりませんでした。",
+            links: [],
+          };
+        if (slipConf.confirmedAt)
+          return {
+            text: `⚠️ この給与明細は ${moment(slipConf.confirmedAt).format("M月D日")} にすでに確認済みです。`,
+            links: [],
+          };
+        slipConf.confirmedAt = new Date();
+        slipConf.confirmedBy = userId;
+        await slipConf.save();
+        return {
+          text:
+            `✅ **給与明細を確認済みにしました！**\n\n` +
+            `• 支給額：**${slipConf.net != null ? slipConf.net.toLocaleString() + "円" : "不明"}**`,
+          links: [{ label: "給与明細を確認", url: "/hr/payroll" }],
+          quickReplies: ["給与を確認する", "今日の状況は？"],
+        };
+      }
+
+      // ── 契約承認 ───────────────────────────────────────────────────────
+      case "contract_action": {
+        const ctAct = await Contract.findById(data.contractId);
+        if (!ctAct)
+          return { text: "⚠️ 契約が見つかりませんでした。", links: [] };
+        if (ctAct.approvalStatus !== "pending")
+          return {
+            text: `⚠️ この契約の承認ステータスは「${ctAct.approvalStatus}」です。`,
+            links: [],
+          };
+        const sortedCtFlow = [...ctAct.approvalFlow].sort(
+          (a, b) => a.order - b.order,
+        );
+        const ctStep = sortedCtFlow.find((s) => s.status === "pending");
+        if (!ctStep || String(ctStep.userId) !== String(userId))
+          return {
+            text: "⚠️ 現在あなたの承認番ではありません。",
+            links: [],
+          };
+        const ctIdx = ctAct.approvalFlow.findIndex(
+          (s) => String(s.userId) === String(userId) && s.status === "pending",
+        );
+        ctAct.approvalFlow[ctIdx].status = data.action;
+        ctAct.approvalFlow[ctIdx].comment = data.comment || "";
+        ctAct.approvalFlow[ctIdx].actedAt = new Date();
+
+        if (data.action === "approved") {
+          const nextCtStep = sortedCtFlow.find(
+            (s) => s.order > ctStep.order && s.status === "pending",
+          );
+          if (nextCtStep) {
+            await createNotification({
+              userId: nextCtStep.userId,
+              type: "contract_approval_requested",
+              title: "📋 契約の承認依頼が届きました",
+              body: `「${ctAct.name}」の承認をお願いします（第${nextCtStep.order}承認者）`,
+              link: `/contracts/${ctAct._id}`,
+            });
+          } else {
+            ctAct.status = "active";
+            ctAct.approvalStatus = "approved";
+            if (ctAct.createdBy) {
+              await createNotification({
+                userId: ctAct.createdBy,
+                type: "contract_approval_completed",
+                title: "✅ 契約が承認されました",
+                body: `「${ctAct.name}」がすべての承認者に承認されました`,
+                link: `/contracts/${ctAct._id}`,
+              });
+            }
+          }
+        } else if (data.action === "rejected") {
+          ctAct.status = "canceled";
+          ctAct.approvalStatus = "rejected";
+          if (ctAct.createdBy) {
+            await createNotification({
+              userId: ctAct.createdBy,
+              type: "contract_approval_rejected",
+              title: "❌ 契約が却下されました",
+              body: `「${ctAct.name}」が却下されました${data.comment ? `：${data.comment}` : ""}`,
+              link: `/contracts/${ctAct._id}`,
+            });
+          }
+        } else if (data.action === "returned") {
+          ctAct.status = "draft";
+          ctAct.approvalStatus = "returned";
+          ctAct.approvalFlow.forEach((s) => {
+            s.status = "pending";
+            s.comment = "";
+            s.actedAt = null;
+          });
+          if (ctAct.createdBy) {
+            await createNotification({
+              userId: ctAct.createdBy,
+              type: "contract_approval_returned",
+              title: "🔄 契約が差し戻されました",
+              body: `「${ctAct.name}」が差し戻されました${data.comment ? `：${data.comment}` : ""}。内容を修正して再提出してください`,
+              link: `/contracts/${ctAct._id}`,
+            });
+          }
+        }
+        await ctAct.save();
+        const ctActionLabel =
+          data.action === "approved"
+            ? "承認"
+            : data.action === "rejected"
+              ? "却下"
+              : "差し戻し";
+        return {
+          text:
+            `✅ **契約を${ctActionLabel}しました！**\n\n` +
+            `• 契約名：**${ctAct.name}**`,
+          links: [{ label: "契約一覧", url: "/contracts" }],
+          quickReplies: ["契約一覧を確認", "今日の状況は？"],
+        };
+      }
+
+      // ── スキルシート更新 ───────────────────────────────────────────────
+      case "skillsheet_skill_update": {
+        let ssUp = await SkillSheet.findOne({ employeeId: employee._id });
+        if (!ssUp) {
+          ssUp = await SkillSheet.create({
+            employeeId: employee._id,
+            userId,
+            skills: {
+              languages: [],
+              frameworks: [],
+              databases: [],
+              infra: [],
+              tools: [],
+            },
+            certifications: [],
+            projects: [],
+          });
+        }
+        if (!ssUp.skills) ssUp.skills = {};
+        const catArr = ssUp.skills[data.category] || [];
+        const skillIdx = catArr.findIndex(
+          (s) => s.name.toLowerCase() === data.skillName.toLowerCase(),
+        );
+        if (skillIdx >= 0) {
+          catArr[skillIdx].level = data.level;
+        } else {
+          catArr.push({ name: data.skillName, level: data.level });
+        }
+        ssUp.skills[data.category] = catArr;
+        ssUp.markModified("skills");
+        await ssUp.save();
+        return {
+          text:
+            `✅ **スキルシートを更新しました！**\n\n` +
+            `• **${data.skillName}**（★${data.level}）を${skillIdx >= 0 ? "更新" : "追加"}しました\n` +
+            `• カテゴリ：${data.category}`,
+          links: [{ label: "スキルシートを確認", url: "/skillsheet" }],
+          quickReplies: ["スキルシートを確認", "今日の状況は？"],
+        };
+      }
+
+      // ── 管理者専用：有給付与 ──────────────────────────────────────────
+      case "leave_grant": {
+        const grantExecUser = await User.findById(userId).lean();
+        if (!grantExecUser || !grantExecUser.isAdmin)
+          return {
+            text: "⚠️ 休暇日数の付与は管理者権限が必要です。",
+            links: [],
+          };
+
+        const leaveTypeToFieldGrant = {
+          有給: "paid",
+          病欠: "sick",
+          慶弔: "special",
+          その他: "other",
+        };
+        const field = leaveTypeToFieldGrant[data.leaveType];
+        if (!field) return { text: "⚠️ 不正な休暇種別です。", links: [] };
+
+        let bal = await LeaveBalance.findOne({
+          employeeId: data.employeeObjectId,
+        });
+        if (!bal)
+          bal = await LeaveBalance.create({
+            employeeId: data.employeeObjectId,
+          });
+
+        const before = bal[field] || 0;
+        bal[field] = Math.max(0, before + data.delta);
+        bal.history.push({
+          grantedBy: userId,
+          leaveType: data.leaveType,
+          delta: data.delta,
+          note: data.note || "AIアシスタントより付与",
+          at: new Date(),
+        });
+        bal.updatedAt = new Date();
+        await bal.save();
+
+        const after = bal[field];
+        const actionLabel = data.delta > 0 ? "付与" : "減算";
+
+        return {
+          text:
+            `✅ **${data.leaveType}を${actionLabel}しました！**\n\n` +
+            `• 対象：**${data.employeeName}**\n` +
+            `• 変更：${data.delta > 0 ? "+" : ""}${data.delta} 日\n` +
+            `• 残日数：${before} → **${after} 日**` +
+            (data.note ? `\n• メモ：${data.note}` : ""),
+          links: [{ label: "残日数管理を確認", url: "/admin/leave-balance" }],
+          quickReplies: ["他の社員に付与する", "残日数一覧を確認"],
+        };
+      }
+
+      // ── 管理者専用：休暇承認 ──────────────────────────────────────────
+      case "leave_approve": {
+        const leaveApproveUser = await User.findById(userId).lean();
+        if (!leaveApproveUser || !leaveApproveUser.isAdmin)
+          return {
+            text: "⚠️ 休暇申請の承認は管理者権限が必要です。",
+            links: [],
+          };
+
+        const leaveRec = await LeaveRequest.findById(data.leaveId);
+        if (!leaveRec || leaveRec.status !== "pending")
+          return {
+            text: "⚠️ 申請が見つからないか、すでに処理済みです。",
+            links: [],
+          };
+
+        // LeaveBalance から残日数を消費
+        const leaveTypeToField = {
+          有給: "paid",
+          病欠: "sick",
+          慶弔: "special",
+          その他: "other",
+          午前休: "paid",
+          午後休: "paid",
+          早退: "paid",
+        };
+        const empForLeave = await Employee.findOne({
+          employeeId: leaveRec.employeeId,
+        });
+        if (empForLeave) {
+          const field = leaveTypeToField[leaveRec.leaveType];
+          if (field) {
+            let bal = await LeaveBalance.findOne({
+              employeeId: empForLeave._id,
+            });
+            if (!bal)
+              bal = await LeaveBalance.create({ employeeId: empForLeave._id });
+            bal[field] = Math.max(0, (bal[field] || 0) - leaveRec.days);
+            bal.history.push({
+              grantedBy: userId,
+              leaveType: leaveRec.leaveType,
+              delta: -leaveRec.days,
+              note: "AIアシスタント承認により消費",
+              at: new Date(),
+            });
+            bal.updatedAt = new Date();
+            await bal.save();
+          }
+          // 勤怠レコード自動反映
+          if (empForLeave.userId) {
+            const leaveToAtt = {
+              有給: { status: "有休", workingHours: 8 },
+              病欠: { status: "欠勤", workingHours: 0 },
+              慶弔: { status: "休暇", workingHours: 0 },
+              その他: { status: "休暇", workingHours: 0 },
+              午前休: { status: "午前休", workingHours: 4 },
+              午後休: { status: "午後休", workingHours: 4 },
+              早退: { status: "早退", workingHours: 4 },
+            };
+            const attMap = leaveToAtt[leaveRec.leaveType];
+            if (attMap) {
+              const cur = moment
+                .tz(leaveRec.startDate, "Asia/Tokyo")
+                .startOf("day");
+              const end = moment
+                .tz(leaveRec.endDate || leaveRec.startDate, "Asia/Tokyo")
+                .startOf("day");
+              while (cur.isSameOrBefore(end)) {
+                const dow = cur.day();
+                if (dow !== 0 && dow !== 6) {
+                  const dayStart = cur.clone().toDate();
+                  const dayEnd = cur.clone().endOf("day").toDate();
+                  const existing = await Attendance.findOne({
+                    userId: empForLeave.userId,
+                    date: { $gte: dayStart, $lte: dayEnd },
+                  });
+                  if (existing) {
+                    existing.status = attMap.status;
+                    if (
+                      !["午前休", "午後休", "早退"].includes(leaveRec.leaveType)
+                    ) {
+                      existing.workingHours = attMap.workingHours;
+                      existing.totalHours = attMap.workingHours;
+                    }
+                    await existing.save();
+                  } else {
+                    await Attendance.create({
+                      userId: empForLeave.userId,
+                      date: dayStart,
+                      status: attMap.status,
+                      workingHours: attMap.workingHours,
+                      totalHours: attMap.workingHours,
+                    });
+                  }
+                }
+                cur.add(1, "day");
+              }
+            }
+          }
+          // 申請者への通知
+          await createNotification({
+            userId: empForLeave.userId,
+            type: "leave_approved",
+            title: "✅ 休暇申請が承認されました",
+            body: `${leaveRec.leaveType} (${moment(leaveRec.startDate).format("M/D")}〜${moment(leaveRec.endDate || leaveRec.startDate).format("M/D")})`,
+            link: "/leave",
+          });
+        }
+
+        leaveRec.status = "approved";
+        leaveRec.processedAt = new Date();
+        leaveRec.processedBy = userId;
+        await leaveRec.save();
+
+        return {
+          text:
+            `✅ **休暇申請を承認しました！**\n\n` +
+            `• 申請者：**${data.employeeName || leaveRec.name || ""}**\n` +
+            `• 種別：${leaveRec.leaveType}　期間：${data.startDate}〜${data.endDate}（${leaveRec.days}日）`,
+          links: [{ label: "休暇申請一覧", url: "/admin/leave-requests" }],
+          quickReplies: ["他の休暇申請を確認", "今日の状況は？"],
+        };
+      }
+
+      // ── 管理者専用：休暇却下 ──────────────────────────────────────────
+      case "leave_reject": {
+        const leaveRejectUser = await User.findById(userId).lean();
+        if (!leaveRejectUser || !leaveRejectUser.isAdmin)
+          return {
+            text: "⚠️ 休暇申請の却下は管理者権限が必要です。",
+            links: [],
+          };
+
+        const leaveRejRec = await LeaveRequest.findById(data.leaveId);
+        if (!leaveRejRec || leaveRejRec.status !== "pending")
+          return {
+            text: "⚠️ 申請が見つからないか、すでに処理済みです。",
+            links: [],
+          };
+
+        leaveRejRec.status = "rejected";
+        leaveRejRec.processedAt = new Date();
+        leaveRejRec.processedBy = userId;
+        leaveRejRec.notes = data.reason || "";
+        await leaveRejRec.save();
+
+        const empForReject = await Employee.findOne({
+          employeeId: leaveRejRec.employeeId,
+        });
+        if (empForReject && empForReject.userId) {
+          await createNotification({
+            userId: empForReject.userId,
+            type: "leave_rejected",
+            title: "❌ 休暇申請が却下されました",
+            body:
+              `${leaveRejRec.leaveType} (${moment(leaveRejRec.startDate).format("M/D")}〜${moment(leaveRejRec.endDate || leaveRejRec.startDate).format("M/D")})` +
+              (data.reason ? ` - ${data.reason}` : ""),
+            link: "/leave",
+          });
+        }
+
+        return {
+          text:
+            `❌ **休暇申請を却下しました。**\n\n` +
+            `• 申請者：**${data.employeeName || leaveRejRec.name || ""}**\n` +
+            `• 種別：${leaveRejRec.leaveType}` +
+            (data.reason ? `\n• 理由：${data.reason}` : ""),
+          links: [{ label: "休暇申請一覧", url: "/admin/leave-requests" }],
+          quickReplies: ["他の休暇申請を確認"],
+        };
+      }
+
+      // ── 管理者専用：残業承認 ──────────────────────────────────────────
+      case "overtime_approve": {
+        const otApproveUser = await User.findById(userId).lean();
+        if (!otApproveUser || !otApproveUser.isAdmin)
+          return {
+            text: "⚠️ 残業申請の承認は管理者権限が必要です。",
+            links: [],
+          };
+
+        const otRec = await OvertimeRequest.findById(data.overtimeId);
+        if (!otRec || otRec.status !== "pending")
+          return {
+            text: "⚠️ 申請が見つからないか、すでに処理済みです。",
+            links: [],
+          };
+
+        otRec.status = "approved";
+        otRec.processedAt = new Date();
+        otRec.processedBy = userId;
+        await otRec.save();
+
+        const isPre = otRec.requestTiming !== "post";
+        await createNotification({
+          userId: otRec.userId,
+          type: "overtime_approved",
+          title: `残業${isPre ? "事前" : "事後"}申請が承認されました`,
+          body: `${moment(otRec.date).tz("Asia/Tokyo").format("MM/DD")} ${otRec.startTime}〜${otRec.endTime} (${otRec.hours}h)`,
+          link: "/overtime",
+        });
+
+        return {
+          text:
+            `✅ **残業申請を承認しました！**\n\n` +
+            `• 申請者：**${data.employeeName || ""}**\n` +
+            `• 日付：${data.date}　${data.startTime}〜${data.endTime}（${otRec.hours}h）`,
+          links: [{ label: "残業申請一覧", url: "/admin/overtime" }],
+          quickReplies: ["他の残業申請を確認", "今日の状況は？"],
+        };
+      }
+
+      // ── 管理者専用：残業却下 ──────────────────────────────────────────
+      case "overtime_reject": {
+        const otRejectUser = await User.findById(userId).lean();
+        if (!otRejectUser || !otRejectUser.isAdmin)
+          return {
+            text: "⚠️ 残業申請の却下は管理者権限が必要です。",
+            links: [],
+          };
+
+        const otRejRec = await OvertimeRequest.findById(data.overtimeId);
+        if (!otRejRec || otRejRec.status !== "pending")
+          return {
+            text: "⚠️ 申請が見つからないか、すでに処理済みです。",
+            links: [],
+          };
+
+        otRejRec.status = "rejected";
+        otRejRec.processedAt = new Date();
+        otRejRec.processedBy = userId;
+        otRejRec.rejectReason = data.reason || "";
+        await otRejRec.save();
+
+        const isPreRej = otRejRec.requestTiming !== "post";
+        await createNotification({
+          userId: otRejRec.userId,
+          type: "overtime_rejected",
+          title: `残業${isPreRej ? "事前" : "事後"}申請が却下されました`,
+          body:
+            `${moment(otRejRec.date).tz("Asia/Tokyo").format("MM/DD")} ${otRejRec.startTime}〜${otRejRec.endTime}` +
+            (data.reason ? ` 理由: ${data.reason}` : ""),
+          link: "/overtime",
+        });
+
+        return {
+          text:
+            `❌ **残業申請を却下しました。**\n\n` +
+            `• 申請者：**${data.employeeName || ""}**\n` +
+            `• 日付：${data.date}` +
+            (data.reason ? `\n• 理由：${data.reason}` : ""),
+          links: [{ label: "残業申請一覧", url: "/admin/overtime" }],
+          quickReplies: ["他の残業申請を確認"],
+        };
+      }
+
+      // ── ワークフロー却下 ───────────────────────────────────────────────
+      case "workflow_reject": {
+        const wfRej = await Workflow.findOne({
+          _id: data.workflowId,
+          isDeleted: false,
+        });
+        if (!wfRej)
+          return { text: "⚠️ ワークフローが見つかりません。", links: [] };
+        if (wfRej.status !== "submitted")
+          return {
+            text: `⚠️ この申請は「${wfRej.status}」状態のため却下できません。`,
+            links: [],
+          };
+
+        const rejectUser = await User.findById(userId).lean();
+        const isAdminRej = rejectUser && rejectUser.isAdmin;
+        // 承認者かどうかチェック（管理者はスキップ可）
+        if (!isAdminRej) {
+          const isApprover = wfRej.approvers.some(
+            (a) =>
+              a.step === wfRej.currentStep &&
+              String(a.approverId) === String(userId) &&
+              a.status === "pending",
+          );
+          if (!isApprover)
+            return {
+              text: "⚠️ この申請の却下権限がありません。",
+              links: [],
+            };
+        }
+
+        const actorEmp = await Employee.findOne({ userId }).lean();
+        const actorName = actorEmp ? actorEmp.name : "管理者";
+        const nowDate = new Date();
+
+        wfRej.status = "rejected";
+        for (const a of wfRej.approvers) {
+          if (
+            a.step === wfRej.currentStep &&
+            String(a.approverId) === String(userId) &&
+            a.status === "pending"
+          ) {
+            a.status = "rejected";
+            a.actedAt = nowDate;
+            a.comment = data.reason;
+          }
+        }
+        wfRej.histories.push({
+          action: "rejected",
+          actedBy: userId,
+          actedByName: actorName,
+          step: wfRej.currentStep,
+          comment: data.reason,
+          actedAt: nowDate,
+        });
+        await wfRej.save();
+
+        await createNotification({
+          userId: wfRej.applicantId,
+          type: "workflow_rejected",
+          title: "❌ ワークフロー申請が却下されました",
+          body: `${wfRej.title}：${data.reason}`,
+          link: `/workflow/${wfRej._id}`,
+        });
+
+        return {
+          text:
+            `❌ **ワークフロー申請を却下しました。**\n\n` +
+            `• 申請：**${wfRej.title}**\n` +
+            `• 理由：${data.reason}`,
+          links: [{ label: "ワークフロー一覧", url: "/workflow" }],
+          quickReplies: ["ワークフロー一覧を確認"],
+        };
+      }
+
+      // ── 管理者専用：社員登録 ──────────────────────────────────────────
+      case "employee_register": {
+        const regUserExec = await User.findById(userId).lean();
+        if (!regUserExec || !regUserExec.isAdmin) {
+          return { text: "⚠️ 社員登録は管理者権限が必要です。", links: [] };
+        }
+        const hashedPw = await bcrypt.hash(data.password, 10);
+        const isAdminRole = data.role === "admin";
+        const newUser = await User.create({
+          username: data.username,
+          password: hashedPw,
+          role: data.role || "employee",
+          isAdmin: isAdminRole,
+        });
+        await Employee.create({
+          userId: newUser._id,
+          employeeId: data.employeeId,
+          name: data.name,
+          department: data.department,
+          position: data.position,
+          joinDate: data.joinDate ? new Date(data.joinDate) : undefined,
+          email: data.email,
+          orgRole: data.role || "employee",
+          paidLeave: 10,
+        });
+        return {
+          text:
+            `✅ **社員を登録しました！**\n\n` +
+            `• 氏名：**${data.name}**\n` +
+            `• ユーザー名：${data.username}\n` +
+            `• 社員番号：${data.employeeId}\n` +
+            `• 部署：${data.department}　役職：${data.position}\n` +
+            `• 入社日：${data.joinDate}　ロール：${data.role}`,
+          links: [{ label: "社員一覧を確認", url: "/hr" }],
+          quickReplies: ["社員一覧を確認", "今日の状況は？"],
+        };
+      }
+
+      // ── 管理者専用：勤怠承認 ─────────────────────────────────────────────
+      case "attendance_approve": {
+        const approveExecUser = await User.findById(userId).lean();
+        if (!approveExecUser || !approveExecUser.isAdmin) {
+          return { text: "⚠️ この操作は管理者権限が必要です。", links: [] };
+        }
+        const startDate = new Date(data.year, data.month - 1, 1);
+        const endDate = new Date(data.year, data.month, 0);
+        await Attendance.updateMany(
+          {
+            userId: data.targetUserId,
+            date: { $gte: startDate, $lte: endDate },
+          },
+          { $set: { isApproved: true } },
+        );
+        await ApprovalRequest.findByIdAndUpdate(data.approvalRequestId, {
+          status: "approved",
+          processedBy: userId,
+          processedAt: new Date(),
+        });
+        await createNotification({
+          userId: data.targetUserId,
+          type: "attendance_approved",
+          message: `${data.year}年${data.month}月の勤怠が管理者に承認されました。`,
+          link: `/attendance`,
+        });
+        return {
+          text: `✅ **${data.employeeName}**の${data.year}年${data.month}月の勤怠を承認しました。`,
+          links: [
+            {
+              label: "承認リクエスト一覧",
+              url: "/admin/approval-requests",
+            },
+          ],
+        };
+      }
+
+      // ── 管理者専用：社員情報編集・削除 ──────────────────────────────────
+      case "employee_update": {
+        const updExecUser = await User.findById(userId).lean();
+        if (!updExecUser || !updExecUser.isAdmin) {
+          return { text: "⚠️ この操作は管理者権限が必要です。", links: [] };
+        }
+        await Employee.findByIdAndUpdate(data.employeeObjectId, {
+          $set: data.changes,
+        });
+        const updSummary = Object.entries(data.changes)
+          .map(([k, v]) => `• ${k}：${v}`)
+          .join("\n");
+        return {
+          text: `✅ **${data.employeeName}**の社員情報を更新しました。\n\n${updSummary}`,
+          links: [{ label: "社員一覧を確認", url: "/hr" }],
+        };
+      }
+
+      case "employee_delete": {
+        const delExecUser = await User.findById(userId).lean();
+        if (!delExecUser || !delExecUser.isAdmin) {
+          return { text: "⚠️ この操作は管理者権限が必要です。", links: [] };
+        }
+        await Employee.findByIdAndDelete(data.employeeObjectId);
+        return {
+          text: `✅ **${data.employeeName}**の社員レコードを削除しました。`,
+          links: [{ label: "社員一覧を確認", url: "/hr" }],
+        };
+      }
+
+      // ── 管理者専用：ユーザー権限管理 ─────────────────────────────────────
+      case "user_role_change": {
+        const roleExecUser = await User.findById(userId).lean();
+        if (!roleExecUser || !roleExecUser.isAdmin) {
+          return { text: "⚠️ この操作は管理者権限が必要です。", links: [] };
+        }
+        const VALID_ROLES_EXEC = [
+          "employee",
+          "team_leader",
+          "manager",
+          "admin",
+        ];
+        if (!VALID_ROLES_EXEC.includes(data.newRole))
+          return { text: `⚠️ 無効なロール: ${data.newRole}`, links: [] };
+        await Employee.findByIdAndUpdate(data.employeeObjectId, {
+          orgRole: data.newRole,
+        });
+        await User.findByIdAndUpdate(data.targetUserId, {
+          role: data.newRole,
+          isAdmin: data.newRole === "admin",
+        });
+        const ROLE_LABEL_EXEC = {
+          employee: "社員",
+          team_leader: "チームリーダー",
+          manager: "部門長",
+          admin: "管理者",
+        };
+        return {
+          text: `✅ **${data.employeeName}**のロールを「${ROLE_LABEL_EXEC[data.newRole] || data.newRole}」に変更しました。`,
+          links: [
+            {
+              label: "組織管理を確認",
+              url: "/admin/organization/roles",
+            },
+          ],
+        };
+      }
+
+      case "user_password_reset": {
+        const pwExecUser = await User.findById(userId).lean();
+        if (!pwExecUser || !pwExecUser.isAdmin) {
+          return { text: "⚠️ この操作は管理者権限が必要です。", links: [] };
+        }
+        const hashedPwReset = await bcrypt.hash(data.newPassword, 10);
+        await User.findByIdAndUpdate(data.targetUserId, {
+          password: hashedPwReset,
+        });
+        return {
+          text:
+            `✅ **${data.employeeName}**のパスワードをリセットしました。\n\n` +
+            `新しいパスワードを本人に安全な方法で伝え、ログイン後すぐに変更するよう案内してください。`,
+          links: [{ label: "ユーザー管理", url: "/admin/users" }],
+        };
+      }
+
+      // ── 管理者専用：給与計算 ─────────────────────────────────────────────
+      case "payroll_run": {
+        const payExecUser = await User.findById(userId).lean();
+        if (!payExecUser || !payExecUser.isAdmin) {
+          return { text: "⚠️ この操作は管理者権限が必要です。", links: [] };
+        }
+        const { year: prYear, month: prMonth, runByUserId } = data;
+        const prPeriodFrom = moment
+          .tz(`${prYear}-${String(prMonth).padStart(2, "0")}-01`, "Asia/Tokyo")
+          .startOf("month")
+          .toDate();
+        const prPeriodTo = moment
+          .tz(`${prYear}-${String(prMonth).padStart(2, "0")}-01`, "Asia/Tokyo")
+          .endOf("month")
+          .toDate();
+        const prRun = await PayrollRun.findOneAndUpdate(
+          { periodFrom: prPeriodFrom, periodTo: prPeriodTo },
+          {
+            periodFrom: prPeriodFrom,
+            periodTo: prPeriodTo,
+            status: "draft",
+            runBy: runByUserId,
+            runAt: new Date(),
+          },
+          { upsert: true, new: true },
+        );
+        const prEmployees = await Employee.find({ isActive: { $ne: false } })
+          .populate("userId", "birthdate")
+          .lean();
+        let prCount = 0;
+        const prErrors = [];
+        for (const emp of prEmployees) {
+          try {
+            const master = await PayrollMaster.findOne({
+              employeeId: emp._id,
+            }).lean();
+            if (!master) continue;
+            const attendance = await aggregateAttendance(
+              String(emp.userId?._id || emp.userId),
+              prYear,
+              prMonth,
+            );
+            const birthdate = emp.userId?.birthdate;
+            const age = birthdate
+              ? moment().diff(moment(birthdate), "years")
+              : 30;
+            const result = calcPayroll(master, attendance, age);
+            await PayrollSlip.findOneAndUpdate(
+              { employeeId: emp._id, runId: prRun._id },
+              {
+                employeeId: emp._id,
+                runId: prRun._id,
+                gross: result.totalGross,
+                net: result.netPay,
+                deductions: result.totalDeduction,
+                details: result,
+                status: "draft",
+                confirmedAt: null,
+                confirmedBy: null,
+              },
+              { upsert: true, new: true },
+            );
+            prCount++;
+          } catch (e) {
+            prErrors.push(`${emp.name || String(emp._id)}: ${e.message}`);
+          }
+        }
+        const prErrMsg = prErrors.length
+          ? `\n⚠️ ${prErrors.length}件のエラー：${prErrors.slice(0, 3).join("、")}`
+          : "";
+        return {
+          text:
+            `✅ **${prYear}年${prMonth}月分の給与計算が完了しました！**\n\n` +
+            `• 計算対象：${prCount}名\n` +
+            `• 給与明細ステータス：下書き${prErrMsg}\n\n` +
+            `次に issue_payroll_slip で明細を発行してください。`,
+          links: [{ label: "給与管理画面へ", url: "/admin/payroll/master" }],
+        };
+      }
+
+      case "payroll_issue": {
+        const issueExecUser = await User.findById(userId).lean();
+        if (!issueExecUser || !issueExecUser.isAdmin) {
+          return { text: "⚠️ この操作は管理者権限が必要です。", links: [] };
+        }
+        let piCount = 0;
+        for (const slipId of data.slipIds) {
+          try {
+            const slip = await PayrollSlip.findById(slipId)
+              .populate("employeeId")
+              .populate("runId");
+            if (!slip || slip.status === "issued") continue;
+            slip.status = "issued";
+            slip.confirmedAt = new Date();
+            slip.confirmedBy = userId;
+            await slip.save();
+            const piEmp = slip.employeeId;
+            if (piEmp?.userId) {
+              const piRun = slip.runId;
+              const piMonthLabel = piRun?.periodFrom
+                ? moment(piRun.periodFrom)
+                    .tz("Asia/Tokyo")
+                    .format("YYYY年M月分")
+                : `${data.year}年${data.month}月分`;
+              await createNotification({
+                userId: piEmp.userId,
+                type: "payroll_issued",
+                message: `${piMonthLabel}の給与明細が発行されました。（手取り：¥${(slip.net || 0).toLocaleString()}）`,
+                link: "/hr/payroll",
+              });
+            }
+            piCount++;
+          } catch (e) {
+            console.error(`[payroll_issue] slip ${slipId}:`, e.message);
+          }
+        }
+        return {
+          text: `✅ **${data.year}年${data.month}月分の給与明細を${piCount}名分発行しました。**\n\n各社員に通知が送信されました。`,
+          links: [{ label: "給与管理画面へ", url: "/admin/payroll/master" }],
+        };
+      }
+
       default:
         return { text: "⚠️ 不明な操作です。", links: [] };
     }
@@ -3524,7 +4631,612 @@ const CHATBOT_TOOLS = [
       },
     },
   },
+  // ── 目標承認フロー ──────────────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "get_pending_goals",
+      description: "自分が承認者として承認待ちになっている目標の一覧を取得する",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "submit_goal",
+      description:
+        "自分の目標を承認へ提出する。draft/rejectedは1次承認へ、approved1は2次承認へ提出する。事前にget_goalsで目標IDを確認すること。",
+      parameters: {
+        type: "object",
+        properties: {
+          goalId: {
+            type: "string",
+            description: "提出する目標のID（get_goalsで取得）",
+          },
+          approverId: {
+            type: "string",
+            description:
+              "2次提出時の承認者Employee ID（approved1→pending2の場合のみ）",
+          },
+        },
+        required: ["goalId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "approve_goal",
+      description:
+        "承認者として目標を承認する（pending1→approved1 または pending2→completed）。事前にget_pending_goalsで目標IDを確認すること。",
+      parameters: {
+        type: "object",
+        properties: {
+          goalId: { type: "string", description: "承認する目標のID" },
+          title: { type: "string", description: "目標タイトル（確認用）" },
+        },
+        required: ["goalId", "title"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "reject_goal",
+      description:
+        "承認者として目標を差し戻す。コメント（理由）を添えて差し戻す。事前にget_pending_goalsで目標IDを確認すること。",
+      parameters: {
+        type: "object",
+        properties: {
+          goalId: { type: "string", description: "差し戻す目標のID" },
+          title: { type: "string", description: "目標タイトル（確認用）" },
+          comment: {
+            type: "string",
+            description: "差し戻しの理由・コメント",
+          },
+        },
+        required: ["goalId", "title", "comment"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_goal",
+      description:
+        "自分の目標を削除する（下書き状態のみ削除可能）。事前にget_goalsで目標IDを確認すること。",
+      parameters: {
+        type: "object",
+        properties: {
+          goalId: { type: "string", description: "削除する目標のID" },
+          title: { type: "string", description: "目標タイトル（確認用）" },
+        },
+        required: ["goalId", "title"],
+      },
+    },
+  },
+  // ── 日報追加操作 ─────────────────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "delete_daily_report",
+      description:
+        "自分の日報を削除する。事前にget_daily_reportsでIDを確認すること。",
+      parameters: {
+        type: "object",
+        properties: {
+          reportId: { type: "string", description: "削除する日報のID" },
+        },
+        required: ["reportId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_daily_report_reaction",
+      description:
+        "日報にリアクション（スタンプ）を押す。すでに押している場合はトグルOFF。",
+      parameters: {
+        type: "object",
+        properties: {
+          reportId: {
+            type: "string",
+            description: "リアクションする日報のID",
+          },
+          emoji: {
+            type: "string",
+            description: "絵文字（👍 ✨ 👏 💪 ✅ 💡 😊 ❤️ 🎉 🔥 のいずれか）",
+          },
+        },
+        required: ["reportId", "emoji"],
+      },
+    },
+  },
+  // ── 給与明細確認 ─────────────────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "confirm_payroll",
+      description:
+        "自分の給与明細を確認済みにする。slipIdを省略した場合は最新の未確認明細を対象にする。",
+      parameters: {
+        type: "object",
+        properties: {
+          slipId: {
+            type: "string",
+            description: "確認する給与明細のID（省略可）",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  // ── 契約管理 ─────────────────────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "get_contracts",
+      description:
+        "契約の一覧を取得する（マネージャー以上のロールが必要）。ステータスでフィルタ可能。",
+      parameters: {
+        type: "object",
+        properties: {
+          status: {
+            type: "string",
+            description:
+              "ステータスフィルタ（all/active/pending_approval/expiring_soon/expired/draft/canceled）",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "approve_contract",
+      description:
+        "契約承認フローを実行する（承認・却下・差し戻し）。事前にget_contractsで契約IDを確認すること。",
+      parameters: {
+        type: "object",
+        properties: {
+          contractId: {
+            type: "string",
+            description: "対象の契約ID",
+          },
+          contractName: {
+            type: "string",
+            description: "契約名（確認用）",
+          },
+          action: {
+            type: "string",
+            description:
+              "アクション: approved（承認）/ rejected（却下）/ returned（差し戻し）",
+          },
+          comment: {
+            type: "string",
+            description: "コメント（却下・差し戻し時は推奨）",
+          },
+        },
+        required: ["contractId", "contractName", "action"],
+      },
+    },
+  },
+  // ── 組織・社員情報 ────────────────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "get_organization",
+      description: "社員・組織情報を取得する。名前や部署でキーワード検索可能。",
+      parameters: {
+        type: "object",
+        properties: {
+          keyword: {
+            type: "string",
+            description: "氏名の検索キーワード（任意）",
+          },
+          department: {
+            type: "string",
+            description: "部署名フィルタ（任意）",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  // ── スキルシート更新 ──────────────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "update_skillsheet",
+      description:
+        "スキルシートのスキルを追加・更新する。既存スキルは上書き（upsert）。",
+      parameters: {
+        type: "object",
+        properties: {
+          category: {
+            type: "string",
+            description:
+              "スキルカテゴリ: languages / frameworks / databases / infra / tools",
+          },
+          skillName: {
+            type: "string",
+            description: "スキル名（例: JavaScript, React, MySQL）",
+          },
+          level: {
+            type: "number",
+            description: "スキルレベル 1〜5（★の数）",
+          },
+        },
+        required: ["category", "skillName", "level"],
+      },
+    },
+  },
+  // ── 管理者専用：社員登録 ──────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "register_employee",
+      description:
+        "【管理者専用】新しい社員・ユーザーアカウントを登録する。管理者権限が必要。",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "社員氏名" },
+          username: {
+            type: "string",
+            description: "ログイン用ユーザー名（英数字推奨）",
+          },
+          password: { type: "string", description: "初期パスワード" },
+          employeeId: { type: "string", description: "社員番号" },
+          department: { type: "string", description: "部署名" },
+          position: { type: "string", description: "役職" },
+          joinDate: {
+            type: "string",
+            description: "入社日（YYYY-MM-DD）",
+          },
+          email: { type: "string", description: "メールアドレス" },
+          role: {
+            type: "string",
+            description: "ロール: employee / team_leader / manager / admin",
+          },
+        },
+        required: [
+          "name",
+          "username",
+          "password",
+          "employeeId",
+          "department",
+          "position",
+          "joinDate",
+          "email",
+          "role",
+        ],
+      },
+    },
+  },
+  // ── 管理者専用：休暇残日数の確認・付与 ───────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "get_leave_balance",
+      description:
+        "休暇残日数を確認する。管理者は全社員分を確認できる。一般社員は自分の残日数のみ。",
+      parameters: {
+        type: "object",
+        properties: {
+          employeeName: {
+            type: "string",
+            description:
+              "確認したい社員名（管理者が特定社員を調べる場合。省略時は全社員または自分）",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "grant_leave",
+      description:
+        "【管理者専用】社員に休暇日数を付与または調整する。マイナス値で減算も可能。",
+      parameters: {
+        type: "object",
+        properties: {
+          employeeName: {
+            type: "string",
+            description: "付与対象の社員名",
+          },
+          employeeId: {
+            type: "string",
+            description:
+              "付与対象の社員のEmployee ID（get_leave_balance や get_organization で取得）",
+          },
+          leaveType: {
+            type: "string",
+            description: "付与する休暇種別: 有給 / 病欠 / 慶弔 / その他",
+          },
+          delta: {
+            type: "number",
+            description: "付与日数（マイナスで減算）",
+          },
+          note: {
+            type: "string",
+            description: "メモ（理由・備考）",
+          },
+        },
+        required: ["employeeName", "employeeId", "leaveType", "delta"],
+      },
+    },
+  },
+  // ── 管理者専用：休暇申請の承認・却下 ─────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "approve_leave",
+      description:
+        "【管理者専用】休暇申請を承認する。承認すると残日数が自動的に消費される。",
+      parameters: {
+        type: "object",
+        properties: {
+          leaveId: { type: "string", description: "休暇申請のID" },
+          employeeName: {
+            type: "string",
+            description: "申請者名（確認用・表示のみ）",
+          },
+        },
+        required: ["leaveId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "reject_leave",
+      description: "【管理者専用】休暇申請を却下する。",
+      parameters: {
+        type: "object",
+        properties: {
+          leaveId: { type: "string", description: "休暇申請のID" },
+          reason: { type: "string", description: "却下理由（任意）" },
+          employeeName: {
+            type: "string",
+            description: "申請者名（確認用・表示のみ）",
+          },
+        },
+        required: ["leaveId"],
+      },
+    },
+  },
+  // ── 管理者専用：残業申請の承認・却下 ─────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "approve_overtime",
+      description: "【管理者専用】残業申請を承認する。",
+      parameters: {
+        type: "object",
+        properties: {
+          overtimeId: { type: "string", description: "残業申請のID" },
+          employeeName: {
+            type: "string",
+            description: "申請者名（確認用・表示のみ）",
+          },
+        },
+        required: ["overtimeId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "reject_overtime",
+      description: "【管理者専用】残業申請を却下する。",
+      parameters: {
+        type: "object",
+        properties: {
+          overtimeId: { type: "string", description: "残業申請のID" },
+          reason: { type: "string", description: "却下理由（任意）" },
+          employeeName: {
+            type: "string",
+            description: "申請者名（確認用・表示のみ）",
+          },
+        },
+        required: ["overtimeId"],
+      },
+    },
+  },
+  // ── ワークフロー却下 ───────────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "reject_workflow",
+      description:
+        "ワークフロー申請を却下する（差し戻しではなく最終的な却下）。承認者または管理者のみ可能。",
+      parameters: {
+        type: "object",
+        properties: {
+          workflowId: { type: "string", description: "ワークフローID" },
+          title: {
+            type: "string",
+            description: "ワークフロー名（確認表示用）",
+          },
+          reason: { type: "string", description: "却下理由" },
+        },
+        required: ["workflowId", "title", "reason"],
+      },
+    },
+  },
+  // ── 管理者専用：勤怠月次承認 ─────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "get_pending_approval_requests",
+      description:
+        "【管理者専用】社員が提出した勤怠月次承認リクエスト（承認待ち・差し戻し）の一覧を取得する。",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "approve_attendance",
+      description:
+        "【管理者専用】社員の月次勤怠申請を承認する。対象月の勤怠レコードを一括承認し、承認ステータスを更新する。",
+      parameters: {
+        type: "object",
+        properties: {
+          employeeName: { type: "string", description: "対象社員名" },
+          year: { type: "number", description: "対象年" },
+          month: { type: "number", description: "対象月（1〜12）" },
+        },
+        required: ["employeeName", "year", "month"],
+      },
+    },
+  },
+  // ── 管理者専用：社員情報編集・削除 ──────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "update_employee",
+      description:
+        "【管理者専用】社員の基本情報（氏名・部署・役職・入社日・メール）を更新する。変更したいフィールドのみ渡す。",
+      parameters: {
+        type: "object",
+        properties: {
+          employeeName: {
+            type: "string",
+            description: "対象社員の現在の氏名（検索用）",
+          },
+          name: { type: "string", description: "新しい氏名" },
+          department: { type: "string", description: "新しい部署名" },
+          position: { type: "string", description: "新しい役職" },
+          joinDate: {
+            type: "string",
+            description: "新しい入社日 YYYY-MM-DD",
+          },
+          email: { type: "string", description: "新しいメールアドレス" },
+        },
+        required: ["employeeName"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_employee",
+      description:
+        "【管理者専用・不可逆】社員レコードを完全削除する。取り消せないため必ず確認を取ること。",
+      parameters: {
+        type: "object",
+        properties: {
+          employeeName: {
+            type: "string",
+            description: "削除する社員名（確認用）",
+          },
+        },
+        required: ["employeeName"],
+      },
+    },
+  },
+  // ── 管理者専用：ユーザー権限管理 ────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "change_user_role",
+      description:
+        "【管理者専用】ユーザーのロールを変更する（employee / team_leader / manager / admin）。adminにするとシステム管理者権限が付与される。",
+      parameters: {
+        type: "object",
+        properties: {
+          employeeName: { type: "string", description: "対象社員名" },
+          newRole: {
+            type: "string",
+            description:
+              "新しいロール: employee / team_leader / manager / admin",
+          },
+        },
+        required: ["employeeName", "newRole"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "reset_user_password",
+      description:
+        "【管理者専用】ユーザーのパスワードをリセットする。新しいパスワードを設定してすぐ変更するよう社員に伝えること。",
+      parameters: {
+        type: "object",
+        properties: {
+          employeeName: { type: "string", description: "対象社員名" },
+          newPassword: {
+            type: "string",
+            description: "新しいパスワード（8文字以上推奨）",
+          },
+        },
+        required: ["employeeName", "newPassword"],
+      },
+    },
+  },
+  // ── 管理者専用：給与計算 ─────────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "run_payroll",
+      description:
+        "【管理者専用】指定月の給与計算バッチを実行する。PayrollMasterが設定されている社員全員の給与明細（下書き）を生成・更新する。",
+      parameters: {
+        type: "object",
+        properties: {
+          year: { type: "number", description: "計算対象年" },
+          month: { type: "number", description: "計算対象月（1〜12）" },
+        },
+        required: ["year", "month"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "issue_payroll_slip",
+      description:
+        "【管理者専用】指定月の給与明細を発行する（ステータスを issued に変更し社員に通知）。事前にrun_payrollで計算済みであること。employeeNameを省略すると全員分を発行する。",
+      parameters: {
+        type: "object",
+        properties: {
+          year: { type: "number", description: "発行対象年" },
+          month: { type: "number", description: "発行対象月（1〜12）" },
+          employeeName: {
+            type: "string",
+            description: "特定社員のみ発行する場合の社員名（省略時は全員）",
+          },
+        },
+        required: ["year", "month"],
+      },
+    },
+  },
 ];
+
+// 管理者専用ツール名リスト（非管理者ユーザーには提供しない）
+const ADMIN_TOOL_NAMES = new Set([
+  "grant_leave",
+  "approve_leave",
+  "reject_leave",
+  "approve_overtime",
+  "reject_overtime",
+  "register_employee",
+  "get_pending_approval_requests",
+  "approve_attendance",
+  "update_employee",
+  "delete_employee",
+  "change_user_role",
+  "reset_user_password",
+  "run_payroll",
+  "issue_payroll_slip",
+]);
 
 // ── ツール実行（Read系は直接実行・Write系はpendingAction返却）─────────────
 async function executeToolCall(toolName, toolArgs, userId, employee, now) {
@@ -3628,6 +5340,7 @@ async function executeToolCall(toolName, toolArgs, userId, employee, now) {
       if (!goals.length) return { result: "登録済みの目標はありません。" };
       return {
         result: goals.map((g) => ({
+          id: String(g._id),
           title: g.title,
           progress: g.progress || 0,
           status: g.status || "進行中",
@@ -3721,6 +5434,7 @@ async function executeToolCall(toolName, toolArgs, userId, employee, now) {
       if (!reports.length) return { result: "日報の記録がありません。" };
       return {
         result: reports.map((r) => ({
+          id: String(r._id),
           date: moment(r.reportDate).format("M/D"),
           content: (r.content || "").substring(0, 100),
           achievements: (r.achievements || "").substring(0, 80),
@@ -3751,16 +5465,24 @@ async function executeToolCall(toolName, toolArgs, userId, employee, now) {
 
     case "get_leave_requests": {
       const statusFilter = toolArgs.status || "all";
-      const q = { userId };
+      const leaveUser = await User.findById(userId).lean();
+      const isAdminUser = leaveUser && leaveUser.isAdmin;
+      const q = isAdminUser ? {} : { userId };
       if (statusFilter !== "all") q.status = statusFilter;
       const leaves = await LeaveRequest.find(q)
         .sort({ createdAt: -1 })
-        .limit(10)
+        .limit(isAdminUser ? 20 : 10)
         .lean();
-      if (!leaves.length) return { result: "休暇申請の記録がありません。" };
+      if (!leaves.length)
+        return {
+          result: isAdminUser
+            ? "承認待ちの休暇申請はありません。"
+            : "休暇申請の記録がありません。",
+        };
       return {
         result: leaves.map((l) => ({
           id: String(l._id),
+          name: l.name || "",
           leaveType: l.leaveType,
           startDate: moment(l.startDate).format("M/D"),
           endDate: moment(l.endDate).format("M/D"),
@@ -3773,16 +5495,37 @@ async function executeToolCall(toolName, toolArgs, userId, employee, now) {
 
     case "get_overtime_requests": {
       const stFilter = toolArgs.status || "pending";
-      const oq = { userId };
+      const otUser = await User.findById(userId).lean();
+      const isAdminOT = otUser && otUser.isAdmin;
+      const oq = isAdminOT ? {} : { userId };
       if (stFilter !== "all") oq.status = stFilter;
       const overtimes = await OvertimeRequest.find(oq)
         .sort({ date: -1 })
-        .limit(10)
+        .limit(isAdminOT ? 20 : 10)
         .lean();
-      if (!overtimes.length) return { result: "残業申請の記録がありません。" };
+      if (!overtimes.length)
+        return {
+          result: isAdminOT
+            ? "承認待ちの残業申請はありません。"
+            : "残業申請の記録がありません。",
+        };
+      // 管理者の場合は社員名を付加
+      let empMap = {};
+      if (isAdminOT) {
+        const uids = [...new Set(overtimes.map((o) => String(o.userId)))];
+        const emps = await Employee.find({
+          userId: { $in: uids },
+        })
+          .select("userId name")
+          .lean();
+        emps.forEach((e) => {
+          empMap[String(e.userId)] = e.name;
+        });
+      }
       return {
         result: overtimes.map((o) => ({
           id: String(o._id),
+          name: empMap[String(o.userId)] || "",
           date: moment(o.date).tz("Asia/Tokyo").format("M/D"),
           startTime: o.startTime,
           endTime: o.endTime,
@@ -3854,6 +5597,87 @@ async function executeToolCall(toolName, toolArgs, userId, employee, now) {
       };
     }
 
+    case "get_pending_goals": {
+      const pending = await Goal.find({
+        currentApprover: employee._id,
+        status: { $in: ["pending1", "pending2"] },
+      }).lean();
+      if (!pending.length) return { result: "承認待ちの目標はありません。" };
+      return {
+        result: pending.map((g) => ({
+          id: String(g._id),
+          title: g.title,
+          ownerName: g.ownerName || g.createdByName || "不明",
+          status: g.status,
+          statusLabel: g.status === "pending1" ? "1次承認待ち" : "2次承認待ち",
+          progress: g.progress || 0,
+          deadline: g.deadline
+            ? moment(g.deadline).tz("Asia/Tokyo").format("YYYY-MM-DD")
+            : null,
+        })),
+      };
+    }
+
+    case "get_contracts": {
+      const allowedRoles = ["admin", "manager", "team_leader"];
+      if (!allowedRoles.includes(employee.orgRole)) {
+        return {
+          result:
+            "契約管理はマネージャー以上のロールが必要です。管理者にお問い合わせください。",
+        };
+      }
+      const statusFilter = toolArgs.status || "all";
+      const q = {};
+      if (statusFilter !== "all") q.status = statusFilter;
+      const contracts = await Contract.find(q)
+        .sort({ updatedAt: -1 })
+        .limit(15)
+        .lean();
+      if (!contracts.length) return { result: "契約が見つかりませんでした。" };
+      return {
+        result: contracts.map((c) => ({
+          id: String(c._id),
+          name: c.name,
+          counterparty: c.counterparty,
+          contractType: c.contractType,
+          status: c.status,
+          approvalStatus: c.approvalStatus,
+          startDate: c.startDate
+            ? moment(c.startDate).format("YYYY-MM-DD")
+            : null,
+          endDate: c.endDate ? moment(c.endDate).format("YYYY-MM-DD") : null,
+        })),
+      };
+    }
+
+    case "get_organization": {
+      const keyword = (toolArgs.keyword || "").trim();
+      const dept = (toolArgs.department || "").trim();
+      const q = {};
+      if (keyword) q.name = { $regex: keyword, $options: "i" };
+      if (dept) q.department = { $regex: dept, $options: "i" };
+      const emps = await Employee.find(q)
+        .select("name department position email orgRole")
+        .limit(30)
+        .lean();
+      if (!emps.length)
+        return {
+          result:
+            keyword || dept
+              ? "条件に一致する社員が見つかりませんでした。"
+              : "社員情報が見つかりませんでした。",
+        };
+      return {
+        result: emps.map((e) => ({
+          name: e.name,
+          department: e.department || "",
+          position: e.position || "",
+          email: e.email || "",
+          orgRole: e.orgRole || "employee",
+        })),
+      };
+    }
+
     // ── WRITE TOOLS（pendingAction を組み立てて返す）────────────────────
     case "create_schedule": {
       const startAt = new Date(toolArgs.startAt);
@@ -3892,6 +5716,10 @@ async function executeToolCall(toolName, toolArgs, userId, employee, now) {
           result:
             "指定した予定が見つかりませんでした。get_schedulesで再確認してください。",
         };
+      if (String(sc.createdBy) !== String(userId))
+        return {
+          result: "この予定はあなたが作成したものではないため変更できません。",
+        };
       const newStartAt = toolArgs.newStartAt
         ? new Date(toolArgs.newStartAt).toISOString()
         : new Date(sc.startAt).toISOString();
@@ -3926,6 +5754,10 @@ async function executeToolCall(toolName, toolArgs, userId, employee, now) {
         return {
           result:
             "指定した予定が見つかりませんでした。get_schedulesで再確認してください。",
+        };
+      if (String(sc.createdBy) !== String(userId))
+        return {
+          result: "この予定はあなたが作成したものではないため削除できません。",
         };
       const pa = {
         type: "schedule_delete",
@@ -4399,20 +6231,942 @@ async function executeToolCall(toolName, toolArgs, userId, employee, now) {
       };
     }
 
+    // ── 目標承認フロー WRITE ──────────────────────────────────────────────
+    case "submit_goal": {
+      const gSub = await Goal.findById(toolArgs.goalId).lean();
+      if (!gSub)
+        return {
+          result: "目標が見つかりません。get_goalsで再確認してください。",
+        };
+      const isOwnerSub =
+        (gSub.createdBy && String(gSub.createdBy) === String(employee._id)) ||
+        (gSub.ownerId && String(gSub.ownerId) === String(employee._id));
+      if (!isOwnerSub)
+        return { result: "この目標はあなたのものではありません。" };
+      if (!["draft", "rejected", "approved1"].includes(gSub.status))
+        return {
+          result: `この目標は「${gSub.status}」状態のため提出できません。draft・rejected・approved1 の場合のみ提出可能です。`,
+        };
+      const isSecondSub = gSub.status === "approved1";
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "goal_submit",
+          data: {
+            goalId: toolArgs.goalId,
+            submitType: isSecondSub ? "submit2" : "submit1",
+            approverId: toolArgs.approverId || null,
+          },
+        },
+        confirmSummary: `「${gSub.title}」を${isSecondSub ? "2次" : "1次"}承認へ提出する`,
+      };
+    }
+
+    case "approve_goal": {
+      const gApp = await Goal.findById(toolArgs.goalId).lean();
+      if (!gApp) return { result: "目標が見つかりません。" };
+      if (
+        !gApp.currentApprover ||
+        String(gApp.currentApprover) !== String(employee._id)
+      )
+        return {
+          result:
+            "この目標の承認権限がありません。get_pending_goalsで承認待ち一覧を確認してください。",
+        };
+      if (!["pending1", "pending2"].includes(gApp.status))
+        return {
+          result: `この目標は「${gApp.status}」状態のため承認できません。`,
+        };
+      const approveType = gApp.status === "pending1" ? "approve1" : "approve2";
+      const approveLabel =
+        approveType === "approve2" ? "最終承認（完了）" : "1次承認";
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "goal_approve",
+          data: { goalId: toolArgs.goalId, approveType },
+        },
+        confirmSummary: `「${toolArgs.title}」を${approveLabel}する`,
+      };
+    }
+
+    case "reject_goal": {
+      const gRej = await Goal.findById(toolArgs.goalId).lean();
+      if (!gRej) return { result: "目標が見つかりません。" };
+      if (
+        !gRej.currentApprover ||
+        String(gRej.currentApprover) !== String(employee._id)
+      )
+        return { result: "この目標の承認権限がありません。" };
+      if (!["pending1", "pending2"].includes(gRej.status))
+        return {
+          result: `この目標は「${gRej.status}」状態のため差し戻しできません。`,
+        };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "goal_reject",
+          data: {
+            goalId: toolArgs.goalId,
+            rejectType: gRej.status === "pending1" ? "reject1" : "reject2",
+            comment: toolArgs.comment || "",
+          },
+        },
+        confirmSummary:
+          `「${toolArgs.title}」を差し戻す` +
+          (toolArgs.comment ? `\n理由: ${toolArgs.comment}` : ""),
+      };
+    }
+
+    case "delete_goal": {
+      const gDel = await Goal.findById(toolArgs.goalId).lean();
+      if (!gDel) return { result: "目標が見つかりません。" };
+      const isOwnerDel =
+        (gDel.createdBy && String(gDel.createdBy) === String(employee._id)) ||
+        (gDel.ownerId && String(gDel.ownerId) === String(employee._id));
+      if (!isOwnerDel)
+        return { result: "この目標はあなたのものではありません。" };
+      if (gDel.status !== "draft")
+        return {
+          result: `「${gDel.status}」状態の目標は削除できません。削除は下書き(draft)のみ可能です。`,
+        };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "goal_delete",
+          data: { goalId: toolArgs.goalId, goalTitle: gDel.title },
+        },
+        confirmSummary: `目標「${toolArgs.title}」を削除する（この操作は元に戻せません）`,
+      };
+    }
+
+    // ── 日報追加操作 WRITE ────────────────────────────────────────────────
+    case "delete_daily_report": {
+      const drDel = await DailyReport.findById(toolArgs.reportId).lean();
+      if (!drDel)
+        return {
+          result:
+            "日報が見つかりません。get_daily_reportsで再確認してください。",
+        };
+      if (String(drDel.userId) !== String(userId))
+        return { result: "この日報はあなたのものではありません。" };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "daily_report_delete",
+          data: { reportId: toolArgs.reportId },
+        },
+        confirmSummary: `${moment(drDel.reportDate).format("M月D日")}の日報を削除する（元に戻せません）`,
+      };
+    }
+
+    case "add_daily_report_reaction": {
+      const drReact = await DailyReport.findById(toolArgs.reportId).lean();
+      if (!drReact) return { result: "日報が見つかりません。" };
+      const validEmojis = [
+        "👍",
+        "✨",
+        "👏",
+        "💪",
+        "✅",
+        "💡",
+        "😊",
+        "❤️",
+        "🎉",
+        "🔥",
+      ];
+      if (!validEmojis.includes(toolArgs.emoji))
+        return {
+          result: `無効な絵文字です。使用可能: ${validEmojis.join(" ")}`,
+        };
+      const alreadyReacted = (drReact.reactions || []).some(
+        (r) =>
+          r.emoji === toolArgs.emoji && String(r.userId) === String(userId),
+      );
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "daily_report_reaction",
+          data: {
+            reportId: toolArgs.reportId,
+            reportOwnerId: String(drReact.userId),
+            emoji: toolArgs.emoji,
+            alreadyReacted,
+          },
+        },
+        confirmSummary: alreadyReacted
+          ? `日報の ${toolArgs.emoji} リアクションを取り消す`
+          : `日報に ${toolArgs.emoji} リアクションを追加する`,
+      };
+    }
+
+    // ── 給与明細確認 WRITE ────────────────────────────────────────────────
+    case "confirm_payroll": {
+      let targetSlip = null;
+      if (toolArgs.slipId) {
+        targetSlip = await PayrollSlip.findById(toolArgs.slipId).lean();
+        if (
+          !targetSlip ||
+          String(targetSlip.employeeId) !== String(employee._id)
+        )
+          return { result: "給与明細が見つかりません。" };
+      } else {
+        targetSlip = await PayrollSlip.findOne({
+          employeeId: employee._id,
+          status: { $in: ["issued", "locked", "paid"] },
+          confirmedAt: null,
+        })
+          .sort({ createdAt: -1 })
+          .lean();
+      }
+      if (!targetSlip) return { result: "未確認の給与明細はありません。" };
+      if (targetSlip.confirmedAt)
+        return {
+          result: `この給与明細は ${moment(targetSlip.confirmedAt).format("M月D日")} に確認済みです。`,
+        };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "payroll_confirm",
+          data: { slipId: String(targetSlip._id) },
+        },
+        confirmSummary: `給与明細を確認済みにする（支給額: ${targetSlip.net != null ? targetSlip.net.toLocaleString() + "円" : "不明"}）`,
+      };
+    }
+
+    // ── 契約承認 WRITE ────────────────────────────────────────────────────
+    case "approve_contract": {
+      const ctApprove = await Contract.findById(toolArgs.contractId).lean();
+      if (!ctApprove)
+        return {
+          result: "契約が見つかりません。get_contractsで再確認してください。",
+        };
+      if (ctApprove.approvalStatus !== "pending")
+        return {
+          result: `この契約の承認ステータスは「${ctApprove.approvalStatus}」です。現在は承認フロー中ではありません。`,
+        };
+      const sortedFlow = [...ctApprove.approvalFlow].sort(
+        (a, b) => a.order - b.order,
+      );
+      const currentFlowStep = sortedFlow.find((s) => s.status === "pending");
+      if (!currentFlowStep)
+        return { result: "承認待ちのステップが見つかりません。" };
+      if (String(currentFlowStep.userId) !== String(userId))
+        return { result: "現在あなたの承認番ではありません。" };
+      const action = ["approved", "rejected", "returned"].includes(
+        toolArgs.action,
+      )
+        ? toolArgs.action
+        : "approved";
+      const actionLabelMap = {
+        approved: "承認",
+        rejected: "却下",
+        returned: "差し戻し",
+      };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "contract_action",
+          data: {
+            contractId: toolArgs.contractId,
+            action,
+            comment: toolArgs.comment || "",
+          },
+        },
+        confirmSummary:
+          `「${toolArgs.contractName}」を${actionLabelMap[action]}する` +
+          (toolArgs.comment ? `\nコメント: ${toolArgs.comment}` : ""),
+      };
+    }
+
+    // ── スキルシート更新 WRITE ────────────────────────────────────────────
+    case "update_skillsheet": {
+      const validCats = [
+        "languages",
+        "frameworks",
+        "databases",
+        "infra",
+        "tools",
+      ];
+      if (!validCats.includes(toolArgs.category))
+        return {
+          result: `カテゴリが正しくありません。使用可能: ${validCats.join(", ")}`,
+        };
+      const lvl = Math.max(1, Math.min(5, Number(toolArgs.level) || 3));
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "skillsheet_skill_update",
+          data: {
+            category: toolArgs.category,
+            skillName: toolArgs.skillName,
+            level: lvl,
+          },
+        },
+        confirmSummary: `スキルシートに「${toolArgs.skillName}（★${lvl}）」を追加/更新（カテゴリ: ${toolArgs.category}）`,
+      };
+    }
+
+    // ── 休暇残日数確認 READ ───────────────────────────────────────────────
+    case "get_leave_balance": {
+      const balUser = await User.findById(userId).lean();
+      const isAdminBal = balUser && balUser.isAdmin;
+      if (isAdminBal) {
+        // 管理者：全社員 or 指定社員
+        let empQuery = {};
+        if (toolArgs.employeeName) {
+          empQuery.name = { $regex: toolArgs.employeeName, $options: "i" };
+        }
+        const allEmps = await Employee.find(empQuery)
+          .sort({ employeeId: 1 })
+          .lean();
+        if (!allEmps.length) return { result: "社員が見つかりません。" };
+        const empIds = allEmps.map((e) => e._id);
+        const bals = await LeaveBalance.find({
+          employeeId: { $in: empIds },
+        }).lean();
+        const balMap = {};
+        bals.forEach((b) => {
+          balMap[String(b.employeeId)] = b;
+        });
+        return {
+          result: allEmps.map((e) => {
+            const b = balMap[String(e._id)] || {};
+            return {
+              employeeId: String(e._id),
+              employeeCode: e.employeeId,
+              name: e.name,
+              department: e.department,
+              paid: b.paid || 0,
+              sick: b.sick || 0,
+              special: b.special || 0,
+              other: b.other || 0,
+            };
+          }),
+        };
+      } else {
+        // 一般：自分の残日数
+        let bal = await LeaveBalance.findOne({
+          employeeId: employee._id,
+        }).lean();
+        if (!bal) bal = { paid: 0, sick: 0, special: 0, other: 0 };
+        return {
+          result: {
+            name: employee.name,
+            paid: bal.paid || 0,
+            sick: bal.sick || 0,
+            special: bal.special || 0,
+            other: bal.other || 0,
+          },
+        };
+      }
+    }
+
+    // ── 管理者専用：有給付与 WRITE ────────────────────────────────────────
+    case "grant_leave": {
+      const grantUser = await User.findById(userId).lean();
+      if (!grantUser || !grantUser.isAdmin) {
+        return { result: "休暇日数の付与は管理者権限が必要です。" };
+      }
+      const validLeaveTypes = ["有給", "病欠", "慶弔", "その他"];
+      if (!validLeaveTypes.includes(toolArgs.leaveType)) {
+        return {
+          result: `leaveType は ${validLeaveTypes.join(" / ")} のいずれかを指定してください。`,
+        };
+      }
+      if (typeof toolArgs.delta !== "number" || toolArgs.delta === 0) {
+        return { result: "delta に 0 以外の数値を指定してください。" };
+      }
+      // 対象社員を確認
+      const targetEmp = await Employee.findById(toolArgs.employeeId).lean();
+      if (!targetEmp) {
+        return {
+          result: `社員が見つかりません。get_leave_balance または get_organization で社員IDを確認してください。`,
+        };
+      }
+      const actionLabel = toolArgs.delta > 0 ? "付与" : "減算";
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "leave_grant",
+          data: {
+            employeeObjectId: toolArgs.employeeId,
+            employeeName: targetEmp.name,
+            leaveType: toolArgs.leaveType,
+            delta: toolArgs.delta,
+            note: toolArgs.note || "",
+          },
+        },
+        confirmSummary:
+          `**${targetEmp.name}** に有給を${actionLabel}する\n\n` +
+          `• 種別：${toolArgs.leaveType}\n` +
+          `• 変更日数：${toolArgs.delta > 0 ? "+" : ""}${toolArgs.delta} 日\n` +
+          (toolArgs.note ? `• メモ：${toolArgs.note}` : ""),
+      };
+    }
+
+    // ── 管理者専用：休暇承認 WRITE ────────────────────────────────────────
+    case "approve_leave": {
+      const approveLeaveUser = await User.findById(userId).lean();
+      if (!approveLeaveUser || !approveLeaveUser.isAdmin) {
+        return { result: "休暇申請の承認は管理者権限が必要です。" };
+      }
+      const leaveReq = await LeaveRequest.findById(toolArgs.leaveId).lean();
+      if (!leaveReq) return { result: "指定された休暇申請が見つかりません。" };
+      if (leaveReq.status !== "pending")
+        return {
+          result: `この申請はすでに「${leaveReq.status}」状態です。`,
+        };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "leave_approve",
+          data: {
+            leaveId: toolArgs.leaveId,
+            employeeName: toolArgs.employeeName || leaveReq.name || "",
+            leaveType: leaveReq.leaveType,
+            startDate: moment(leaveReq.startDate).format("YYYY-MM-DD"),
+            endDate: moment(leaveReq.endDate || leaveReq.startDate).format(
+              "YYYY-MM-DD",
+            ),
+            days: leaveReq.days,
+            employeeId: String(leaveReq.employeeId || ""),
+          },
+        },
+        confirmSummary:
+          `休暇申請を承認する\n\n` +
+          `• 申請者：${leaveReq.name || toolArgs.employeeName || ""}\n` +
+          `• 種別：${leaveReq.leaveType}　期間：${moment(leaveReq.startDate).format("M/D")}〜${moment(leaveReq.endDate || leaveReq.startDate).format("M/D")}（${leaveReq.days}日）`,
+      };
+    }
+
+    // ── 管理者専用：休暇却下 WRITE ────────────────────────────────────────
+    case "reject_leave": {
+      const rejectLeaveUser = await User.findById(userId).lean();
+      if (!rejectLeaveUser || !rejectLeaveUser.isAdmin) {
+        return { result: "休暇申請の却下は管理者権限が必要です。" };
+      }
+      const leaveReqRej = await LeaveRequest.findById(toolArgs.leaveId).lean();
+      if (!leaveReqRej)
+        return { result: "指定された休暇申請が見つかりません。" };
+      if (leaveReqRej.status !== "pending")
+        return {
+          result: `この申請はすでに「${leaveReqRej.status}」状態です。`,
+        };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "leave_reject",
+          data: {
+            leaveId: toolArgs.leaveId,
+            reason: toolArgs.reason || "",
+            employeeName: toolArgs.employeeName || leaveReqRej.name || "",
+            leaveType: leaveReqRej.leaveType,
+          },
+        },
+        confirmSummary:
+          `休暇申請を却下する\n\n` +
+          `• 申請者：${leaveReqRej.name || toolArgs.employeeName || ""}\n` +
+          `• 種別：${leaveReqRej.leaveType}` +
+          (toolArgs.reason ? `\n• 理由：${toolArgs.reason}` : ""),
+      };
+    }
+
+    // ── 管理者専用：残業承認 WRITE ────────────────────────────────────────
+    case "approve_overtime": {
+      const approveOTUser = await User.findById(userId).lean();
+      if (!approveOTUser || !approveOTUser.isAdmin) {
+        return { result: "残業申請の承認は管理者権限が必要です。" };
+      }
+      const otReq = await OvertimeRequest.findById(toolArgs.overtimeId).lean();
+      if (!otReq) return { result: "指定された残業申請が見つかりません。" };
+      if (otReq.status !== "pending")
+        return { result: `この申請はすでに「${otReq.status}」状態です。` };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "overtime_approve",
+          data: {
+            overtimeId: toolArgs.overtimeId,
+            employeeName: toolArgs.employeeName || "",
+            date: moment(otReq.date).tz("Asia/Tokyo").format("YYYY-MM-DD"),
+            startTime: otReq.startTime,
+            endTime: otReq.endTime,
+            hours: otReq.hours,
+            applicantUserId: String(otReq.userId),
+            timing: otReq.requestTiming,
+          },
+        },
+        confirmSummary:
+          `残業申請を承認する\n\n` +
+          `• 申請者：${toolArgs.employeeName || ""}\n` +
+          `• 日付：${moment(otReq.date).tz("Asia/Tokyo").format("M/D")}　${otReq.startTime}〜${otReq.endTime}（${otReq.hours}h）`,
+      };
+    }
+
+    // ── 管理者専用：残業却下 WRITE ────────────────────────────────────────
+    case "reject_overtime": {
+      const rejectOTUser = await User.findById(userId).lean();
+      if (!rejectOTUser || !rejectOTUser.isAdmin) {
+        return { result: "残業申請の却下は管理者権限が必要です。" };
+      }
+      const otReqRej = await OvertimeRequest.findById(
+        toolArgs.overtimeId,
+      ).lean();
+      if (!otReqRej) return { result: "指定された残業申請が見つかりません。" };
+      if (otReqRej.status !== "pending")
+        return {
+          result: `この申請はすでに「${otReqRej.status}」状態です。`,
+        };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "overtime_reject",
+          data: {
+            overtimeId: toolArgs.overtimeId,
+            reason: toolArgs.reason || "",
+            employeeName: toolArgs.employeeName || "",
+            date: moment(otReqRej.date).tz("Asia/Tokyo").format("YYYY-MM-DD"),
+            applicantUserId: String(otReqRej.userId),
+            timing: otReqRej.requestTiming,
+          },
+        },
+        confirmSummary:
+          `残業申請を却下する\n\n` +
+          `• 申請者：${toolArgs.employeeName || ""}\n` +
+          `• 日付：${moment(otReqRej.date).tz("Asia/Tokyo").format("M/D")}` +
+          (toolArgs.reason ? `\n• 理由：${toolArgs.reason}` : ""),
+      };
+    }
+
+    // ── ワークフロー却下 WRITE ─────────────────────────────────────────────
+    case "reject_workflow": {
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "workflow_reject",
+          data: {
+            workflowId: toolArgs.workflowId,
+            reason: toolArgs.reason,
+          },
+        },
+        confirmSummary: `「${toolArgs.title}」を却下\n理由：${toolArgs.reason}`,
+      };
+    }
+
+    // ── 管理者専用：社員登録 WRITE ────────────────────────────────────────
+    case "register_employee": {
+      const regUser = await User.findById(userId).lean();
+      if (!regUser || !regUser.isAdmin) {
+        return {
+          result:
+            "社員登録は管理者権限が必要です。管理者アカウントでログインし直してください。",
+        };
+      }
+      // 必須項目チェック
+      const required = [
+        "name",
+        "username",
+        "password",
+        "employeeId",
+        "department",
+        "position",
+        "joinDate",
+        "email",
+        "role",
+      ];
+      const missing = required.filter((k) => !toolArgs[k]);
+      if (missing.length) {
+        return {
+          result: `以下の項目が不足しています: ${missing.join(", ")}`,
+        };
+      }
+      const validRoles = ["employee", "team_leader", "manager", "admin"];
+      if (!validRoles.includes(toolArgs.role)) {
+        return {
+          result: `role は ${validRoles.join(" / ")} のいずれかを指定してください。`,
+        };
+      }
+      // 重複チェック
+      const existUser = await User.findOne({
+        username: toolArgs.username,
+      }).lean();
+      if (existUser) {
+        return {
+          result: `ユーザー名「${toolArgs.username}」はすでに使用されています。`,
+        };
+      }
+      const existEmp = await Employee.findOne({
+        employeeId: toolArgs.employeeId,
+      }).lean();
+      if (existEmp) {
+        return {
+          result: `社員番号「${toolArgs.employeeId}」はすでに登録されています。`,
+        };
+      }
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "employee_register",
+          data: {
+            name: toolArgs.name,
+            username: toolArgs.username,
+            password: toolArgs.password,
+            employeeId: toolArgs.employeeId,
+            department: toolArgs.department,
+            position: toolArgs.position,
+            joinDate: toolArgs.joinDate,
+            email: toolArgs.email,
+            role: toolArgs.role,
+          },
+        },
+        confirmSummary:
+          `新しい社員を登録する\n\n` +
+          `• 氏名：${toolArgs.name}\n` +
+          `• ユーザー名：${toolArgs.username}\n` +
+          `• 社員番号：${toolArgs.employeeId}\n` +
+          `• 部署：${toolArgs.department}　役職：${toolArgs.position}\n` +
+          `• 入社日：${toolArgs.joinDate}　ロール：${toolArgs.role}`,
+      };
+    }
+
+    // ── 管理者専用：勤怠承認 READ ────────────────────────────────────────────
+    case "get_pending_approval_requests": {
+      const reqUser = await User.findById(userId).lean();
+      if (!reqUser || !reqUser.isAdmin) {
+        return { result: "この操作は管理者権限が必要です。" };
+      }
+      const reqs = await ApprovalRequest.find({
+        status: { $in: ["pending", "returned"] },
+      })
+        .populate("userId", "username")
+        .sort({ requestedAt: -1 })
+        .lean();
+      if (!reqs.length)
+        return { result: "現在、承認待ちの勤怠申請はありません。" };
+      return {
+        result: reqs.map((r) => ({
+          id: String(r._id),
+          employeeId: r.employeeId || "",
+          username: r.userId?.username || "",
+          year: r.year,
+          month: r.month,
+          status: r.status,
+          requestedAt: moment(r.requestedAt)
+            .tz("Asia/Tokyo")
+            .format("YYYY-MM-DD"),
+        })),
+      };
+    }
+
+    case "approve_attendance": {
+      const approveUser = await User.findById(userId).lean();
+      if (!approveUser || !approveUser.isAdmin) {
+        return { result: "この操作は管理者権限が必要です。" };
+      }
+      const targetEmpApprove = await Employee.findOne({
+        name: { $regex: new RegExp(toolArgs.employeeName, "i") },
+      }).lean();
+      if (!targetEmpApprove)
+        return {
+          result: `「${toolArgs.employeeName}」という社員が見つかりません。`,
+        };
+      const pendingReq = await ApprovalRequest.findOne({
+        employeeId: targetEmpApprove.employeeId,
+        year: toolArgs.year,
+        month: toolArgs.month,
+        status: { $in: ["pending", "returned"] },
+      }).lean();
+      if (!pendingReq)
+        return {
+          result: `${targetEmpApprove.name}の${toolArgs.year}年${toolArgs.month}月の承認待ち申請が見つかりません。`,
+        };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "attendance_approve",
+          data: {
+            approvalRequestId: String(pendingReq._id),
+            employeeId: targetEmpApprove.employeeId,
+            employeeName: targetEmpApprove.name,
+            targetUserId: String(targetEmpApprove.userId),
+            year: toolArgs.year,
+            month: toolArgs.month,
+          },
+        },
+        confirmSummary:
+          `${targetEmpApprove.name}の${toolArgs.year}年${toolArgs.month}月の勤怠を承認する\n` +
+          `（該当月の勤怠レコードが一括承認されます）`,
+      };
+    }
+
+    // ── 管理者専用：社員情報編集・削除 WRITE ────────────────────────────────
+    case "update_employee": {
+      const updUser = await User.findById(userId).lean();
+      if (!updUser || !updUser.isAdmin) {
+        return { result: "この操作は管理者権限が必要です。" };
+      }
+      const targetEmpUpd = await Employee.findOne({
+        name: { $regex: new RegExp(toolArgs.employeeName, "i") },
+      }).lean();
+      if (!targetEmpUpd)
+        return {
+          result: `「${toolArgs.employeeName}」という社員が見つかりません。`,
+        };
+      const changes = {};
+      if (toolArgs.name) changes.name = toolArgs.name;
+      if (toolArgs.department) changes.department = toolArgs.department;
+      if (toolArgs.position) changes.position = toolArgs.position;
+      if (toolArgs.joinDate) changes.joinDate = toolArgs.joinDate;
+      if (toolArgs.email) changes.email = toolArgs.email;
+      if (!Object.keys(changes).length)
+        return {
+          result:
+            "変更する項目（name / department / position / joinDate / email）を指定してください。",
+        };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "employee_update",
+          data: {
+            employeeObjectId: String(targetEmpUpd._id),
+            employeeName: targetEmpUpd.name,
+            changes,
+          },
+        },
+        confirmSummary:
+          `${targetEmpUpd.name}の社員情報を更新する\n\n` +
+          Object.entries(changes)
+            .map(([k, v]) => `• ${k}：${v}`)
+            .join("\n"),
+      };
+    }
+
+    case "delete_employee": {
+      const delUser = await User.findById(userId).lean();
+      if (!delUser || !delUser.isAdmin) {
+        return { result: "この操作は管理者権限が必要です。" };
+      }
+      const targetEmpDel = await Employee.findOne({
+        name: { $regex: new RegExp(toolArgs.employeeName, "i") },
+      }).lean();
+      if (!targetEmpDel)
+        return {
+          result: `「${toolArgs.employeeName}」という社員が見つかりません。`,
+        };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "employee_delete",
+          data: {
+            employeeObjectId: String(targetEmpDel._id),
+            employeeName: targetEmpDel.name,
+          },
+        },
+        confirmSummary:
+          `⚠️ 【取り消し不可】${targetEmpDel.name}（社員番号: ${targetEmpDel.employeeId || ""}）の社員レコードを削除する\n\n` +
+          `この操作は取り消せません。本当に削除しますか？`,
+      };
+    }
+
+    // ── 管理者専用：ユーザー権限管理 WRITE ──────────────────────────────────
+    case "change_user_role": {
+      const roleUser = await User.findById(userId).lean();
+      if (!roleUser || !roleUser.isAdmin) {
+        return { result: "この操作は管理者権限が必要です。" };
+      }
+      const validRoles = ["employee", "team_leader", "manager", "admin"];
+      if (!validRoles.includes(toolArgs.newRole))
+        return {
+          result: `newRole は ${validRoles.join(" / ")} のいずれかを指定してください。`,
+        };
+      const targetEmpRole = await Employee.findOne({
+        name: { $regex: new RegExp(toolArgs.employeeName, "i") },
+      }).lean();
+      if (!targetEmpRole)
+        return {
+          result: `「${toolArgs.employeeName}」という社員が見つかりません。`,
+        };
+      const ROLE_LABEL_CONFIRM = {
+        employee: "社員",
+        team_leader: "チームリーダー",
+        manager: "部門長",
+        admin: "管理者",
+      };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "user_role_change",
+          data: {
+            employeeObjectId: String(targetEmpRole._id),
+            targetUserId: String(targetEmpRole.userId),
+            employeeName: targetEmpRole.name,
+            newRole: toolArgs.newRole,
+          },
+        },
+        confirmSummary:
+          `${targetEmpRole.name}のロールを「${ROLE_LABEL_CONFIRM[toolArgs.newRole] || toolArgs.newRole}」に変更する` +
+          (toolArgs.newRole === "admin"
+            ? "\n⚠️ adminにするとシステム管理者権限が付与されます"
+            : ""),
+      };
+    }
+
+    case "reset_user_password": {
+      const pwUser = await User.findById(userId).lean();
+      if (!pwUser || !pwUser.isAdmin) {
+        return { result: "この操作は管理者権限が必要です。" };
+      }
+      if (!toolArgs.newPassword || toolArgs.newPassword.length < 6)
+        return { result: "パスワードは6文字以上で指定してください。" };
+      const targetEmpPw = await Employee.findOne({
+        name: { $regex: new RegExp(toolArgs.employeeName, "i") },
+      }).lean();
+      if (!targetEmpPw)
+        return {
+          result: `「${toolArgs.employeeName}」という社員が見つかりません。`,
+        };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "user_password_reset",
+          data: {
+            targetUserId: String(targetEmpPw.userId),
+            employeeName: targetEmpPw.name,
+            newPassword: toolArgs.newPassword,
+          },
+        },
+        confirmSummary: `${targetEmpPw.name}のパスワードをリセットする（新しいパスワードを設定します）`,
+      };
+    }
+
+    // ── 管理者専用：給与計算 WRITE ───────────────────────────────────────────
+    case "run_payroll": {
+      const payUser = await User.findById(userId).lean();
+      if (!payUser || !payUser.isAdmin) {
+        return { result: "この操作は管理者権限が必要です。" };
+      }
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "payroll_run",
+          data: {
+            year: toolArgs.year,
+            month: toolArgs.month,
+            runByUserId: String(userId),
+          },
+        },
+        confirmSummary:
+          `${toolArgs.year}年${toolArgs.month}月分の給与計算バッチを実行する\n` +
+          `（PayrollMaster設定済みの全社員の給与明細を生成します）`,
+      };
+    }
+
+    case "issue_payroll_slip": {
+      const issueUser = await User.findById(userId).lean();
+      if (!issueUser || !issueUser.isAdmin) {
+        return { result: "この操作は管理者権限が必要です。" };
+      }
+      const issuePeriodFrom = moment
+        .tz(
+          `${toolArgs.year}-${String(toolArgs.month).padStart(2, "0")}-01`,
+          "Asia/Tokyo",
+        )
+        .startOf("month")
+        .toDate();
+      const issuePeriodTo = moment
+        .tz(
+          `${toolArgs.year}-${String(toolArgs.month).padStart(2, "0")}-01`,
+          "Asia/Tokyo",
+        )
+        .endOf("month")
+        .toDate();
+      const issueRun = await PayrollRun.findOne({
+        periodFrom: { $lte: issuePeriodFrom },
+        periodTo: { $gte: issuePeriodTo },
+      }).lean();
+      if (!issueRun)
+        return {
+          result: `${toolArgs.year}年${toolArgs.month}月分の給与計算ランが見つかりません。先にrun_payrollで給与計算を実行してください。`,
+        };
+      const draftSlips = await PayrollSlip.find({
+        runId: issueRun._id,
+        status: "draft",
+      })
+        .populate("employeeId")
+        .lean();
+      if (!draftSlips.length)
+        return {
+          result: `${toolArgs.year}年${toolArgs.month}月分に発行可能な下書き明細がありません（既に全員発行済みかもしれません）。`,
+        };
+      const targetSlips = toolArgs.employeeName
+        ? draftSlips.filter((s) =>
+            s.employeeId?.name?.includes(toolArgs.employeeName),
+          )
+        : draftSlips;
+      if (!targetSlips.length)
+        return {
+          result: `「${toolArgs.employeeName}」の下書き明細が見つかりません。`,
+        };
+      return {
+        needsConfirmation: true,
+        pendingAction: {
+          type: "payroll_issue",
+          data: {
+            slipIds: targetSlips.map((s) => String(s._id)),
+            year: toolArgs.year,
+            month: toolArgs.month,
+            issuedByUserId: String(userId),
+          },
+        },
+        confirmSummary:
+          `${toolArgs.year}年${toolArgs.month}月分の給与明細を発行する\n` +
+          `対象：${targetSlips.length}名（${targetSlips.map((s) => s.employeeId?.name || "?").join("、")}）\n` +
+          `発行後、各社員に通知が送信されます。`,
+      };
+    }
+
     default:
       return { result: `不明なツール: ${toolName}` };
   }
 }
 
 // ── AIチャットハンドラー（OpenAI Function Calling）──────────────────────────
-async function aiChatHandler(message, userId, employee, sessionContext) {
+async function aiChatHandler(
+  message,
+  userId,
+  employee,
+  sessionContext,
+  isAdmin = false,
+) {
   const now = jst();
   const ai = getChatOpenAI();
+
+  const adminToolLine = isAdmin
+    ? `- get_leave_requests: 全社員の休暇申請一覧（管理者は全員分表示）\n` +
+      `- get_overtime_requests: 全社員の残業申請一覧（管理者は全員分表示）\n` +
+      `- get_leave_balance: 全社員の休暇残日数確認（管理者は全員分・名前で絞り込み可）\n` +
+      `- grant_leave: 【管理者専用】社員の休暇日数を付与・調整する（マイナスで減算も可）\n` +
+      `- approve_leave: 【管理者専用】休暇申請を承認する（残日数・勤怠自動反映）\n` +
+      `- reject_leave: 【管理者専用】休暇申請を却下する\n` +
+      `- approve_overtime: 【管理者専用】残業申請を承認する\n` +
+      `- reject_overtime: 【管理者専用】残業申請を却下する\n` +
+      `- reject_workflow: ワークフロー申請を却下する（承認者または管理者のみ）\n` +
+      `- register_employee: 【管理者専用】新しい社員・ユーザーアカウントを登録する\n` +
+      `- get_pending_approval_requests: 【管理者専用】勤怠月次承認の承認待ち一覧を取得する\n` +
+      `- approve_attendance: 【管理者専用】社員の月次勤怠を承認する\n` +
+      `- update_employee: 【管理者専用】社員の基本情報（氏名・部署・役職・入社日・メール）を更新する\n` +
+      `- delete_employee: 【管理者専用・不可逆】社員レコードを完全削除する\n` +
+      `- change_user_role: 【管理者専用】ユーザーのロールを変更する（employee/team_leader/manager/admin）\n` +
+      `- reset_user_password: 【管理者専用】ユーザーのパスワードをリセットする\n` +
+      `- run_payroll: 【管理者専用】指定月の給与計算バッチを実行し給与明細（下書き）を生成する\n` +
+      `- issue_payroll_slip: 【管理者専用】給与明細を発行し社員に通知する（事前にrun_payroll要）\n`
+    : "";
 
   const systemPrompt =
     `あなたは「DXPRO AIアシスタント」です。社内勤怠・業務管理システムの日本語AIアシスタントです。\n\n` +
     `現在日時: ${now.format("YYYY年MM月DD日(ddd) HH:mm")} (JST)\n` +
-    `担当ユーザー: ${employee.name}（${employee.department || ""}）\n\n` +
+    `担当ユーザー: ${employee.name}（${employee.department || ""}）${isAdmin ? "　【管理者】" : ""}\n\n` +
     `【利用可能なツール】\n` +
     `- get_schedules: 予定の照会（変更・削除の前にも呼び出してIDを確認する）\n` +
     `- create_schedule / update_schedule / delete_schedule: 予定の登録・変更・削除\n` +
@@ -4436,13 +7190,29 @@ async function aiChatHandler(message, userId, employee, sessionContext) {
     `- get_pending_workflows / approve_workflow / return_workflow: ワークフロー承認\n` +
     `- get_board_posts / post_to_board: 掲示板の確認・投稿\n` +
     `- search_company_rules: 就業規則の検索\n` +
-    `- get_daily_reports / create_daily_report: 日報の確認・提出（スケジュールとは別機能）\n\n` +
-    `【重要なルール】\n` +
+    `- get_daily_reports / create_daily_report: 日報の確認・提出（スケジュールとは別機能）\n` +
+    `- get_pending_goals / approve_goal / reject_goal: 承認者として目標を承認・差し戻し\n` +
+    `- submit_goal / delete_goal: 自分の目標を提出・削除\n` +
+    `- delete_daily_report / add_daily_report_reaction: 日報の削除・リアクション追加\n` +
+    `- confirm_payroll: 給与明細を確認済みにする\n` +
+    `- get_contracts / approve_contract: 契約の一覧確認・承認・却下・差し戻し\n` +
+    `- get_organization: 社員・組織情報の検索・確認\n` +
+    `- update_skillsheet: スキルシートへのスキル追加・更新\n` +
+    adminToolLine +
+    `\n【重要なルール】\n` +
     `1. データを変更・作成・削除するツール（create/update/delete/apply/post/approve/return）は必ずツール経由で実行し、実行結果はユーザーに確認を求めてください。\n` +
     `2. 予定の変更・削除をする場合は、必ず先にget_schedulesで予定を検索してIDを取得してから、update_schedule/delete_scheduleを呼んでください。\n` +
     `3. 目標作成はcreate_goal、日報作成はcreate_daily_reportを使用してください。スケジュール（create_schedule）と間違えないよう注意してください。\n` +
     `4. ツールを呼ばずに勝手に「〇〇しました」と言わないでください。\n` +
-    `5. 日本語で丁寧かつ簡潔に回答してください。マークダウン（**太字**、箇条書き）を使って見やすく。`;
+    `5. 日本語で丁寧かつ簡潔に回答してください。マークダウン（**太字**、箇条書き）を使って見やすく。` +
+    (!isAdmin
+      ? `\n\n【権限について】\nこのユーザーは一般社員権限です。社員の登録・削除・給与計算・明細発行・権限変更・パスワードリセット・有給付与・勤怠承認など管理者専用の操作を依頼された場合は、ツールを呼ばずに「この操作は管理者権限が必要です。管理者の方にご依頼ください。」と案内してください。`
+      : "");
+
+  // 権限に応じてツールをフィルタリング
+  const activeTools = isAdmin
+    ? CHATBOT_TOOLS
+    : CHATBOT_TOOLS.filter((t) => !ADMIN_TOOL_NAMES.has(t.function.name));
 
   // メッセージ履歴を構築
   const messages = [{ role: "system", content: systemPrompt }];
@@ -4455,7 +7225,7 @@ async function aiChatHandler(message, userId, employee, sessionContext) {
   let response = await ai.chat.completions.create({
     model: "gpt-4o-mini",
     messages,
-    tools: CHATBOT_TOOLS,
+    tools: activeTools,
     tool_choice: "auto",
     max_tokens: 1000,
     temperature: 0.3,
@@ -4511,7 +7281,7 @@ async function aiChatHandler(message, userId, employee, sessionContext) {
     response = await ai.chat.completions.create({
       model: "gpt-4o-mini",
       messages,
-      tools: CHATBOT_TOOLS,
+      tools: activeTools,
       // 確認待ち中は追加のツール呼び出しをさせない
       tool_choice: toolCallPendingAction ? "none" : "auto",
       max_tokens: 800,
@@ -4563,7 +7333,13 @@ router.post("/api/chatbot", requireLogin, async (req, res) => {
     if (!hasPendingAction && hasOpenAIKey()) {
       // ── OpenAI Function Calling ──────────────────────────────────────
       try {
-        reply = await aiChatHandler(text, user._id, employee, ctx);
+        reply = await aiChatHandler(
+          text,
+          user._id,
+          employee,
+          ctx,
+          user.isAdmin || false,
+        );
       } catch (aiErr) {
         console.error(
           "[chatbot] OpenAI error, falling back to rule-based:",
