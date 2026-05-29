@@ -54,7 +54,8 @@
     "workflow": "Quy trình làm việc",
     "cloud": "Ổ đĩa đám mây",
     "integrations": "Cài đặt tích hợp API",
-    "contracts": "Quản lý hợp đồng"
+    "contracts": "Quản lý hợp đồng",
+    "analytics": "BI Phân tích"
   },
   "topbar": {
     "admin_badge": "Quản trị viên",

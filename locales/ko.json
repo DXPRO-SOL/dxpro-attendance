@@ -54,7 +54,8 @@
     "workflow": "워크플로우",
     "cloud": "클라우드 드라이브",
     "integrations": "외부 API 연동 설정",
-    "contracts": "계약 관리"
+    "contracts": "계약 관리",
+    "analytics": "BI 분석"
   },
   "topbar": {
     "admin_badge": "관리자",

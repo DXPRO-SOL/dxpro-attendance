@@ -52,6 +52,7 @@
         cloud: "クラウド",
         integrations: "連携",
         contracts: "契約管理",
+        analytics: "BI・分析",
         admin_section: "管理者",
       },
       topbar: {
@@ -159,6 +160,7 @@
         cloud: "Cloud",
         integrations: "Integrations",
         contracts: "Contract Management",
+        analytics: "BI Analytics",
         admin_section: "Admin",
       },
       topbar: {
@@ -266,6 +268,7 @@
         cloud: "Đám mây",
         integrations: "Tích hợp",
         contracts: "Quản lý hợp đồng",
+        analytics: "BI Phân tích",
         admin_section: "Quản trị",
       },
       topbar: {
@@ -376,6 +379,7 @@
           cloud: "클라우드",
           integrations: "연동",
           contracts: "계약 관리",
+          analytics: "BI 분석",
           admin_section: "관리자",
         },
         topbar: {
@@ -483,6 +487,7 @@
           cloud: "云盘",
           integrations: "集成",
           contracts: "合同管理",
+          analytics: "BI 分析",
           admin_section: "管理员",
         },
         topbar: {
