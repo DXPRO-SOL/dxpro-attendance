@@ -54,7 +54,20 @@
     "workflow": "工作流",
     "cloud": "云盘",
     "integrations": "外部API集成设置",
-    "contracts": "合同管理"
+    "contracts": "合同管理",
+    "admin_monthly_attendance": "月度考勤查询",
+    "admin_approval_requests": "审批请求列表",
+    "admin_departments": "部门管理",
+    "admin_org_roles": "角色与人事调动",
+    "admin_payroll_master": "薪资主数据管理",
+    "admin_contract_types": "合同类型管理",
+    "admin_locations": "GPS地点管理",
+    "admin_skillmap": "技能图谱",
+    "admin_daily_summary": "日报AI摘要",
+    "admin_semi_assessments": "AI评估报告",
+    "admin_audit_log": "审计日志",
+    "admin_chat_management": "聊天管理",
+    "admin_ui_analytics": "UI分析"
   },
   "topbar": {
     "admin_badge": "管理员",
