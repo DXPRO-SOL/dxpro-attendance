@@ -54,7 +54,20 @@
     "workflow": "Workflow",
     "cloud": "Cloud Drive",
     "integrations": "External API Integration",
-    "contracts": "Contract Management"
+    "contracts": "Contract Management",
+    "admin_monthly_attendance": "Monthly Attendance",
+    "admin_approval_requests": "Approval Requests",
+    "admin_departments": "Department Management",
+    "admin_org_roles": "Roles & Transfers",
+    "admin_payroll_master": "Payroll Master",
+    "admin_contract_types": "Contract Types",
+    "admin_locations": "GPS Location Management",
+    "admin_skillmap": "Skill Map",
+    "admin_daily_summary": "Daily Report AI Summary",
+    "admin_semi_assessments": "AI Assessment Report",
+    "admin_audit_log": "Audit Log",
+    "admin_chat_management": "Chat Management",
+    "admin_ui_analytics": "UI Analytics"
   },
   "topbar": {
     "admin_badge": "Admin",

@@ -54,7 +54,20 @@
     "workflow": "워크플로우",
     "cloud": "클라우드 드라이브",
     "integrations": "외부 API 연동 설정",
-    "contracts": "계약 관리"
+    "contracts": "계약 관리",
+    "admin_monthly_attendance": "월별 근태 조회",
+    "admin_approval_requests": "승인 요청 목록",
+    "admin_departments": "부서 관리",
+    "admin_org_roles": "역할 및 인사 이동",
+    "admin_payroll_master": "급여 마스터 관리",
+    "admin_contract_types": "계약 유형 관리",
+    "admin_locations": "GPS 장소 관리",
+    "admin_skillmap": "스킬 맵",
+    "admin_daily_summary": "일보 AI 요약",
+    "admin_semi_assessments": "AI 평가 리포트",
+    "admin_audit_log": "감사 로그",
+    "admin_chat_management": "채팅 관리",
+    "admin_ui_analytics": "UI 분석"
   },
   "topbar": {
     "admin_badge": "관리자",
