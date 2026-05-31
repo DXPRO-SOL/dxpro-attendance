@@ -1,78 +1,189 @@
 // ==============================
 // routes/cloud.js - クラウドドライブ（ファイル共有・同時編集）
 // ==============================
-const router   = require('express').Router();
-const multer   = require('multer');
-const path     = require('path');
-const fs       = require('fs');
-const mongoose = require('mongoose');
-const mammoth  = require('mammoth');
-const XLSX     = require('xlsx');
-const { User, Employee, CloudFolder, CloudFile } = require('../models');
-const { requireLogin } = require('../middleware/auth');
-const { renderPage } = require('../lib/renderPage');
+const router = require("express").Router();
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+const mongoose = require("mongoose");
+const mammoth = require("mammoth");
+const XLSX = require("xlsx");
+const iconv = require("iconv-lite");
+const { User, Employee, CloudFolder, CloudFile } = require("../models");
+const { requireLogin } = require("../middleware/auth");
+const { renderPage } = require("../lib/renderPage");
 
 // ── アップロード先ディレクトリ ────────────────────────────────────
-const UPLOAD_DIR = path.join(__dirname, '..', 'uploads', 'cloud');
+const UPLOAD_DIR = path.join(__dirname, "..", "uploads", "cloud");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-  filename:    (req, file, cb) => {
-    const ext = path.extname(file.originalname) || '';
-    cb(null, Date.now() + '-' + Math.round(Math.random() * 1e9) + ext);
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || "";
+    cb(null, Date.now() + "-" + Math.round(Math.random() * 1e9) + ext);
   },
 });
 const upload = multer({ storage, limits: { fileSize: 100 * 1024 * 1024 } }); // 100MB
 
+// ── エンコーディング検出・UTF-8変換ヘルパー ─────────────────────────
+/**
+ * バイナリバッファのエンコーディングを検出し、UTF-8文字列に変換する。
+ * BOM（\uFEFF）も自動除去する。
+ */
+/**
+ * バッファのエンコーディングを検出してUTF-8文字列に変換する（外部ライブラリ不要）。
+ * 検出順序: BOM → Shift-JIS/EUC-JP ヒューリスティック → UTF-8
+ */
+function detectEncoding(buf) {
+  // BOM検出（最も確実）
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf)
+    return "utf8-bom";
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return "utf-16le";
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) return "utf-16be";
+
+  // まずUTF-8として有効か検証（U+FFFD=置換文字が入っていなければUTF-8）
+  const asUtf8 = buf.toString("utf8");
+  if (!asUtf8.includes("\uFFFD")) return "utf8";
+
+  // Shift-JIS ヒューリスティック
+  // 先頭4096バイトで2バイト文字パターンをカウント
+  const sampleLen = Math.min(buf.length - 1, 4096);
+  let sjisCount = 0;
+  let eucCount = 0;
+  for (let i = 0; i < sampleLen; i++) {
+    const b = buf[i];
+    const n = buf[i + 1];
+    // Shift-JIS 第1バイト: 0x81-0x9F or 0xE0-0xEF
+    if ((b >= 0x81 && b <= 0x9f) || (b >= 0xe0 && b <= 0xef)) {
+      if ((n >= 0x40 && n <= 0x7e) || (n >= 0x80 && n <= 0xfc)) {
+        sjisCount++;
+        i++;
+        continue;
+      }
+    }
+    // EUC-JP 第1バイト: 0xA1-0xFE
+    if (b >= 0xa1 && b <= 0xfe) {
+      if (n >= 0xa1 && n <= 0xfe) {
+        eucCount++;
+        i++;
+        continue;
+      }
+    }
+  }
+  if (sjisCount > 0 && sjisCount >= eucCount) return "Shift_JIS";
+  if (eucCount > 0) return "EUC-JP";
+  return "utf8"; // フォールバック
+}
+
+function toUtf8String(buffer) {
+  if (!buffer || buffer.length === 0) return "";
+  const enc = detectEncoding(buffer);
+  switch (enc) {
+    case "utf8-bom":
+      return buffer.slice(3).toString("utf8");
+    case "utf-16le":
+      return iconv.decode(buffer.slice(2), "utf-16le");
+    case "utf-16be":
+      return iconv.decode(buffer.slice(2), "utf-16be");
+    case "Shift_JIS":
+      return iconv.decode(buffer, "Shift_JIS");
+    case "EUC-JP":
+      return iconv.decode(buffer, "EUC-JP");
+    default:
+      return buffer.toString("utf8");
+  }
+}
+
 // ── テキスト系 MIME 判定 ──────────────────────────────────────────
 const TEXT_MIMES = new Set([
-  'text/plain','text/markdown','text/html','text/css','text/javascript',
-  'application/json','application/xml','text/xml','text/csv',
-  'application/javascript','text/x-python','text/x-java-source',
-  'text/x-c','text/x-c++','text/x-shellscript','text/x-sh',
+  "text/plain",
+  "text/markdown",
+  "text/html",
+  "text/css",
+  "text/javascript",
+  "application/json",
+  "application/xml",
+  "text/xml",
+  "text/csv",
+  "application/javascript",
+  "text/x-python",
+  "text/x-java-source",
+  "text/x-c",
+  "text/x-c++",
+  "text/x-shellscript",
+  "text/x-sh",
 ]);
 const TEXT_EXTS = new Set([
-  '.txt','.md','.html','.css','.js','.ts','.json','.xml','.csv',
-  '.py','.java','.c','.cpp','.sh','.bash','.yaml','.yml','.sql','.env',
+  ".txt",
+  ".md",
+  ".html",
+  ".css",
+  ".js",
+  ".ts",
+  ".json",
+  ".xml",
+  ".csv",
+  ".py",
+  ".java",
+  ".c",
+  ".cpp",
+  ".sh",
+  ".bash",
+  ".yaml",
+  ".yml",
+  ".sql",
+  ".env",
 ]);
 function isTextFile(mimeType, filename) {
-  const ext = path.extname(filename || '').toLowerCase();
+  const ext = path.extname(filename || "").toLowerCase();
   return TEXT_MIMES.has(mimeType) || TEXT_EXTS.has(ext);
 }
 
 // ── スプレッドシート判定 ──────────────────────────────────────────
-const SHEET_EXTS = new Set(['.xlsx', '.xls', '.ods', '.csv']);
+const SHEET_EXTS = new Set([".xlsx", ".xls", ".ods", ".csv"]);
 function isSpreadsheet(filename) {
-  return SHEET_EXTS.has(path.extname(filename || '').toLowerCase());
+  return SHEET_EXTS.has(path.extname(filename || "").toLowerCase());
 }
 
 // ── Word ドキュメント判定 ────────────────────────────────────────
-const WORD_EXTS = new Set(['.docx', '.doc']);
+const WORD_EXTS = new Set([".docx", ".doc"]);
 function isWordDoc(filename) {
-  return WORD_EXTS.has(path.extname(filename || '').toLowerCase());
+  return WORD_EXTS.has(path.extname(filename || "").toLowerCase());
 }
 
 // ── ファイルタイプ → エディタ種別 ───────────────────────────────
 function getEditorType(filename) {
-  const ext = path.extname(filename || '').toLowerCase();
-  if (ext === '.csv' || ext === '.xlsx' || ext === '.xls' || ext === '.ods') return 'spreadsheet';
-  if (ext === '.docx' || ext === '.doc') return 'word';
-  if (TEXT_EXTS.has(ext)) return 'text';
+  const ext = path.extname(filename || "").toLowerCase();
+  if (ext === ".csv" || ext === ".xlsx" || ext === ".xls" || ext === ".ods")
+    return "spreadsheet";
+  if (ext === ".docx" || ext === ".doc") return "word";
+  if (TEXT_EXTS.has(ext)) return "text";
   return null; // 編集不可
 }
 
 // ── アクセス権チェック ────────────────────────────────────────────
 function canAccess(item, userId) {
   if (!item) return false;
-  if (item.ownerId && item.ownerId.toString() === userId.toString()) return true;
+  if (item.ownerId && item.ownerId.toString() === userId.toString())
+    return true;
   if (item.isPublic) return true;
-  return item.sharedWith && item.sharedWith.some(s => s.userId && s.userId.toString() === userId.toString());
+  return (
+    item.sharedWith &&
+    item.sharedWith.some(
+      (s) => s.userId && s.userId.toString() === userId.toString(),
+    )
+  );
 }
 function canEdit(item, userId) {
   if (!item) return false;
-  if (item.ownerId && item.ownerId.toString() === userId.toString()) return true;
-  const sw = item.sharedWith && item.sharedWith.find(s => s.userId && s.userId.toString() === userId.toString());
+  if (item.ownerId && item.ownerId.toString() === userId.toString())
+    return true;
+  const sw =
+    item.sharedWith &&
+    item.sharedWith.find(
+      (s) => s.userId && s.userId.toString() === userId.toString(),
+    );
   return sw && sw.canEdit;
 }
 
@@ -92,174 +203,317 @@ async function buildBreadcrumb(folderId) {
 // ============================
 // ページ: メイン（フォルダ一覧）
 // ============================
-router.get('/cloud', requireLogin, async (req, res) => {
+router.get("/cloud", requireLogin, async (req, res) => {
   try {
     const userId = req.session.userId;
     const folderId = req.query.folder || null;
 
     // フォルダ内容取得（自分のもの + 共有されているもの + 公開もの）
-    const folderQuery = folderId
-      ? { parentId: folderId }
-      : { parentId: null };
-    const [allFolders, allFiles, users] = await Promise.all([
+    const folderQuery = folderId ? { parentId: folderId } : { parentId: null };
+    const [allFolders, allFiles, users, recentFilesRaw] = await Promise.all([
       CloudFolder.find(folderQuery).lean(),
       CloudFile.find(folderId ? { folderId } : { folderId: null }).lean(),
-      User.find({}, 'username _id').lean(),
+      User.find({}, "username _id").lean(),
+      // 最近使ったファイル: ルート表示時のみ取得（自分が所有 or 編集したもの）
+      !folderId
+        ? CloudFile.find({
+            $or: [{ ownerId: userId }, { lastEditedBy: userId }],
+          })
+            .sort({ updatedAt: -1 })
+            .limit(8)
+            .lean()
+        : Promise.resolve([]),
     ]);
 
     // アクセス可能なものだけフィルタ
-    const folders = allFolders.filter(f => canAccess(f, userId));
-    const files   = allFiles.filter(f => canAccess(f, userId));
+    const folders = allFolders.filter((f) => canAccess(f, userId));
+    const files = allFiles.filter((f) => canAccess(f, userId));
     const breadcrumb = folderId ? await buildBreadcrumb(folderId) : [];
 
     const userMap = {};
-    users.forEach(u => { userMap[u._id.toString()] = u.username; });
+    users.forEach((u) => {
+      userMap[u._id.toString()] = u.username;
+    });
 
     const fmtSize = (bytes) => {
-      if (!bytes) return '-';
-      if (bytes < 1024) return bytes + ' B';
-      if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
-      return (bytes/(1024*1024)).toFixed(1) + ' MB';
+      if (!bytes) return "-";
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+      return (bytes / (1024 * 1024)).toFixed(1) + " MB";
     };
 
-    const folderRows = folders.map(f => `
+    const folderRows = folders
+      .map(
+        (f) => `
       <div class="cd-item cd-folder" ondblclick="location.href='/cloud?folder=${f._id}'">
-        <div class="cd-item-icon" style="color:${f.color||'#f59e0b'}"><i class="fa-solid fa-folder"></i></div>
+        <div class="cd-item-icon" style="color:${f.color || "#f59e0b"}"><i class="fa-solid fa-folder"></i></div>
         <div class="cd-item-info">
           <div class="cd-item-name">${escH(f.name)}</div>
-          <div class="cd-item-meta">${f.isPublic ? '🌐 全員' : f.sharedWith && f.sharedWith.length ? `👥 ${f.sharedWith.length}人` : '🔒 自分のみ'}</div>
+          <div class="cd-item-meta">${f.isPublic ? "🌐 全員" : f.sharedWith && f.sharedWith.length ? `👥 ${f.sharedWith.length}人` : "🔒 自分のみ"}</div>
         </div>
         <div class="cd-item-actions">
           <a href="/cloud?folder=${f._id}" class="cd-btn cd-btn-sm">開く</a>
-          ${f.ownerId && f.ownerId.toString() === userId ? `
+          ${
+            f.ownerId && f.ownerId.toString() === userId
+              ? `
           <button class="cd-btn cd-btn-sm cd-btn-share" onclick="openShareModal('folder','${f._id}','${escH(f.name)}',${f.isPublic})">共有</button>
           <button class="cd-btn cd-btn-sm cd-btn-del" onclick="deleteItem('folder','${f._id}','${escH(f.name)}')">削除</button>
-          ` : ''}
+          `
+              : ""
+          }
         </div>
       </div>
-    `).join('');
+    `,
+      )
+      .join("");
 
-    const fileRows = files.map(f => {
-      const ext = path.extname(f.originalName||f.name||'').toLowerCase();
-      const isImg = ['.jpg','.jpeg','.png','.gif','.webp','.svg'].includes(ext);
-      const isTxt = isTextFile(f.mimeType, f.originalName||f.name);
-      const isSheet = isSpreadsheet(f.originalName||f.name);
-      const isWord  = isWordDoc(f.originalName||f.name);
-      const editorType = getEditorType(f.originalName||f.name);
-      const icon = isImg ? '🖼️' : isSheet ? '📊' : isWord ? '📄' : isTxt ? '📝' : ext === '.pdf' ? '�' : '📦';
-      const owned = f.ownerId && f.ownerId.toString() === userId;
-      const editable = editorType && (owned || canEdit(f, userId));
-      const editLabel = isSheet ? '📊 編集' : isWord ? '📄 編集' : '✏️ 編集';
-      return `
+    const fileRows = files
+      .map((f) => {
+        const ext = path.extname(f.originalName || f.name || "").toLowerCase();
+        const isImg = [
+          ".jpg",
+          ".jpeg",
+          ".png",
+          ".gif",
+          ".webp",
+          ".svg",
+        ].includes(ext);
+        const isTxt = isTextFile(f.mimeType, f.originalName || f.name);
+        const isSheet = isSpreadsheet(f.originalName || f.name);
+        const isWord = isWordDoc(f.originalName || f.name);
+        const editorType = getEditorType(f.originalName || f.name);
+        const icon = isImg
+          ? "🖼️"
+          : isSheet
+            ? "📊"
+            : isWord
+              ? "📄"
+              : isTxt
+                ? "📝"
+                : ext === ".pdf"
+                  ? "�"
+                  : "📦";
+        const owned = f.ownerId && f.ownerId.toString() === userId;
+        const editable = editorType && (owned || canEdit(f, userId));
+        const editLabel = isSheet ? "📊 編集" : isWord ? "📄 編集" : "✏️ 編集";
+        return `
       <div class="cd-item cd-file">
         <div class="cd-item-icon cd-file-icon">${icon}</div>
         <div class="cd-item-info">
           <div class="cd-item-name">${escH(f.name)}</div>
-          <div class="cd-item-meta">${fmtSize(f.size)} · ${f.isPublic ? '🌐 全員' : f.sharedWith && f.sharedWith.length ? `👥 ${f.sharedWith.length}人` : '🔒 自分のみ'}${f.lastEditedBy ? ` · ✏️ ${userMap[f.lastEditedBy.toString()]||'?'}` : ''}</div>
+          <div class="cd-item-meta">${fmtSize(f.size)} · ${f.isPublic ? "🌐 全員" : f.sharedWith && f.sharedWith.length ? `👥 ${f.sharedWith.length}人` : "🔒 自分のみ"}${f.lastEditedBy ? ` · ✏️ ${userMap[f.lastEditedBy.toString()] || "?"}` : ""}</div>
         </div>
         <div class="cd-item-actions">
-          ${editable ? `<a href="/cloud/file/${f._id}/edit" class="cd-btn cd-btn-sm cd-btn-edit">${editLabel}</a>` : ''}
-          ${isImg ? `<a href="/uploads/cloud/${path.basename(f.filePath||'')}" target="_blank" class="cd-btn cd-btn-sm">👁 プレビュー</a>` : ''}
+          ${editable ? `<a href="/cloud/file/${f._id}/edit" class="cd-btn cd-btn-sm cd-btn-edit">${editLabel}</a>` : ""}
+          ${isImg ? `<a href="/uploads/cloud/${path.basename(f.filePath || "")}" target="_blank" class="cd-btn cd-btn-sm">👁 プレビュー</a>` : ""}
           <a href="/cloud/file/${f._id}/download" class="cd-btn cd-btn-sm">⬇ DL</a>
-          ${owned ? `
+          ${
+            owned
+              ? `
           <button class="cd-btn cd-btn-sm cd-btn-share" onclick="openShareModal('file','${f._id}','${escH(f.name)}',${f.isPublic})">共有</button>
           <button class="cd-btn cd-btn-sm cd-btn-del" onclick="deleteItem('file','${f._id}','${escH(f.name)}')">削除</button>
-          ` : ''}
+          `
+              : ""
+          }
         </div>
       </div>
-    `}).join('');
+    `;
+      })
+      .join("");
 
-    const crumbHtml = ['<a href="/cloud" class="cd-crumb-link">🏠 マイドライブ</a>', ...breadcrumb.map(b => `<a href="/cloud?folder=${b.id}" class="cd-crumb-link">${escH(b.name)}</a>`)].join('<span class="cd-crumb-sep">/</span>');
+    const crumbHtml = [
+      '<a href="/cloud" class="cd-crumb-link">🏠 マイドライブ</a>',
+      ...breadcrumb.map(
+        (b) =>
+          `<a href="/cloud?folder=${b.id}" class="cd-crumb-link">${escH(b.name)}</a>`,
+      ),
+    ].join('<span class="cd-crumb-sep">/</span>');
 
-    const usersOptions = users.filter(u => u._id.toString() !== userId).map(u => `<option value="${u._id}">${escH(u.username)}</option>`).join('');
+    const usersOptions = users
+      .filter((u) => u._id.toString() !== userId)
+      .map((u) => `<option value="${u._id}">${escH(u.username)}</option>`)
+      .join("");
 
     // ファイルタイプバッジ情報
     const FILE_TYPE_MAP = {
-      '.xlsx':{ bg:'#217346',label:'XLS' },'.xls':{ bg:'#217346',label:'XLS' },
-      '.docx':{ bg:'#2b579a',label:'DOC' },'.doc':{ bg:'#2b579a',label:'DOC' },
-      '.pdf': { bg:'#dc2626',label:'PDF' },
-      '.pptx':{ bg:'#d24726',label:'PPT' },'.ppt':{ bg:'#d24726',label:'PPT' },
-      '.txt': { bg:'#64748b',label:'TXT' },'.md': { bg:'#7c3aed',label:'MD'  },
-      '.csv': { bg:'#059669',label:'CSV' },'.json':{ bg:'#d97706',label:'JSON'},
-      '.js':  { bg:'#ca8a04',label:'JS'  },'.ts': { bg:'#3178c6',label:'TS'  },
-      '.py':  { bg:'#3776ab',label:'PY'  },'.html':{ bg:'#ea580c',label:'HTML'},
-      '.css': { bg:'#0284c7',label:'CSS' },'.sql': { bg:'#dc2626',label:'SQL' },
-      '.zip': { bg:'#92400e',label:'ZIP' },'.tar': { bg:'#92400e',label:'TAR' },
-      '.jpg': { bg:'#7c3aed',label:'IMG' },'.jpeg':{ bg:'#7c3aed',label:'IMG' },
-      '.png': { bg:'#7c3aed',label:'IMG' },'.gif': { bg:'#7c3aed',label:'GIF' },
-      '.svg': { bg:'#0891b2',label:'SVG' },'.mp4': { bg:'#ec4899',label:'MP4' },
+      ".xlsx": { bg: "#217346", label: "XLS" },
+      ".xls": { bg: "#217346", label: "XLS" },
+      ".docx": { bg: "#2b579a", label: "DOC" },
+      ".doc": { bg: "#2b579a", label: "DOC" },
+      ".pdf": { bg: "#dc2626", label: "PDF" },
+      ".pptx": { bg: "#d24726", label: "PPT" },
+      ".ppt": { bg: "#d24726", label: "PPT" },
+      ".txt": { bg: "#64748b", label: "TXT" },
+      ".md": { bg: "#7c3aed", label: "MD" },
+      ".csv": { bg: "#059669", label: "CSV" },
+      ".json": { bg: "#d97706", label: "JSON" },
+      ".js": { bg: "#ca8a04", label: "JS" },
+      ".ts": { bg: "#3178c6", label: "TS" },
+      ".py": { bg: "#3776ab", label: "PY" },
+      ".html": { bg: "#ea580c", label: "HTML" },
+      ".css": { bg: "#0284c7", label: "CSS" },
+      ".sql": { bg: "#dc2626", label: "SQL" },
+      ".zip": { bg: "#92400e", label: "ZIP" },
+      ".tar": { bg: "#92400e", label: "TAR" },
+      ".jpg": { bg: "#7c3aed", label: "IMG" },
+      ".jpeg": { bg: "#7c3aed", label: "IMG" },
+      ".png": { bg: "#7c3aed", label: "IMG" },
+      ".gif": { bg: "#7c3aed", label: "GIF" },
+      ".svg": { bg: "#0891b2", label: "SVG" },
+      ".mp4": { bg: "#ec4899", label: "MP4" },
     };
     function ftInfo(fname) {
-      const e = path.extname(fname||'').toLowerCase();
-      return FILE_TYPE_MAP[e] || { bg:'#64748b', label:(e.replace('.','').toUpperCase().substring(0,4)||'FILE') };
+      const e = path.extname(fname || "").toLowerCase();
+      return (
+        FILE_TYPE_MAP[e] || {
+          bg: "#64748b",
+          label: e.replace(".", "").toUpperCase().substring(0, 4) || "FILE",
+        }
+      );
     }
 
     // 合計サイズ計算
-    const totalSize  = files.reduce((s,f) => s + (f.size||0), 0);
-    const fmtSizeStr = totalSize > 1024*1024*1024 ? (totalSize/1024/1024/1024).toFixed(1)+' GB'
-                      : totalSize > 1024*1024 ? (totalSize/1024/1024).toFixed(1)+' MB'
-                      : totalSize > 1024 ? (totalSize/1024).toFixed(1)+' KB'
-                      : totalSize + ' B';
+    const totalSize = files.reduce((s, f) => s + (f.size || 0), 0);
+    const fmtSizeStr =
+      totalSize > 1024 * 1024 * 1024
+        ? (totalSize / 1024 / 1024 / 1024).toFixed(1) + " GB"
+        : totalSize > 1024 * 1024
+          ? (totalSize / 1024 / 1024).toFixed(1) + " MB"
+          : totalSize > 1024
+            ? (totalSize / 1024).toFixed(1) + " KB"
+            : totalSize + " B";
+
+    // 最近使ったファイル HTML
+    const recentFiles = recentFilesRaw.filter((f) => canAccess(f, userId));
+    const recentFilesHtml = recentFiles.length
+      ? `
+    <div class="drv-recent">
+      <div class="drv-section-head" style="margin-top:0"><i class="fa-solid fa-clock-rotate-left" style="color:#7c3aed"></i> 最近使ったファイル</div>
+      <div class="drv-recent-scroll">
+        ${recentFiles
+          .map((f) => {
+            const fi = ftInfo(f.originalName || f.name);
+            const dateStr = f.updatedAt
+              ? new Date(f.updatedAt).toLocaleDateString("ja-JP", {
+                  month: "numeric",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : "";
+            const ext2 = path
+              .extname(f.originalName || f.name || "")
+              .toLowerCase();
+            const isImg2 = [
+              ".jpg",
+              ".jpeg",
+              ".png",
+              ".gif",
+              ".webp",
+              ".svg",
+            ].includes(ext2);
+            const et = getEditorType(f.originalName || f.name);
+            const owned2 = f.ownerId && f.ownerId.toString() === userId;
+            const editable2 = et && (owned2 || canEdit(f, userId));
+            return `<div class="drv-recent-card" onclick="openPreview('${f._id}','${escH(f.name)}','${ext2}',${isImg2},'${f.filePath ? path.basename(f.filePath) : ""}','${editable2 ? "/cloud/file/" + f._id + "/edit" : ""}',${f.size || 0})" title="${escH(f.name)}">
+            <div class="drv-recent-typebadge" style="background:${fi.bg}">${fi.label}</div>
+            <div class="drv-recent-name">${escH(f.name)}</div>
+            <div class="drv-recent-date">${dateStr}</div>
+          </div>`;
+          })
+          .join("")}
+      </div>
+    </div>`
+      : "";
 
     // フォルダカード HTML
-    const folderCards = folders.map(f => {
-      const owned = f.ownerId && f.ownerId.toString() === userId;
-      const shareLabel = f.isPublic ? '<span class="drv-badge drv-badge-pub">全員</span>'
-                       : f.sharedWith && f.sharedWith.length ? '<span class="drv-badge drv-badge-share">共有</span>' : '';
-      return `
+    const folderCards = folders
+      .map((f) => {
+        const owned = f.ownerId && f.ownerId.toString() === userId;
+        const shareLabel = f.isPublic
+          ? '<span class="drv-badge drv-badge-pub">全員</span>'
+          : f.sharedWith && f.sharedWith.length
+            ? '<span class="drv-badge drv-badge-share">共有</span>'
+            : "";
+        return `
       <div class="drv-folder-card" ondblclick="location.href='/cloud?folder=${f._id}'" data-name="${escH(f.name)}" data-type="folder" data-id="${f._id}">
         <div class="drv-folder-icon-wrap">
-          <svg width="44" height="36" viewBox="0 0 44 36" fill="none"><path d="M2 8C2 5.8 3.8 4 6 4h13l4 4h13c2.2 0 4 1.8 4 4v20c0 2.2-1.8 4-4 4H6c-2.2 0-4-1.8-4-4V8z" fill="${f.color||'#f59e0b'}" opacity=".9"/><path d="M2 12h40v20c0 2.2-1.8 4-4 4H6c-2.2 0-4-1.8-4-4V12z" fill="${f.color||'#f59e0b'}"/></svg>
+          <svg width="44" height="36" viewBox="0 0 44 36" fill="none"><path d="M2 8C2 5.8 3.8 4 6 4h13l4 4h13c2.2 0 4 1.8 4 4v20c0 2.2-1.8 4-4 4H6c-2.2 0-4-1.8-4-4V8z" fill="${f.color || "#f59e0b"}" opacity=".9"/><path d="M2 12h40v20c0 2.2-1.8 4-4 4H6c-2.2 0-4-1.8-4-4V12z" fill="${f.color || "#f59e0b"}"/></svg>
         </div>
         <div class="drv-folder-name">${escH(f.name)}</div>
         <div class="drv-folder-meta">${shareLabel}</div>
         <div class="drv-card-actions">
           <a href="/cloud?folder=${f._id}" class="drv-act-btn" title="開く"><i class="fa-solid fa-folder-open"></i></a>
-          ${owned ? `<button class="drv-act-btn" title="共有" onclick="event.stopPropagation();openShareModal('folder','${f._id}','${escH(f.name)}',${f.isPublic})"><i class="fa-solid fa-user-plus"></i></button>` : ''}
-          ${owned ? `<button class="drv-act-btn drv-act-del" title="削除" onclick="event.stopPropagation();deleteItem('folder','${f._id}','${escH(f.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
+          ${owned ? `<button class="drv-act-btn" title="共有" onclick="event.stopPropagation();openShareModal('folder','${f._id}','${escH(f.name)}',${f.isPublic})"><i class="fa-solid fa-user-plus"></i></button>` : ""}
+          ${owned ? `<button class="drv-act-btn drv-act-del" title="削除" onclick="event.stopPropagation();deleteItem('folder','${f._id}','${escH(f.name)}')"><i class="fa-solid fa-trash"></i></button>` : ""}
         </div>
       </div>`;
-    }).join('');
+      })
+      .join("");
 
     // ファイルカード HTML
-    const fileCards = files.map(f => {
-      const fi     = ftInfo(f.originalName||f.name);
-      const ext    = path.extname(f.originalName||f.name||'').toLowerCase();
-      const isImg  = ['.jpg','.jpeg','.png','.gif','.webp','.svg'].includes(ext);
-      const etype  = getEditorType(f.originalName||f.name);
-      const owned  = f.ownerId && f.ownerId.toString() === userId;
-      const editable = etype && (owned || canEdit(f, userId));
-      const sz     = fmtSize(f.size);
-      const modBy  = f.lastEditedBy ? userMap[f.lastEditedBy.toString()]||'?' : '';
-      const shareLabel = f.isPublic ? '<span class="drv-badge drv-badge-pub">全員</span>'
-                       : f.sharedWith && f.sharedWith.length ? '<span class="drv-badge drv-badge-share">共有</span>' : '';
-      const imgThumb = isImg && f.filePath
-        ? `<div class="drv-file-thumb" style="background-image:url('/uploads/cloud/${path.basename(f.filePath)}')"></div>`
-        : `<div class="drv-file-typebadge" style="background:${fi.bg}">${fi.label}</div>`;
-      return `
-      <div class="drv-file-card" data-name="${escH(f.name)}" data-ext="${ext}" data-size="${f.size||0}" data-modified="${f.updatedAt||''}">
+    const fileCards = files
+      .map((f) => {
+        const fi = ftInfo(f.originalName || f.name);
+        const ext = path.extname(f.originalName || f.name || "").toLowerCase();
+        const isImg = [
+          ".jpg",
+          ".jpeg",
+          ".png",
+          ".gif",
+          ".webp",
+          ".svg",
+        ].includes(ext);
+        const etype = getEditorType(f.originalName || f.name);
+        const owned = f.ownerId && f.ownerId.toString() === userId;
+        const editable = etype && (owned || canEdit(f, userId));
+        const sz = fmtSize(f.size);
+        const modBy = f.lastEditedBy
+          ? userMap[f.lastEditedBy.toString()] || "?"
+          : "";
+        const shareLabel = f.isPublic
+          ? '<span class="drv-badge drv-badge-pub">全員</span>'
+          : f.sharedWith && f.sharedWith.length
+            ? '<span class="drv-badge drv-badge-share">共有</span>'
+            : "";
+        const imgThumb =
+          isImg && f.filePath
+            ? `<div class="drv-file-thumb" style="background-image:url('/uploads/cloud/${path.basename(f.filePath)}')"></div>`
+            : `<div class="drv-file-typebadge" style="background:${fi.bg}">${fi.label}</div>`;
+        return `
+      <div class="drv-file-card" data-name="${escH(f.name)}" data-ext="${ext}" data-size="${f.size || 0}" data-modified="${f.updatedAt || ""}"
+           onclick="openPreview('${f._id}','${escH(f.name)}','${ext}',${isImg},'${f.filePath ? path.basename(f.filePath) : ""}','${editable ? "/cloud/file/" + f._id + "/edit" : ""}',${f.size || 0})" style="cursor:pointer">
         <div class="drv-file-preview">${imgThumb}</div>
         <div class="drv-file-body">
           <div class="drv-file-name" title="${escH(f.name)}">${escH(f.name)}</div>
-          <div class="drv-file-meta">${sz}${modBy ? ' · '+escH(modBy) : ''}${shareLabel ? ' '+shareLabel : ''}</div>
+          <div class="drv-file-meta">${sz}${modBy ? " · " + escH(modBy) : ""}${shareLabel ? " " + shareLabel : ""}</div>
         </div>
         <div class="drv-card-actions">
-          ${editable ? `<a href="/cloud/file/${f._id}/edit" class="drv-act-btn drv-act-edit" title="編集"><i class="fa-solid fa-pen"></i></a>` : ''}
-          ${isImg    ? `<a href="/uploads/cloud/${path.basename(f.filePath||'')}" target="_blank" class="drv-act-btn" title="プレビュー"><i class="fa-solid fa-eye"></i></a>` : ''}
-          <a href="/cloud/file/${f._id}/download" class="drv-act-btn" title="ダウンロード"><i class="fa-solid fa-download"></i></a>
-          ${owned ? `<button class="drv-act-btn" title="共有" onclick="event.stopPropagation();openShareModal('file','${f._id}','${escH(f.name)}',${f.isPublic})"><i class="fa-solid fa-user-plus"></i></button>` : ''}
-          ${owned ? `<button class="drv-act-btn drv-act-del" title="削除" onclick="event.stopPropagation();deleteItem('file','${f._id}','${escH(f.name)}')"><i class="fa-solid fa-trash"></i></button>` : ''}
+          ${editable ? `<a href="/cloud/file/${f._id}/edit" class="drv-act-btn drv-act-edit" title="編集" onclick="event.stopPropagation()"><i class="fa-solid fa-pen"></i></a>` : ""}
+          ${isImg ? `<a href="/uploads/cloud/${path.basename(f.filePath || "")}" target="_blank" class="drv-act-btn" title="プレビュー" onclick="event.stopPropagation()"><i class="fa-solid fa-eye"></i></a>` : ""}
+          <a href="/cloud/file/${f._id}/download" class="drv-act-btn" title="ダウンロード" onclick="event.stopPropagation()"><i class="fa-solid fa-download"></i></a>
+          ${owned ? `<button class="drv-act-btn" title="共有" onclick="event.stopPropagation();openShareModal('file','${f._id}','${escH(f.name)}',${f.isPublic})"><i class="fa-solid fa-user-plus"></i></button>` : ""}
+          ${owned ? `<button class="drv-act-btn drv-act-del" title="削除" onclick="event.stopPropagation();deleteItem('file','${f._id}','${escH(f.name)}')"><i class="fa-solid fa-trash"></i></button>` : ""}
         </div>
       </div>`;
-    }).join('');
+      })
+      .join("");
 
     // パンくず
     const crumbParts = [
       `<a href="/cloud" class="drv-crumb-link"><i class="fa-solid fa-house" style="font-size:13px"></i> マイドライブ</a>`,
-      ...breadcrumb.map(b => `<a href="/cloud?folder=${b.id}" class="drv-crumb-link">${escH(b.name)}</a>`),
+      ...breadcrumb.map(
+        (b) =>
+          `<a href="/cloud?folder=${b.id}" class="drv-crumb-link">${escH(b.name)}</a>`,
+      ),
     ];
 
-    renderPage(req, res, 'クラウドドライブ', 'ファイル共有・同時編集', `
+    renderPage(
+      req,
+      res,
+      "クラウドドライブ",
+      "ファイル共有・同時編集",
+      `
 <style>
 /* ─── Base ─── */
 .drv-root{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:#1e293b;min-height:80vh}
@@ -402,6 +656,39 @@ body.drv-dragging .drv-drop-hint{display:flex!important}
   .drv-modal-foot{flex-direction:column}
   .drv-modal-foot .drv-btn{width:100%;justify-content:center}
 }
+
+/* ─── Preview Panel ─── */
+.drv-preview-overlay{display:none;position:fixed;inset:0;z-index:8000;background:rgba(15,23,42,.35);backdrop-filter:blur(2px)}
+.drv-preview-overlay.open{display:block}
+.drv-preview-panel{position:fixed;top:0;right:0;bottom:0;width:420px;max-width:95vw;background:#fff;box-shadow:-8px 0 40px rgba(0,0,0,.18);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s cubic-bezier(.4,0,.2,1);z-index:8001}
+.drv-preview-panel.open{transform:translateX(0)}
+.drv-preview-header{display:flex;align-items:center;gap:10px;padding:18px 18px 14px;border-bottom:1.5px solid #f1f5f9;flex-shrink:0}
+.drv-preview-title{flex:1;font-size:14px;font-weight:700;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.drv-preview-close{border:none;background:none;cursor:pointer;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:18px;transition:all .1s;flex-shrink:0}
+.drv-preview-close:hover{background:#f1f5f9;color:#1e293b}
+.drv-preview-meta{padding:12px 18px;border-bottom:1.5px solid #f8fafc;display:flex;gap:12px;flex-wrap:wrap;flex-shrink:0}
+.drv-preview-meta-item{display:flex;align-items:center;gap:5px;font-size:11px;color:#64748b}
+.drv-preview-meta-item strong{color:#1e293b}
+.drv-preview-body{flex:1;overflow-y:auto;padding:16px 18px;min-height:0}
+.drv-preview-code{font-family:'JetBrains Mono','Fira Code','Consolas',monospace;font-size:12px;line-height:1.65;color:#334155;white-space:pre-wrap;word-break:break-all;background:#f8fafc;border-radius:8px;padding:14px;border:1px solid #f1f5f9;max-height:100%;overflow-y:auto}
+.drv-preview-img{max-width:100%;max-height:100%;border-radius:8px;display:block;margin:auto}
+.drv-preview-footer{padding:12px 18px;border-top:1.5px solid #f1f5f9;display:flex;gap:8px;flex-shrink:0}
+.drv-preview-no-support{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#94a3b8;text-align:center;gap:12px}
+.drv-preview-no-support i{font-size:48px;color:#cbd5e1}
+
+/* ─── Recent Files ─── */
+.drv-recent{margin-bottom:28px}
+.drv-recent-scroll{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
+.drv-recent-card{flex:0 0 160px;background:#fff;border:1.5px solid #f1f5f9;border-radius:12px;padding:12px;cursor:pointer;transition:all .15s;position:relative}
+.drv-recent-card:hover{border-color:#bfdbfe;box-shadow:0 3px 12px rgba(37,99,235,.1);transform:translateY(-1px)}
+.drv-recent-typebadge{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;margin-bottom:8px;letter-spacing:.04em}
+.drv-recent-name{font-size:11px;font-weight:700;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+.drv-recent-date{font-size:10px;color:#94a3b8}
+
+@media(max-width:640px){
+  .drv-preview-panel{width:100vw}
+  .drv-recent-card{flex:0 0 130px}
+}
 </style>
 
 <!-- ドラッグ&ドロップ ヒントオーバーレイ -->
@@ -462,25 +749,37 @@ body.drv-dragging .drv-drop-hint{display:flex!important}
     <div class="drv-stat"><i class="fa-solid fa-file" style="color:#2563eb"></i><strong>${files.length}</strong> ファイル</div>
     <div class="drv-stat-divider"></div>
     <div class="drv-stat"><i class="fa-solid fa-database" style="color:#7c3aed"></i><strong>${fmtSizeStr}</strong> 使用中</div>
-    ${folderId ? '' : '<div style="margin-left:auto"><span style="font-size:11px;color:#94a3b8"><i class="fa-solid fa-info-circle"></i> ダブルクリックでフォルダを開く・右上アイコンで操作</span></div>'}
+    ${folderId ? "" : '<div style="margin-left:auto"><span style="font-size:11px;color:#94a3b8"><i class="fa-solid fa-info-circle"></i> クリックでプレビュー・ダブルクリックでフォルダを開く</span></div>'}
   </div>
+
+  <!-- ─── 最近使ったファイル ─── -->
+  ${recentFilesHtml}
 
   <!-- ─── コンテンツエリア ─── -->
   <div id="drv-content">
-    ${folders.length === 0 && files.length === 0 ? `
+    ${
+      folders.length === 0 && files.length === 0
+        ? `
     <div class="drv-empty">
       <div class="drv-empty-icon">☁</div>
       <h3>このフォルダは空です</h3>
       <p>ファイルをアップロードするか、新規フォルダを作成してください。<br>ドラッグ＆ドロップにも対応しています。</p>
       <button class="drv-btn drv-btn-primary" onclick="openUploadModal()"><i class="fa-solid fa-cloud-arrow-up"></i> ファイルをアップロード</button>
-    </div>` : `
+    </div>`
+        : `
 
-    ${folders.length ? `
+    ${
+      folders.length
+        ? `
     <div class="drv-section-head"><i class="fa-solid fa-folder" style="color:#f59e0b"></i> フォルダ</div>
     <div class="drv-folders-grid" id="folders-grid">${folderCards}</div>
-    ` : ''}
+    `
+        : ""
+    }
 
-    ${files.length ? `
+    ${
+      files.length
+        ? `
     <div class="drv-section-head"><i class="fa-solid fa-file" style="color:#2563eb"></i> ファイル</div>
     <div id="files-grid-wrap">
       <!-- グリッドビュー -->
@@ -496,34 +795,50 @@ body.drv-dragging .drv-drop-hint{display:flex!important}
             <th></th>
           </tr></thead>
           <tbody id="files-list-body">
-            ${files.map(f => {
-              const fi2 = ftInfo(f.originalName||f.name);
-              const ext2 = path.extname(f.originalName||f.name||'').toLowerCase();
-              const etype2 = getEditorType(f.originalName||f.name);
-              const owned2 = f.ownerId && f.ownerId.toString() === userId;
-              const editable2 = etype2 && (owned2 || canEdit(f, userId));
-              const isImg2 = ['.jpg','.jpeg','.png','.gif','.webp','.svg'].includes(ext2);
-              const modBy2 = f.lastEditedBy ? userMap[f.lastEditedBy.toString()]||'?' : '-';
-              return `<tr data-name="${escH(f.name)}" data-size="${f.size||0}" data-modified="${f.updatedAt||''}">
+            ${files
+              .map((f) => {
+                const fi2 = ftInfo(f.originalName || f.name);
+                const ext2 = path
+                  .extname(f.originalName || f.name || "")
+                  .toLowerCase();
+                const etype2 = getEditorType(f.originalName || f.name);
+                const owned2 = f.ownerId && f.ownerId.toString() === userId;
+                const editable2 = etype2 && (owned2 || canEdit(f, userId));
+                const isImg2 = [
+                  ".jpg",
+                  ".jpeg",
+                  ".png",
+                  ".gif",
+                  ".webp",
+                  ".svg",
+                ].includes(ext2);
+                const modBy2 = f.lastEditedBy
+                  ? userMap[f.lastEditedBy.toString()] || "?"
+                  : "-";
+                return `<tr data-name="${escH(f.name)}" data-size="${f.size || 0}" data-modified="${f.updatedAt || ""}">
                 <td><span class="drv-list-icon" style="background:${fi2.bg}">${fi2.label}</span><span class="drv-list-name" title="${escH(f.name)}">${escH(f.name)}</span></td>
                 <td style="color:#64748b;font-size:12px">${fi2.label}</td>
                 <td style="color:#64748b;font-size:12px;white-space:nowrap">${fmtSize(f.size)}</td>
                 <td style="color:#64748b;font-size:12px">${escH(modBy2)}</td>
                 <td><div class="drv-list-actions">
-                  ${editable2 ? `<a href="/cloud/file/${f._id}/edit" class="drv-act-btn drv-act-edit" title="編集"><i class="fa-solid fa-pen"></i></a>` : ''}
-                  ${isImg2 ? `<a href="/uploads/cloud/${path.basename(f.filePath||'')}" target="_blank" class="drv-act-btn" title="プレビュー"><i class="fa-solid fa-eye"></i></a>` : ''}
+                  ${editable2 ? `<a href="/cloud/file/${f._id}/edit" class="drv-act-btn drv-act-edit" title="編集"><i class="fa-solid fa-pen"></i></a>` : ""}
+                  ${isImg2 ? `<a href="/uploads/cloud/${path.basename(f.filePath || "")}" target="_blank" class="drv-act-btn" title="プレビュー"><i class="fa-solid fa-eye"></i></a>` : ""}
                   <a href="/cloud/file/${f._id}/download" class="drv-act-btn" title="ダウンロード"><i class="fa-solid fa-download"></i></a>
-                  ${owned2 ? `<button class="drv-act-btn" onclick="openShareModal('file','${f._id}','${escH(f.name)}',${f.isPublic})" title="共有"><i class="fa-solid fa-user-plus"></i></button>` : ''}
-                  ${owned2 ? `<button class="drv-act-btn drv-act-del" onclick="deleteItem('file','${f._id}','${escH(f.name)}')" title="削除"><i class="fa-solid fa-trash"></i></button>` : ''}
+                  ${owned2 ? `<button class="drv-act-btn" onclick="openShareModal('file','${f._id}','${escH(f.name)}',${f.isPublic})" title="共有"><i class="fa-solid fa-user-plus"></i></button>` : ""}
+                  ${owned2 ? `<button class="drv-act-btn drv-act-del" onclick="deleteItem('file','${f._id}','${escH(f.name)}')" title="削除"><i class="fa-solid fa-trash"></i></button>` : ""}
                 </div></td>
               </tr>`;
-            }).join('')}
+              })
+              .join("")}
           </tbody>
         </table>
       </div>
     </div>
-    ` : ''}
-    `}
+    `
+        : ""
+    }
+    `
+    }
   </div>
 </div>
 
@@ -535,7 +850,7 @@ body.drv-dragging .drv-drop-hint{display:flex!important}
       <button class="drv-modal-close" onclick="closeModal('folder-modal')">×</button>
     </div>
     <form method="post" action="/cloud/folder">
-      <input type="hidden" name="parentId" value="${folderId||''}">
+      <input type="hidden" name="parentId" value="${folderId || ""}">
       <div class="drv-field">
         <label class="drv-label">フォルダ名</label>
         <input type="text" name="name" class="drv-input" required placeholder="例: プロジェクト資料" autofocus>
@@ -563,7 +878,7 @@ body.drv-dragging .drv-drop-hint{display:flex!important}
       <button class="drv-modal-close" onclick="closeModal('upload-modal')">×</button>
     </div>
     <form id="upload-form">
-      <input type="hidden" name="folderId" value="${folderId||''}">
+      <input type="hidden" name="folderId" value="${folderId || ""}">
       <div class="drv-upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
         <i class="fa-solid fa-cloud-arrow-up"></i>
         <div style="font-size:14px;font-weight:700;margin-bottom:4px">クリックまたはドラッグ&ドロップ</div>
@@ -629,6 +944,23 @@ body.drv-dragging .drv-drop-hint{display:flex!important}
       </div>
     </form>
   </div>
+</div>
+
+<!-- ─── プレビューパネル ─── -->
+<div class="drv-preview-overlay" id="preview-overlay" onclick="closePreview()"></div>
+<div class="drv-preview-panel" id="preview-panel">
+  <div class="drv-preview-header">
+    <div class="drv-preview-title" id="preview-filename">-</div>
+    <button class="drv-preview-close" onclick="closePreview()" title="閉じる">×</button>
+  </div>
+  <div class="drv-preview-meta" id="preview-meta"></div>
+  <div class="drv-preview-body" id="preview-body">
+    <div class="drv-preview-no-support">
+      <i class="fa-solid fa-file-circle-question"></i>
+      <div>プレビューを読み込んでいます...</div>
+    </div>
+  </div>
+  <div class="drv-preview-footer" id="preview-footer"></div>
 </div>
 
 <script>
@@ -814,106 +1146,206 @@ function saveShare(){
     body:JSON.stringify({isPublic,sharedWith:shareUsers.map(s=>({userId:s.userId,canEdit:s.canEdit}))}),
   }).then(r=>r.json()).then(d=>{if(d.ok){closeModal('share-modal');location.reload();}else alert('保存に失敗しました');});
 }
+
+/* ─── プレビューパネル ─── */
+function openPreview(fileId, fileName, ext, isImg, basename, editUrl, size) {
+  const panel   = document.getElementById('preview-panel');
+  const overlay = document.getElementById('preview-overlay');
+  const bodyEl  = document.getElementById('preview-body');
+  const metaEl  = document.getElementById('preview-meta');
+  const footEl  = document.getElementById('preview-footer');
+  document.getElementById('preview-filename').textContent = fileName;
+
+  const fmtSz = s => {
+    if(!s) return '-';
+    if(s < 1024) return s + ' B';
+    if(s < 1024*1024) return (s/1024).toFixed(1) + ' KB';
+    return (s/(1024*1024)).toFixed(1) + ' MB';
+  };
+  metaEl.innerHTML = \`
+    <div class="drv-preview-meta-item"><i class="fa-solid fa-file" style="color:#2563eb"></i> <strong>\${ext || 'unknown'}</strong></div>
+    <div class="drv-preview-meta-item"><i class="fa-solid fa-database" style="color:#7c3aed"></i> <strong>\${fmtSz(size)}</strong></div>
+  \`;
+  footEl.innerHTML = \`
+    <a href="/cloud/file/\${fileId}/download" class="drv-btn drv-btn-ghost" style="font-size:12px;padding:7px 14px"><i class="fa-solid fa-download"></i> ダウンロード</a>
+    \${editUrl ? \`<a href="\${editUrl}" class="drv-btn drv-btn-primary" style="font-size:12px;padding:7px 14px"><i class="fa-solid fa-pen"></i> 編集</a>\` : ''}
+  \`;
+
+  // オープン
+  overlay.classList.add('open');
+  panel.classList.add('open');
+
+  // 画像プレビュー
+  const IMG_EXTS = ['.jpg','.jpeg','.png','.gif','.webp','.svg'];
+  if (isImg && basename) {
+    bodyEl.innerHTML = \`<img src="/uploads/cloud/\${basename}" class="drv-preview-img" alt="\${escH(fileName)}">\`;
+    return;
+  }
+
+  // テキスト/JSON/コード プレビュー（APIで取得）
+  const TEXT_PREVIEW_EXTS = new Set([
+    '.txt','.md','.json','.js','.ts','.css','.html','.xml','.yaml','.yml',
+    '.py','.java','.c','.cpp','.sh','.bash','.sql','.csv','.env',
+  ]);
+  if (TEXT_PREVIEW_EXTS.has(ext)) {
+    bodyEl.innerHTML = '<div style="color:#94a3b8;padding:20px;text-align:center"><i class="fa-solid fa-spinner fa-spin"></i> 読み込み中...</div>';
+    fetch('/cloud/file/' + fileId + '/preview')
+      .then(r => r.json())
+      .then(d => {
+        if(!d.ok){ bodyEl.innerHTML = '<div class="drv-preview-no-support"><i class="fa-solid fa-triangle-exclamation"></i><div>プレビューを読み込めませんでした</div></div>'; return; }
+        const escaped = d.content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        bodyEl.innerHTML = \`<pre class="drv-preview-code">\${escaped}</pre>\`;
+      })
+      .catch(() => { bodyEl.innerHTML = '<div class="drv-preview-no-support"><i class="fa-solid fa-triangle-exclamation"></i><div>通信エラー</div></div>'; });
+    return;
+  }
+
+  // その他（プレビュー非対応）
+  bodyEl.innerHTML = \`<div class="drv-preview-no-support">
+    <i class="fa-solid fa-file-circle-xmark"></i>
+    <div style="font-weight:700;color:#475569">\${escH(fileName)}</div>
+    <div style="font-size:12px">このファイル形式はプレビューに対応していません</div>
+    <a href="/cloud/file/\${fileId}/download" class="drv-btn drv-btn-primary" style="margin-top:8px;font-size:12px;padding:8px 18px"><i class="fa-solid fa-download"></i> ダウンロード</a>
+  </div>\`;
+}
+
+function closePreview() {
+  document.getElementById('preview-panel').classList.remove('open');
+  document.getElementById('preview-overlay').classList.remove('open');
+}
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closePreview(); });
 </script>
-    `);
-  } catch(err) {
-    console.error('[Cloud] index error:', err);
-    res.redirect('/dashboard');
+    `,
+    );
+  } catch (err) {
+    console.error("[Cloud] index error:", err);
+    res.redirect("/dashboard");
   }
 });
 
 // ============================
 // フォルダ作成
 // ============================
-router.post('/cloud/folder', requireLogin, async (req, res) => {
+router.post("/cloud/folder", requireLogin, async (req, res) => {
   try {
     const { name, parentId, isPublic } = req.body;
     await CloudFolder.create({
       name: name.trim(),
       ownerId: req.session.userId,
       parentId: parentId || null,
-      isPublic: isPublic === 'true',
+      isPublic: isPublic === "true",
     });
-    const redirect = parentId ? `/cloud?folder=${parentId}` : '/cloud';
+    const redirect = parentId ? `/cloud?folder=${parentId}` : "/cloud";
     res.redirect(redirect);
-  } catch(err) {
-    console.error('[Cloud] folder create error:', err);
-    res.redirect('/cloud');
+  } catch (err) {
+    console.error("[Cloud] folder create error:", err);
+    res.redirect("/cloud");
   }
 });
 
 // ============================
 // ファイルアップロード
 // ============================
-router.post('/cloud/upload', requireLogin, upload.array('files', 20), async (req, res) => {
-  try {
-    const { folderId, isPublic } = req.body;
-    const uid = req.session.userId;
-    for (const f of req.files || []) {
-      const isText = isTextFile(f.mimetype, f.originalname);
-      let textContent = null;
-      if (isText) {
-        try { textContent = fs.readFileSync(f.path, 'utf8'); } catch(e) {}
+router.post(
+  "/cloud/upload",
+  requireLogin,
+  upload.array("files", 20),
+  async (req, res) => {
+    try {
+      const { folderId, isPublic } = req.body;
+      const uid = req.session.userId;
+      for (const f of req.files || []) {
+        // multer はファイル名を latin1 で渡すため UTF-8 に変換する（日本語ファイル名の文字化け防止）
+        const originalname = Buffer.from(f.originalname, "latin1").toString(
+          "utf8",
+        );
+        const isText = isTextFile(f.mimetype, originalname);
+        let textContent = null;
+        if (isText) {
+          try {
+            const rawBuf = fs.readFileSync(f.path);
+            textContent = toUtf8String(rawBuf);
+            // アップロードされたファイルをUTF-8で書き戻す（文字化け防止）
+            fs.writeFileSync(f.path, textContent, "utf8");
+          } catch (e) {
+            console.error("[Cloud] encoding convert error:", e);
+            try {
+              textContent = fs.readFileSync(f.path, "utf8");
+            } catch (e2) {}
+          }
+        }
+        await CloudFile.create({
+          name: originalname,
+          originalName: originalname,
+          filePath: f.path,
+          mimeType: f.mimetype,
+          size: f.size,
+          folderId: folderId || null,
+          ownerId: uid,
+          isPublic: isPublic === "true",
+          textContent,
+        });
       }
-      await CloudFile.create({
-        name:         f.originalname,
-        originalName: f.originalname,
-        filePath:     f.path,
-        mimeType:     f.mimetype,
-        size:         f.size,
-        folderId:     folderId || null,
-        ownerId:      uid,
-        isPublic:     isPublic === 'true',
-        textContent,
-      });
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[Cloud] upload error:", err);
+      res.status(500).json({ ok: false, error: err.message });
     }
-    res.json({ ok: true });
-  } catch(err) {
-    console.error('[Cloud] upload error:', err);
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
+  },
+);
 
 // ============================
 // ファイルダウンロード
 // ============================
-router.get('/cloud/file/:id/download', requireLogin, async (req, res) => {
+router.get("/cloud/file/:id/download", requireLogin, async (req, res) => {
   try {
     const file = await CloudFile.findById(req.params.id).lean();
-    if (!file || !canAccess(file, req.session.userId)) return res.status(403).send('アクセス拒否');
+    if (!file || !canAccess(file, req.session.userId))
+      return res.status(403).send("アクセス拒否");
     if (file.filePath && fs.existsSync(file.filePath)) {
       return res.download(file.filePath, file.originalName || file.name);
     }
     if (file.textContent !== null && file.textContent !== undefined) {
-      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.originalName||file.name)}"`);
-      return res.send(file.textContent);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${encodeURIComponent(file.originalName || file.name)}"`,
+      );
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      return res.send(Buffer.from(file.textContent, "utf8"));
     }
-    res.status(404).send('ファイルが見つかりません');
-  } catch(err) {
-    res.status(500).send('エラー');
+    res.status(404).send("ファイルが見つかりません");
+  } catch (err) {
+    res.status(500).send("エラー");
   }
 });
 
 // ============================
 // テキストファイル 同時編集エディタ
 // ============================
-router.get('/cloud/file/:id/edit', requireLogin, async (req, res) => {
+router.get("/cloud/file/:id/edit", requireLogin, async (req, res) => {
   try {
     const file = await CloudFile.findById(req.params.id).lean();
-    if (!file) return res.status(404).send('ファイルが見つかりません');
-    if (!canAccess(file, req.session.userId)) return res.status(403).send('アクセス拒否');
+    if (!file) return res.status(404).send("ファイルが見つかりません");
+    if (!canAccess(file, req.session.userId))
+      return res.status(403).send("アクセス拒否");
 
-    const editable   = canEdit(file, req.session.userId);
-    const fname      = file.originalName || file.name || '';
+    const editable = canEdit(file, req.session.userId);
+    const fname = file.originalName || file.name || "";
     const editorType = getEditorType(fname);
-    const ext        = path.extname(fname).toLowerCase().replace('.', '');
-    const backUrl    = '/cloud' + (file.folderId ? '?folder=' + file.folderId : '');
+    const ext = path.extname(fname).toLowerCase().replace(".", "");
+    const backUrl =
+      "/cloud" + (file.folderId ? "?folder=" + file.folderId : "");
 
     // ─────────────────────────────────────────────────────────
     // スプレッドシート（xlsx / xls / csv）
     // ─────────────────────────────────────────────────────────
-    if (editorType === 'spreadsheet') {
-      return renderPage(req, res, file.name, 'スプレッドシート編集', `
+    if (editorType === "spreadsheet") {
+      return renderPage(
+        req,
+        res,
+        file.name,
+        "スプレッドシート編集",
+        `
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/handsontable@14.5.0/dist/handsontable.full.min.css">
 <style>
 .sp-wrap{max-width:100%;margin:0 auto;isolation:isolate;position:relative;z-index:0}
@@ -923,7 +1355,7 @@ router.get('/cloud/file/:id/edit', requireLogin, async (req, res) => {
 .sp-sheet-tabs{display:flex;gap:4px;margin-bottom:0;background:#f8fafc;padding:8px 12px 0;border-radius:12px 12px 0 0;border:1.5px solid #e5e7eb;border-bottom:none;overflow-x:auto}
 .sp-tab{padding:7px 18px;border-radius:8px 8px 0 0;font-size:13px;font-weight:600;cursor:pointer;background:#e5e7eb;color:#6b7280;border:none;transition:all .15s}
 .sp-tab.active{background:#fff;color:#2563eb;border:1.5px solid #e5e7eb;border-bottom:2px solid #fff;margin-bottom:-2px}
-#hot-container{border:1.5px solid #e5e7eb;border-radius:0 12px 12px 12px;overflow:hidden;min-height:500px;position:relative;z-index:0}
+#hot-container{border:1.5px solid #e5e7eb;border-radius:0 12px 12px 12px;overflow:auto;min-height:500px;position:relative;z-index:0}
 /* Handsontableの固定列・行番号がサイドバー等の上に出ないよう z-index を制限 */
 .handsontable .wtHolder{z-index:auto!important}
 .handsontable .ht_clone_left,.handsontable .ht_clone_top,.handsontable .ht_clone_top_left_corner,.handsontable .ht_clone_bottom,.handsontable .ht_clone_bottom_left_corner{z-index:1!important}
@@ -949,12 +1381,12 @@ router.get('/cloud/file/:id/edit', requireLogin, async (req, res) => {
     <span class="sp-badge">.${ext}</span>
     <span class="sp-badge" id="online-badge" style="background:#f3f4f6;color:#6b7280">👁 読み込み中...</span>
     <a href="${backUrl}" class="cd-btn cd-btn-secondary">← 戻る</a>
-    ${editable ? '<button class="cd-btn cd-btn-primary" id="save-btn" onclick="saveSheet()">💾 保存</button>' : ''}
+    ${editable ? '<button class="cd-btn cd-btn-primary" id="save-btn" onclick="saveSheet()">💾 保存</button>' : ""}
     <a href="/cloud/file/${file._id}/download" class="cd-btn cd-btn-secondary">⬇ DL</a>
   </div>
   <div class="sp-sheet-tabs" id="sheet-tabs"></div>
   <div id="hot-container"></div>
-  <div class="sp-status" id="sp-status">${editable ? '編集可能 · Ctrl+Z で元に戻す' : '閲覧のみ'}</div>
+  <div class="sp-status" id="sp-status">${editable ? "編集可能 · Ctrl+Z で元に戻す" : "閲覧のみ"}</div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/handsontable@14.5.0/dist/handsontable.full.min.js"></script>
@@ -962,7 +1394,7 @@ router.get('/cloud/file/:id/edit', requireLogin, async (req, res) => {
 <script>
 const FILE_ID  = '${file._id}';
 const EDITABLE = ${editable};
-const MY_NAME  = '${escH2(req.session.username || '?')}';
+const MY_NAME  = '${escH2(req.session.username || "?")}';
 const MY_ID    = '${req.session.userId}';
 let workbook   = null;
 let hot        = null;
@@ -972,17 +1404,40 @@ let saveTimer  = null;
 const statusEl = document.getElementById('sp-status');
 function setStatus(msg, cls){ statusEl.textContent = msg; statusEl.className = 'sp-status ' + (cls||''); }
 
+// CDN 読み込み確認
+if (typeof Handsontable === 'undefined' || typeof XLSX === 'undefined') {
+  document.getElementById('online-badge').textContent = '⚠ ライブラリ読み込み失敗';
+  document.getElementById('online-badge').style.background = '#fef2f2';
+  document.getElementById('online-badge').style.color = '#dc2626';
+  setStatus('⚠ スプレッドシートライブラリの読み込みに失敗しました。ページを再読み込みしてください。', 'saving');
+} else {
+
 // ファイルデータ取得
 fetch('/cloud/file/' + FILE_ID + '/xlsx-data')
-  .then(r => r.json())
+  .then(r => {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  })
   .then(data => {
-    if(!data.ok) { setStatus('⚠ データ読み込み失敗', 'saving'); return; }
+    if (!data.ok) {
+      document.getElementById('online-badge').textContent = '⚠ 読み込み失敗';
+      setStatus('⚠ データ読み込み失敗: ' + (data.error || '不明なエラー'), 'saving');
+      return;
+    }
     workbook = data;
     renderSheetTabs();
-    loadSheet(0);
+    // badge はシート描画の前に更新（loadSheet がエラーでも表示が残るように）
     document.getElementById('online-badge').textContent = '✅ 読み込み完了';
     setTimeout(()=>{ document.getElementById('online-badge').textContent = EDITABLE ? '✏️ 編集中' : '👁 閲覧のみ'; }, 1500);
+    loadSheet(0);
+  })
+  .catch(err => {
+    console.error('[xlsx-editor] fetch error:', err);
+    document.getElementById('online-badge').textContent = '⚠ 通信エラー';
+    setStatus('⚠ データ取得に失敗しました: ' + err.message, 'saving');
   });
+
+} // end CDN check
 
 function renderSheetTabs() {
   const tabs = document.getElementById('sheet-tabs');
@@ -994,26 +1449,34 @@ function loadSheet(idx) {
   currentSheet = idx;
   document.querySelectorAll('.sp-tab').forEach((t,i) => t.classList.toggle('active', i===idx));
   const sheetData = workbook.sheets[idx].data;
-  if(hot) { hot.destroy(); hot = null; }
-  hot = new Handsontable(document.getElementById('hot-container'), {
-    data: sheetData.length ? sheetData : [['']],
-    rowHeaders: true,
-    colHeaders: true,
-    licenseKey: 'non-commercial-and-evaluation',
-    readOnly: !EDITABLE,
-    contextMenu: EDITABLE,
-    manualColumnResize: true,
-    manualRowResize: true,
-    minSpareRows: EDITABLE ? 5 : 0,
-    minSpareCols: EDITABLE ? 2 : 0,
-    stretchH: 'all',
-    height: 'auto',
-    afterChange: EDITABLE ? () => {
-      setStatus('変更あり...', 'saving');
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(autoSave, 1500);
-    } : undefined,
-  });
+  if (hot) { hot.destroy(); hot = null; }
+  const container = document.getElementById('hot-container');
+  try {
+    hot = new Handsontable(container, {
+      data: sheetData.length ? sheetData : [['']],
+      rowHeaders: true,
+      colHeaders: true,
+      licenseKey: 'non-commercial-and-evaluation',
+      readOnly: !EDITABLE,
+      contextMenu: EDITABLE,
+      manualColumnResize: true,
+      manualRowResize: true,
+      minSpareRows: EDITABLE ? 5 : 0,
+      minSpareCols: EDITABLE ? 2 : 0,
+      stretchH: 'all',
+      height: 500,
+      width: '100%',
+      afterChange: EDITABLE ? () => {
+        setStatus('変更あり...', 'saving');
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(autoSave, 1500);
+      } : undefined,
+    });
+  } catch(err) {
+    console.error('[xlsx-editor] Handsontable init error:', err);
+    container.innerHTML = '<div style="padding:24px;color:#dc2626;font-size:13px">⚠ スプレッドシートの初期化に失敗しました: ' + err.message + '</div>';
+    setStatus('⚠ 表示エラー: ' + err.message, 'saving');
+  }
 }
 function escH(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -1048,8 +1511,8 @@ function buildCsvText() {
   const data = trimData(hot.getData());
   return data.map(row => row.map(c => {
     const s = String(c === null || c === undefined ? '' : c);
-    return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g,'""') + '"' : s;
-  }).join(',')).join('\r\n');
+    return s.includes(',') || s.includes('"') || s.includes('\\n') ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(',')).join('\\r\\n');
 }
 
 function autoSave() {
@@ -1102,28 +1565,45 @@ window.addEventListener('beforeunload', () => {
   if(socket) socket.emit('cloud_leave_doc', { fileId: FILE_ID, username: MY_NAME, userId: MY_ID });
 });
 </script>
-      `);
+      `,
+      );
     }
 
     // ─────────────────────────────────────────────────────────
     // Word ドキュメント（docx / doc）
     // ─────────────────────────────────────────────────────────
-    if (editorType === 'word') {
+    if (editorType === "word") {
       // mammoth で docx → HTML 変換
-      let docHtml = '<p>（ドキュメントの内容を読み込めませんでした）</p>';
+      let docHtml = "<p>（ドキュメントの内容を読み込めませんでした）</p>";
       if (file.textContent) {
         // 既に編集済みのHTMLがあればそちらを使用
         docHtml = file.textContent;
-      } else if (file.filePath && fs.existsSync(file.filePath) && ext === 'docx') {
+      } else if (
+        file.filePath &&
+        fs.existsSync(file.filePath) &&
+        ext === "docx"
+      ) {
         try {
           const result = await mammoth.convertToHtml({ path: file.filePath });
           docHtml = result.value || docHtml;
-        } catch(e) { console.error('[Cloud] mammoth error:', e); }
-      } else if (file.filePath && fs.existsSync(file.filePath) && ext === 'doc') {
-        docHtml = '<p>⚠ .doc 形式は表示のみ対応です。編集するには .docx に変換してアップロードしてください。</p>';
+        } catch (e) {
+          console.error("[Cloud] mammoth error:", e);
+        }
+      } else if (
+        file.filePath &&
+        fs.existsSync(file.filePath) &&
+        ext === "doc"
+      ) {
+        docHtml =
+          "<p>⚠ .doc 形式は表示のみ対応です。編集するには .docx に変換してアップロードしてください。</p>";
       }
 
-      return renderPage(req, res, file.name, 'ドキュメント編集', `
+      return renderPage(
+        req,
+        res,
+        file.name,
+        "ドキュメント編集",
+        `
 <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet">
 <style>
 .wd-wrap{max-width:900px;margin:0 auto}
@@ -1156,15 +1636,15 @@ window.addEventListener('beforeunload', () => {
     <span class="wd-badge">.${ext}</span>
     <span class="wd-badge" id="online-badge" style="background:#f3f4f6;color:#6b7280">👁 閲覧中</span>
     <a href="${backUrl}" class="cd-btn cd-btn-secondary">← 戻る</a>
-    ${editable ? '<button class="cd-btn cd-btn-primary" onclick="saveDoc()">💾 保存</button>' : ''}
+    ${editable ? '<button class="cd-btn cd-btn-primary" onclick="saveDoc()">💾 保存</button>' : ""}
     <a href="/cloud/file/${file._id}/download" class="cd-btn cd-btn-secondary">⬇ 原本DL</a>
   </div>
-  ${editable ? '<div class="wd-notice">💡 編集内容はサーバーに保存されます。「原本DL」ボタンで元の .docx ファイルをダウンロードできます。</div>' : ''}
+  ${editable ? '<div class="wd-notice">💡 編集内容はサーバーに保存されます。「原本DL」ボタンで元の .docx ファイルをダウンロードできます。</div>' : ""}
   <div class="wd-editor-wrap">
     <div id="quill-editor"></div>
   </div>
   <div class="wd-footer">
-    <div class="wd-status" id="wd-status">${editable ? '自動保存 オン · Ctrl+S で保存' : '閲覧のみ'}</div>
+    <div class="wd-status" id="wd-status">${editable ? "自動保存 オン · Ctrl+S で保存" : "閲覧のみ"}</div>
     <div style="font-size:12px;color:#9ca3af" id="version-info">v${file.version || 0}</div>
   </div>
 </div>
@@ -1173,7 +1653,7 @@ window.addEventListener('beforeunload', () => {
 <script>
 const FILE_ID  = '${file._id}';
 const EDITABLE = ${editable};
-const MY_NAME  = '${escH2(req.session.username || '?')}';
+const MY_NAME  = '${escH2(req.session.username || "?")}';
 const MY_ID    = '${req.session.userId}';
 let version    = ${file.version || 0};
 let saveTimer  = null;
@@ -1257,14 +1737,20 @@ window.addEventListener('beforeunload', () => {
   if(socket) socket.emit('cloud_leave_doc', { fileId: FILE_ID, username: MY_NAME, userId: MY_ID });
 });
 </script>
-      `);
+      `,
+      );
     }
 
     // ─────────────────────────────────────────────────────────
     // テキストファイル（既存エディタ）
     // ─────────────────────────────────────────────────────────
-    const content = file.textContent || '';
-    renderPage(req, res, file.name, 'リアルタイム同時編集', `
+    const content = file.textContent || "";
+    renderPage(
+      req,
+      res,
+      file.name,
+      "リアルタイム同時編集",
+      `
 <style>
 .ce-wrap{max-width:1100px;margin:0 auto}
 .ce-header{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
@@ -1294,10 +1780,10 @@ window.addEventListener('beforeunload', () => {
 <div class="ce-wrap">
   <div class="ce-header">
     <div class="ce-title">📝 ${escH2(file.name)}</div>
-    <span class="ce-badge">.${ext || 'txt'}</span>
+    <span class="ce-badge">.${ext || "txt"}</span>
     <span class="ce-badge editing" id="editing-badge">👁 閲覧中</span>
-    <a href="/cloud${file.folderId ? '?folder='+file.folderId : ''}" class="cd-btn cd-btn-secondary" style="display:inline-flex;align-items:center;gap:5px;padding:7px 16px;border-radius:9px;font-size:13px;font-weight:700;background:#f1f5f9;color:#374151;text-decoration:none">← 戻る</a>
-    ${editable ? `<button class="cd-btn cd-btn-primary" onclick="saveNow()" style="display:inline-flex;align-items:center;gap:5px;padding:7px 16px;border-radius:9px;font-size:13px;font-weight:700;background:linear-gradient(90deg,#2563eb,#1d4ed8);color:#fff;border:none;cursor:pointer">💾 保存</button>` : ''}
+    <a href="/cloud${file.folderId ? "?folder=" + file.folderId : ""}" class="cd-btn cd-btn-secondary" style="display:inline-flex;align-items:center;gap:5px;padding:7px 16px;border-radius:9px;font-size:13px;font-weight:700;background:#f1f5f9;color:#374151;text-decoration:none">← 戻る</a>
+    ${editable ? `<button class="cd-btn cd-btn-primary" onclick="saveNow()" style="display:inline-flex;align-items:center;gap:5px;padding:7px 16px;border-radius:9px;font-size:13px;font-weight:700;background:linear-gradient(90deg,#2563eb,#1d4ed8);color:#fff;border:none;cursor:pointer">💾 保存</button>` : ""}
     <a href="/cloud/file/${file._id}/download" class="cd-btn cd-btn-secondary" style="display:inline-flex;align-items:center;gap:5px;padding:7px 16px;border-radius:9px;font-size:13px;font-weight:700;background:#f1f5f9;color:#374151;text-decoration:none">⬇ DL</a>
   </div>
 
@@ -1306,24 +1792,24 @@ window.addEventListener('beforeunload', () => {
       <span>${escH2(file.originalName || file.name)}</span>
       <div class="ce-online-list" id="online-list"></div>
     </div>
-    <textarea id="ce-editor" spellcheck="false" ${editable ? '' : 'readonly'}>${escH2(content)}</textarea>
+    <textarea id="ce-editor" spellcheck="false" ${editable ? "" : "readonly"}>${escH2(content)}</textarea>
   </div>
 
   <div class="ce-footer">
-    <div class="ce-status" id="ce-status">${editable ? '自動保存 オン' : '閲覧のみ'}</div>
-    <div style="font-size:12px;color:#9ca3af" id="version-info">v${file.version||0}</div>
+    <div class="ce-status" id="ce-status">${editable ? "自動保存 オン" : "閲覧のみ"}</div>
+    <div style="font-size:12px;color:#9ca3af" id="version-info">v${file.version || 0}</div>
   </div>
 </div>
 
 <script>
 const FILE_ID   = '${file._id}';
-const EDITABLE  = ${editable ? 'true' : 'false'};
-const MY_NAME   = '${escH2(req.session.username || '?')}';
+const EDITABLE  = ${editable ? "true" : "false"};
+const MY_NAME   = '${escH2(req.session.username || "?")}';
 const MY_ID     = '${req.session.userId}';
 const editor    = document.getElementById('ce-editor');
 const statusEl  = document.getElementById('ce-status');
 const badge     = document.getElementById('editing-badge');
-let version     = ${file.version||0};
+let version     = ${file.version || 0};
 let saveTimer   = null;
 let onlineUsers = {};
 
@@ -1416,44 +1902,70 @@ window.addEventListener('beforeunload', () => {
   if(EDITABLE && socket) socket.emit('cloud_leave_doc', { fileId: FILE_ID, username: MY_NAME, userId: MY_ID });
 });
 </script>
-    `);
-  } catch(err) {
-    console.error('[Cloud] edit error:', err);
-    res.status(500).send('エラーが発生しました');
+    `,
+    );
+  } catch (err) {
+    console.error("[Cloud] edit error:", err);
+    res.status(500).send("エラーが発生しました");
   }
 });
 
 // ============================
 // xlsx データ取得 API（スプレッドシートエディタ用）
 // ============================
-router.get('/cloud/file/:id/xlsx-data', requireLogin, async (req, res) => {
+router.get("/cloud/file/:id/xlsx-data", requireLogin, async (req, res) => {
   try {
     const file = await CloudFile.findById(req.params.id).lean();
-    if (!file || !canAccess(file, req.session.userId)) return res.status(403).json({ ok: false });
-    const fname = file.originalName || file.name || 'data.xlsx';
-    const ext   = path.extname(fname).toLowerCase();
+    if (!file || !canAccess(file, req.session.userId))
+      return res.status(403).json({ ok: false });
+    const fname = file.originalName || file.name || "data.xlsx";
+    const ext = path.extname(fname).toLowerCase();
 
-    // CSV の場合はテキストコンテンツをパース
-    if (ext === '.csv') {
-      const csvText = file.textContent || (file.filePath && fs.existsSync(file.filePath) ? fs.readFileSync(file.filePath, 'utf8') : '');
-      const wb = XLSX.read(csvText, { type: 'string' });
+    // CSV の場合はテキストコンテンツをパース（エンコーディング自動検出）
+    if (ext === ".csv") {
+      let csvText = "";
+      if (file.textContent) {
+        csvText = file.textContent;
+      } else if (file.filePath && fs.existsSync(file.filePath)) {
+        try {
+          const rawBuf = fs.readFileSync(file.filePath);
+          csvText = toUtf8String(rawBuf);
+        } catch (e) {
+          csvText = fs.readFileSync(file.filePath, "utf8");
+        }
+      }
+      const wb = XLSX.read(csvText, { type: "string" });
       const sheetName = wb.SheetNames[0];
-      const data = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '' });
-      return res.json({ ok: true, sheets: [{ name: sheetName, data }], filename: fname });
+      const data = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], {
+        header: 1,
+        defval: "",
+      });
+      return res.json({
+        ok: true,
+        sheets: [{ name: sheetName, data }],
+        filename: fname,
+      });
     }
 
     // xlsx / xls / ods
     if (!file.filePath || !fs.existsSync(file.filePath)) {
-      return res.json({ ok: true, sheets: [{ name: 'Sheet1', data: [[]] }], filename: fname });
+      return res.json({
+        ok: true,
+        sheets: [{ name: "Sheet1", data: [[]] }],
+        filename: fname,
+      });
     }
     const wb = XLSX.readFile(file.filePath);
-    const sheets = wb.SheetNames.map(name => ({
+    const sheets = wb.SheetNames.map((name) => ({
       name,
-      data: XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '' }),
+      data: XLSX.utils.sheet_to_json(wb.Sheets[name], {
+        header: 1,
+        defval: "",
+      }),
     }));
     res.json({ ok: true, sheets, filename: fname });
-  } catch(err) {
-    console.error('[Cloud] xlsx-data error:', err);
+  } catch (err) {
+    console.error("[Cloud] xlsx-data error:", err);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
@@ -1461,77 +1973,215 @@ router.get('/cloud/file/:id/xlsx-data', requireLogin, async (req, res) => {
 // ============================
 // xlsx バイナリ保存 API
 // ============================
-const uploadXlsx = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
-router.post('/cloud/file/:id/save-xlsx', requireLogin, uploadXlsx.single('file'), async (req, res) => {
-  try {
-    const file = await CloudFile.findById(req.params.id);
-    if (!file) return res.status(404).json({ ok: false });
-    if (!canEdit(file, req.session.userId)) return res.status(403).json({ ok: false, error: '編集権限がありません' });
-    if (!req.file) return res.status(400).json({ ok: false, error: 'ファイルがありません' });
-
-    // ディスクに上書き保存
-    const origExt = path.extname(file.originalName || file.name || '').toLowerCase();
-    const isCsvFile = origExt === '.csv';
-    const savePath = file.filePath || path.join(UPLOAD_DIR, Date.now() + '-' + Math.round(Math.random()*1e9) + (isCsvFile ? '.csv' : '.xlsx'));
-    fs.writeFileSync(savePath, req.file.buffer);
-    if (isCsvFile) {
-      // CSV の場合、textContent にも保存しておく
-      file.textContent = req.file.buffer.toString('utf8');
-    }
-    file.filePath     = savePath;
-    file.size         = req.file.buffer.length;
-    file.version      = (file.version || 0) + 1;
-    file.lastEditedBy = req.session.userId;
-    file.lastEditedAt = new Date();
-    await file.save();
-
-    // Socket.IO で他ユーザーに変更を通知
-    if (global.io) {
-      global.io.to('doc_' + file._id).emit('cloud_doc_update', {
-        userId: req.session.userId,
-        username: req.session.username || '?',
-        version: file.version,
-        content: null,
-      });
-    }
-    res.json({ ok: true, version: file.version });
-  } catch(err) {
-    console.error('[Cloud] save-xlsx error:', err);
-    res.status(500).json({ ok: false, error: err.message });
-  }
+const uploadXlsx = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
 });
+router.post(
+  "/cloud/file/:id/save-xlsx",
+  requireLogin,
+  uploadXlsx.single("file"),
+  async (req, res) => {
+    try {
+      const file = await CloudFile.findById(req.params.id);
+      if (!file) return res.status(404).json({ ok: false });
+      if (!canEdit(file, req.session.userId))
+        return res
+          .status(403)
+          .json({ ok: false, error: "編集権限がありません" });
+      if (!req.file)
+        return res
+          .status(400)
+          .json({ ok: false, error: "ファイルがありません" });
+      // ③ 空バッファでの上書きを防止
+      if (req.file.buffer.length === 0) {
+        return res.status(400).json({
+          ok: false,
+          error: "ファイルデータが空です。保存をキャンセルしました",
+        });
+      }
+
+      // ディスクに上書き保存
+      const origExt = path
+        .extname(file.originalName || file.name || "")
+        .toLowerCase();
+      const isCsvFile = origExt === ".csv";
+      const savePath =
+        file.filePath ||
+        path.join(
+          UPLOAD_DIR,
+          Date.now() +
+            "-" +
+            Math.round(Math.random() * 1e9) +
+            (isCsvFile ? ".csv" : ".xlsx"),
+        );
+      fs.writeFileSync(savePath, req.file.buffer);
+      if (isCsvFile) {
+        // CSV の場合、textContent にも保存しておく（UTF-8に変換してから格納）
+        file.textContent = toUtf8String(req.file.buffer);
+      }
+      file.filePath = savePath;
+      file.size = req.file.buffer.length;
+      file.version = (file.version || 0) + 1;
+      file.lastEditedBy = req.session.userId;
+      file.lastEditedAt = new Date();
+      await file.save();
+
+      // Socket.IO で他ユーザーに変更を通知
+      if (global.io) {
+        global.io.to("doc_" + file._id).emit("cloud_doc_update", {
+          userId: req.session.userId,
+          username: req.session.username || "?",
+          version: file.version,
+          content: null,
+        });
+      }
+      res.json({ ok: true, version: file.version });
+    } catch (err) {
+      console.error("[Cloud] save-xlsx error:", err);
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  },
+);
 
 // ============================
 // テキストファイル保存 API
 // ============================
-router.post('/cloud/file/:id/save', requireLogin, async (req, res) => {
+router.post("/cloud/file/:id/save", requireLogin, async (req, res) => {
   try {
     const file = await CloudFile.findById(req.params.id);
     if (!file) return res.status(404).json({ ok: false });
-    if (!canEdit(file, req.session.userId)) return res.status(403).json({ ok: false, error: '編集権限がありません' });
+    if (!canEdit(file, req.session.userId))
+      return res.status(403).json({ ok: false, error: "編集権限がありません" });
     const { content } = req.body;
-    file.textContent   = content;
-    file.version       = (file.version || 0) + 1;
-    file.lastEditedBy  = req.session.userId;
-    file.lastEditedAt  = new Date();
-    // ディスクにも書き戻す（テキスト系のみ）
-    const ext2 = path.extname(file.originalName || file.name || '').toLowerCase();
+    // ① undefined/nullでの上書きを防止
+    if (content === undefined || content === null) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "コンテンツが指定されていません" });
+    }
+    // ② 既存コンテンツがあるのに空文字で上書きしようとした場合はブロック
+    if (typeof content !== "string") {
+      return res
+        .status(400)
+        .json({ ok: false, error: "コンテンツの型が不正です" });
+    }
+    if (
+      content.trim() === "" &&
+      file.textContent &&
+      file.textContent.trim() !== ""
+    ) {
+      return res.status(400).json({
+        ok: false,
+        error: "空のコンテンツで既存データを上書きすることはできません",
+      });
+    }
+    file.textContent = content;
+    file.version = (file.version || 0) + 1;
+    file.lastEditedBy = req.session.userId;
+    file.lastEditedAt = new Date();
+    // ディスクにも書き戻す（テキスト系のみ）。常にUTF-8で保存
+    const ext2 = path
+      .extname(file.originalName || file.name || "")
+      .toLowerCase();
     const isText2 = TEXT_EXTS.has(ext2);
-    if (isText2 && file.filePath && fs.existsSync(path.dirname(file.filePath))) {
-      try { fs.writeFileSync(file.filePath, content, 'utf8'); } catch(e) {}
+    if (
+      isText2 &&
+      file.filePath &&
+      fs.existsSync(path.dirname(file.filePath))
+    ) {
+      try {
+        fs.writeFileSync(file.filePath, content, "utf8");
+      } catch (e) {
+        console.error("[Cloud] disk write error:", e);
+      }
     }
     await file.save();
     // Socket.IO で他ユーザーに通知
     if (global.io) {
-      global.io.to('doc_' + file._id).emit('cloud_doc_update', {
+      global.io.to("doc_" + file._id).emit("cloud_doc_update", {
         userId: req.session.userId,
-        username: req.session.username || '?',
+        username: req.session.username || "?",
         version: file.version,
         content,
       });
     }
     res.json({ ok: true, version: file.version });
-  } catch(err) {
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ============================
+// ファイルプレビュー API
+// ============================
+router.get("/cloud/file/:id/preview", requireLogin, async (req, res) => {
+  try {
+    const file = await CloudFile.findById(req.params.id).lean();
+    if (!file || !canAccess(file, req.session.userId))
+      return res.status(403).json({ ok: false });
+
+    const fname = file.originalName || file.name || "";
+    const ext = path.extname(fname).toLowerCase();
+    const PREVIEW_LIMIT = 8000; // 最大8000文字を返す
+
+    // テキスト系: textContent or ディスクから読み込み
+    const TEXT_PREVIEW_EXTS = new Set([
+      ".txt",
+      ".md",
+      ".json",
+      ".js",
+      ".ts",
+      ".css",
+      ".html",
+      ".xml",
+      ".yaml",
+      ".yml",
+      ".py",
+      ".java",
+      ".c",
+      ".cpp",
+      ".sh",
+      ".bash",
+      ".sql",
+      ".csv",
+      ".env",
+    ]);
+    if (TEXT_PREVIEW_EXTS.has(ext)) {
+      let content = file.textContent || null;
+      if (content === null && file.filePath && fs.existsSync(file.filePath)) {
+        try {
+          const rawBuf = fs.readFileSync(file.filePath);
+          content = toUtf8String(rawBuf);
+        } catch (e) {
+          content = null;
+        }
+      }
+      if (content === null)
+        return res.json({ ok: false, error: "コンテンツを読み込めません" });
+      // 長すぎる場合は切り詰める
+      const truncated = content.length > PREVIEW_LIMIT;
+      return res.json({
+        ok: true,
+        type: "text",
+        content:
+          content.substring(0, PREVIEW_LIMIT) +
+          (truncated ? "\n\n... (表示を省略しました)" : ""),
+        truncated,
+        size: file.size,
+        name: fname,
+      });
+    }
+
+    // 非対応
+    return res.json({
+      ok: true,
+      type: "unsupported",
+      name: fname,
+      size: file.size,
+    });
+  } catch (err) {
+    console.error("[Cloud] preview error:", err);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
@@ -1539,21 +2189,23 @@ router.post('/cloud/file/:id/save', requireLogin, async (req, res) => {
 // ============================
 // 共有情報取得 API
 // ============================
-router.get('/cloud/share-info/:type/:id', requireLogin, async (req, res) => {
+router.get("/cloud/share-info/:type/:id", requireLogin, async (req, res) => {
   try {
     const { type, id } = req.params;
-    const Model = type === 'folder' ? CloudFolder : CloudFile;
-    const item = await Model.findById(id).populate('sharedWith.userId','username').lean();
+    const Model = type === "folder" ? CloudFolder : CloudFile;
+    const item = await Model.findById(id)
+      .populate("sharedWith.userId", "username")
+      .lean();
     if (!item) return res.json({ sharedWith: [], isPublic: false });
     res.json({
       isPublic: item.isPublic,
-      sharedWith: (item.sharedWith || []).map(s => ({
-        userId: s.userId ? s.userId._id || s.userId : '',
-        username: s.userId ? s.userId.username || '?' : '?',
+      sharedWith: (item.sharedWith || []).map((s) => ({
+        userId: s.userId ? s.userId._id || s.userId : "",
+        username: s.userId ? s.userId.username || "?" : "?",
         canEdit: s.canEdit,
       })),
     });
-  } catch(err) {
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -1561,19 +2213,23 @@ router.get('/cloud/share-info/:type/:id', requireLogin, async (req, res) => {
 // ============================
 // 共有設定保存 API
 // ============================
-router.post('/cloud/share/:type/:id', requireLogin, async (req, res) => {
+router.post("/cloud/share/:type/:id", requireLogin, async (req, res) => {
   try {
     const { type, id } = req.params;
     const { isPublic, sharedWith } = req.body;
-    const Model = type === 'folder' ? CloudFolder : CloudFile;
+    const Model = type === "folder" ? CloudFolder : CloudFile;
     const item = await Model.findById(id);
     if (!item) return res.status(404).json({ ok: false });
-    if (item.ownerId.toString() !== req.session.userId) return res.status(403).json({ ok: false });
-    item.isPublic   = !!isPublic;
-    item.sharedWith = (sharedWith || []).map(s => ({ userId: s.userId, canEdit: !!s.canEdit }));
+    if (item.ownerId.toString() !== req.session.userId)
+      return res.status(403).json({ ok: false });
+    item.isPublic = !!isPublic;
+    item.sharedWith = (sharedWith || []).map((s) => ({
+      userId: s.userId,
+      canEdit: !!s.canEdit,
+    }));
     await item.save();
     res.json({ ok: true });
-  } catch(err) {
+  } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
 });
@@ -1581,17 +2237,20 @@ router.post('/cloud/share/:type/:id', requireLogin, async (req, res) => {
 // ============================
 // ファイル削除
 // ============================
-router.delete('/cloud/file/:id', requireLogin, async (req, res) => {
+router.delete("/cloud/file/:id", requireLogin, async (req, res) => {
   try {
     const file = await CloudFile.findById(req.params.id);
     if (!file) return res.status(404).json({ ok: false });
-    if (file.ownerId.toString() !== req.session.userId) return res.status(403).json({ ok: false });
+    if (file.ownerId.toString() !== req.session.userId)
+      return res.status(403).json({ ok: false });
     if (file.filePath && fs.existsSync(file.filePath)) {
-      try { fs.unlinkSync(file.filePath); } catch(e) {}
+      try {
+        fs.unlinkSync(file.filePath);
+      } catch (e) {}
     }
     await file.deleteOne();
     res.json({ ok: true });
-  } catch(err) {
+  } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
 });
@@ -1599,26 +2258,44 @@ router.delete('/cloud/file/:id', requireLogin, async (req, res) => {
 // ============================
 // フォルダ削除
 // ============================
-router.delete('/cloud/folder/:id', requireLogin, async (req, res) => {
+router.delete("/cloud/folder/:id", requireLogin, async (req, res) => {
   try {
     const folder = await CloudFolder.findById(req.params.id);
     if (!folder) return res.status(404).json({ ok: false });
-    if (folder.ownerId.toString() !== req.session.userId) return res.status(403).json({ ok: false });
+    if (folder.ownerId.toString() !== req.session.userId)
+      return res.status(403).json({ ok: false });
     // フォルダ内のファイルも削除
     const files = await CloudFile.find({ folderId: folder._id });
     for (const f of files) {
-      if (f.filePath && fs.existsSync(f.filePath)) { try { fs.unlinkSync(f.filePath); } catch(e) {} }
+      if (f.filePath && fs.existsSync(f.filePath)) {
+        try {
+          fs.unlinkSync(f.filePath);
+        } catch (e) {}
+      }
       await f.deleteOne();
     }
     await folder.deleteOne();
     res.json({ ok: true });
-  } catch(err) {
+  } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
 });
 
 // ── HTML エスケープ ヘルパー ────────────────────────────────────
-function escH(s)  { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function escH2(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function escH(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+function escH2(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 module.exports = router;
