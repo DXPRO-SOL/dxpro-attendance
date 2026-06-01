@@ -357,7 +357,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
       .lean();
 
     // AI操作学習・個人最適化レイアウト取得
-    const aiLayout = await getPersonalizedLayout(user._id);
+    const aiLayout = await getPersonalizedLayout(user._id, lang);
 
     renderPage(
       req,
@@ -901,14 +901,14 @@ router.get("/dashboard", requireLogin, async (req, res) => {
         <div class="ai-home-section" id="aiHomeSection">
           <div class="ai-home-header">
             <div class="ai-home-title">
-              <span class="ai-brain-badge"><i class="fa-solid fa-brain"></i> AI最適化ホーム</span>
-              <span style="font-size:12px;color:var(--c-muted);font-weight:500">あなたの利用傾向から最適化されています</span>
+              <span class="ai-brain-badge"><i class="fa-solid fa-brain"></i> ${t("dashboard.ai_home_title", lang)}</span>
+              <span style="font-size:12px;color:var(--c-muted);font-weight:500">${t("dashboard.ai_home_subtitle", lang)}</span>
             </div>
             <div class="ai-home-actions">
               <button class="ai-home-toggle-btn" onclick="toggleAiSection()" id="aiToggleBtn">
-                <i class="fa-solid fa-chevron-up" id="aiToggleIcon"></i> 折りたたむ
+                <i class="fa-solid fa-chevron-up" id="aiToggleIcon"></i> ${t("dashboard.ai_home_collapse", lang)}
               </button>
-              <a href="/ai-home-settings" class="ai-settings-link"><i class="fa-solid fa-gear"></i> 設定</a>
+              <a href="/ai-home-settings" class="ai-settings-link"><i class="fa-solid fa-gear"></i> ${t("dashboard.ai_home_settings", lang)}</a>
             </div>
           </div>
           <div id="aiHomeSectionBody">
@@ -919,11 +919,11 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                 ? `
             <div class="ai-trend-bar">
               <i class="fa-solid fa-chart-line"></i>
-              <span class="ai-trend-text">最近よく使っている機能:</span>
+              <span class="ai-trend-text">${t("dashboard.ai_home_recent_features", lang)}</span>
               <div class="ai-trend-tags">
                 ${aiLayout.trendSummary.topFeatureNames.map((n) => `<span class="ai-trend-tag">${n}</span>`).join("")}
               </div>
-              ${aiLayout.trendSummary.peakLabel ? `<span style="font-size:11px;color:#7c3aed;font-weight:500;margin-left:4px">利用時間帯: ${aiLayout.trendSummary.peakLabel}</span>` : ""}
+              ${aiLayout.trendSummary.peakLabel ? `<span style="font-size:11px;color:#7c3aed;font-weight:500;margin-left:4px">${t("dashboard.ai_home_peak_period", lang)}${aiLayout.trendSummary.peakLabel}</span>` : ""}
             </div>
             `
                 : ""
@@ -952,7 +952,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
               /* よく使う機能ショートカット */ aiLayout.topFeatures.length > 0
                 ? `
             <div style="font-size:11px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
-              <i class="fa-solid fa-star" style="color:#d97706"></i> よく使う機能
+              <i class="fa-solid fa-star" style="color:#d97706"></i> ${t("dashboard.ai_home_freq_section", lang)}
             </div>
             <div class="ai-freq-grid">
               ${aiLayout.topFeatures
@@ -964,7 +964,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                 </div>
                 <div>
                   <div>${f.label}</div>
-                  <div class="ai-freq-count">${f.count} 回利用</div>
+                  <div class="ai-freq-count">${t("dashboard.ai_home_times_used", lang, { count: f.count })}</div>
                 </div>
               </a>`,
                 )
@@ -978,7 +978,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
               /* AIおすすめ提案 */ aiLayout.suggestions.length > 0
                 ? `
             <div style="font-size:11px;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;margin-top:4px">
-              <i class="fa-solid fa-lightbulb" style="color:#d97706"></i> AIおすすめ操作
+              <i class="fa-solid fa-lightbulb" style="color:#d97706"></i> ${t("dashboard.ai_home_suggestions_section", lang)}
             </div>
             <div class="ai-suggestion-grid">
               ${aiLayout.suggestions
@@ -989,14 +989,14 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                   <div class="ai-suggest-icon" style="background:${s.bgColor};color:${s.color}">
                     <i class="fa-solid ${s.icon}"></i>
                   </div>
-                  <button class="ai-suggest-dismiss" title="非表示にする" onclick="dismissSuggestion('${s.id}')">
+                  <button class="ai-suggest-dismiss" title="${t("dashboard.ai_home_dismiss", lang)}" onclick="dismissSuggestion('${s.id}')">
                     <i class="fa-solid fa-xmark"></i>
                   </button>
                 </div>
                 <div class="ai-suggest-title">${s.title}</div>
                 <div class="ai-suggest-desc">${s.desc}</div>
                 <a href="${s.link}" class="ai-suggest-link">
-                  <i class="fa-solid fa-arrow-right" style="font-size:10px"></i> 確認する
+                  <i class="fa-solid fa-arrow-right" style="font-size:10px"></i> ${t("dashboard.ai_home_check", lang)}
                 </a>
               </div>`,
                 )
@@ -1013,8 +1013,8 @@ router.get("/dashboard", requireLogin, async (req, res) => {
         <!-- AI学習OFF状態: 軽量リンク表示 -->
         <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:#f9fafb;border:1px solid var(--c-border);border-radius:10px;margin-bottom:16px;font-size:12px;color:var(--c-muted)">
           <i class="fa-solid fa-brain" style="color:var(--c-sub)"></i>
-          現在AI操作学習がOFFになっています。
-          <a href="/ai-home-settings" style="color:var(--c-primary);font-weight:600">設定でオンにする</a>
+          ${t("dashboard.ai_home_ai_off", lang)}
+          <a href="/ai-home-settings" style="color:var(--c-primary);font-weight:600">${t("dashboard.ai_home_turn_on", lang)}</a>
         </div>
         `
         }
@@ -2329,6 +2329,8 @@ router.get("/dashboard", requireLogin, async (req, res) => {
         }
 
         // ── AI最適化ホーム: 折りたたみ ──────────────────────────────────────
+        const _aiCollapseLabel = ${JSON.stringify(t("dashboard.ai_home_collapse", lang))};
+        const _aiExpandLabel   = ${JSON.stringify(t("dashboard.ai_home_expand", lang))};
         function toggleAiSection() {
             const body = document.getElementById('aiHomeSectionBody');
             const icon = document.getElementById('aiToggleIcon');
@@ -2337,12 +2339,12 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             if (body.style.display === 'none') {
                 body.style.display = '';
                 icon.className = 'fa-solid fa-chevron-up';
-                btn.innerHTML = '<i class="fa-solid fa-chevron-up" id="aiToggleIcon"></i> 折りたたむ';
+                btn.innerHTML = '<i class="fa-solid fa-chevron-up" id="aiToggleIcon"></i> ' + _aiCollapseLabel;
                 localStorage.removeItem('aiSectionCollapsed');
             } else {
                 body.style.display = 'none';
                 icon.className = 'fa-solid fa-chevron-down';
-                btn.innerHTML = '<i class="fa-solid fa-chevron-down" id="aiToggleIcon"></i> 展開する';
+                btn.innerHTML = '<i class="fa-solid fa-chevron-down" id="aiToggleIcon"></i> ' + _aiExpandLabel;
                 localStorage.setItem('aiSectionCollapsed', '1');
             }
         }

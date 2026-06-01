@@ -4,6 +4,7 @@
 "use strict";
 
 const { UserBehaviorLog, UserUIPreference } = require("../models");
+const { t } = require("../lib/i18n");
 
 // ─── 機能定義マスター ─────────────────────────────────────────────────────────
 const FEATURE_META = {
@@ -116,52 +117,58 @@ const FEATURE_META = {
 const VALID_FEATURES = Object.keys(FEATURE_META);
 const VALID_ACTIONS = ["page_visit", "feature_use", "click", "search"];
 
-// ─── ユーザータイプ別パネル定義 ───────────────────────────────────────────────
-const USER_TYPE_PANELS = {
-  approver: {
-    title: "承認業務が多い傾向",
-    icon: "fa-check-double",
-    colorClass: "warn",
-    accentColor: "#d97706",
-    accentBg: "#fffbeb",
-    message:
-      "承認待ちの申請を優先表示しています。未処理の承認をご確認ください。",
-    link: "/admin?tab=approval",
-    linkLabel: "承認一覧を確認",
-  },
-  attendance_fixer: {
-    title: "勤怠管理が多い傾向",
-    icon: "fa-clock",
-    colorClass: "blue",
-    accentColor: "#2563eb",
-    accentBg: "#eff6ff",
-    message:
-      "勤怠修正・打刻確認が多い傾向があります。本日の勤怠をご確認ください。",
-    link: "/attendance-main",
-    linkLabel: "勤怠管理を開く",
-  },
-  project_manager: {
-    title: "タスク・案件管理が多い傾向",
-    icon: "fa-list-check",
-    colorClass: "green",
-    accentColor: "#16a34a",
-    accentBg: "#f0fdf4",
-    message: "担当タスクや案件管理を優先表示しています。",
-    link: "/tasks",
-    linkLabel: "タスク一覧を確認",
-  },
-  chatbot_user: {
-    title: "AIアシスタントをよく利用",
-    icon: "fa-robot",
-    colorClass: "purple",
-    accentColor: "#7c3aed",
-    accentBg: "#f5f3ff",
-    message:
-      "AIアシスタントの利用が多い傾向があります。いつでもAIに相談できます。",
-    link: "/chatbot",
-    linkLabel: "AIアシスタントを開く",
-  },
-};
+// ─── 多言語ヘルパー ──────────────────────────────────────────────────────────
+function getFeatureLabel(feature, lang) {
+  const key = `dashboard.ai_home_feature_${feature}`;
+  const localized = t(key, lang);
+  // fallback to static label if key not found
+  return localized !== key ? localized : (FEATURE_META[feature]?.label || feature);
+}
+
+function getLocalizedTypePanels(lang) {
+  return {
+    approver: {
+      title: t("dashboard.ai_home_type_approver_title", lang),
+      icon: "fa-check-double",
+      colorClass: "warn",
+      accentColor: "#d97706",
+      accentBg: "#fffbeb",
+      message: t("dashboard.ai_home_type_approver_msg", lang),
+      link: "/admin?tab=approval",
+      linkLabel: t("dashboard.ai_home_type_approver_link", lang),
+    },
+    attendance_fixer: {
+      title: t("dashboard.ai_home_type_attendance_fixer_title", lang),
+      icon: "fa-clock",
+      colorClass: "blue",
+      accentColor: "#2563eb",
+      accentBg: "#eff6ff",
+      message: t("dashboard.ai_home_type_attendance_fixer_msg", lang),
+      link: "/attendance-main",
+      linkLabel: t("dashboard.ai_home_type_attendance_fixer_link", lang),
+    },
+    project_manager: {
+      title: t("dashboard.ai_home_type_project_manager_title", lang),
+      icon: "fa-list-check",
+      colorClass: "green",
+      accentColor: "#16a34a",
+      accentBg: "#f0fdf4",
+      message: t("dashboard.ai_home_type_project_manager_msg", lang),
+      link: "/tasks",
+      linkLabel: t("dashboard.ai_home_type_project_manager_link", lang),
+    },
+    chatbot_user: {
+      title: t("dashboard.ai_home_type_chatbot_user_title", lang),
+      icon: "fa-robot",
+      colorClass: "purple",
+      accentColor: "#7c3aed",
+      accentBg: "#f5f3ff",
+      message: t("dashboard.ai_home_type_chatbot_user_msg", lang),
+      link: "/chatbot",
+      linkLabel: t("dashboard.ai_home_type_chatbot_user_link", lang),
+    },
+  };
+}
 
 // ─── 行動ログ分析 → UI設定更新 ───────────────────────────────────────────────
 async function analyzeAndUpdatePreference(userId) {
@@ -237,7 +244,7 @@ async function analyzeAndUpdatePreference(userId) {
 }
 
 // ─── 個人最適化レイアウト生成 ─────────────────────────────────────────────────
-async function getPersonalizedLayout(userId) {
+async function getPersonalizedLayout(userId, lang = "ja") {
   try {
     let pref = await UserUIPreference.findOne({ userId }).lean();
     if (!pref) {
@@ -262,17 +269,19 @@ async function getPersonalizedLayout(userId) {
         count: f.count,
         lastUsed: f.lastUsed,
         ...FEATURE_META[f.feature],
+        label: getFeatureLabel(f.feature, lang),
       }));
 
     // ユーザータイプ別パネル
-    const typePanel = USER_TYPE_PANELS[pref.userType] || null;
+    const localizedTypePanels = getLocalizedTypePanels(lang);
+    const typePanel = localizedTypePanels[pref.userType] || null;
 
     // AIおすすめ提案
     const dismissed = new Set(pref.dismissedSuggestions || []);
-    const suggestions = buildSuggestions(pref, dismissed);
+    const suggestions = buildSuggestions(pref, dismissed, lang);
 
     // 業務傾向サマリー文
-    const trendSummary = buildTrendSummary(pref);
+    const trendSummary = buildTrendSummary(pref, lang);
 
     return {
       enabled: pref.aiLearningEnabled !== false,
@@ -304,7 +313,7 @@ async function getPersonalizedLayout(userId) {
 }
 
 // ─── AIおすすめ提案生成 ───────────────────────────────────────────────────────
-function buildSuggestions(pref, dismissed) {
+function buildSuggestions(pref, dismissed, lang = "ja") {
   const suggestions = [];
   const now = new Date();
   const h = now.getHours();
@@ -317,8 +326,8 @@ function buildSuggestions(pref, dismissed) {
       icon: "fa-clock",
       color: "#2563eb",
       bgColor: "#eff6ff",
-      title: "出勤打刻を確認",
-      desc: "本日の出勤打刻が未登録の可能性があります",
+      title: t("dashboard.ai_home_sug_morning_checkin_title", lang),
+      desc: t("dashboard.ai_home_sug_morning_checkin_desc", lang),
       link: "/attendance-main",
     });
   }
@@ -328,8 +337,8 @@ function buildSuggestions(pref, dismissed) {
       icon: "fa-door-open",
       color: "#16a34a",
       bgColor: "#f0fdf4",
-      title: "退勤打刻を確認",
-      desc: "退勤打刻をお忘れなく",
+      title: t("dashboard.ai_home_sug_evening_checkout_title", lang),
+      desc: t("dashboard.ai_home_sug_evening_checkout_desc", lang),
       link: "/attendance-main",
     });
   }
@@ -341,8 +350,8 @@ function buildSuggestions(pref, dismissed) {
       icon: "fa-yen-sign",
       color: "#d97706",
       bgColor: "#fffbeb",
-      title: "月末処理を確認",
-      desc: "給与・承認処理の確認をお勧めします",
+      title: t("dashboard.ai_home_sug_month_end_title", lang),
+      desc: t("dashboard.ai_home_sug_month_end_desc", lang),
       link: "/payroll",
     });
   }
@@ -353,13 +362,14 @@ function buildSuggestions(pref, dismissed) {
   );
   if (top && !dismissed.has(`frequent_${top.feature}`)) {
     const meta = FEATURE_META[top.feature];
+    const featureLabel = getFeatureLabel(top.feature, lang);
     suggestions.push({
       id: `frequent_${top.feature}`,
       icon: meta.icon,
       color: "#7c3aed",
       bgColor: "#f5f3ff",
-      title: `よく使う機能: ${meta.label}`,
-      desc: `最近 ${top.count} 回利用しています`,
+      title: t("dashboard.ai_home_sug_frequent_title", lang, { feature: featureLabel }),
+      desc: t("dashboard.ai_home_sug_frequent_desc", lang, { count: top.count }),
       link: meta.url,
     });
   }
@@ -371,8 +381,8 @@ function buildSuggestions(pref, dismissed) {
       icon: "fa-bullseye",
       color: "#16a34a",
       bgColor: "#f0fdf4",
-      title: "目標進捗を更新",
-      desc: "定期的な目標確認で業務効率がアップします",
+      title: t("dashboard.ai_home_sug_goals_title", lang),
+      desc: t("dashboard.ai_home_sug_goals_desc", lang),
       link: "/goals",
     });
   }
@@ -381,33 +391,33 @@ function buildSuggestions(pref, dismissed) {
 }
 
 // ─── 業務傾向サマリー文生成 ───────────────────────────────────────────────────
-function buildTrendSummary(pref) {
+function buildTrendSummary(pref, lang = "ja") {
   if (!pref.frequentFeatures || !pref.frequentFeatures.length) return null;
 
   const top3 = pref.frequentFeatures
     .filter((f) => FEATURE_META[f.feature])
     .slice(0, 3)
-    .map((f) => FEATURE_META[f.feature].label);
+    .map((f) => getFeatureLabel(f.feature, lang));
 
   if (!top3.length) return null;
 
-  const peakLabel = buildPeakHourLabel(pref.peakHours);
+  const peakLabel = buildPeakHourLabel(pref.peakHours, lang);
   return {
     topFeatureNames: top3,
     peakLabel,
   };
 }
 
-function buildPeakHourLabel(peakHours) {
+function buildPeakHourLabel(peakHours, lang = "ja") {
   if (!peakHours || !peakHours.length) return null;
   const sorted = [...peakHours].sort((a, b) => a - b);
   const labels = sorted.map((h) => {
-    if (h < 6) return "深夜";
-    if (h < 10) return "午前";
-    if (h < 13) return "昼";
-    if (h < 17) return "午後";
-    if (h < 20) return "夕方";
-    return "夜間";
+    if (h < 6) return t("dashboard.ai_home_peak_midnight", lang);
+    if (h < 10) return t("dashboard.ai_home_peak_morning", lang);
+    if (h < 13) return t("dashboard.ai_home_peak_noon", lang);
+    if (h < 17) return t("dashboard.ai_home_peak_afternoon", lang);
+    if (h < 20) return t("dashboard.ai_home_peak_evening", lang);
+    return t("dashboard.ai_home_peak_night", lang);
   });
   // ユニーク化
   return [...new Set(labels)].join("・");
