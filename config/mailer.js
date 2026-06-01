@@ -78,10 +78,13 @@ async function sendMail({ to, from, subject, text, html, attachments } = {}) {
                 console.log('Brevo REST API: メール送信成功', to);
                 return;
             } catch (brevoErr) {
-                console.warn('Brevo REST送信エラー、SMTPへフォールバックします:', brevoErr && (brevoErr.response || brevoErr.message) || brevoErr);
+                console.warn('Brevo REST送信エラー:', brevoErr && (brevoErr.response || brevoErr.message) || brevoErr);
+                throw brevoErr;
             }
         }
+        // SMTPフォールバック（Renderでは587/465ポートがブロックされる場合があります）
         const smtpFrom = from || process.env.MAIL_FROM || process.env.EMAIL_USER || 'info@dxpro-sol.com';
+        console.warn('SMTP フォールバック使用（Renderでは動作しない場合があります）');
         const info = await transporter.sendMail({ from: smtpFrom, to, subject, text, html, attachments });
         console.log('SMTP: メール送信成功', to, 'messageId=', info && info.messageId, 'response=', info && info.response);
     } catch (err) {
