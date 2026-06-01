@@ -925,6 +925,7 @@ router.get("/hr", requireLogin, async (req, res) => {
 
 // 社員追加（統合フォーム）
 router.get("/hr/add", requireLogin, isAdmin, (req, res) => {
+  const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
   const html = `
 <style>
 .hradd-wrap{max-width:700px;margin:0 auto;padding:0 0 60px}
@@ -1057,7 +1058,7 @@ router.get("/hr/add", requireLogin, isAdmin, (req, res) => {
     </form>
 </div>
 `;
-  renderPage(req, res, "社員追加", "社員追加", html);
+  renderPage(req, res, t("hr.add_employee_title", lang), t("hr.add_employee_title", lang), html);
 });
 
 router.post("/hr/add", requireLogin, isAdmin, async (req, res) => {
@@ -1105,6 +1106,7 @@ router.post("/hr/add", requireLogin, isAdmin, async (req, res) => {
 
 // 社員編集
 router.get("/hr/edit/:id", requireLogin, async (req, res) => {
+  const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
   const id = req.params.id;
   const employee = await Employee.findById(id);
   if (!employee) return res.redirect("/hr");
@@ -1182,7 +1184,7 @@ router.get("/hr/edit/:id", requireLogin, async (req, res) => {
             </form>
         </div>
     `;
-  renderPage(req, res, "社員編集", "社員情報を編集", html);
+  renderPage(req, res, t("hr.edit_employee_title", lang), t("hr.edit_employee_heading", lang), html);
 });
 
 router.post("/hr/edit/:id", requireLogin, async (req, res) => {
@@ -1225,6 +1227,7 @@ router.get("/hr/delete/:id", requireLogin, async (req, res) => {
 
 // 統計
 router.get("/hr/statistics", requireLogin, async (req, res) => {
+  const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
   const employees = await Employee.find();
   const deptCount = {};
   const posCount = {};
@@ -1244,7 +1247,7 @@ router.get("/hr/statistics", requireLogin, async (req, res) => {
           .join("")}</ul>
         <a href="/hr">社員一覧に戻る</a>
     `;
-  renderPage(req, res, "統計", "部署・役職統計", html);
+  renderPage(req, res, t("hr.stats_title", lang), t("hr.stats_heading", lang), html);
 });
 
 // 有給更新
@@ -1582,7 +1585,7 @@ router.post("/hr/payroll/admin/add", requireLogin, async (req, res) => {
 
 router.get("/hr/payroll/admin/new", requireLogin, async (req, res) => {
   if (!req.session.isAdmin) return res.redirect("/hr/payroll");
-
+  const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
   const employees = await Employee.find();
   const preselect = req.query.employeeId || "";
 
@@ -1727,13 +1730,14 @@ router.get("/hr/payroll/admin/new", requireLogin, async (req, res) => {
             </form>
         </div>
     `;
-  renderPage(req, res, "給与管理", "新規給与登録", html);
+  renderPage(req, res, t("hr.payroll_title", lang), t("hr.payroll_new_heading", lang), html);
 });
 
 // 管理者用 給与明細編集画面
 router.get("/hr/payroll/admin/edit/:slipId", requireLogin, async (req, res) => {
   if (!req.session.isAdmin)
     return res.status(403).send("アクセス権限がありません");
+  const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
 
   const slip = await PayrollSlip.findById(req.params.slipId).populate(
     "employeeId runId",
@@ -1859,7 +1863,7 @@ router.get("/hr/payroll/admin/edit/:slipId", requireLogin, async (req, res) => {
             </form>
         </div>
     `;
-  renderPage(req, res, "給与管理", "給与明細編集", html);
+  renderPage(req, res, t("hr.payroll_title", lang), t("hr.payroll_edit_heading", lang), html);
 });
 
 // 管理者用 給与明細更新

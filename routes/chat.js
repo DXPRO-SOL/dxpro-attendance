@@ -21,6 +21,7 @@ const {
 } = require("../models");
 const { GridFSBucket } = require("mongodb");
 const { renderPage } = require("../lib/renderPage");
+const { t } = require("../lib/i18n");
 
 const UPLOAD_DIR = path.join(__dirname, "../uploads/chat");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -249,6 +250,7 @@ router.get("/chat/agent/download", requireLogin, (req, res) => {
 // エージェント セットアップページ
 router.get("/chat/agent/setup", requireLogin, async (req, res) => {
   const { renderPage } = require("../lib/renderPage");
+  const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
   const myId = req.session.userId;
   const myUser = await require("../models").User.findById(myId).lean();
   const SERVER_URL =
@@ -438,7 +440,7 @@ fetch('/api/chat/agent-status')
   });
 </script>
 `;
-  return renderPage(req, res, { title: "遠隔操作セットアップ", body: html });
+  return renderPage(req, res, { title: t("chat_page.remote_setup_title", lang), body: html });
 });
 
 router.get("/chat", requireLogin, async (req, res) => {
@@ -1904,7 +1906,7 @@ function buildSidebarHtml(d) {
     <div class="sc-side-hd">
         <a href="/dashboard" class="sc-back-btn" title="ダッシュボードに戻る"><i class="fa-solid fa-arrow-left"></i></a>
         <i class="fa-regular fa-comment-dots" style="color:#818cf8;font-size:.85rem;flex-shrink:0"></i>
-        <span class="sc-ws-name">DXPRO チャット</span>
+        <span class="sc-ws-name">DXPRO SOLUTIONS</span>
     </div>
     <div class="sc-me-row">
         <div class="sc-av-wrap sm"><div class="sc-av sm sc-av-me">${myInitial}</div>
@@ -3339,6 +3341,7 @@ function buildStampPickerModal() {
 // ── スタンプ管理ページ ──────────────────────────────────────
 router.get("/chat/stamps", requireLogin, async (req, res) => {
   const { renderPage } = require("../lib/renderPage");
+  const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
 
   const body = `
 <style>
@@ -3548,7 +3551,7 @@ loadStamps();
 </script>
 `;
 
-  return renderPage(req, res, "スタンプ管理", "スタンプ管理", body);
+  return renderPage(req, res, t("chat_page.stamp_management", lang), t("chat_page.stamp_management", lang), body);
 });
 
 function buildStampManagerModal() {

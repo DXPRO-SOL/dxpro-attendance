@@ -964,7 +964,44 @@
     "task_operation": "運用・保守",
     "task_management": "PM / リーダー"
   },
+  "board": {
+    "title": "社内掲示板",
+    "new_post_title": "新規投稿",
+    "new_post_heading": "掲示板への投稿",
+    "post_detail": "投稿詳細",
+    "edit_post_title": "投稿編集",
+    "edit_post_heading": "掲示板編集",
+    "links_title": "リンク集"
+  },
+  "overtime": {
+    "title": "残業申請",
+    "list_heading": "残業申請一覧",
+    "admin_title": "残業申請管理",
+    "admin_heading": "残業申請管理"
+  },
+  "admin_page": {
+    "title": "管理者メニュー",
+    "approval_requests": "承認リクエスト一覧",
+    "user_permissions": "ユーザー権限管理",
+    "chat_management": "チャット管理"
+  },
+  "rules": {
+    "title": "会社規定",
+    "heading": "会社規定・ポリシー"
+  },
+  "chat_page": {
+    "remote_setup_title": "遠隔操作セットアップ",
+    "stamp_management": "スタンプ管理"
+  },
   "hr": {
+    "add_employee_title": "社員追加",
+    "edit_employee_title": "社員編集",
+    "edit_employee_heading": "社員情報を編集",
+    "stats_title": "統計",
+    "stats_heading": "部署・役職統計",
+    "payroll_title": "給与管理",
+    "payroll_new_heading": "新規給与登録",
+    "payroll_edit_heading": "給与明細編集",
     "daily_report_list": "日報一覧",
     "post_report": "＋ 日報を投稿",
     "filter_by_employee": "社員で絞り込み",
@@ -1170,6 +1207,21 @@
     "col_result": "結果",
     "export_csv": "CSV出力",
     "filter_reset": "リセット",
-    "no_logs": "ログが見つかりません"
+    "no_logs": "ログが見つかりません",
+    "filter_username": "ユーザー名",
+    "filter_action": "操作種別",
+    "filter_category": "カテゴリ",
+    "filter_result": "結果",
+    "filter_from": "開始日",
+    "filter_to": "終了日",
+    "filter_ip": "IPアドレス",
+    "filter_all": "すべて",
+    "filter_search": "検索",
+    "stat_total": "総件数",
+    "stat_current_page": "現在ページ",
+    "stat_total_pages": "総ページ",
+    "back_to_admin": "管理者メニュー",
+    "pagination_prev": "前へ",
+    "pagination_next": "次へ"
   }
 }

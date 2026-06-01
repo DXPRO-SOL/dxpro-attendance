@@ -1,24 +1,15 @@
 // ==============================
 // routes/board.js - 掲示板
 // ==============================
-const router = require("express").Router();
-const multer = require("multer");
-const path = require("path");
-const moment = require("moment-timezone");
-const {
-  User,
-  Employee,
-  BoardPost,
-  BoardComment,
-  Notification,
-} = require("../models");
-const { requireLogin, isAdmin } = require("../middleware/auth");
-const {
-  escapeHtml,
-  stripHtmlTags,
-  renderMarkdownToHtml,
-} = require("../lib/helpers");
-const { renderPage } = require("../lib/renderPage");
+const router = require('express').Router();
+const multer = require('multer');
+const path = require('path');
+const moment = require('moment-timezone');
+const { User, Employee, BoardPost, BoardComment, Notification } = require('../models');
+const { requireLogin, isAdmin } = require('../middleware/auth');
+const { escapeHtml, stripHtmlTags, renderMarkdownToHtml } = require('../lib/helpers');
+const { renderPage } = require('../lib/renderPage');
+const { t } = require('../lib/i18n');
 
 // ファイルアップロード設定
 const storage = multer.diskStorage({
@@ -32,13 +23,9 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-router.get("/board/new", requireLogin, (req, res) => {
-  renderPage(
-    req,
-    res,
-    "新規投稿",
-    "掲示板への投稿",
-    `
+router.get('/board/new', requireLogin, (req, res) => {
+    const lang = (req.session && req.session.lang) ? req.session.lang : 'ja';
+    renderPage(req, res, t("board.new_post_title", lang), t("board.new_post_heading", lang), `
         <style>
             .bn-wrap{max-width:760px;margin:0 auto}
             .bn-card{background:#fff;border-radius:20px;box-shadow:0 8px 40px rgba(11,36,64,.10);overflow:hidden}
@@ -107,22 +94,14 @@ router.get("/board/new", requireLogin, (req, res) => {
   );
 });
 
-router.get("/links", requireLogin, (req, res) => {
-  const links = [
-    { title: "DXPRO SOLUTIONS Top", url: "https://dxpro-sol.com/" },
-    {
-      title: "DXPRO SOLUTIONS 教育コンテンツ",
-      url: "https://dxpro-edu.web.app/",
-    },
-    {
-      title: "DXPRO SOLUTIONS 採用ページ",
-      url: "https://dxpro-recruit-c76b3f4df6d9.herokuapp.com/login.html",
-    },
-    {
-      title: "DXPRO SOLUTIONS 開発用のGPT",
-      url: "https://2024073118010411766192.onamaeweb.jp/",
-    },
-  ];
+router.get('/links', requireLogin, (req, res) => {
+    const lang = (req.session && req.session.lang) ? req.session.lang : 'ja';
+    const links = [
+        { title: 'DXPRO SOLUTIONS Top', url: 'https://dxpro-sol.com/' },
+        { title: 'DXPRO SOLUTIONS 教育コンテンツ', url: 'https://dxpro-edu.web.app/' },
+        { title: 'DXPRO SOLUTIONS 採用ページ', url: 'https://dxpro-recruit-c76b3f4df6d9.herokuapp.com/login.html' },
+        { title: 'DXPRO SOLUTIONS 開発用のGPT', url: 'https://2024073118010411766192.onamaeweb.jp/' },
+    ];
 
   const html = `
         <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
@@ -212,7 +191,7 @@ router.get("/links", requireLogin, (req, res) => {
         </script>
     `;
 
-  renderPage(req, res, "リンク集", "リンク集", html);
+    renderPage(req, res, t('board.links_title', lang), t('board.links_title', lang), html);
 });
 
 // --- 掲示板詳細 ---
@@ -230,16 +209,11 @@ router.get("/board/:id", requireLogin, async (req, res) => {
     .populate("authorId")
     .sort({ createdAt: -1 });
 
-  // メンション候補のユーザー一覧（コメント入力で使用）
-  const allUsers = await User.find({}, "username _id").lean();
-
-  const contentHtml = renderMarkdownToHtml(post.content || "");
-  renderPage(
-    req,
-    res,
-    post.title,
-    "投稿詳細",
-    `
+    // メンション候補のユーザー一覧（コメント入力で使用）
+    const allUsers = await User.find({}, 'username _id').lean();
+    const lang = (req.session && req.session.lang) ? req.session.lang : 'ja';
+    const contentHtml = renderMarkdownToHtml(post.content || '');
+    renderPage(req, res, post.title, t("board.post_detail", lang), `
         <style>
             .bd-detail{max-width:800px;margin:0 auto}
 
@@ -725,13 +699,8 @@ router.get("/board", requireLogin, async (req, res) => {
     { $group: { _id: "$postId", count: { $sum: 1 } } },
   ]);
   comments.forEach((c) => (commentCounts[c._id] = c.count));
-
-  renderPage(
-    req,
-    res,
-    "社内掲示板",
-    "社内掲示板",
-    `
+  const lang = (req.session && req.session.lang) ? req.session.lang : 'ja';
+  renderPage(req, res, t("board.title", lang), t("board.title", lang), `
         <style>
             /* ===== 掲示板 共通 ===== */
             .bd-page{max-width:900px;margin:0 auto}
@@ -963,13 +932,8 @@ router.get("/board/:id/edit", requireLogin, async (req, res) => {
   if (!req.session.isAdmin && req.session.userId != post.authorId.toString()) {
     return res.status(403).send("権限がありません");
   }
-
-  renderPage(
-    req,
-    res,
-    "投稿編集",
-    "掲示板編集",
-    `
+  const lang = (req.session && req.session.lang) ? req.session.lang : 'ja';
+  renderPage(req, res, t("board.edit_post_title", lang), t("board.edit_post_heading", lang), `
         <style>
             .bn-wrap{max-width:760px;margin:0 auto}
             .bn-card{background:#fff;border-radius:20px;box-shadow:0 8px 40px rgba(11,36,64,.10);overflow:hidden}

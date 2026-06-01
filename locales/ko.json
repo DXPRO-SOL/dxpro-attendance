@@ -929,7 +929,44 @@
     "task_operation": "운영",
     "task_management": "PM / 리더"
   },
+  "board": {
+    "title": "사내 게시판",
+    "new_post_title": "새 글 작성",
+    "new_post_heading": "게시판에 글 작성",
+    "post_detail": "게시글 상세",
+    "edit_post_title": "글 수정",
+    "edit_post_heading": "게시판 글 수정",
+    "links_title": "링크 모음"
+  },
+  "overtime": {
+    "title": "초과근무 신청",
+    "list_heading": "초과근무 신청 목록",
+    "admin_title": "초과근무 관리",
+    "admin_heading": "초과근무 관리"
+  },
+  "admin_page": {
+    "title": "관리자 메뉴",
+    "approval_requests": "승인 요청 목록",
+    "user_permissions": "사용자 권한 관리",
+    "chat_management": "채팅 관리"
+  },
+  "rules": {
+    "title": "회사 규정",
+    "heading": "회사 규정 및 정책"
+  },
+  "chat_page": {
+    "remote_setup_title": "원격 제어 설정",
+    "stamp_management": "스탬프 관리"
+  },
   "hr": {
+    "add_employee_title": "직원 추가",
+    "edit_employee_title": "직원 수정",
+    "edit_employee_heading": "직원 정보 수정",
+    "stats_title": "통계",
+    "stats_heading": "부서·직책 통계",
+    "payroll_title": "급여 관리",
+    "payroll_new_heading": "새 급여 등록",
+    "payroll_edit_heading": "급여 명세 수정",
     "daily_report_list": "일보 목록",
     "post_report": "+ 일보 작성",
     "filter_by_employee": "직원으로 필터",
@@ -1145,5 +1182,46 @@
     "server_error": "서버 오류가 발생했습니다",
     "unauthorized": "인증이 필요합니다",
     "forbidden": "권한이 없습니다"
+  },
+  "audit_log": {
+    "title": "감사 로그",
+    "description": "사용자 조작·인증·데이터 변경 이력",
+    "action_login": "로그인",
+    "action_login_failed": "로그인 실패",
+    "action_logout": "로그아웃",
+    "action_create": "생성",
+    "action_update": "수정",
+    "action_delete": "삭제",
+    "action_approve": "승인",
+    "action_reject": "반려",
+    "action_export": "내보내기",
+    "action_view": "조회",
+    "result_success": "성공",
+    "result_failure": "실패",
+    "col_datetime": "일시",
+    "col_user": "사용자",
+    "col_action": "작업 유형",
+    "col_category": "카테고리",
+    "col_detail": "상세",
+    "col_ip": "IP 주소",
+    "col_result": "결과",
+    "export_csv": "CSV 내보내기",
+    "filter_reset": "초기화",
+    "no_logs": "로그가 없습니다",
+    "filter_username": "사용자명",
+    "filter_action": "작업 유형",
+    "filter_category": "카테고리",
+    "filter_result": "결과",
+    "filter_from": "시작일",
+    "filter_to": "종료일",
+    "filter_ip": "IP 주소",
+    "filter_all": "전체",
+    "filter_search": "검색",
+    "stat_total": "총 건수",
+    "stat_current_page": "현재 페이지",
+    "stat_total_pages": "전체 페이지",
+    "back_to_admin": "관리자 메뉴",
+    "pagination_prev": "이전",
+    "pagination_next": "다음"
   }
 }

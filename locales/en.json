@@ -964,7 +964,44 @@
     "task_operation": "Operations",
     "task_management": "PM / Lead"
   },
+  "board": {
+    "title": "Company Board",
+    "new_post_title": "New Post",
+    "new_post_heading": "Post to Board",
+    "post_detail": "Post Detail",
+    "edit_post_title": "Edit Post",
+    "edit_post_heading": "Edit Board Post",
+    "links_title": "Link Directory"
+  },
+  "overtime": {
+    "title": "Overtime Request",
+    "list_heading": "Overtime Request List",
+    "admin_title": "Overtime Management",
+    "admin_heading": "Overtime Management"
+  },
+  "admin_page": {
+    "title": "Admin Menu",
+    "approval_requests": "Approval Requests",
+    "user_permissions": "User Permissions",
+    "chat_management": "Chat Management"
+  },
+  "rules": {
+    "title": "Company Rules",
+    "heading": "Company Rules & Policies"
+  },
+  "chat_page": {
+    "remote_setup_title": "Remote Control Setup",
+    "stamp_management": "Stamp Management"
+  },
   "hr": {
+    "add_employee_title": "Add Employee",
+    "edit_employee_title": "Edit Employee",
+    "edit_employee_heading": "Edit Employee Info",
+    "stats_title": "Statistics",
+    "stats_heading": "Department & Role Statistics",
+    "payroll_title": "Payroll",
+    "payroll_new_heading": "New Payroll Entry",
+    "payroll_edit_heading": "Edit Payroll Slip",
     "daily_report_list": "Daily Reports",
     "post_report": "+ Post Report",
     "filter_by_employee": "Filter by employee",
@@ -1170,6 +1207,21 @@
     "col_result": "Result",
     "export_csv": "Export CSV",
     "filter_reset": "Reset",
-    "no_logs": "No logs found"
+    "no_logs": "No logs found",
+    "filter_username": "Username",
+    "filter_action": "Action Type",
+    "filter_category": "Category",
+    "filter_result": "Result",
+    "filter_from": "Start Date",
+    "filter_to": "End Date",
+    "filter_ip": "IP Address",
+    "filter_all": "All",
+    "filter_search": "Search",
+    "stat_total": "Total",
+    "stat_current_page": "Current Page",
+    "stat_total_pages": "Total Pages",
+    "back_to_admin": "Admin Menu",
+    "pagination_prev": "Prev",
+    "pagination_next": "Next"
   }
 }

@@ -58,7 +58,7 @@ router.get("/skillsheet", requireLogin, async (req, res) => {
       const sheetSet = new Set(sheets.map((s) => String(s.employeeId)));
       const lang = req.lang || req.session?.lang || "ja";
       const html = buildAdminListPage(employees, sheetSet, lang);
-      return renderPage(req, res, "スキルシート管理", "スキルシート管理", html);
+      return renderPage(req, res, t("skillsheet.admin_title", lang), t("skillsheet.admin_title", lang), html);
     }
 
     // 一般ユーザー → 自分のシートを表示
@@ -68,7 +68,7 @@ router.get("/skillsheet", requireLogin, async (req, res) => {
     const sheet = await getOrCreate(emp._id, req.session.userId);
     const lang = req.lang || req.session?.lang || "ja";
     const html = buildEditPage(emp, sheet, req, false, lang);
-    renderPage(req, res, "スキルシート", "スキルシート管理", html);
+    renderPage(req, res, t("skillsheet.edit_title", lang), t("skillsheet.admin_title", lang), html);
   } catch (e) {
     console.error(e);
     res.status(500).send("エラーが発生しました");

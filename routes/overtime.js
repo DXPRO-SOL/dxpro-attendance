@@ -7,6 +7,7 @@ const { User, Employee, OvertimeRequest, Notification } = require("../models");
 const { requireLogin, isAdmin } = require("../middleware/auth");
 const { escapeHtml } = require("../lib/helpers");
 const { renderPage } = require("../lib/renderPage");
+const { t } = require("../lib/i18n");
 const { sendEmailToUser } = require("../lib/emailHelper");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -136,6 +137,7 @@ const COMMON_CSS = `
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/overtime", requireLogin, async (req, res) => {
   try {
+    const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
     const user = await User.findById(req.session.userId);
     const employee = await Employee.findOne({ userId: user._id });
     if (!employee) return res.status(400).send("社員情報がありません");
@@ -255,7 +257,7 @@ router.get("/overtime", requireLogin, async (req, res) => {
             </div>
         </div>`;
 
-    renderPage(req, res, "残業申請", "残業申請一覧", html);
+    renderPage(req, res, t("overtime.title", lang), t("overtime.list_heading", lang), html);
   } catch (err) {
     console.error(err);
     res.status(500).send("サーバーエラー");
@@ -642,6 +644,7 @@ router.post("/overtime/:id/cancel", requireLogin, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get("/admin/overtime", requireLogin, isAdmin, async (req, res) => {
   try {
+    const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
     const timingFilter = req.query.timing || "";
     const statusFilter = req.query.status || "pending";
     const page = Math.max(1, parseInt(req.query.page) || 1);
@@ -844,7 +847,7 @@ router.get("/admin/overtime", requireLogin, isAdmin, async (req, res) => {
         });
         </script>`;
 
-    renderPage(req, res, "残業申請管理", "残業申請管理", html);
+    renderPage(req, res, t("overtime.admin_title", lang), t("overtime.admin_heading", lang), html);
   } catch (err) {
     console.error(err);
     res.status(500).send("サーバーエラー");

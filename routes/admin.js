@@ -21,8 +21,10 @@ const { escapeHtml } = require("../lib/helpers");
 const { renderPage, buildPageShell, pageFooter } = require("../lib/renderPage");
 const { createNotification } = require("./notifications");
 const { sendEmailToUser } = require("../lib/emailHelper");
+const { t } = require("../lib/i18n");
 
 router.get("/admin", requireLogin, isAdmin, async (req, res) => {
+  const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
   const username =
     req.session.user?.username || req.session.username || "管理者";
   const html = `
@@ -147,7 +149,7 @@ router.get("/admin", requireLogin, isAdmin, async (req, res) => {
         </div>
         `;
 
-  renderPage(req, res, "管理者メニュー", "管理者メニュー", html);
+  renderPage(req, res, t("admin_page.title", lang), t("admin_page.title", lang), html);
 });
 
 // 従業員登録 → 統合ページにリダイレクト
@@ -915,6 +917,7 @@ router.get(
   isAdmin,
   async (req, res) => {
     try {
+      const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
       const requests = await ApprovalRequest.find({
         status: { $in: ["pending", "returned"] },
       })
@@ -1110,7 +1113,7 @@ router.get(
         });
         </script>
         `;
-      renderPage(req, res, "承認リクエスト一覧", "承認リクエスト一覧", html);
+      renderPage(req, res, t("admin_page.approval_requests", lang), t("admin_page.approval_requests", lang), html);
     } catch (error) {
       console.error(error);
       res.status(500).send("承認リクエスト一覧取得中にエラーが発生しました");
@@ -1640,6 +1643,7 @@ router.get(
 // ユーザー権限管理
 router.get("/admin/users", requireLogin, isAdmin, async (req, res) => {
   try {
+    const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
     const users = await User.find({}, "username isAdmin role createdAt").lean();
 
     const ROLE_OPTS = [
@@ -1824,7 +1828,7 @@ router.get("/admin/users", requireLogin, isAdmin, async (req, res) => {
             </div>
         </div>
         `;
-    renderPage(req, res, "ユーザー権限管理", "ユーザー権限管理", html);
+    renderPage(req, res, t("admin_page.user_permissions", lang), t("admin_page.user_permissions", lang), html);
   } catch (err) {
     console.error(err);
     res.status(500).send("エラーが発生しました");
@@ -1914,6 +1918,7 @@ router.get(
   requireLogin,
   isAdmin,
   async (req, res) => {
+    const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
     const { User: UserModel, ChatMessage, ChatRoom } = require("../models");
     const users = await UserModel.find({}, "_id username name").lean();
     // 各ユーザーのメッセージ件数
@@ -2030,7 +2035,7 @@ async function delRoom(roomId, name) {
     else alert('エラー: ' + (data.error || '不明'));
 }
 </script>`;
-    renderPage(req, res, "チャット管理", "チャット管理", html);
+    renderPage(req, res, t("admin_page.chat_management", lang), t("admin_page.chat_management", lang), html);
   },
 );
 

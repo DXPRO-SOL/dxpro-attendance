@@ -929,7 +929,44 @@
     "task_operation": "Vận hành",
     "task_management": "PM / Trưởng nhóm"
   },
+  "board": {
+    "title": "Bảng tin nội bộ",
+    "new_post_title": "Bài viết mới",
+    "new_post_heading": "Đăng bài lên bảng tin",
+    "post_detail": "Chi tiết bài viết",
+    "edit_post_title": "Chỉnh sửa bài",
+    "edit_post_heading": "Chỉnh sửa bảng tin",
+    "links_title": "Danh sách liên kết"
+  },
+  "overtime": {
+    "title": "Đăng ký làm thêm giờ",
+    "list_heading": "Danh sách đăng ký làm thêm",
+    "admin_title": "Quản lý làm thêm giờ",
+    "admin_heading": "Quản lý làm thêm giờ"
+  },
+  "admin_page": {
+    "title": "Menu quản trị",
+    "approval_requests": "Danh sách yêu cầu phê duyệt",
+    "user_permissions": "Quản lý quyền người dùng",
+    "chat_management": "Quản lý chat"
+  },
+  "rules": {
+    "title": "Nội quy công ty",
+    "heading": "Nội quy & Chính sách công ty"
+  },
+  "chat_page": {
+    "remote_setup_title": "Cài đặt điều khiển từ xa",
+    "stamp_management": "Quản lý tem"
+  },
   "hr": {
+    "add_employee_title": "Thêm nhân viên",
+    "edit_employee_title": "Sửa nhân viên",
+    "edit_employee_heading": "Chỉnh sửa thông tin nhân viên",
+    "stats_title": "Thống kê",
+    "stats_heading": "Thống kê phòng ban & chức vụ",
+    "payroll_title": "Quản lý lương",
+    "payroll_new_heading": "Thêm bảng lương mới",
+    "payroll_edit_heading": "Chỉnh sửa bảng lương",
     "daily_report_list": "Nhật ký công việc",
     "post_report": "+ Viết nhật ký",
     "filter_by_employee": "Lọc theo nhân viên",
@@ -1145,5 +1182,46 @@
     "server_error": "Đã xảy ra lỗi máy chủ",
     "unauthorized": "Yêu cầu xác thực",
     "forbidden": "Không đủ quyền"
+  },
+  "audit_log": {
+    "title": "Nhật ký kiểm tra",
+    "description": "Lịch sử thao tác người dùng · xác thực · thay đổi dữ liệu",
+    "action_login": "Đăng nhập",
+    "action_login_failed": "Đăng nhập thất bại",
+    "action_logout": "Đăng xuất",
+    "action_create": "Tạo mới",
+    "action_update": "Cập nhật",
+    "action_delete": "Xóa",
+    "action_approve": "Phê duyệt",
+    "action_reject": "Từ chối",
+    "action_export": "Xuất",
+    "action_view": "Xem",
+    "result_success": "Thành công",
+    "result_failure": "Thất bại",
+    "col_datetime": "Thời gian",
+    "col_user": "Người dùng",
+    "col_action": "Loại thao tác",
+    "col_category": "Danh mục",
+    "col_detail": "Chi tiết",
+    "col_ip": "Địa chỉ IP",
+    "col_result": "Kết quả",
+    "export_csv": "Xuất CSV",
+    "filter_reset": "Đặt lại",
+    "no_logs": "Không tìm thấy nhật ký",
+    "filter_username": "Tên người dùng",
+    "filter_action": "Loại thao tác",
+    "filter_category": "Danh mục",
+    "filter_result": "Kết quả",
+    "filter_from": "Ngày bắt đầu",
+    "filter_to": "Ngày kết thúc",
+    "filter_ip": "Địa chỉ IP",
+    "filter_all": "Tất cả",
+    "filter_search": "Tìm kiếm",
+    "stat_total": "Tổng số",
+    "stat_current_page": "Trang hiện tại",
+    "stat_total_pages": "Tổng trang",
+    "back_to_admin": "Menu quản trị",
+    "pagination_prev": "Trước",
+    "pagination_next": "Sau"
   }
 }

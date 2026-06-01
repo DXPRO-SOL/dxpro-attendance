@@ -929,7 +929,44 @@
     "task_operation": "运维",
     "task_management": "PM / 主管"
   },
+  "board": {
+    "title": "公司公告板",
+    "new_post_title": "新建帖子",
+    "new_post_heading": "发布到公告板",
+    "post_detail": "帖子详情",
+    "edit_post_title": "编辑帖子",
+    "edit_post_heading": "编辑公告板帖子",
+    "links_title": "链接集"
+  },
+  "overtime": {
+    "title": "加班申请",
+    "list_heading": "加班申请列表",
+    "admin_title": "加班管理",
+    "admin_heading": "加班管理"
+  },
+  "admin_page": {
+    "title": "管理员菜单",
+    "approval_requests": "审批请求列表",
+    "user_permissions": "用户权限管理",
+    "chat_management": "聊天管理"
+  },
+  "rules": {
+    "title": "公司规定",
+    "heading": "公司规定与政策"
+  },
+  "chat_page": {
+    "remote_setup_title": "远程控制设置",
+    "stamp_management": "表情包管理"
+  },
   "hr": {
+    "add_employee_title": "添加员工",
+    "edit_employee_title": "编辑员工",
+    "edit_employee_heading": "编辑员工信息",
+    "stats_title": "统计",
+    "stats_heading": "部门·职位统计",
+    "payroll_title": "薪资管理",
+    "payroll_new_heading": "新建薪资登记",
+    "payroll_edit_heading": "编辑工资单",
     "daily_report_list": "日报列表",
     "post_report": "+ 写日报",
     "filter_by_employee": "按员工筛选",
@@ -1145,5 +1182,46 @@
     "server_error": "服务器发生错误",
     "unauthorized": "需要登录",
     "forbidden": "权限不足"
+  },
+  "audit_log": {
+    "title": "审计日志",
+    "description": "用户操作·认证·数据变更历史",
+    "action_login": "登录",
+    "action_login_failed": "登录失败",
+    "action_logout": "退出",
+    "action_create": "创建",
+    "action_update": "更新",
+    "action_delete": "删除",
+    "action_approve": "审批",
+    "action_reject": "拒绝",
+    "action_export": "导出",
+    "action_view": "查看",
+    "result_success": "成功",
+    "result_failure": "失败",
+    "col_datetime": "日期时间",
+    "col_user": "用户",
+    "col_action": "操作类型",
+    "col_category": "类别",
+    "col_detail": "详情",
+    "col_ip": "IP地址",
+    "col_result": "结果",
+    "export_csv": "导出CSV",
+    "filter_reset": "重置",
+    "no_logs": "未找到日志",
+    "filter_username": "用户名",
+    "filter_action": "操作类型",
+    "filter_category": "类别",
+    "filter_result": "结果",
+    "filter_from": "开始日期",
+    "filter_to": "结束日期",
+    "filter_ip": "IP地址",
+    "filter_all": "全部",
+    "filter_search": "搜索",
+    "stat_total": "总件数",
+    "stat_current_page": "当前页",
+    "stat_total_pages": "总页数",
+    "back_to_admin": "管理菜单",
+    "pagination_prev": "上一页",
+    "pagination_next": "下一页"
   }
 }

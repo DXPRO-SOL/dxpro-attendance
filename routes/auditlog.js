@@ -6,10 +6,12 @@ const { AuditLog, User } = require("../models");
 const { requireLogin, isAdmin } = require("../middleware/auth");
 const { renderPage } = require("../lib/renderPage");
 const { escapeHtml } = require("../lib/helpers");
+const { t } = require("../lib/i18n");
 
 // ── 監査ログ一覧ページ ─────────────────────────────────────
 router.get("/admin/audit-log", requireLogin, isAdmin, async (req, res) => {
   try {
+    const lang = req.session && req.session.lang ? req.session.lang : "ja";
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = 50;
     const skip = (page - 1) * limit;
@@ -38,16 +40,16 @@ router.get("/admin/audit-log", requireLogin, isAdmin, async (req, res) => {
     );
 
     const ACTION_LABELS = {
-      login: "ログイン",
-      login_failed: "ログイン失敗",
-      logout: "ログアウト",
-      create: "作成",
-      update: "更新",
-      delete: "削除",
-      approve: "承認",
-      reject: "却下",
-      export: "エクスポート",
-      view: "閲覧",
+      login: t("audit_log.action_login", lang),
+      login_failed: t("audit_log.action_login_failed", lang),
+      logout: t("audit_log.action_logout", lang),
+      create: t("audit_log.action_create", lang),
+      update: t("audit_log.action_update", lang),
+      delete: t("audit_log.action_delete", lang),
+      approve: t("audit_log.action_approve", lang),
+      reject: t("audit_log.action_reject", lang),
+      export: t("audit_log.action_export", lang),
+      view: t("audit_log.action_view", lang),
     };
 
     const ACTION_COLORS = {
@@ -64,8 +66,8 @@ router.get("/admin/audit-log", requireLogin, isAdmin, async (req, res) => {
     };
 
     const RESULT_LABELS = {
-      success: "成功",
-      failure: "失敗",
+      success: t("audit_log.result_success", lang),
+      failure: t("audit_log.result_failure", lang),
     };
 
     const q = req.query;
@@ -121,37 +123,37 @@ router.get("/admin/audit-log", requireLogin, isAdmin, async (req, res) => {
   <div class="al-card">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:20px">
       <div>
-        <div class="al-title"><i class="fa-solid fa-shield-halved" style="color:#2563eb;margin-right:8px"></i>監査ログ</div>
-        <div class="al-sub">管理者専用 — ユーザー操作・認証・データ変更履歴を記録します</div>
+        <div class="al-title"><i class="fa-solid fa-shield-halved" style="color:#2563eb;margin-right:8px"></i>${t("audit_log.title", lang)}</div>
+        <div class="al-sub">${t("audit_log.description", lang)}</div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <a href="/admin/audit-log/export.csv${buildQueryString(q)}" class="al-btn al-btn-green">
-          <i class="fa-solid fa-file-csv" style="margin-right:5px"></i>CSV出力
+          <i class="fa-solid fa-file-csv" style="margin-right:5px"></i>${t("audit_log.export_csv", lang)}
         </a>
         <a href="/admin" class="al-btn al-btn-gray">
-          <i class="fa-solid fa-arrow-left" style="margin-right:5px"></i>管理者メニュー
+          <i class="fa-solid fa-arrow-left" style="margin-right:5px"></i>${t("audit_log.back_to_admin", lang)}
         </a>
       </div>
     </div>
 
     <!-- 統計 -->
     <div class="al-stats">
-      <div class="al-stat"><div class="al-stat-num">${total.toLocaleString()}</div><div class="al-stat-label">総件数</div></div>
-      <div class="al-stat"><div class="al-stat-num">${page}</div><div class="al-stat-label">現在ページ</div></div>
-      <div class="al-stat"><div class="al-stat-num">${totalPages.toLocaleString()}</div><div class="al-stat-label">総ページ</div></div>
+      <div class="al-stat"><div class="al-stat-num">${total.toLocaleString()}</div><div class="al-stat-label">${t("audit_log.stat_total", lang)}</div></div>
+      <div class="al-stat"><div class="al-stat-num">${page}</div><div class="al-stat-label">${t("audit_log.stat_current_page", lang)}</div></div>
+      <div class="al-stat"><div class="al-stat-num">${totalPages.toLocaleString()}</div><div class="al-stat-label">${t("audit_log.stat_total_pages", lang)}</div></div>
     </div>
 
     <!-- 検索フィルター -->
     <form method="GET" action="/admin/audit-log">
       <div class="al-filter">
         <div class="fg">
-          <label>ユーザー名</label>
-          <input type="text" name="username" value="${escapeHtml(q.username || "")}" placeholder="例: yamada" style="width:140px">
+          <label>${t("audit_log.filter_username", lang)}</label>
+          <input type="text" name="username" value="${escapeHtml(q.username || "")}" placeholder="yamada" style="width:140px">
         </div>
         <div class="fg">
-          <label>操作種別</label>
+          <label>${t("audit_log.filter_action", lang)}</label>
           <select name="action">
-            <option value="">すべて</option>
+            <option value="">${t("audit_log.filter_all", lang)}</option>
             ${Object.entries(ACTION_LABELS)
               .map(
                 ([v, l]) =>
@@ -161,9 +163,9 @@ router.get("/admin/audit-log", requireLogin, isAdmin, async (req, res) => {
           </select>
         </div>
         <div class="fg">
-          <label>カテゴリ</label>
+          <label>${t("audit_log.filter_category", lang)}</label>
           <select name="category">
-            <option value="">すべて</option>
+            <option value="">${t("audit_log.filter_all", lang)}</option>
             ${[
               "auth",
               "attendance",
@@ -186,30 +188,30 @@ router.get("/admin/audit-log", requireLogin, isAdmin, async (req, res) => {
           </select>
         </div>
         <div class="fg">
-          <label>結果</label>
+          <label>${t("audit_log.filter_result", lang)}</label>
           <select name="result">
-            <option value="">すべて</option>
-            <option value="success"${q.result === "success" ? " selected" : ""}>成功</option>
-            <option value="failure"${q.result === "failure" ? " selected" : ""}>失敗</option>
+            <option value="">${t("audit_log.filter_all", lang)}</option>
+            <option value="success"${q.result === "success" ? " selected" : ""}>${t("audit_log.result_success", lang)}</option>
+            <option value="failure"${q.result === "failure" ? " selected" : ""}>${t("audit_log.result_failure", lang)}</option>
           </select>
         </div>
         <div class="fg">
-          <label>開始日</label>
+          <label>${t("audit_log.filter_from", lang)}</label>
           <input type="date" name="from" value="${escapeHtml(q.from || "")}">
         </div>
         <div class="fg">
-          <label>終了日</label>
+          <label>${t("audit_log.filter_to", lang)}</label>
           <input type="date" name="to" value="${escapeHtml(q.to || "")}">
         </div>
         <div class="fg">
-          <label>IPアドレス</label>
-          <input type="text" name="ip" value="${escapeHtml(q.ip || "")}" placeholder="例: 192.168.1.1" style="width:140px">
+          <label>${t("audit_log.filter_ip", lang)}</label>
+          <input type="text" name="ip" value="${escapeHtml(q.ip || "")}" placeholder="192.168.1.1" style="width:140px">
         </div>
         <div class="fg" style="justify-content:flex-end">
           <label>&nbsp;</label>
           <div style="display:flex;gap:6px">
-            <button type="submit" class="al-btn al-btn-blue"><i class="fa-solid fa-magnifying-glass" style="margin-right:5px"></i>検索</button>
-            <a href="/admin/audit-log" class="al-btn al-btn-gray">リセット</a>
+            <button type="submit" class="al-btn al-btn-blue"><i class="fa-solid fa-magnifying-glass" style="margin-right:5px"></i>${t("audit_log.filter_search", lang)}</button>
+            <a href="/admin/audit-log" class="al-btn al-btn-gray">${t("audit_log.filter_reset", lang)}</a>
           </div>
         </div>
       </div>
@@ -218,19 +220,19 @@ router.get("/admin/audit-log", requireLogin, isAdmin, async (req, res) => {
     <!-- テーブル -->
     ${
       logs.length === 0
-        ? '<div class="al-empty"><i class="fa-solid fa-inbox" style="font-size:32px;margin-bottom:10px;display:block;color:#cbd5e1"></i>ログが見つかりません</div>'
+        ? `<div class="al-empty"><i class="fa-solid fa-inbox" style="font-size:32px;margin-bottom:10px;display:block;color:#cbd5e1"></i>${t("audit_log.no_logs", lang)}</div>`
         : `
     <div style="overflow-x:auto">
     <table>
       <thead>
         <tr>
-          <th>日時</th>
-          <th>ユーザー</th>
-          <th>操作</th>
-          <th>カテゴリ</th>
-          <th>詳細</th>
-          <th>IPアドレス</th>
-          <th>結果</th>
+          <th>${t("audit_log.col_datetime", lang)}</th>
+          <th>${t("audit_log.col_user", lang)}</th>
+          <th>${t("audit_log.col_action", lang)}</th>
+          <th>${t("audit_log.col_category", lang)}</th>
+          <th>${t("audit_log.col_detail", lang)}</th>
+          <th>${t("audit_log.col_ip", lang)}</th>
+          <th>${t("audit_log.col_result", lang)}</th>
         </tr>
       </thead>
       <tbody>
@@ -261,7 +263,7 @@ router.get("/admin/audit-log", requireLogin, isAdmin, async (req, res) => {
 
     <!-- ページネーション -->
     <div class="al-pagination">
-      <a href="/admin/audit-log?${buildPaginationQuery(q, page - 1)}" class="al-page-btn${page <= 1 ? " disabled" : ""}">‹ 前へ</a>
+      <a href="/admin/audit-log?${buildPaginationQuery(q, page - 1)}" class="al-page-btn${page <= 1 ? " disabled" : ""}">‹ ${t("audit_log.pagination_prev", lang)}</a>
       ${generatePageNumbers(page, totalPages)
         .map((p) =>
           p === "..."
@@ -269,14 +271,14 @@ router.get("/admin/audit-log", requireLogin, isAdmin, async (req, res) => {
             : `<a href="/admin/audit-log?${buildPaginationQuery(q, p)}" class="al-page-btn${p === page ? " active" : ""}">${p}</a>`,
         )
         .join("")}
-      <a href="/admin/audit-log?${buildPaginationQuery(q, page + 1)}" class="al-page-btn${page >= totalPages ? " disabled" : ""}">次へ ›</a>
+      <a href="/admin/audit-log?${buildPaginationQuery(q, page + 1)}" class="al-page-btn${page >= totalPages ? " disabled" : ""}">${t("audit_log.pagination_next", lang)} ›</a>
     </div>`
     }
   </div>
 </div>
 `;
 
-    renderPage(req, res, "監査ログ", "監査ログ", html);
+    renderPage(req, res, t("audit_log.title", lang), t("audit_log.title", lang), html);
   } catch (err) {
     console.error("[AuditLog] 一覧取得エラー:", err);
     res.status(500).send("エラーが発生しました");

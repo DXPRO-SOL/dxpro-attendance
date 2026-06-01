@@ -9,6 +9,7 @@ const { CompanyRule } = require('../models');
 const { requireLogin, isAdmin } = require('../middleware/auth');
 const { renderPage } = require('../lib/renderPage');
 const { escapeHtml } = require('../lib/helpers');
+const { t } = require('../lib/i18n');
 
 // ── multer 設定 ───────────────────────────────────────────
 const RULES_UPLOAD_DIR = path.join(__dirname, '..', 'uploads', 'rules');
@@ -61,12 +62,13 @@ function formatSize(bytes=0){
 // ── 一覧 ─────────────────────────────────────────────────
 router.get('/rules', requireLogin, async (req, res) => {
     try {
+        const lang = (req.session && req.session.lang) ? req.session.lang : 'ja';
         const rules = await CompanyRule.find().sort({ category: 1, order: 1 });
         const grouped = {};
         rules.forEach(r => { if(!grouped[r.category]) grouped[r.category]=[]; grouped[r.category].push(r); });
         const isAdminUser = req.session.isAdmin;
 
-        renderPage(req, res, '会社規定', '会社規定・ポリシー', `
+        renderPage(req, res, t('rules.title', lang), t('rules.heading', lang), `
             <style>
                 .rule-section{background:#fff;border-radius:14px;box-shadow:0 4px 14px rgba(11,36,48,.06);margin-bottom:20px;overflow:hidden}
                 .rule-section-head{background:linear-gradient(90deg,#0b5fff,#184df2);color:#fff;padding:14px 22px;font-weight:700;font-size:15px;display:flex;justify-content:space-between;align-items:center}
@@ -138,7 +140,8 @@ router.get('/rules', requireLogin, async (req, res) => {
 
 // ── 新規追加フォーム ─────────────────────────────────────
 router.get('/rules/new', requireLogin, isAdmin, (req, res) => {
-    renderPage(req, res, '規定を追加', '会社規定を追加', `
+    const lang = (req.session && req.session.lang) ? req.session.lang : 'ja';
+    renderPage(req, res, t('rules.title', lang), t('rules.heading', lang), `
         <style>
             .form-card{background:#fff;border-radius:14px;padding:28px;box-shadow:0 4px 14px rgba(11,36,48,.06);max-width:760px;margin:0 auto}
             .drop-zone{border:2px dashed #c7d7fd;border-radius:10px;padding:30px;text-align:center;color:#6b7280;cursor:pointer;transition:.2s;background:#f8faff}
@@ -225,6 +228,7 @@ router.post('/rules/new', requireLogin, isAdmin, upload.array('files', 10), asyn
 // ── 編集フォーム ─────────────────────────────────────────
 router.get('/rules/edit/:id', requireLogin, isAdmin, async (req, res) => {
     try {
+        const lang = (req.session && req.session.lang) ? req.session.lang : 'ja';
         const rule = await CompanyRule.findById(req.params.id);
         if(!rule) return res.redirect('/rules');
 
@@ -237,7 +241,7 @@ router.get('/rules/edit/:id', requireLogin, isAdmin, async (req, res) => {
             </div>
         `).join('');
 
-        renderPage(req, res, '規定を編集', '会社規定を編集', `
+        renderPage(req, res, t('rules.title', lang), t('rules.heading', lang), `
             <style>
                 .form-card{background:#fff;border-radius:14px;padding:28px;box-shadow:0 4px 14px rgba(11,36,48,.06);max-width:760px;margin:0 auto}
                 .drop-zone{border:2px dashed #c7d7fd;border-radius:10px;padding:24px;text-align:center;color:#6b7280;cursor:pointer;transition:.2s;background:#f8faff}
