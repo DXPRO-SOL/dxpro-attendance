@@ -1,123 +1,63 @@
-# 05. ダッシュボード・半期評価
+# 05. Dashboard
 
-関連ファイル: `routes/dashboard.js`（1067行）、`lib/helpers.js`
-
----
-
-## 1. エンドポイント一覧
-
-| メソッド | パス | 権限 | 説明 |
-|---------|------|------|------|
-| GET | `/dashboard` | requireLogin | メインダッシュボード |
-| POST | `/feedback/semi` | requireLogin | 半期評価フィードバック送信 |
-| GET | `/links` | requireLogin | 外部リンク集ページ |
-| GET | `/debug/pretests` | requireLogin + isAdmin | 入社前テスト全件デバッグ |
-| GET | `/debug/my-pretests` | requireLogin | 自分のテスト結果デバッグ |
+Source file: `routes/dashboard.js` (2364 lines)
 
 ---
 
-## 2. ダッシュボード表示データ
+## 1. Endpoints
 
-| ウィジェット | データソース | 内容 |
-|------------|------------|------|
-| 今日の打刻状態 | Attendance（今日） | チェックイン/アウト済みフラグ |
-| 今月 KPI | Attendance（今月集計） | 出勤日数・遅刻・残業・欠勤 |
-| 目標達成率 | Goal（自分のアクティブ目標） | 平均達成率（%） |
-| 承認待ち目標 | Goal（pending1 or pending2） | 承認が必要な件数 |
-| 休暇申請状況 | LeaveRequest（今月） | 承認待ち・承認済み件数 |
-| 給与処理状況 | PayrollSlip（draft） | 未処理件数 |
-| 半期評価グレード | computeSemiAnnualGrade() | S/A/B/C/D + スコア |
-| AI インサイト | computeAIRecommendations() | 最大6件のアドバイスカード |
-| 出勤トレンド | Attendance（過去6か月） | 月別出勤日数 Chart.js 折れ線グラフ |
-| 最新日報（5件） | DailyReport（最新5件） | タイトル・日付・コメント数 |
+| Method | Path                            | Auth         | Description                 |
+| ------ | ------------------------------- | ------------ | --------------------------- |
+| GET    | /dashboard                      | requireLogin | Main dashboard page         |
+| GET    | /dashboard/api/summary          | requireLogin | Summary data (JSON API)     |
+| GET    | /dashboard/semi-annual          | requireLogin | Semi-annual evaluation page |
+| POST   | /dashboard/semi-annual/feedback | requireLogin | Submit feedback             |
+| GET    | /dashboard/ai-home              | requireLogin | AI home page                |
 
 ---
 
-## 3. AI インサイト（computeAIRecommendations）
+## 2. Dashboard Widgets
 
-関数定義: `lib/helpers.js`
-
-### 入力パラメータ
-
-| パラメータ | 型 | 説明 |
-|-----------|-----|------|
-| attendanceSummary | Object | 今月の出勤・遅刻・早退・残業集計 |
-| goalSummary | Object | 目標平均達成率 |
-| leaveSummary | Object | 申請状況・今後の予定 |
-| payrollSummary | Object | 未処理給与件数 |
-| monthlyAttendance | Array | 今月の日別勤怠配列 |
-| attendanceTrend | Array | 過去6か月の月別出勤日数 |
-| goalsDetail | Array | 目標詳細リスト |
-| now | Date | 現在日時 |
-
-### 分析ルール一覧（9種）
-
-| # | 分析内容 | 判定条件 | タグ・色 |
-|---|---------|---------|---------|
-| 1 | 残業予測アラート | 今月残業 ≥ 20h → 月末残業時間を線形予測 | danger（40h超） / warn（30h超） / success |
-| 2 | 出勤トレンド分析 | 過去6か月の移動平均で増減傾向を判定 | warn（低下傾向） / success（安定/改善） |
-| 3 | 遅刻・早退異常検知 | 発生率 ≥ 30% かつ 件数 ≥ 3 | danger（率高）/ warn（中程度） |
-| 4 | 打刻漏れ検知 | 未登録平日 > 5日 | warn（漏れ多）/ info（少数） |
-| 5 | 目標達成予測 | 経過率 vs 達成率のギャップ分析 | danger（大幅遅延）/ warn（やや遅延）/ success |
-| 6 | 休暇利用分析 | 承認待ち件数 / 今後の予定休暇 | info |
-| 7 | 給与処理アラート | 未確定 PayrollSlip 存在 | warn |
-| 8 | 半期評価改善ヒント | 弱点カテゴリが複数重なる場合 | purple |
-| 9 | スキルアップ推奨 | 目標達成率 < 70% | info |
-
-### 出力
-
-```javascript
-// confidence スコア降順で最大6件返却
-[
-  {
-    title: "残業時間に注意",
-    message: "今月の残業は XX 時間。このペースだと月末に YY 時間になる可能性があります",
-    tag: "danger",
-    confidence: 0.9
-  },
-  ...
-]
-```
+| Widget                    | Data Source                   |
+| ------------------------- | ----------------------------- |
+| Today's attendance status | Attendance (today)            |
+| This month's work hours   | Attendance (monthly sum)      |
+| Remaining leave days      | LeaveBalance                  |
+| Goal progress             | Goal (own)                    |
+| Latest pay slip           | PayrollSlip (latest)          |
+| Recent notifications      | Notification (unread top 5)   |
+| Team attendance status    | Attendance (same dept, today) |
+| AI recommendations        | computeAIRecommendations()    |
+| Semi-annual grade         | computeSemiAnnualGrade()      |
+| Pending approval count    | ApprovalRequest (pending)     |
+| Upcoming schedule         | Schedule (next 3 days)        |
 
 ---
 
-## 4. 半期評価グレード計算（computeSemiAnnualGrade）
+## 3. computeAIRecommendations() — 9 Analysis Rules
 
-関数定義: `lib/helpers.js`（async関数）
+| Rule             | Trigger Condition                            |
+| ---------------- | -------------------------------------------- |
+| overtimeAlert    | Monthly overtime > 45h                       |
+| attendanceTrend  | Absence rate this month > last month         |
+| lateAbsent       | Late count this month >= 3                   |
+| stampMissing     | Missing check-in/out records this month      |
+| goalProgress     | Goal deadline within 2 weeks, progress < 50% |
+| leaveAnalysis    | Remaining paid leave >= 10 days              |
+| payrollAlert     | Salary change > 20% from previous month      |
+| gradeImprovement | Semi-annual grade C or D                     |
+| skillup          | No skill sheet updates for 6+ months         |
 
-### スコア計算（100点満点）
+---
 
-| カテゴリ | 配点 | サブ項目 |
-|---------|------|---------|
-| 出勤 | 30点 | 時間厳守(10) + 安定性(10) + 一貫性(10) |
-| 目標 | 30点 | 進捗率(12) + 完了率(12) + 計画性(6) |
-| 休暇 | 10点 | 残日数管理(5) + 計画性(5) |
-| 残業 | 10点 | 時間外コントロール(5) + ワークライフバランス(5) |
-| 給与 | 20点 | 正確性(10) + 適時性(10) |
+## 4. computeSemiAnnualGrade() — Evaluation Formula
 
-### グレード判定
+| Category   | Weight | Data Source                           |
+| ---------- | ------ | ------------------------------------- |
+| Attendance | 30pts  | Absence/late rate                     |
+| Goals      | 30pts  | Average goal progress %               |
+| Leave      | 10pts  | Leave usage rate                      |
+| Overtime   | 10pts  | Overtime hours (fewer = higher score) |
+| Payroll    | 20pts  | Salary trend                          |
 
-| スコア | グレード |
-|-------|---------|
-| 88点以上 | **S** |
-| 75〜87点 | **A** |
-| 60〜74点 | **B** |
-| 45〜59点 | **C** |
-| 44点以下 | **D** |
-
-### 改善アクション
-
-スコアが低いカテゴリに対して最大7件の改善アクションを生成。  
-各アクションには `priority: high / medium / low` が付与される。
-
-### フィードバック保存
-
-```
-POST /feedback/semi
-  └── SemiAnnualFeedback.create({
-        userId, employeeId,
-        predictedGrade, predictedScore,
-        agree,   // 評価への同意
-        comment  // コメント
-      })
-```
+**Grade mapping:** S (90+), A (75-89), B (60-74), C (45-59), D (<45)

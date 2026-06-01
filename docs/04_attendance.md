@@ -1,121 +1,80 @@
-# 04. 勤怠管理
+# 04. Attendance Management
 
-関連ファイル: `routes/attendance.js`（1726行）
-
----
-
-## 1. エンドポイント一覧
-
-| メソッド | パス | 権限 | 説明 |
-|---------|------|------|------|
-| GET | `/attendance-main` | requireLogin | 勤怠メイン画面 |
-| POST | `/checkin` | requireLogin | 出勤打刻 |
-| POST | `/start-lunch` | requireLogin | 昼休憩開始打刻 |
-| POST | `/end-lunch` | requireLogin | 昼休憩終了打刻 |
-| POST | `/checkout` | requireLogin | 退勤打刻 |
-| POST | `/save-attendance` | requireLogin | 勤怠フォーム保存 |
-| GET | `/add-attendance` | requireLogin | 勤怠新規追加フォーム |
-| GET | `/edit-attendance/:id` | requireLogin | 勤怠編集フォーム |
-| POST | `/update-attendance/:id` | requireLogin | 勤怠更新 |
-| POST | `/delete-attendance/:id` | requireLogin | 勤怠削除 |
-| GET | `/attendance/bulk-register` | requireLogin | 月次一括登録フォーム |
-| POST | `/attendance/bulk-register` | requireLogin | 月次一括登録処理 |
-| GET | `/my-monthly-attendance` | requireLogin | 自分の月別勤怠照会 |
-| POST | `/request-approval` | requireLogin | 月次勤怠承認申請 |
-| GET | `/print-attendance` | requireLogin | 勤怠表印刷用 HTML |
+Source file: `routes/attendance.js` (2446 lines)
 
 ---
 
-## 2. 打刻フロー
+## 1. Endpoints
 
-```
-出勤打刻(checkin)
-    │
-    ├── [任意] 昼休憩開始(start-lunch)
-    │              └── 昼休憩終了(end-lunch)
-    │
-    └── 退勤打刻(checkout)
-             └── 実労働時間・ステータスを自動計算して保存
-```
-
-### 各打刻の詳細
-
-| 打刻 | 処理内容 |
-|------|---------|
-| `POST /checkin` | 今日の Attendance レコードを作成（既に出勤済みなら 400 エラー） |
-| `POST /start-lunch` | 今日の Attendance に `lunchStart` をセット |
-| `POST /end-lunch` | 今日の Attendance に `lunchEnd` をセット |
-| `POST /checkout` | `checkOut` をセット + 勤務時間・ステータスを自動計算して保存 |
+| Method | Path                         | Auth         | Description                     |
+| ------ | ---------------------------- | ------------ | ------------------------------- |
+| GET    | /attendance-main             | requireLogin | Attendance main page            |
+| POST   | /attendance/check-in         | requireLogin | Clock in                        |
+| POST   | /attendance/check-out        | requireLogin | Clock out                       |
+| POST   | /attendance/lunch-start      | requireLogin | Lunch break start               |
+| POST   | /attendance/lunch-end        | requireLogin | Lunch break end                 |
+| GET    | /attendance/monthly          | requireLogin | Monthly attendance list         |
+| GET    | /attendance/detail/:date     | requireLogin | Daily detail view               |
+| POST   | /attendance/edit             | requireLogin | Edit attendance record          |
+| POST   | /attendance/bulk-register    | requireLogin | Bulk register (manual entry)    |
+| POST   | /attendance/request-approval | requireLogin | Submit monthly approval request |
+| POST   | /attendance/cancel-approval  | requireLogin | Cancel approval request         |
+| GET    | /attendance/export-csv       | requireLogin | CSV export                      |
+| GET    | /attendance/summary          | requireLogin | Summary data (API)              |
+| POST   | /attendance/delete           | isAdmin      | Delete record                   |
+| GET    | /attendance/all              | isAdmin      | All employees' records          |
 
 ---
 
-## 3. 勤務時間計算ロジック
+## 2. GPS Punch Flow
+
+### Client-side
 
 ```
-lunchTime = (lunchEnd - lunchStart)  ※打刻がある場合のみ
-totalHours = (checkOut - checkIn) の時間数
-workingHours = totalHours - lunchTime（小数点以下30分切り捨て）
+navigator.geolocation.getCurrentPosition()
+  → POST {lat, lng} to /attendance/check-in
+```
 
-status 判定:
-  checkIn > 09:30  → 「遅刻」
-  checkOut < 18:00 → 「早退」
-  どちらもなし     → 「正常」
-  その他           → 「欠勤」
+### Server-side
+
+```
+For each ApprovedLocation:
+  distance = haversine(userLat, userLng, loc.lat, loc.lng)
+  If distance <= loc.radius → gpsLocation = loc.name (OK)
+If no match → reject or flag
 ```
 
 ---
 
-## 4. 月次一括登録
+## 3. Work Hours Calculation
 
 ```
-GET/POST /attendance/bulk-register
-  ├── 対象月の全営業日を生成
-  ├── 既存データが存在する日付はスキップ
-  └── 残りの日付に空の勤怠レコードを一括 insert
-```
-
----
-
-## 5. 月次承認申請フロー
-
-```
-POST /request-approval（社員）
-  └── ApprovalRequest.create({
-        employeeId, userId, year, month,
-        status: 'pending'
-      })
-
-↓ 管理者が /admin/approval-requests で確認
-
-GET /admin/approve-request/:id（管理者）
-  ├── ApprovalRequest.status → 'approved'
-  ├── 該当月の全勤怠レコード isConfirmed = true
-  ├── メール送信（勤怠表 HTML 添付）
-  └── 通知: 該当社員 → type: attendance_approved
-
-POST /admin/return-request（管理者）
-  ├── ApprovalRequest.status → 'returned'
-  ├── returnReason をセット
-  └── 通知: 該当社員 → type: attendance_returned
+totalHours = (checkOut - checkIn) in hours
+lunchTime = (lunchEnd - lunchStart) in hours  [default 1h if not clocked]
+workingHours = totalHours - lunchTime
+overtimeHours = max(0, workingHours - 8)
+status = 正常 / 遅刻 / 早退 / 欠勤  (based on checkIn/checkOut time vs shift)
 ```
 
 ---
 
-## 6. 勤怠メイン画面の表示データ
+## 4. Bulk Register Flow
 
-| データ | 内容 |
-|--------|------|
-| 今月カレンダー | 日別勤怠データ（出勤/退勤/状態） |
-| 今日の打刻状態 | checkin / lunchStart / lunchEnd / checkout 各打刻済み判定 |
-| 今月サマリー | 出勤日数・遅刻回数・早退回数・残業時間・欠勤日数 |
-| 承認状況 | ApprovalRequest の今月ステータス |
+```
+POST /attendance/bulk-register
+  → For each submitted day:
+      Skip if status is "approved" (isConfirmed=true)
+      Save/update Attendance record
+  → Note: Cannot overwrite approved records
+```
 
 ---
 
-## 7. 印刷・エクスポート
+## 5. Monthly Approval Flow
 
-| 機能 | パス | 出力形式 |
-|------|------|---------|
-| 個人勤怠表印刷 | GET `/print-attendance` | HTML（ブラウザ印刷） |
-| 管理者用印刷 | GET `/admin/print-attendance` | HTML（ブラウザ印刷） |
-| 月別勤怠照会 | GET `/my-monthly-attendance` | 画面表示（CSV エクスポートあり） |
+```
+POST /attendance/request-approval
+  → Check: no pending ApprovalRequest exists
+  → ApprovalRequest.create({userId, year, month, status:'pending'})
+  → Notify admin via Notification + email
+```

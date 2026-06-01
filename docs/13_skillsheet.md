@@ -1,98 +1,74 @@
-# 13. スキルシート
+# 13. Skill Sheet
 
-関連ファイル: `routes/skillsheet.js`（841行）
-
----
-
-## 1. エンドポイント一覧
-
-| メソッド | パス | 権限 | 説明 |
-|---------|------|------|------|
-| GET | `/skillsheet` | requireLogin | 自分のスキルシート（管理者: 社員一覧） |
-| GET | `/skillsheet/admin/:employeeId` | requireLogin | 管理者: 特定社員のスキルシート閲覧 |
-| POST | `/skillsheet/admin/:employeeId/save` | requireLogin | 管理者: スキルシート保存 |
-| GET | `/skillsheet/admin/:employeeId/export` | requireLogin | 管理者: Excel エクスポート |
-| POST | `/skillsheet/save` | requireLogin | 自分のスキルシート保存 |
-| GET | `/skillsheet/export` | requireLogin | 自分の Excel エクスポート |
+Source file: `routes/skillsheet.js` (1509 lines)
 
 ---
 
-## 2. スキルシート取得・作成
+## 1. Endpoints
+
+| Method | Path                                 | Auth         | Description                       |
+| ------ | ------------------------------------ | ------------ | --------------------------------- |
+| GET    | /skillsheet                          | requireLogin | Own skill sheet                   |
+| POST   | /skillsheet/save                     | requireLogin | Save skill sheet                  |
+| GET    | /skillsheet/:employeeId              | requireLogin | View another employee's sheet     |
+| GET    | /skillsheet/export-excel             | requireLogin | Export own sheet as Excel         |
+| GET    | /skillsheet/export-excel/:employeeId | isAdmin      | Export specified employee's sheet |
+| GET    | /skillsheet/api/skill-map            | requireLogin | Skill map data (JSON)             |
+| POST   | /skillsheet/admin/update/:employeeId | isAdmin      | Admin edit                        |
+| GET    | /skillsheet/admin/list               | isAdmin      | All employees' sheet list         |
+| GET    | /skillsheet/admin/export-all         | isAdmin      | Bulk Excel export                 |
+
+---
+
+## 2. Auto-create on First Access
 
 ```
-GET /skillsheet または GET /skillsheet/admin/:employeeId
-  └── SkillSheet.findOne({employeeId}) または create（初回アクセス時に自動生成）
+GET /skillsheet
+  → SkillSheet.findOne({employeeId})
+  → If not found: SkillSheet.create({employeeId}) with empty defaults
+  → Render the form
 ```
 
 ---
 
-## 3. スキルシートの入力項目
+## 3. Form Fields
 
-### 基本情報
+### Basic Info
 
-| フィールド | 説明 |
-|-----------|------|
-| nameKana | 氏名（カナ） |
-| birthDate | 生年月日 |
-| gender | 性別 |
-| nearestStation | 最寄り駅 |
-| experience | IT 経験年数 |
-| selfPR | 自己PR |
+| Field          | Description           |
+| -------------- | --------------------- |
+| nameKana       | Name in Katakana      |
+| birthDate      | Date of birth         |
+| gender         | Gender                |
+| nearestStation | Nearest station       |
+| experience     | IT experience (years) |
+| selfPR         | Self introduction     |
 
-### スキル（★1〜5 評価）
+### Skills (each: name + level ★1–5)
 
-| 区分 | フィールド | 例 |
-|------|-----------|-----|
-| プログラミング言語 | skills.languages | Java, Python, JavaScript |
-| FW・ライブラリ | skills.frameworks | Spring Boot, React, Vue.js |
-| データベース | skills.databases | MySQL, MongoDB, PostgreSQL |
-| インフラ・クラウド | skills.infra | AWS, GCP, Docker |
-| ツール | skills.tools | Git, Jira, Figma |
+- languages, frameworks, databases, infra, tools
 
-### 資格
+### Certifications
 
-| フィールド | 説明 |
-|-----------|------|
-| certifications[].name | 資格名 |
-| certifications[].acquiredDate | 取得日 |
+Array of `{name, acquiredDate}`
 
-### 職務経歴
+### Projects (work history)
 
-| フィールド | 説明 |
-|-----------|------|
-| projects[].projectName | プロジェクト名 |
-| projects[].client | クライアント名 |
-| projects[].industry | 業種 |
-| projects[].periodFrom / periodTo | 期間 |
-| projects[].team | チーム規模 |
-| projects[].role | 役割 |
-| projects[].description | 概要 |
-| projects[].techStack | 使用技術 |
-| projects[].tasks | 担当タスク |
+`{projectName, client, periodFrom, periodTo, role, description, techStack, tasks{}}`
+
+**tasks checkboxes:** requirement, basicDesign, detailDesign, development, testing, operation, management
 
 ---
 
-## 4. Excel エクスポート（ExcelJS）
+## 4. Excel Export Structure (ExcelJS)
 
-```
-GET /skillsheet/export または GET /skillsheet/admin/:employeeId/export
-  ├── ExcelJS で Workbook 生成
-  ├── シート構成:
-  │     Sheet1: 基本情報・スキル一覧・資格
-  │     Sheet2: 職務経歴（プロジェクト別）
-  └── res.attachment('skillsheet.xlsx') でダウンロード
-```
+| Sheet  | Contents                                   |
+| ------ | ------------------------------------------ |
+| Sheet1 | Basic info + skill tables + certifications |
+| Sheet2 | Projects (work history) table              |
 
-### Sheet1 内容
+---
 
-| 列 | 内容 |
-|----|------|
-| 基本情報 | 氏名(カナ)・生年月日・性別・最寄り駅・経験年数・自己PR |
-| スキル | 言語/FW/DB/インフラ/ツール（名前 + ★評価） |
-| 資格 | 資格名 + 取得日 |
+## 5. Skill Map API
 
-### Sheet2 内容
-
-| 列 | 内容 |
-|----|------|
-| プロジェクト情報 | プロジェクト名・期間・クライアント・業種・チーム・役割・概要・技術・タスク |
+`GET /skillsheet/api/skill-map` returns JSON for radar/bar chart rendering on the frontend.

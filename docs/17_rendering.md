@@ -1,93 +1,90 @@
-# 17. ページレンダリング・共通 UI
+# 17. Page Rendering
 
-関連ファイル: `lib/renderPage.js`（1487行）、`lib/helpers.js`
-
----
-
-## 1. renderPage.js の関数一覧
-
-| 関数 | 説明 |
-|------|------|
-| `renderPage(req, res, title, mainTitle, descriptionHtml)` | メインレンダラー。共通レイアウト HTML を生成して `res.send()` する |
-| `buildPageShell(req, options)` | 旧スタイルルート用。HTML ヘッダー＋ナビ部分を文字列で返す |
-| `pageFooter()` | `</div></div>` + チャットボットウィジェット + `</body></html>` を返す |
+Source file: `lib/renderPage.js` (1923 lines)
 
 ---
 
-## 2. renderPage が生成する HTML 構造
+## 1. Main Functions
+
+| Function | Description |
+|----------|-------------|
+| renderPage(req, options) | Generate full HTML page |
+| buildPageShell(req, options) | Build page HTML excluding dynamic content |
+| pageFooter(req) | Generate chatbot widget + footer scripts |
+
+---
+
+## 2. HTML Structure (6 Sections)
 
 ```html
 <!DOCTYPE html>
-<html lang="ja">
+<html>
+<!-- ① head -->
 <head>
     <meta charset="UTF-8">
-    <title>{title} - DXPRO</title>
+    <meta name="viewport" ...>
+    <title>{title} | DXPRO</title>
+    <!-- Bootstrap 5 (CDN) -->
     <!-- FontAwesome 6 (CDN) -->
-    <!-- Google Fonts: Noto Sans JP -->
-    <!-- カスタム CSS（インライン） -->
+    <!-- Chart.js 4 (CDN) -->
+    <!-- /public/i18n.js -->
+    <style>{inlineStyles}</style>
 </head>
 <body>
 
-<!-- ① サイドバー -->
+<!-- ② sidebar -->
 <div class="sidebar" id="sidebar">
-    <div class="sidebar-logo"> <!-- DXPRO ロゴ --> </div>
-    <nav class="sidebar-nav">
-        <!-- メインメニュー（全ユーザー） -->
-        <!-- 管理者メニュー（isAdmin のみ折りたたみで表示） -->
-        <!-- 教育サブメニュー（折りたたみ） -->
-    </nav>
+    <div class="sidebar-logo">DXPRO</div>
+    {sidebarMenu}
 </div>
 
-<!-- ② メインラッパー -->
-<div class="app-wrapper" id="appWrapper">
-
-    <!-- ③ トップバー -->
+<!-- ③ app-wrapper (main content area) -->
+<div class="app-wrapper" id="app-wrapper">
     <div class="topbar">
-        <div class="topbar-left">
-            <!-- サイドバートグルボタン -->
-            <!-- ページタイトル -->
-        </div>
-        <div class="topbar-right">
-            <!-- 日時時計 (id="topbar-clock") -->
-            <!-- 管理者バッジ（isAdmin のみ） -->
-            <!-- 🔔 通知ベル -->
-            <div class="notif-bell-wrap">
-                <button id="notif-bell-btn" onclick="toggleNotifDropdown()">🔔</button>
-                <span id="notif-bell-badge"></span>
-                <div id="notif-dropdown">
-                    <!-- 最新20件の通知リスト -->
-                    <!-- 「全て見る」リンク → /notifications -->
-                </div>
+        <!-- Clock -->
+        <span id="clock"></span>
+        <!-- Notification bell -->
+        <div class="notif-bell">
+            <button id="notif-bell-btn" onclick="toggleNotifDropdown()">🔔</button>
+            <span id="notif-bell-badge"></span>
+            <div id="notif-dropdown">
+                <!-- Latest 20 notifications -->
+                <!-- "View all" link → /notifications -->
             </div>
         </div>
     </div>
 
-    <!-- ④ メインコンテンツ -->
+    <!-- ④ main content -->
     <div class="main">
-        {descriptionHtml または mainTitle ヘッダー}
+        {descriptionHtml or mainTitle header}
     </div>
 
 </div><!-- /app-wrapper -->
 
-<!-- ⑤ JavaScript（インライン） -->
+<!-- ⑤ JavaScript (inline) -->
 <script>
-    updateClock();            // 毎秒時計を更新
-    setInterval(fetchUnreadCount, 30000); // 30秒ごとに未読数取得
-    toggleNotifDropdown();    // ベルクリックでドロップダウン開閉
-    loadNotifList();          // 通知リスト読み込み
-    openNotif(id, link);      // 1件既読 + リンク遷移
-    markAllRead();            // 全件既読
-    bindToggle();             // サイドバートグル
-    // 管理者メニュー折りたたみ制御
+    updateClock();            // Update clock every second
+    setInterval(fetchUnreadCount, 30000); // Fetch unread count every 30s
+    toggleNotifDropdown();    // Bell click → dropdown toggle
+    loadNotifList();          // Load notification list
+    openNotif(id, link);      // Mark single as read + navigate
+    markAllRead();            // Mark all as read
+    bindToggle();             // Sidebar toggle
+    // Admin menu collapse control
 </script>
 
-<!-- ⑥ チャットボットウィジェット（pageFooter） -->
-<div class="chatbot-widget">
-    <button class="chatbot-toggle" id="chatbot-toggle">🤖</button>
-    <div class="chatbot-window" id="chatbot-window">
-        <div class="chatbot-messages" id="chatbot-messages"></div>
-        <input id="chatbot-input" placeholder="質問を入力してください..." />
-        <button onclick="sendChatMessage()">送信</button>
+<!-- ⑥ Chatbot widget (pageFooter) -->
+<button id="cb-fab">🤖</button>
+<div id="cb-panel">
+    <div id="cb-panel-header">
+        <span>AI Assistant</span>
+        <button id="cb-reset">Reset</button>
+        <button id="cb-close">✕</button>
+    </div>
+    <div id="cb-messages"></div>
+    <div id="cb-input-row">
+        <input id="cb-input" placeholder="Enter your question..." />
+        <button id="cb-send">Send</button>
     </div>
 </div>
 
@@ -97,61 +94,57 @@
 
 ---
 
-## 3. サイドバーメニュー構成
+## 3. Sidebar Menu Structure
 
-### メインメニュー（全ユーザー共通）
+### Main Menu (All Users)
 
-| アイコン | メニュー名 | リンク先 |
-|---------|----------|---------|
-| 📊 | ダッシュボード | `/dashboard` |
-| ⏰ | 勤怠管理 | `/attendance-main` |
-| 🎯 | 目標管理 | `/goals` |
-| 📝 | 日報 | `/hr/daily-report` |
-| 🏖️ | 休暇申請 | `/leave/apply` |
-| 💰 | 給与明細 | `/hr/payroll` |
-| 📋 | スキルシート | `/skillsheet` |
-| 📣 | 掲示板 | `/board` |
-| 📚 | 会社規定 | `/rules` |
-| 🎓 | 教育（折りたたみ） | ─ |
-| └ | 入社前テスト | `/pretest` |
-| 👤 | 人事 | `/hr` |
-| 🔔 | 通知 | `/notifications` |
+| Icon | Menu Item | Link |
+|------|-----------|------|
+| 📊 | Dashboard | /dashboard |
+| ⏰ | Attendance | /attendance-main |
+| 🎯 | Goals | /goals |
+| 📝 | Daily Report | /hr/daily-report |
+| 🏖️ | Leave Requests | /leave/apply |
+| 💰 | Pay Slips | /hr/payroll |
+| 📋 | Skill Sheet | /skillsheet |
+| 📣 | Board | /board |
+| 📚 | Company Rules | /rules |
+| 🎓 | Education (collapsible) | — |
+| └ | Pre-employment Test | /pretest |
+| 👤 | HR | /hr |
+| 🔔 | Notifications | /notifications |
 
-### 管理者メニュー（isAdmin のみ）
+### Admin Menu (isAdmin only)
 
-| メニュー名 | リンク先 |
-|----------|---------|
-| 管理者ホーム | `/admin` |
-| 社員登録 | `/admin/register-employee` |
-| 月別勤怠 | `/admin/monthly-attendance` |
-| 承認リクエスト | `/admin/approval-requests` |
-| 休暇申請管理 | `/admin/leave-requests` |
-| 給与管理 | `/hr/payroll/admin` |
-| ユーザー管理 | `/admin/users` |
-| テスト結果 | `/admin/pretests` |
+| Menu Item | Link |
+|-----------|------|
+| Admin Home | /admin |
+| Register Employee | /admin/register-employee |
+| Monthly Attendance | /admin/monthly-attendance |
+| Approval Requests | /admin/approval-requests |
+| Leave Requests | /admin/leave-requests |
+| Payroll Admin | /hr/payroll/admin |
 
 ---
 
-## 4. helpers.js — ユーティリティ関数一覧
+## 4. Topbar
 
-| 関数 | 引数 | 返り値 | 説明 |
-|------|------|--------|------|
-| `escapeHtml(str)` | String | String | XSS 対策 HTML エスケープ（`& < > " '` の5種） |
-| `stripHtmlTags(str)` | String | String | HTML タグ除去（sanitize-html 使用） |
-| `renderMarkdownToHtml(md)` | String | String | Markdown → サニタイズ済み HTML（marked + sanitize-html） |
-| `getErrorMessageJP(code)` | String | String | 認証エラーコード → 日本語メッセージ |
-| `getPasswordErrorMessage(code)` | String | String | パスワードエラーコード → 日本語メッセージ |
-| `computeAIRecommendations(params)` | Object | Array | ダッシュボード AI インサイト生成（9ルール、最大6件） |
-| `computePretestScore(answers, lang)` | Object, String | Object | 入社前テスト採点（40問、キーワード/正規表現マッチング） |
-| `computeSemiAnnualGrade(userId, employee)` | ObjectId, Object | Object | 半期評価グレード計算（async、5カテゴリ 100点満点） |
+- **Clock:** Updated every second via `updateClock()`
+- **Notification bell:** Calls `fetchUnreadCount()` every 30 seconds, displays badge count
+- **Dropdown:** Shows latest 20 notifications with `loadNotifList()`
 
 ---
 
-## 5. デバッグエンドポイント（server.js）
+## 5. Chatbot Widget DOM IDs
 
-```javascript
-GET /debug-session
-  └── req.session の内容を JSON で返す（開発用）
-```
+| ID | Element | Description |
+|----|---------|-------------|
+| #cb-fab | Button | Floating action button (open panel) |
+| #cb-panel | Div | Chat panel container |
+| #cb-close | Button | Close panel |
+| #cb-reset | Button | Reset conversation |
+| #cb-messages | Div | Message list area |
+| #cb-input | Input | User input field |
+| #cb-send | Button | Send button |
 
-> ⚠️ 本番環境ではこのエンドポイントを削除するか認証を追加してください。
+Widget JS: `public/chatbot-widget.js`

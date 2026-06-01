@@ -1,140 +1,77 @@
-# 09. 目標管理
+# 09. Goal Management
 
-関連ファイル: `routes/goals.js`（1250行）
-
----
-
-## 1. エンドポイント一覧
-
-| メソッド | パス | 権限 | 説明 |
-|---------|------|------|------|
-| GET | `/goals` | requireLogin | 目標一覧 |
-| GET | `/goals/add` | requireLogin | 目標作成フォーム |
-| POST | `/goals/add` | requireLogin | 目標作成（status: draft） |
-| GET | `/goals/edit/:id` | requireLogin | 目標編集フォーム |
-| POST | `/goals/edit/:id` | requireLogin | 目標更新 |
-| GET | `/goals/detail/:id` | requireLogin | 目標詳細・履歴表示 |
-| GET | `/goals/delete/:id` | requireLogin | 目標削除（draft のみ） |
-| GET | `/goals/submit1/:id` | requireLogin | 1次承認依頼送信 ＋**通知** |
-| GET | `/goals/approve1/:id` | requireLogin | 1次承認処理 ＋**通知** |
-| GET | `/goals/reject1/:id` | requireLogin | 1次差し戻しフォーム |
-| POST | `/goals/reject1/:id` | requireLogin | 1次差し戻し処理 ＋**通知** |
-| GET | `/goals/evaluate/:id` | requireLogin | 評価入力フォーム |
-| POST | `/goals/evaluate/:id` | requireLogin | 評価入力 + 2次承認依頼 ＋**通知** |
-| GET | `/goals/reject2/:id` | requireLogin | 2次差し戻しフォーム |
-| POST | `/goals/reject2/:id` | requireLogin | 2次差し戻し処理 ＋**通知** |
-| GET | `/goals/approve2/:id` | requireLogin | 最終承認（completed）＋**通知** |
-| GET | `/goals/approval` | requireLogin | 自分が承認者の承認待ち一覧 |
-| GET | `/goals/report` | requireLogin | 目標レポート（管理者: 全員） |
-| GET | `/api/ai/goal-suggestions` | なし | AI 目標提案 API |
-| GET | `/goals/admin-fix/:id` | requireLogin + isAdmin | 管理者: 目標ステータス強制修正 |
-| GET | `/goals/admin-fix-drafts/preview` | requireLogin + isAdmin | draft 一括確認プレビュー |
-| POST | `/goals/admin-fix-drafts` | requireLogin + isAdmin | draft 一括ステータス修正 |
-| GET | `/goals/admin-fix-drafts` | requireLogin + isAdmin | draft 一覧 |
-| GET | `/goals/admin-backfill-createdBy` | requireLogin + isAdmin | createdBy フィールド補完バッチ |
+Source file: `routes/goals.js` (1850 lines)
 
 ---
 
-## 2. ワークフロー詳細
+## 1. Endpoints
 
-### ステータス遷移図
+| Method | Path                | Auth             | Description                                    |
+| ------ | ------------------- | ---------------- | ---------------------------------------------- |
+| GET    | /goals              | requireLogin     | Goal list                                      |
+| GET    | /goals/new          | requireLogin     | New goal form                                  |
+| POST   | /goals              | requireLogin     | Create goal                                    |
+| GET    | /goals/:id          | requireLogin     | Goal detail                                    |
+| POST   | /goals/:id/edit     | requireLogin     | Edit goal                                      |
+| POST   | /goals/:id/delete   | requireLogin     | Delete goal (draft only)                       |
+| POST   | /goals/:id/submit   | requireLogin     | Submit for approval (draft → pending1)         |
+| POST   | /goals/:id/approve1 | isManagerOrAdmin | Manager approve (pending1 → approved1)         |
+| POST   | /goals/:id/reject1  | isManagerOrAdmin | Manager reject                                 |
+| POST   | /goals/:id/submit2  | requireLogin     | Submit for 2nd approval (approved1 → pending2) |
+| POST   | /goals/:id/approve2 | isAdmin          | Admin approve (pending2 → completed)           |
+| POST   | /goals/:id/reject2  | isAdmin          | Admin reject                                   |
+| POST   | /goals/:id/progress | requireLogin     | Update progress %                              |
+| GET    | /goals/team         | isManagerOrAdmin | Team goals view                                |
+| GET    | /goals/all          | isAdmin          | All goals                                      |
+| GET    | /goals/ai-suggest   | requireLogin     | AI suggestion (JSON)                           |
+| POST   | /goals/:id/grade    | isAdmin          | Set evaluation grade                           |
+| GET    | /goals/export-csv   | isAdmin          | CSV export                                     |
+| GET    | /goals/template     | requireLogin     | Goal template download                         |
+| POST   | /goals/import-csv   | isAdmin          | CSV import                                     |
+| GET    | /goals/history/:id  | requireLogin     | Goal history                                   |
+| GET    | /goals/dashboard    | requireLogin     | Goals dashboard widget data                    |
+
+---
+
+## 2. Status Transitions
 
 ```
-作成
- │
- ▼
-draft ────── submit1 ────────► pending1
-                                 │
-                        ┌────────┴────────┐
-                   approve1           reject1
-                        │                │
-                        ▼                ▼
-                    approved1         rejected
-                        │
-                     evaluate
-                     + submit2
-                        │
-                        ▼
-                     pending2
-                        │
-               ┌────────┴────────┐
-           approve2           reject2
-               │                │
-               ▼                ▼
-           completed         rejected
-```
-
-### 各ステップの詳細
-
-| ステップ | 実行者 | 処理 | 通知先 |
-|---------|--------|------|--------|
-| `submit1` | 作成者 | status: pending1 + history 追記 | 1次承認者 |
-| `approve1` | 1次承認者 | status: approved1 + history 追記 | 作成者 |
-| `reject1` | 1次承認者 | status: rejected + 理由記録 | 作成者 |
-| `evaluate` + `submit2` | 作成者 | progress・grade 入力 + status: pending2 | 2次承認者 |
-| `reject2` | 2次承認者 | status: rejected + 理由記録 | 作成者 |
-| `approve2` | 2次承認者 | status: completed + history 追記 | 作成者 |
-
----
-
-## 3. 目標作成フォーム
-
-| 入力項目 | 必須 | 説明 |
-|---------|------|------|
-| title | ✅ | 目標タイトル |
-| description | — | 説明・詳細 |
-| deadline | — | 期日（スケジューラーが監視） |
-| goalLevel | — | 難易度（低/中/高） |
-| actionPlan | — | アクションプラン |
-| 1次承認者 | — | currentApprover |
-| 2次承認者 | — | 将来の承認者 |
-
----
-
-## 4. 目標一覧の表示ルール
-
-| 対象 | 表示条件 |
-|------|---------|
-| 自分の目標 | ownerId = 自分の Employee._id |
-| 承認待ち目標 | currentApprover = 自分 かつ pending1 or pending2 |
-
----
-
-## 5. AI 目標提案 API
-
-```
-GET /api/ai/goal-suggestions
-  └── ランダムに目標テンプレートを返す（JSON）
-
-レスポンス例:
-{
-  suggestions: [
-    "月次売上目標を達成するためのアクションプランを策定する",
-    "スキルアップのため資格取得を目指す",
-    ...
-  ]
-}
+draft → [submit] → pending1 → [approve1] → approved1 → [submit2] → pending2 → [approve2] → completed
+                       ↓ [reject1]                                      ↓ [reject2]
+                    rejected                                          rejected
 ```
 
 ---
 
-## 6. 目標レポート（/goals/report）
+## 3. 6-Step Workflow
 
-| データ | 内容 |
-|--------|------|
-| 全体達成率 | 全目標の平均達成率 |
-| ステータス別件数 | draft / pending / approved / completed / rejected |
-| 期日超過目標 | deadline < now かつ 未完了 |
-| 管理者表示 | 全社員の目標を部署・氏名でフィルター可能 |
+| Step | Actor    | Action                  | Notification      |
+| ---- | -------- | ----------------------- | ----------------- |
+| 1    | Employee | Create draft            | —                 |
+| 2    | Employee | Submit (→ pending1)     | Manager notified  |
+| 3    | Manager  | Approve/reject          | Employee notified |
+| 4    | Employee | Submit for 2nd approval | Admin notified    |
+| 5    | Admin    | Final approve/reject    | Employee notified |
+| 6    | Admin    | Set grade               | Employee notified |
 
 ---
 
-## 7. 管理者バッチ操作
+## 4. Create Form Fields
 
-| パス | 内容 |
-|------|------|
-| GET `/goals/admin-fix/:id` | 任意の目標の status を強制変更 |
-| GET `/goals/admin-fix-drafts` | draft 状態で止まっている目標の一覧 |
-| GET `/goals/admin-fix-drafts/preview` | 対象目標のプレビュー確認 |
-| POST `/goals/admin-fix-drafts` | draft 目標を一括で status 変更 |
-| GET `/goals/admin-backfill-createdBy` | createdBy フィールドが null の目標に ownerId を補完 |
+| Field       | Type   | Required | Description         |
+| ----------- | ------ | -------- | ------------------- |
+| title       | String | ✓        | Goal title          |
+| description | String | —        | Details             |
+| deadline    | Date   | —        | Target date         |
+| goalLevel   | enum   | —        | Low / Medium / High |
+| actionPlan  | String | —        | Action steps        |
+
+---
+
+## 5. AI Suggestions
+
+Fixed template response based on goal title analysis:
+
+- Provides 3 suggested action steps
+- Estimates progress milestones
+- Returns JSON: `{suggestions: [...]}`

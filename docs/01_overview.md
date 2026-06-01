@@ -1,123 +1,125 @@
-# 01. システム概要・技術スタック・ディレクトリ構成
+# 01. System Overview / Tech Stack / Directory Structure
 
 ---
 
-## 1. システム概要
+## 1. System Overview
 
-DXPRO 勤怠管理システムは、中小企業向けのオールインワン HR プラットフォームです。
+DXPRO Attendance is an all-in-one HR platform for small and medium-sized businesses.
 
-| 機能カテゴリ | 概要 |
-|------------|------|
-| 勤怠管理 | 出退勤打刻・月次集計・承認ワークフロー |
-| 目標管理 | 個人目標の設定・2段階承認・評価入力 |
-| 給与管理 | 給与明細の発行・閲覧・PDF エクスポート |
-| 休暇申請 | 各種休暇の申請・承認・残日数管理 |
-| 人事管理 | 社員情報の登録・編集・写真管理 |
-| 日報 | 日報投稿・コメント・スタンプリアクション |
-| 半期評価 | AI による自動グレード計算・改善提案 |
-| スキルシート | スキル・職務経歴の登録・Excel エクスポート |
-| 掲示板 | 社内お知らせ・ピン留め・いいね・コメント |
-| 会社規定 | 規定文書の管理・添付ファイルダウンロード |
-| 入社前テスト | 採用前の技術試験（言語選択式 40問） |
-| AI チャットボット | 自然言語で勤怠・目標・評価などを照会 |
-| 通知 | リアルタイム通知 + スケジュール自動通知 |
-
----
-
-## 2. 技術スタック
-
-| 区分 | 内容 | バージョン |
-|------|------|-----------|
-| **ランタイム** | Node.js | LTS |
-| **Webフレームワーク** | Express.js | ^5.1.0 |
-| **データベース** | MongoDB Atlas（Mongoose） | ^8.14.2 |
-| **セッション** | express-session（メモリストア） | ^1.18.1 |
-| **認証** | bcryptjs（パスワードハッシュ） | ^3.0.2 |
-| **テンプレート** | サーバーサイドテンプレートリテラル（renderPage.js） | — |
-| **メール** | Nodemailer + SendGrid / Brevo SMTP | ^7.0.3 / ^8.1.5 |
-| **スケジューラー** | node-cron | ^4.2.1 |
-| **PDF生成** | html-pdf | ^3.0.1 |
-| **Excel出力** | ExcelJS | ^4.4.0 |
-| **ファイルアップロード** | Multer | ^2.1.1 |
-| **日付処理** | moment-timezone | ^0.5.48 |
-| **Markdown変換** | marked + sanitize-html | — |
-| **フロントエンドUI** | FontAwesome 6、Bootstrap 5（CDN）、Chart.js 4 | CDN |
-| **SMS（予約）** | Twilio | ^5.7.1 |
-| **デプロイポート** | 3000 | — |
-
-### package.json 依存関係全件
-
-```json
-{
-  "@sendgrid/mail": "^8.1.5",
-  "bcryptjs": "^3.0.2",
-  "dotenv": "^16.5.0",
-  "exceljs": "^4.4.0",
-  "express": "^5.1.0",
-  "express-session": "^1.18.1",
-  "html-pdf": "^3.0.1",
-  "moment-timezone": "^0.5.48",
-  "mongoose": "^8.14.2",
-  "multer": "^2.1.1",
-  "node-cron": "^4.2.1",
-  "nodemailer": "^7.0.3",
-  "twilio": "^5.7.1"
-}
-```
+| Category | Overview |
+|----------|---------|
+| Attendance | Clock-in/out, monthly summary, approval workflow |
+| Goal Management | Personal goals, 2-stage approval, evaluation input |
+| Payroll | Pay slip generation, viewing, PDF export |
+| Leave Requests | Various leave types, approval, balance management |
+| HR Management | Employee registration, editing, photo management |
+| Daily Reports | Post reports, comments, stamp reactions |
+| Semi-Annual Evaluation | AI-based auto grade calculation, improvement suggestions |
+| Skill Sheet | Skills & work history registration, Excel export |
+| Board | Company announcements, pinning, likes, comments |
+| Company Rules | Rule document management, file downloads |
+| Pre-employment Test | Technical exam before hiring (language-selectable, 40 questions) |
+| AI Chatbot | Query attendance, goals, evaluations in natural language |
+| Notifications | Real-time notifications + scheduled auto notifications |
 
 ---
 
-## 3. ディレクトリ構成
+## 2. Tech Stack
+
+| Category | Technology | Version |
+|----------|-----------|---------|
+| **Runtime** | Node.js | LTS |
+| **Web Framework** | Express.js | ^5.1.0 |
+| **Database** | MongoDB Atlas (Mongoose) | ^8.14.2 |
+| **Session** | express-session (memory store) | ^1.18.1 |
+| **Auth** | bcryptjs (password hashing) | ^3.0.2 |
+| **Templates** | Server-side template literals (renderPage.js) | — |
+| **Email** | Nodemailer + SendGrid / Brevo SMTP | ^7.0.3 / ^8.1.5 |
+| **Scheduler** | node-cron | ^4.2.1 |
+| **PDF** | html-pdf | ^3.0.1 |
+| **Excel** | ExcelJS | ^4.4.0 |
+| **File Upload** | Multer | ^2.1.1 |
+| **Date Processing** | moment-timezone | ^0.5.48 |
+| **Markdown** | marked + sanitize-html | — |
+| **Frontend UI** | FontAwesome 6, Bootstrap 5 (CDN), Chart.js 4 | CDN |
+| **SMS (reserved)** | Twilio | ^5.7.1 |
+| **Deploy Port** | 3000 | — |
+
+---
+
+## 3. Directory Structure
 
 ```
 dxpro-attendance/
-├── server.js                    # エントリーポイント
+├── server.js                    # Entry point
 ├── package.json
-├── .env                         # 環境変数（Git 除外）
-├── docs/                        # 設計書（本ドキュメント群）
+├── .env                         # Environment variables (Git-excluded)
+├── docs/                        # Design documents
 ├── config/
-│   ├── db.js                    # MongoDB 接続（mongoose.connect）
-│   └── mailer.js                # メール送信設定（SendGrid / Brevo / SMTP）
+│   ├── db.js                    # MongoDB connection (mongoose.connect)
+│   └── mailer.js                # Email configuration (SendGrid / Brevo / SMTP)
 ├── middleware/
-│   └── auth.js                  # requireLogin / isAdmin ミドルウェア
+│   └── auth.js                  # requireLogin / isAdmin / requireRole middleware
 ├── models/
-│   └── index.js                 # 全 Mongoose スキーマ・モデル定義（17モデル）
+│   └── index.js                 # All Mongoose schemas and model definitions (43 models, 1526 lines)
 ├── lib/
-│   ├── helpers.js               # ユーティリティ関数・AI計算エンジン（601行）
-│   ├── renderPage.js            # HTML ページ生成（共通レイアウト）（1487行）
-│   └── notificationScheduler.js # cron スケジューラー（128行）
+│   ├── helpers.js               # Utility functions & AI calculation engine (1202 lines)
+│   ├── renderPage.js            # HTML page generation (common layout) (1923 lines)
+│   ├── notificationScheduler.js # cron scheduler (306 lines)
+│   ├── payrollEngine.js         # Payroll calculation batch engine
+│   ├── auditLog.js              # Audit log helper
+│   ├── emailHelper.js           # Email sending helper
+│   ├── i18n.js                  # Internationalization helper
+│   ├── integrations.js          # External integrations (Slack / LINE WORKS)
+│   └── dailyReportSummary.js    # Daily report AI summary helper
 ├── routes/
-│   ├── auth.js                  # 認証・ユーザー登録（560行）
-│   ├── attendance.js            # 勤怠打刻・集計・承認申請（1726行）
-│   ├── dashboard.js             # ダッシュボード・半期評価（1067行）
-│   ├── admin.js                 # 管理者機能（1228行）
-│   ├── hr.js                    # 人事・給与・日報（2845行）
-│   ├── leave.js                 # 休暇申請・承認（614行）
-│   ├── goals.js                 # 目標管理（1250行）
-│   ├── board.js                 # 掲示板（714行）
-│   ├── pretest.js               # 入社前テスト（1268行）
-│   ├── rules.js                 # 会社規定（361行）
-│   ├── skillsheet.js            # スキルシート（841行）
-│   ├── chatbot.js               # AIチャットボット（452行）
-│   └── notifications.js         # 通知（167行）
-├── public/
-│   ├── dxpro-logo.png
-│   ├── dxpro-solutions-logo.png
-│   ├── inkan.png
-│   └── nokori-logo.png
+│   ├── auth.js                  # Authentication & user registration (507 lines)
+│   ├── attendance.js            # Clock-in/out, summary, approval (2446 lines)
+│   ├── dashboard.js             # Dashboard & semi-annual evaluation (2364 lines)
+│   ├── admin.js                 # Admin features (1962 lines)
+│   ├── hr.js                    # HR, payroll, daily reports (5895 lines)
+│   ├── leave.js                 # Leave requests & approval (874 lines)
+│   ├── goals.js                 # Goal management (1850 lines)
+│   ├── board.js                 # Bulletin board (832 lines)
+│   ├── pretest.js               # Pre-employment test (983 lines)
+│   ├── rules.js                 # Company rules (357 lines)
+│   ├── skillsheet.js            # Skill sheet (1509 lines)
+│   ├── chatbot.js               # AI chatbot (7143 lines)
+│   ├── notifications.js         # Notifications (351 lines)
+│   ├── schedule.js              # Schedule / calendar (4084 lines)
+│   ├── workflow.js              # Workflow (1815 lines)
+│   ├── chat.js                  # Group chat (3430 lines)
+│   ├── contracts.js             # Contract management (2845 lines)
+│   ├── cloud.js                 # Cloud storage (2163 lines)
+│   ├── tasks.js                 # Task management (3236 lines)
+│   ├── overtime.js              # Overtime requests (887 lines)
+│   ├── locations.js             # GPS approved locations (603 lines)
+│   ├── organization.js          # Org chart management (636 lines)
+│   ├── ai_home_settings.js      # AI home settings (375 lines)
+│   ├── auditlog.js              # Audit log viewer (425 lines)
+│   ├── email.js                 # Email settings (477 lines)
+│   ├── integrations.js          # External integration settings (369 lines)
+│   ├── payroll_admin.js         # Payroll batch management (473 lines)
+│   ├── ui_optimizer.js          # UI optimization (506 lines)
+│   └── lang.js                  # Language switcher (42 lines)
+├── services/
+│   └── workflow-engine.js       # Workflow engine
+├── locales/
+│   └── ja.json / en.json / vi.json / ko.json / zh.json  # i18n translation files
+├── public/                      # Static assets & frontend JS
 └── uploads/
-    ├── (社員写真)
+    ├── (employee photos, daily report attachments)
     └── rules/
-        └── (規定添付ファイル)
+        └── (rule document attachments)
 ```
 
-### server.js 起動処理
+### server.js Startup Sequence
 
 ```
-1. express / express-session 設定
-2. 静的ファイル配信: /public, /uploads
-3. 全ルートをマウント（auth → attendance → dashboard → admin → hr → leave → goals → board → pretest → rules → chatbot → skillsheet → notifications）
-4. createAdminUser()  ← デフォルト管理者作成（username: admin, password: admin1234）
-5. startScheduler()   ← cron スケジューラー起動
-6. app.listen(PORT)   ← デフォルト 3000
+1. Configure express / express-session
+2. Serve static files: /public, /uploads
+3. Mount all routes (auth → attendance → dashboard → admin → hr → leave → goals → board → pretest → rules → chatbot → skillsheet → notifications)
+4. createAdminUser()  ← Create default admin (username: admin, password: admin1234)
+5. startScheduler()   ← Start cron scheduler
+6. app.listen(PORT)   ← Default 3000
 ```

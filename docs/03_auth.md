@@ -1,149 +1,100 @@
-# 03. 認証・権限・セッション管理
+# 03. Authentication & Permissions
 
-関連ファイル: `routes/auth.js` / `middleware/auth.js`
-
----
-
-## 1. エンドポイント一覧
-
-| メソッド | パス | 権限 | 説明 |
-|---------|------|------|------|
-| GET | `/` | requireLogin | ルートリダイレクト → `/dashboard` |
-| GET | `/login` | なし | ログイン画面 |
-| POST | `/login` | なし | ログイン処理 |
-| GET | `/logout` | なし | ログアウト処理 |
-| GET | `/register` | なし | ユーザー登録画面 |
-| POST | `/register` | なし | ユーザー登録処理 |
-| GET | `/change-password` | requireLogin | パスワード変更画面 |
-| POST | `/change-password` | requireLogin | パスワード変更処理 |
+Source file: `routes/auth.js` (507 lines), `middleware/auth.js`
 
 ---
 
-## 2. ログイン処理フロー
+## 1. Endpoints
+
+| Method | Path             | Auth         | Description                                      |
+| ------ | ---------------- | ------------ | ------------------------------------------------ |
+| GET    | /login           | —            | Login page                                       |
+| POST   | /login           | —            | Authenticate and start session                   |
+| GET    | /logout          | requireLogin | Destroy session and redirect to /login           |
+| GET    | /change-password | requireLogin | Password change page                             |
+| POST   | /change-password | requireLogin | Update password                                  |
+| GET    | /register        | isAdmin      | User registration page (disabled for non-admins) |
+| POST   | /register        | isAdmin      | Create user                                      |
+| GET    | /users           | isAdmin      | User list                                        |
+
+---
+
+## 2. Login Flow
 
 ```
 POST /login
-  ├── username で User を検索
-  ├── bcryptjs.compare(入力password, hashedPassword)
-  ├── 照合成功 →
-  │     session.userId    = user._id
-  │     session.username  = user.username
-  │     session.isAdmin   = user.isAdmin
-  │     session.employee  = employee（Employee.findOne({userId})）
-  │     redirect → /dashboard
-  └── 失敗 → エラーコードを getErrorMessageJP() で日本語化してログインページ再表示
+  → Find User by username
+  → bcrypt.compare(inputPassword, user.password)
+  → On success:
+      req.session.userId = user._id
+      req.session.isAdmin = user.isAdmin
+      req.session.role = user.role
+      req.session.username = user.username
+      req.session.preferredLang = user.preferredLang
+      auditLog(userId, 'login', ip)
+      redirect to /dashboard
+  → On failure:
+      auditLog(null, 'login_failed', ip)
+      re-render login with error message
 ```
 
 ---
 
-## 3. ユーザー登録処理フロー
+## 3. Login Page Features
 
-```
-POST /register
-  ├── username 重複チェック
-  ├── bcryptjs.hash(password, 10)
-  ├── User.create({username, password: hashed})
-  └── redirect → /login
-```
+- Language selector (5 languages: ja / en / vi / ko / zh)
+- Real-time clock display
+- Password show/hide toggle
 
 ---
 
-## 4. パスワード変更処理フロー
+## 4. Password Change Flow
 
 ```
 POST /change-password
-  ├── 現在のパスワードを bcryptjs.compare で確認
-  ├── 新パスワードと確認用が一致するか確認
-  ├── bcryptjs.hash(newPassword, 10)
-  ├── User.findByIdAndUpdate(session.userId, {password: hashed})
-  └── 成功メッセージ表示 / 失敗時 getPasswordErrorMessage() で日本語化
+  → Verify current password with bcrypt
+  → bcrypt.hash(newPassword, 10)
+  → User.updateOne({password: hash})
 ```
 
 ---
 
-## 5. ミドルウェア
+## 5. Middleware
 
 ### requireLogin
 
-```javascript
-// middleware/auth.js
-function requireLogin(req, res, next) {
-    if (!req.session.userId) {
-        return res.redirect('/login');
-    }
-    next();
-}
-```
+- Checks `req.session.userId`
+- Returns 401 JSON if `wantsJson(req)` (XHR/fetch)
+- Otherwise redirects to /login
 
 ### isAdmin
 
-```javascript
-// middleware/auth.js
-function isAdmin(req, res, next) {
-    if (!req.session.isAdmin) {
-        return res.status(403).send('403 Forbidden');
-    }
-    next();
-}
+- Checks `req.session.isAdmin === true`
+- Returns 403 / redirects to /dashboard
+
+### requireRole(minLevel)
+
+- Uses ROLE_LEVEL to check numeric role level
+- `ROLE_LEVEL = { admin: 4, manager: 3, team_leader: 2, employee: 1 }`
+
+### isManagerOrAdmin
+
+- Shorthand: role is manager or admin (level >= 3)
+
+### isLeaderOrAbove
+
+- Shorthand: role is team_leader, manager, or admin (level >= 2)
+
+### blockTestUser
+
+- Prevents write operations by test_user role
+
+---
+
+## 6. ROLE_LEVEL
+
+```js
+const ROLE_LEVEL = { admin: 4, manager: 3, team_leader: 2, employee: 1 };
 ```
 
----
-
-## 6. 権限モデル
-
-| ロール | 条件 | アクセス可能機能 |
-|--------|------|----------------|
-| **管理者** | `session.isAdmin === true` | 全機能 |
-| **一般ユーザー** | `session.isAdmin === false` | 自分のデータ参照・編集、各種申請、日報・目標・スキルシート |
-| **未認証** | `session.userId` が未設定 | `/login`、`/register`、`/pretest/*` のみ |
-
-### 管理者専用機能一覧
-
-| 機能 | パス |
-|------|------|
-| 社員登録 | POST `/admin/register-employee` |
-| ユーザー一覧・権限操作 | GET/POST `/admin/users/*` |
-| 全社員勤怠一覧 | GET `/admin/monthly-attendance` |
-| 勤怠承認・差し戻し | GET/POST `/admin/approve-request/*` |
-| 休暇申請 承認・却下 | POST `/admin/approve-leave/:id` / `/admin/reject-leave/:id` |
-| 残日数付与 | POST `/admin/leave-balance/grant` |
-| 給与明細 作成・編集・削除 | `/hr/payroll/admin/*` |
-| 会社規定 作成・編集・削除 | `/rules/new` / `/rules/edit/:id` |
-| 入社前テスト全件閲覧 | GET `/admin/pretests` |
-| 目標バッチ操作 | GET/POST `/goals/admin-fix*` |
-
----
-
-## 7. セッション設定
-
-| 項目 | 値 |
-|------|-----|
-| secret | `SESSION_SECRET` 環境変数（未設定時は固定文字列） |
-| resave | false |
-| saveUninitialized | false |
-| cookie.secure | false（HTTP 対応） |
-| cookie.maxAge | 24時間（86,400,000ms） |
-| ストア | デフォルトメモリストア（本番ではRedis等推奨） |
-
-### セッションデータ一覧
-
-| キー | 型 | 内容 |
-|------|-----|------|
-| `userId` | ObjectId | User の _id |
-| `username` | String | ユーザー名 |
-| `isAdmin` | Boolean | 管理者フラグ |
-| `employee` | Object | Employee オブジェクト（キャッシュ） |
-
----
-
-## 8. デフォルト管理者
-
-server.js 起動時に `createAdminUser()` が自動実行される。
-
-| 項目 | 値 |
-|------|-----|
-| username | `admin` |
-| password | `admin1234` |
-| isAdmin | `true` |
-
-> ⚠️ 本番環境では起動後すぐにパスワードを変更してください。
+Exported from `middleware/auth.js` and used by route files.

@@ -1,105 +1,74 @@
-# 08. 休暇申請・承認・残日数管理
+# 08. Leave Requests
 
-関連ファイル: `routes/leave.js`（614行）
-
----
-
-## 1. エンドポイント一覧
-
-| メソッド | パス | 権限 | 説明 |
-|---------|------|------|------|
-| GET | `/leave/apply` | requireLogin | 休暇申請フォーム（残日数表示） |
-| POST | `/leave/apply` | requireLogin | 休暇申請処理 |
-| GET | `/leave/early` | requireLogin | 早退申請フォーム |
-| POST | `/leave/early` | requireLogin | 早退申請処理 |
-| GET | `/leave/my-requests` | requireLogin | 自分の申請一覧 |
-| GET | `/admin/leave-requests` | requireLogin + isAdmin | 管理者: 全申請一覧 |
-| POST | `/admin/approve-leave/:id` | requireLogin + isAdmin | 休暇承認 ＋**通知** |
-| POST | `/admin/reject-leave/:id` | requireLogin + isAdmin | 休暇却下 ＋**通知** |
-| GET | `/admin/leave-balance` | requireLogin + isAdmin | 全社員残日数管理画面 |
-| POST | `/admin/leave-balance/grant` | requireLogin + isAdmin | 残日数付与・調整 |
+Source file: `routes/leave.js` (874 lines)
 
 ---
 
-## 2. 休暇申請フロー
+## 1. Endpoints
+
+| Method | Path                 | Auth         | Description                  |
+| ------ | -------------------- | ------------ | ---------------------------- |
+| GET    | /leave/apply         | requireLogin | Leave application page       |
+| POST   | /leave/apply         | requireLogin | Submit leave request         |
+| GET    | /leave/history       | requireLogin | Application history          |
+| GET    | /leave/balance       | requireLogin | Leave balance                |
+| POST   | /leave/cancel/:id    | requireLogin | Cancel application           |
+| GET    | /leave/admin         | isAdmin      | Admin: all requests list     |
+| POST   | /leave/approve/:id   | isAdmin      | Approve request              |
+| POST   | /leave/reject/:id    | isAdmin      | Reject request               |
+| POST   | /leave/balance/grant | isAdmin      | Grant/deduct leave balance   |
+| GET    | /leave/early         | requireLogin | Early leave application page |
+
+---
+
+## 2. Leave Application Flow
 
 ```
-GET /leave/apply
-  └── LeaveBalance を参照して残日数を表示
-
 POST /leave/apply
-  ├── 残日数チェック（有給 / 病欠 / 慶弔 / その他）
-  ├── LeaveRequest.create({
-  │     userId, employeeId, name, department,
-  │     leaveType, halfDay, startDate, endDate, days, reason,
-  │     status: 'pending'
-  │   })
-  └── redirect → /leave/my-requests
+  → Check LeaveBalance (remaining days >= requested days)
+  → LeaveRequest.create({userId, leaveType, startDate, endDate, days, reason, status:'pending'})
+  → Notify admin via Notification + email
 ```
 
 ---
 
-## 3. 承認・却下フロー
+## 3. Approval / Rejection Flow
 
 ```
-POST /admin/approve-leave/:id （承認）
-  ├── LeaveRequest.status → 'approved'
-  ├── LeaveBalance から該当 leaveType の残日数を減算（days 分）
-  │     LeaveBalance.history に記録
-  └── createNotification({ type: 'leave_approved', 受信者: 申請者 })
+POST /leave/approve/:id
+  → LeaveRequest.status = 'approved'
+  → Deduct LeaveBalance: balance[leaveType] -= days
+  → Auto-reflect in Attendance: status = leaveType label for each day in range
+  → Send notification to applicant
+  → Send email to applicant
+  → Notify Slack/LINE if configured
 
-POST /admin/reject-leave/:id （却下）
-  ├── LeaveRequest.status → 'rejected'
-  └── createNotification({ type: 'leave_rejected', 受信者: 申請者 })
-```
-
----
-
-## 4. 早退申請
-
-```
-POST /leave/early
-  └── LeaveRequest.create({
-        leaveType: '早退',
-        earlyLeaveTime: HH:MM,
-        status: 'pending'
-      })
+POST /leave/reject/:id
+  → LeaveRequest.status = 'rejected'
+  → returnReason saved
+  → Notification + email to applicant
 ```
 
 ---
 
-## 5. 休暇種別一覧
+## 4. Leave Types & Balance Fields
 
-| leaveType | 内容 | 残日数消費 |
-|-----------|------|-----------|
-| 有給 | 有給休暇 | paid から減算 |
-| 病欠 | 病気欠勤 | sick から減算 |
-| 慶弔 | 慶弔休暇 | special から減算 |
-| その他 | 特別事情など | other から減算 |
-| 午前休 | 午前半休（halfDay: AM） | paid × 0.5 |
-| 午後休 | 午後半休（halfDay: PM） | paid × 0.5 |
-| 早退 | 早退届 | 残日数非消費 |
-
----
-
-## 6. 残日数管理
-
-```
-GET /admin/leave-balance
-  └── 全社員の LeaveBalance を一覧表示（有給/病欠/慶弔/その他）
-
-POST /admin/leave-balance/grant
-  ├── LeaveBalance を upsert（社員未作成の場合は create）
-  ├── 指定 leaveType の残日数を加算
-  └── LeaveBalance.history に付与履歴を追記
-```
+| Leave Type         | Balance Field | Description                           |
+| ------------------ | ------------- | ------------------------------------- |
+| 有給 (Paid)        | paid          | Standard paid leave                   |
+| 病欠 (Sick)        | sick          | Sick leave                            |
+| 慶弔 (Special)     | special       | Congratulatory/condolence leave       |
+| その他 (Other)     | other         | Other leave                           |
+| 午前休 (AM Half)   | paid (0.5)    | Morning half-day paid leave           |
+| 午後休 (PM Half)   | paid (0.5)    | Afternoon half-day paid leave         |
+| 早退 (Early Leave) | —             | Early departure (no balance deducted) |
 
 ---
 
-## 7. 申請ステータス遷移
+## 5. Balance Management
 
 ```
-pending → approved （承認: 残日数減算 + 通知）
-pending → rejected （却下: 通知）
-pending → canceled （本人キャンセル）
+POST /leave/balance/grant
+  → LeaveBalance.balance[leaveType] += delta (can be negative for deduction)
+  → Append to history: {grantedBy, leaveType, delta, note, at}
 ```

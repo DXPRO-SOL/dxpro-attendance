@@ -1,100 +1,63 @@
-# 11. 入社前テスト・自動採点
+# 11. Pre-employment Test
 
-関連ファイル: `routes/pretest.js`（1268行）、`lib/helpers.js`
-
----
-
-## 1. エンドポイント一覧
-
-| メソッド | パス | 権限 | 説明 |
-|---------|------|------|------|
-| GET | `/pretest` | requireLogin | テストトップ（言語選択） |
-| GET | `/pretest/:lang` | requireLogin | テスト本体 |
-| GET | `/pretest/answers` | requireLogin | 回答・解説一覧（全言語） |
-| GET | `/pretest/answers/:lang` | requireLogin | 特定言語の解説 |
-| GET | `/pretest/answers/common` | requireLogin | 共通問題の解説 |
-| POST | `/pretest/submit` | requireLogin | 回答送信・自動採点 |
-| GET | `/admin/pretests` | isAdmin | 全提出一覧（管理者） |
-| GET | `/admin/pretest/:id` | isAdmin | 提出詳細・問題別スコア |
+Source file: `routes/pretest.js` (983 lines)
 
 ---
 
-## 2. テスト構成
+## 1. Endpoints
 
-| 言語 | 共通問題 | 言語固有問題 | 合計 |
-|------|---------|------------|------|
-| Java | Q1〜Q20（面接回答形式） | Q21〜Q40（Java コードレビュー形式） | 40問 |
-| Python | Q1〜Q20（面接回答形式） | Q21〜Q40（Python コードレビュー形式） | 40問 |
+| Method | Path                  | Auth    | Description                        |
+| ------ | --------------------- | ------- | ---------------------------------- |
+| GET    | /pretest              | —       | Test start page (no auth required) |
+| GET    | /pretest/test         | —       | Test page                          |
+| POST   | /pretest/submit       | —       | Submit answers                     |
+| GET    | /pretest/result/:id   | —       | Result page                        |
+| GET    | /pretest/admin        | isAdmin | Admin: submission list             |
+| GET    | /pretest/admin/:id    | isAdmin | Admin: submission detail           |
+| POST   | /pretest/admin/config | isAdmin | Update test configuration          |
 
 ---
 
-## 3. 採点ロジック（computePretestScore）
+## 2. Test Structure
 
-関数定義: `lib/helpers.js`
+- Defined in `lib/pretestQuestions.js` as `LANG_TESTS[lang]`
+- **8 languages:** common, java, javascript, python, php, csharp, android, swift
+- Each test: **30 multiple-choice (MC)** + **10 essay questions**
+- Total: **40 questions**
 
-### Q1〜Q20（面接回答形式）
+---
 
-- 自由記述形式
-- **キーワードマッチング**で採点
-- 1問 = 1点（部分点なし）
-- 正解キーワードが回答テキストに含まれるかどうかを判定
+## 3. Scoring Logic (`lib/helpers.js: computePretestScore`)
 
-### Q21〜Q40（コードレビュー形式）
-
-- コード記述・選択形式
-- **正規表現パターン**でマッチング採点
-- 1問 = 1点（部分点: 0.5点あり）
-- 必須要素と加点要素で配点を分割
-
-### 出力
-
-```javascript
-{
-  score: 28,               // 合計点（/40）
-  total: 40,               // 満点
-  perQuestionScores: {     // 問題別スコア
-    q1: 1, q2: 0.5, q3: 1, ...
-  }
-}
+```
+MC questions:    1 point each × 30 = 30 points max
+Essay questions: keyword match scoring × 10 = 10 points max
+Total:           40 points max
+Pass condition:  score >= 24 (60%)
 ```
 
 ---
 
-## 4. 提出フロー
+## 4. Submission Flow (7 Steps)
 
 ```
-GET /pretest/:lang
-  ├── テスト開始時刻を記録（startedAt）
-  └── 問題一覧を表示
-
-POST /pretest/submit
-  ├── computePretestScore(answers, lang) で採点
-  ├── PretestSubmission.create({
-  │     name, email, answers, score, total, lang,
-  │     perQuestionScores, startedAt, endedAt, durationSeconds
-  │   })
-  └── 結果ページ表示（スコア・問題別結果）
+1. Candidate selects language on /pretest
+2. Timer starts (timeLimit from PretestConfig, default 60min)
+3. Answer 30 MC questions (wizard step)
+4. Answer 10 essay questions (wizard step)
+5. POST /pretest/submit
+6. computePretestScore() runs server-side
+7. PretestSubmission saved with score, passed, durationSeconds
+   → Redirect to /pretest/result/:id
 ```
 
 ---
 
-## 5. 管理者閲覧
+## 5. Score Storage
 
-```
-GET /admin/pretests
-  └── 全 PretestSubmission を一覧表示（受験者名・スコア・言語・日時）
+Saved in `PretestSubmission` model:
 
-GET /admin/pretest/:id
-  └── 提出詳細（全回答・問題別スコア・所要時間）
-```
-
----
-
-## 6. 解説ページ
-
-| パス | 内容 |
-|------|------|
-| GET `/pretest/answers` | 全言語の解説一覧 |
-| GET `/pretest/answers/common` | Q1〜Q20 共通問題の模範解答 |
-| GET `/pretest/answers/java` | Q21〜Q40 Java の模範解答 |
-| GET `/pretest/answers/python` | Q21〜Q40 Python の模範解答 |
+- `score`: numeric score (0–40)
+- `passed`: boolean (true if score >= 24)
+- `durationSeconds`: time taken
+- `startedAt` / `endedAt`: timestamps
