@@ -65,10 +65,12 @@ async function sendMail({ to, from, subject, text, html, attachments } = {}) {
 
     // 1) Resend（推奨：IP制限なし、Renderで安定動作）
     if (useResend) {
+        // ドメイン未認証の場合はResendのデフォルト送信者を使用
+        const resendFrom = process.env.RESEND_FROM || 'onboarding@resend.dev';
         await httpsPost('api.resend.com', '/emails', {
             'Authorization': `Bearer ${resendApiKey}`
         }, {
-            from: senderEmail,
+            from: resendFrom,
             to: [to],
             subject,
             html: html || text,
