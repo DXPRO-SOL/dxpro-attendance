@@ -66,7 +66,18 @@ async function sendMail({ to, from, subject, text, html, attachments } = {}) {
     // 1) Resend（推奨：IP制限なし、Renderで安定動作）
     if (useResend) {
         // ドメイン未認証の場合はResendのデフォルト送信者を使用
-        const resendFrom = process.env.RESEND_FROM || 'onboarding@resend.dev';
+        // RESEND_FROM が未認証ドメイン (@dxpro-sol.com 等) の場合は onboarding@resend.dev にフォールバック
+        const resendFromEnv = process.env.RESEND_FROM || '';
+        const verifiedDomains = (process.env.RESEND_VERIFIED_DOMAINS || '').split(',').map(d => d.trim()).filter(Boolean);
+        let resendFrom = 'onboarding@resend.dev';
+        if (resendFromEnv) {
+            const fromDomain = resendFromEnv.split('@')[1] || '';
+            if (verifiedDomains.length > 0 && verifiedDomains.includes(fromDomain)) {
+                resendFrom = resendFromEnv;
+            } else if (verifiedDomains.length === 0 && fromDomain && fromDomain !== 'dxpro-sol.com') {
+                resendFrom = resendFromEnv;
+            }
+        }
         await httpsPost('api.resend.com', '/emails', {
             'Authorization': `Bearer ${resendApiKey}`
         }, {
