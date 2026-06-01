@@ -6,15 +6,16 @@
 
 ## 1. エンドポイント一覧
 
-| メソッド | パス                     | 権限         | 説明                                    |
-| -------- | ------------------------ | ------------ | --------------------------------------- |
-| GET      | `/pretest`               | **なし**     | `/pretest/common` へリダイレクト        |
-| GET      | `/pretest/:lang`         | **なし**     | テスト本体（候補者向け・未ログイン可）  |
-| POST     | `/pretest/submit`        | **なし**     | 回答送信・サーバサイド自動採点          |
-| GET      | `/pretest/answers`       | requireLogin | 解説一覧（言語選択）                    |
-| GET      | `/pretest/answers/:lang` | requireLogin | 言語別 or 共通（lang=common）の模範解答 |
-| GET      | `/admin/pretests`        | isAdmin      | 全提出一覧（最新200件）                 |
-| GET      | `/admin/pretest/:id`     | isAdmin      | 提出詳細・問題別スコア                  |
+| メソッド | パス                      | 権限                   | 説明                                   |
+| -------- | ------------------------- | ---------------------- | -------------------------------------- |
+| GET      | `/pretest`                | **なし**               | `/pretest/common` へリダイレクト       |
+| GET      | `/pretest/:lang`          | **なし**               | テスト本体（候補者向け・未ログイン可） |
+| POST     | `/pretest/submit`         | **なし**               | 回答送信・サーバサイド自動採点         |
+| GET      | `/pretest/answers`        | requireLogin           | 解説一覧（言語選択）                   |
+| GET      | `/pretest/answers/common` | requireLogin           | 共通問題の模範解答（Q1〜Q40）          |
+| GET      | `/pretest/answers/:lang`  | requireLogin           | 言語別の模範解答（Q1〜Q40）            |
+| GET      | `/admin/pretests`         | requireLogin + isAdmin | 全提出一覧（最新200件）                |
+| GET      | `/admin/pretest/:id`      | requireLogin + isAdmin | 提出詳細・問題別スコア                 |
 
 ---
 

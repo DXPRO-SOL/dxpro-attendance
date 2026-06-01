@@ -1,27 +1,44 @@
 // ==============================
 // routes/board.js - 掲示板
 // ==============================
-const router = require('express').Router();
-const multer = require('multer');
-const path = require('path');
-const moment = require('moment-timezone');
-const { User, Employee, BoardPost, BoardComment, Notification } = require('../models');
-const { requireLogin, isAdmin } = require('../middleware/auth');
-const { escapeHtml, stripHtmlTags, renderMarkdownToHtml } = require('../lib/helpers');
-const { renderPage } = require('../lib/renderPage');
+const router = require("express").Router();
+const multer = require("multer");
+const path = require("path");
+const moment = require("moment-timezone");
+const {
+  User,
+  Employee,
+  BoardPost,
+  BoardComment,
+  Notification,
+} = require("../models");
+const { requireLogin, isAdmin } = require("../middleware/auth");
+const {
+  escapeHtml,
+  stripHtmlTags,
+  renderMarkdownToHtml,
+} = require("../lib/helpers");
+const { renderPage } = require("../lib/renderPage");
 
 // ファイルアップロード設定
 const storage = multer.diskStorage({
-    destination: function (req, file, cb) { cb(null, 'uploads/'); },
-    filename: function (req, file, cb) {
-        const ext = path.extname(file.originalname) || '';
-        cb(null, Date.now() + '-' + Math.round(Math.random() * 1e9) + ext);
-    }
+  destination: function (req, file, cb) {
+    cb(null, "uploads/");
+  },
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname) || "";
+    cb(null, Date.now() + "-" + Math.round(Math.random() * 1e9) + ext);
+  },
 });
 const upload = multer({ storage });
 
-router.get('/board/new', requireLogin, (req, res) => {
-    renderPage(req, res, "新規投稿", "掲示板への投稿", `
+router.get("/board/new", requireLogin, (req, res) => {
+  renderPage(
+    req,
+    res,
+    "新規投稿",
+    "掲示板への投稿",
+    `
         <style>
             .bn-wrap{max-width:760px;margin:0 auto}
             .bn-card{background:#fff;border-radius:20px;box-shadow:0 8px 40px rgba(11,36,64,.10);overflow:hidden}
@@ -86,18 +103,28 @@ router.get('/board/new', requireLogin, (req, res) => {
                 </div>
             </div>
         </div>
-    `);
+    `,
+  );
 });
 
-router.get('/links', requireLogin, (req, res) => {
-    const links = [
-        { title: 'DXPRO SOLUTIONS Top', url: 'https://dxpro-sol.com/' },
-        { title: 'DXPRO SOLUTIONS 教育コンテンツ', url: 'https://dxpro-edu.web.app/' },
-        { title: 'DXPRO SOLUTIONS 採用ページ', url: 'https://dxpro-recruit-c76b3f4df6d9.herokuapp.com/login.html' },
-        { title: 'DXPRO SOLUTIONS 開発用のGPT', url: 'https://2024073118010411766192.onamaeweb.jp/' },
-    ];
+router.get("/links", requireLogin, (req, res) => {
+  const links = [
+    { title: "DXPRO SOLUTIONS Top", url: "https://dxpro-sol.com/" },
+    {
+      title: "DXPRO SOLUTIONS 教育コンテンツ",
+      url: "https://dxpro-edu.web.app/",
+    },
+    {
+      title: "DXPRO SOLUTIONS 採用ページ",
+      url: "https://dxpro-recruit-c76b3f4df6d9.herokuapp.com/login.html",
+    },
+    {
+      title: "DXPRO SOLUTIONS 開発用のGPT",
+      url: "https://2024073118010411766192.onamaeweb.jp/",
+    },
+  ];
 
-    const html = `
+  const html = `
         <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
         <style>
             :root{--bg:#f7fbff;--card:#ffffff;--muted:#6b7280;--accent:#0b69ff;--accent-2:#1a73e8}
@@ -141,26 +168,30 @@ router.get('/links', requireLogin, (req, res) => {
             </div>
 
             <div class="grid" id="links-grid">
-                ${links.map(l => `
-                    <article class="link-card" role="article" aria-labelledby="link-${escapeHtml(l.title).replace(/\s+/g,'-')}">
+                ${links
+                  .map(
+                    (l) => `
+                    <article class="link-card" role="article" aria-labelledby="link-${escapeHtml(l.title).replace(/\s+/g, "-")}">
                         <div>
                             <div class="link-top">
-                                <div class="icon" aria-hidden="true">${ l.url.includes('edu') ? '🎓' : l.url.includes('recruit') ? '💼' : l.url.includes('onamaeweb') ? '🤖' : '🌐' }</div>
+                                <div class="icon" aria-hidden="true">${l.url.includes("edu") ? "🎓" : l.url.includes("recruit") ? "💼" : l.url.includes("onamaeweb") ? "🤖" : "🌐"}</div>
                                 <div>
-                                    <div id="link-${escapeHtml(l.title).replace(/\s+/g,'-')}" class="link-title">${escapeHtml(l.title)}</div>
+                                    <div id="link-${escapeHtml(l.title).replace(/\s+/g, "-")}" class="link-title">${escapeHtml(l.title)}</div>
                                     <div class="link-url">${escapeHtml(l.url)}</div>
                                 </div>
                             </div>
-                            <div class="link-desc">${ l.title.includes('教育') ? '社内向け教育コンテンツへ移動します。' : l.title.includes('採用') ? '採用ページ（ログインが必要です）' : l.title.includes('開発用のGPT') ? '開発用ツール（社内向け）' : '公式サイト' }</div>
+                            <div class="link-desc">${l.title.includes("教育") ? "社内向け教育コンテンツへ移動します。" : l.title.includes("採用") ? "採用ページ（ログインが必要です）" : l.title.includes("開発用のGPT") ? "開発用ツール（社内向け）" : "公式サイト"}</div>
                         </div>
                         <div class="meta-row">
-                            <div class="badge">${ l.url.includes('edu') ? '教育' : l.url.includes('recruit') ? '採用' : l.url.includes('onamaeweb') ? 'メール' : '公式' }</div>
+                            <div class="badge">${l.url.includes("edu") ? "教育" : l.url.includes("recruit") ? "採用" : l.url.includes("onamaeweb") ? "メール" : "公式"}</div>
                             <div class="link-actions">
-                                <a class="btn-open" href="${l.url}" ${l.url.startsWith('http') ? 'target="_blank" rel="noopener noreferrer"' : ''}>開く</a>
+                                <a class="btn-open" href="${l.url}" ${l.url.startsWith("http") ? 'target="_blank" rel="noopener noreferrer"' : ""}>開く</a>
                             </div>
                         </div>
                     </article>
-                `).join('')}
+                `,
+                  )
+                  .join("")}
             </div>
         </div>
 
@@ -181,29 +212,34 @@ router.get('/links', requireLogin, (req, res) => {
         </script>
     `;
 
-    renderPage(req, res, 'リンク集', 'リンク集', html);
+  renderPage(req, res, "リンク集", "リンク集", html);
 });
 
 // --- 掲示板詳細 ---
 // ⚠️ "/board/:id" より前に "/board/new" を定義しないとダメ
-router.get('/board/:id', requireLogin, async (req, res) => {
-    const post = await BoardPost.findByIdAndUpdate(
-        req.params.id, 
-        { $inc: { views: 1 }},
-        { new: true }
-    ).populate('authorId');
+router.get("/board/:id", requireLogin, async (req, res) => {
+  const post = await BoardPost.findByIdAndUpdate(
+    req.params.id,
+    { $inc: { views: 1 } },
+    { new: true },
+  ).populate("authorId");
 
-    if (!post) return res.status(404).send("投稿が見つかりません");
+  if (!post) return res.status(404).send("投稿が見つかりません");
 
-    const comments = await BoardComment.find({ postId: post._id })
-        .populate('authorId')
-        .sort({ createdAt: -1 });
+  const comments = await BoardComment.find({ postId: post._id })
+    .populate("authorId")
+    .sort({ createdAt: -1 });
 
-    // メンション候補のユーザー一覧（コメント入力で使用）
-    const allUsers = await User.find({}, 'username _id').lean();
+  // メンション候補のユーザー一覧（コメント入力で使用）
+  const allUsers = await User.find({}, "username _id").lean();
 
-    const contentHtml = renderMarkdownToHtml(post.content || '');
-    renderPage(req, res, post.title, "投稿詳細", `
+  const contentHtml = renderMarkdownToHtml(post.content || "");
+  renderPage(
+    req,
+    res,
+    post.title,
+    "投稿詳細",
+    `
         <style>
             .bd-detail{max-width:800px;margin:0 auto}
 
@@ -299,25 +335,32 @@ router.get('/board/:id', requireLogin, async (req, res) => {
                     <a href="/board" class="bd-post-back">← 掲示板に戻る</a>
                     <div class="bd-post-title">${escapeHtml(post.title)}</div>
                     <div class="bd-post-meta">
-                        <span class="bd-author-avatar">${(post.authorId?.username||'?').charAt(0).toUpperCase()}</span>
-                        <span style="font-weight:700;color:#374151">${escapeHtml(post.authorId?.username || '不明')}</span>
+                        <span class="bd-author-avatar">${(post.authorId?.username || "?").charAt(0).toUpperCase()}</span>
+                        <span style="font-weight:700;color:#374151">${escapeHtml(post.authorId?.username || "不明")}</span>
                         <span>·</span>
-                        <span>${moment.tz(post.createdAt,'Asia/Tokyo').format('YYYY/MM/DD HH:mm')}</span>
+                        <span>${moment.tz(post.createdAt, "Asia/Tokyo").format("YYYY/MM/DD HH:mm")}</span>
                     </div>
-                    ${(post.tags||[]).length ? `<div class="bd-post-tags">${(post.tags||[]).map(t=>`<span class="bd-post-tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+                    ${(post.tags || []).length ? `<div class="bd-post-tags">${(post.tags || []).map((t) => `<span class="bd-post-tag">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
                 </div>
 
                 <div class="bd-post-body">
                     <div class="bd-post-content">${contentHtml}</div>
                 </div>
 
-                ${ post.attachments && post.attachments.length ? `
+                ${
+                  post.attachments && post.attachments.length
+                    ? `
                 <div class="bd-attachments">
-                    ${post.attachments.map(a => a.url && a.url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
-                        ? `<a href="${a.url}" target="_blank"><img src="${a.url}" class="bd-attach-img" alt="${escapeHtml(a.name||'')}"></a>`
-                        : `<a href="${a.url}" target="_blank" class="bd-attach-file">📎 ${escapeHtml(a.name||'ファイル')}</a>`
-                    ).join('')}
-                </div>` : '' }
+                    ${post.attachments
+                      .map((a) =>
+                        a.url && a.url.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+                          ? `<a href="${a.url}" target="_blank"><img src="${a.url}" class="bd-attach-img" alt="${escapeHtml(a.name || "")}"></a>`
+                          : `<a href="${a.url}" target="_blank" class="bd-attach-file">📎 ${escapeHtml(a.name || "ファイル")}</a>`,
+                      )
+                      .join("")}
+                </div>`
+                    : ""
+                }
 
                 <div class="bd-post-foot">
                     <div class="bd-foot-stats">
@@ -329,12 +372,18 @@ router.get('/board/:id', requireLogin, async (req, res) => {
                         <form action="/board/${post._id}/like" method="post" style="display:inline">
                             <button class="bd-btn bd-btn-like">❤️ いいね</button>
                         </form>
-                        ${ (req.session.user?.isAdmin || String(req.session.user?._id) === String(post.authorId?._id)) ? `
+                        ${
+                          req.session.isAdmin ||
+                          String(req.session.userId) ===
+                            String(post.authorId?._id)
+                            ? `
                             <a href="/board/${post._id}/edit" class="bd-btn bd-btn-edit">✏️ 編集</a>
                             <form action="/board/${post._id}/delete" method="post" style="display:inline">
                                 <button class="bd-btn bd-btn-del" onclick="return confirm('削除しますか？')">🗑 削除</button>
                             </form>
-                        ` : '' }
+                        `
+                            : ""
+                        }
                         <a href="/board" class="bd-btn bd-btn-back">← 戻る</a>
                     </div>
                 </div>
@@ -343,20 +392,27 @@ router.get('/board/:id', requireLogin, async (req, res) => {
             <!-- コメント -->
             <div class="bd-comments">
                 <div class="bd-comments-head">💬 コメント（${comments.length}件）</div>
-                ${ comments.length ? comments.map(c => {
-                    const isMyComment = String(req.session.user?._id) === String(c.authorId?._id);
-                    const canManage   = isMyComment || req.session.user?.isAdmin;
-                    // @メンションをハイライト
-                    const commentHtml = escapeHtml(c.content).replace(/@([a-zA-Z0-9_\u3040-\u30ff\u4e00-\u9fff]+)/g,
-                        '<span class="mention">@$1</span>');
-                    return `
+                ${
+                  comments.length
+                    ? comments
+                        .map((c) => {
+                          const isMyComment =
+                            String(req.session.userId) ===
+                            String(c.authorId?._id);
+                          const canManage = isMyComment || req.session.isAdmin;
+                          // @メンションをハイライト
+                          const commentHtml = escapeHtml(c.content).replace(
+                            /@([a-zA-Z0-9_\u3040-\u30ff\u4e00-\u9fff]+)/g,
+                            '<span class="mention">@$1</span>',
+                          );
+                          return `
                 <div class="bd-comment" id="comment-${c._id}">
-                    <div class="bd-comment-avatar">${(c.authorId?.username||'?').charAt(0).toUpperCase()}</div>
+                    <div class="bd-comment-avatar">${(c.authorId?.username || "?").charAt(0).toUpperCase()}</div>
                     <div class="bd-comment-bubble">
                         <div class="bd-comment-name">
-                            ${escapeHtml(c.authorId?.username || '名無し')}
-                            <span class="bd-comment-date">${moment.tz(c.createdAt,'Asia/Tokyo').format('YYYY/MM/DD HH:mm')}</span>
-                            ${c.editedAt ? `<span class="bd-comment-edited">（編集済）</span>` : ''}
+                            ${escapeHtml(c.authorId?.username || "名無し")}
+                            <span class="bd-comment-date">${moment.tz(c.createdAt, "Asia/Tokyo").format("YYYY/MM/DD HH:mm")}</span>
+                            ${c.editedAt ? `<span class="bd-comment-edited">（編集済）</span>` : ""}
                         </div>
                         <div class="bd-comment-text" id="comment-text-${c._id}">${commentHtml}</div>
 
@@ -371,17 +427,24 @@ router.get('/board/:id', requireLogin, async (req, res) => {
                             </div>
                         </form>
 
-                        ${canManage ? `
+                        ${
+                          canManage
+                            ? `
                         <div class="bd-comment-actions">
                             <button class="bd-comment-btn" onclick="startEdit('${c._id}')">✏️ 編集</button>
                             <form action="/board/comment/${c._id}/delete" method="post" style="display:inline">
                                 <button class="bd-comment-btn bd-comment-btn-del"
                                     onclick="return confirm('このコメントを削除しますか？')">🗑 削除</button>
                             </form>
-                        </div>` : ''}
+                        </div>`
+                            : ""
+                        }
                     </div>
                 </div>`;
-                }).join('') : `<div class="bd-comment-empty">まだコメントはありません。最初のコメントを投稿しましょう！</div>` }
+                        })
+                        .join("")
+                    : `<div class="bd-comment-empty">まだコメントはありません。最初のコメントを投稿しましょう！</div>`
+                }
 
                 <div class="bd-comment-form">
                     <label class="bd-comment-label">コメントを追加（@ユーザー名でメンション）</label>
@@ -413,7 +476,7 @@ router.get('/board/:id', requireLogin, async (req, res) => {
         }
 
         // ── @メンション サジェスト ────────────────────
-        const users = ${JSON.stringify(allUsers.map(u => ({ id: u._id, name: u.username })))};
+        const users = ${JSON.stringify(allUsers.map((u) => ({ id: u._id, name: u.username })))};
         const textarea = document.getElementById('bd-new-comment');
         const suggest  = document.getElementById('mention-suggest');
         let activeIdx  = -1;
@@ -465,174 +528,210 @@ router.get('/board/:id', requireLogin, async (req, res) => {
         function closeSuggest(){ suggest.style.display = 'none'; activeIdx = -1; }
         function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
         </script>
-    `);
+    `,
+  );
 });
 
 // --- いいね ---
-router.post('/board/:id/like', requireLogin, async (req, res) => {
-    try {
-        await BoardPost.findByIdAndUpdate(
-            req.params.id,
-            { $inc: { likes: 1 } }
-        );
-        res.redirect(`/board/${req.params.id}`);
-    } catch (err) {
-        console.error(err);
-        res.status(500).send("いいねに失敗しました");
-    }
+router.post("/board/:id/like", requireLogin, async (req, res) => {
+  try {
+    await BoardPost.findByIdAndUpdate(req.params.id, { $inc: { likes: 1 } });
+    res.redirect(`/board/${req.params.id}`);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("いいねに失敗しました");
+  }
 });
 
 // --- コメント投稿 ---
-router.post('/board/:id/comment', requireLogin, async (req, res) => {
-    try {
-        const { content } = req.body;
-        const safe = stripHtmlTags(content);
-        if (!safe.trim()) return res.redirect(`/board/${req.params.id}`);
+router.post("/board/:id/comment", requireLogin, async (req, res) => {
+  try {
+    const { content } = req.body;
+    const safe = stripHtmlTags(content);
+    if (!safe.trim()) return res.redirect(`/board/${req.params.id}`);
 
-        // @メンション抽出
-        const mentionMatches = [...safe.matchAll(/@([a-zA-Z0-9_\u3040-\u30ff\u4e00-\u9fff]+)/g)];
-        const mentionedUsernames = [...new Set(mentionMatches.map(m => m[1]))];
-        const mentionedUsers = mentionedUsernames.length
-            ? await User.find({ username: { $in: mentionedUsernames } }).lean()
-            : [];
-        const mentionIds = mentionedUsers.map(u => u._id);
+    // @メンション抽出
+    const mentionMatches = [
+      ...safe.matchAll(/@([a-zA-Z0-9_\u3040-\u30ff\u4e00-\u9fff]+)/g),
+    ];
+    const mentionedUsernames = [...new Set(mentionMatches.map((m) => m[1]))];
+    const mentionedUsers = mentionedUsernames.length
+      ? await User.find({ username: { $in: mentionedUsernames } }).lean()
+      : [];
+    const mentionIds = mentionedUsers.map((u) => u._id);
 
-        const newComment = new BoardComment({
-            postId:   req.params.id,
-            authorId: req.session.user._id,
-            content:  safe,
-            mentions: mentionIds
-        });
-        await newComment.save();
+    const newComment = new BoardComment({
+      postId: req.params.id,
+      authorId: req.session.userId,
+      content: safe,
+      mentions: mentionIds,
+    });
+    await newComment.save();
 
-        // メンション通知送信
-        for (const mu of mentionedUsers) {
-            if (String(mu._id) === String(req.session.user._id)) continue; // 自分は除外
-            const post = await BoardPost.findById(req.params.id).lean();
-            const notif = new Notification({
-                userId:     mu._id,
-                type:       'mention',
-                title:      `${req.session.user.username} さんがあなたをメンションしました`,
-                body:       safe.slice(0, 80),
-                link:       `/board/${req.params.id}#comment-${newComment._id}`,
-                fromUserId: req.session.user._id,
-                fromName:   req.session.user.username
-            });
-            await notif.save();
-        }
-
-        res.redirect(`/board/${req.params.id}`);
-    } catch (err) {
-        console.error(err);
-        res.status(500).send("コメント投稿に失敗しました");
+    // メンション通知送信
+    for (const mu of mentionedUsers) {
+      if (String(mu._id) === String(req.session.userId)) continue; // 自分は除外
+      const post = await BoardPost.findById(req.params.id).lean();
+      const notif = new Notification({
+        userId: mu._id,
+        type: "mention",
+        title: `${req.session.username} さんがあなたをメンションしました`,
+        body: safe.slice(0, 80),
+        link: `/board/${req.params.id}#comment-${newComment._id}`,
+        fromUserId: req.session.userId,
+        fromName: req.session.username,
+      });
+      await notif.save();
     }
+
+    res.redirect(`/board/${req.params.id}`);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("コメント投稿に失敗しました");
+  }
 });
 
 // --- コメント編集 ---
-router.post('/board/comment/:commentId/edit', requireLogin, async (req, res) => {
+router.post(
+  "/board/comment/:commentId/edit",
+  requireLogin,
+  async (req, res) => {
     try {
-        const comment = await BoardComment.findById(req.params.commentId);
-        if (!comment) return res.status(404).send('コメントが見つかりません');
+      const comment = await BoardComment.findById(req.params.commentId);
+      if (!comment) return res.status(404).send("コメントが見つかりません");
 
-        const isOwner = String(comment.authorId) === String(req.session.user._id);
-        if (!isOwner && !req.session.user.isAdmin) return res.status(403).send('権限がありません');
+      const isOwner = String(comment.authorId) === String(req.session.userId);
+      if (!isOwner && !req.session.isAdmin)
+        return res.status(403).send("権限がありません");
 
-        const safe = stripHtmlTags(req.body.content || '');
-        if (!safe.trim()) return res.status(400).send('コメントを入力してください');
+      const safe = stripHtmlTags(req.body.content || "");
+      if (!safe.trim())
+        return res.status(400).send("コメントを入力してください");
 
-        comment.content  = safe;
-        comment.editedAt = new Date();
-        await comment.save();
+      comment.content = safe;
+      comment.editedAt = new Date();
+      await comment.save();
 
-        res.redirect(`/board/${comment.postId}`);
+      res.redirect(`/board/${comment.postId}`);
     } catch (err) {
-        console.error(err);
-        res.status(500).send('コメント編集に失敗しました');
+      console.error(err);
+      res.status(500).send("コメント編集に失敗しました");
     }
-});
+  },
+);
 
 // --- コメント削除 ---
-router.post('/board/comment/:commentId/delete', requireLogin, async (req, res) => {
+router.post(
+  "/board/comment/:commentId/delete",
+  requireLogin,
+  async (req, res) => {
     try {
-        const comment = await BoardComment.findById(req.params.commentId);
-        if (!comment) return res.status(404).send('コメントが見つかりません');
+      const comment = await BoardComment.findById(req.params.commentId);
+      if (!comment) return res.status(404).send("コメントが見つかりません");
 
-        const isOwner = String(comment.authorId) === String(req.session.user._id);
-        if (!isOwner && !req.session.user.isAdmin) return res.status(403).send('権限がありません');
+      const isOwner = String(comment.authorId) === String(req.session.userId);
+      if (!isOwner && !req.session.isAdmin)
+        return res.status(403).send("権限がありません");
 
-        const postId = comment.postId;
-        await BoardComment.findByIdAndDelete(req.params.commentId);
+      const postId = comment.postId;
+      await BoardComment.findByIdAndDelete(req.params.commentId);
 
-        res.redirect(`/board/${postId}`);
+      res.redirect(`/board/${postId}`);
     } catch (err) {
-        console.error(err);
-        res.status(500).send('コメント削除に失敗しました');
+      console.error(err);
+      res.status(500).send("コメント削除に失敗しました");
     }
-});
+  },
+);
 
 // --- 掲示板投稿作成 ---
 // handle file uploads for board posts
-router.post('/board', requireLogin, upload.array('attachments', 6), async (req, res) => {
+router.post(
+  "/board",
+  requireLogin,
+  upload.array("attachments", 6),
+  async (req, res) => {
     try {
-        const { title, content, tags } = req.body;
-        const employee = await Employee.findOne({ userId: req.session.user._id });
-        if (!employee) return res.status(400).send("社員情報が見つかりません");
+      const { title, content, tags } = req.body;
+      const employee = await Employee.findOne({ userId: req.session.userId });
+      if (!employee) return res.status(400).send("社員情報が見つかりません");
 
-        const safeTitle = stripHtmlTags(title);
-        const safeContent = content; // markdown/plain
+      const safeTitle = stripHtmlTags(title);
+      const safeContent = content; // markdown/plain
 
-        // process uploaded files
-        const attachments = [];
-        if (Array.isArray(req.files)) {
-            for (const f of req.files) {
-                // preserve original filename and accessible url
-                attachments.push({ name: f.originalname, url: `/uploads/${f.filename}` });
-            }
+      // process uploaded files
+      const attachments = [];
+      if (Array.isArray(req.files)) {
+        for (const f of req.files) {
+          // preserve original filename and accessible url
+          attachments.push({
+            name: f.originalname,
+            url: `/uploads/${f.filename}`,
+          });
         }
+      }
 
-        const tagList = (tags || '').split(',').map(t=>t.trim()).filter(Boolean);
+      const tagList = (tags || "")
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
 
-        const newPost = new BoardPost({ title: safeTitle, content: safeContent, tags: tagList, attachments, authorId: employee._id, views: 0, likes: 0, pinned: false });
-        await newPost.save();
-        res.redirect('/board');
+      const newPost = new BoardPost({
+        title: safeTitle,
+        content: safeContent,
+        tags: tagList,
+        attachments,
+        authorId: employee._id,
+        views: 0,
+        likes: 0,
+        pinned: false,
+      });
+      await newPost.save();
+      res.redirect("/board");
     } catch (err) {
-        console.error(err);
-        res.status(500).send("投稿に失敗しました");
+      console.error(err);
+      res.status(500).send("投稿に失敗しました");
     }
-});
+  },
+);
 
 // --- 掲示板一覧 ---
-router.get('/board', requireLogin, async (req, res) => {
-    const q = req.query.q || '';
-    const sort = req.query.sort || 'date';
-    
-    // 検索
-    let postsQuery = BoardPost.find({ 
-        $or: [
-            { title: new RegExp(q, 'i') },
-            { content: new RegExp(q, 'i') }
-        ]
-    }).populate('authorId');
+router.get("/board", requireLogin, async (req, res) => {
+  const q = req.query.q || "";
+  const sort = req.query.sort || "date";
 
-    // ソート
-    if(sort === 'views') postsQuery = postsQuery.sort({ views: -1 });
-    else if(sort === 'likes') postsQuery = postsQuery.sort({ likes: -1 });
-    else postsQuery = postsQuery.sort({ pinned: -1, createdAt: -1 });
+  // 検索
+  let postsQuery = BoardPost.find({
+    $or: [{ title: new RegExp(q, "i") }, { content: new RegExp(q, "i") }],
+  }).populate("authorId");
 
-    // pagination
-    const page = Math.max(1, Number(req.query.page) || 1);
-    const perPage = Math.min(20, Number(req.query.perPage) || 10);
-    const total = await BoardPost.countDocuments(postsQuery.getQuery());
-    const posts = await postsQuery.skip((page-1)*perPage).limit(perPage).exec();
+  // ソート
+  if (sort === "views") postsQuery = postsQuery.sort({ views: -1 });
+  else if (sort === "likes") postsQuery = postsQuery.sort({ likes: -1 });
+  else postsQuery = postsQuery.sort({ pinned: -1, createdAt: -1 });
 
-    // コメント数取得
-    const commentCounts = {};
-    const comments = await BoardComment.aggregate([
-        { $group: { _id: "$postId", count: { $sum: 1 } } }
-    ]);
-    comments.forEach(c => commentCounts[c._id] = c.count);
+  // pagination
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const perPage = Math.min(20, Number(req.query.perPage) || 10);
+  const total = await BoardPost.countDocuments(postsQuery.getQuery());
+  const posts = await postsQuery
+    .skip((page - 1) * perPage)
+    .limit(perPage)
+    .exec();
 
-    renderPage(req, res, "社内掲示板", "社内掲示板", `
+  // コメント数取得
+  const commentCounts = {};
+  const comments = await BoardComment.aggregate([
+    { $group: { _id: "$postId", count: { $sum: 1 } } },
+  ]);
+  comments.forEach((c) => (commentCounts[c._id] = c.count));
+
+  renderPage(
+    req,
+    res,
+    "社内掲示板",
+    "社内掲示板",
+    `
         <style>
             /* ===== 掲示板 共通 ===== */
             .bd-page{max-width:900px;margin:0 auto}
@@ -723,38 +822,53 @@ router.get('/board', requireLogin, async (req, res) => {
             <form method="get" action="/board" class="bd-search-bar">
                 <input type="text" name="q" value="${escapeHtml(q)}" placeholder="🔍 タイトル・内容で検索..." class="bd-search-input">
                 <select name="sort" class="bd-sort-select">
-                    <option value="date"  ${sort==='date' ?'selected':''}>🕐 新着順</option>
-                    <option value="views" ${sort==='views'?'selected':''}>👁 閲覧数順</option>
-                    <option value="likes" ${sort==='likes'?'selected':''}>❤️ いいね順</option>
+                    <option value="date"  ${sort === "date" ? "selected" : ""}>🕐 新着順</option>
+                    <option value="views" ${sort === "views" ? "selected" : ""}>👁 閲覧数順</option>
+                    <option value="likes" ${sort === "likes" ? "selected" : ""}>❤️ いいね順</option>
                 </select>
                 <button type="submit" class="bd-search-btn">検索</button>
             </form>
 
-            ${ posts.filter(p=>p.pinned).length ? `
+            ${
+              posts.filter((p) => p.pinned).length
+                ? `
             <div class="bd-pin-banner">
                 📌 ピン留め投稿があります — 重要なお知らせをご確認ください
-            </div>` : '' }
+            </div>`
+                : ""
+            }
 
             <!-- 投稿一覧 -->
-            ${ posts.length === 0 ? `
+            ${
+              posts.length === 0
+                ? `
             <div class="bd-empty">
                 <div class="bd-empty-icon">📭</div>
-                <div class="bd-empty-text">${q ? `「${escapeHtml(q)}」の検索結果は0件です` : '投稿がまだありません'}</div>
+                <div class="bd-empty-text">${q ? `「${escapeHtml(q)}」の検索結果は0件です` : "投稿がまだありません"}</div>
             </div>
-            ` : posts.map(p => {
-                const authorName = p.authorId?.username || '不明';
-                const excerpt = stripHtmlTags(p.content || '').slice(0, 120) + ((p.content||'').length > 120 ? '…' : '');
-                const dateStr = moment.tz(p.createdAt, 'Asia/Tokyo').format('YYYY/MM/DD HH:mm');
-                const commentCount = commentCounts[p._id] || 0;
+            `
+                : posts
+                    .map((p) => {
+                      const authorName = p.authorId?.username || "不明";
+                      const excerpt =
+                        stripHtmlTags(p.content || "").slice(0, 120) +
+                        ((p.content || "").length > 120 ? "…" : "");
+                      const dateStr = moment
+                        .tz(p.createdAt, "Asia/Tokyo")
+                        .format("YYYY/MM/DD HH:mm");
+                      const commentCount = commentCounts[p._id] || 0;
 
-                // 画像添付を抽出
-                const imgAttachments = (p.attachments || []).filter(a => a.url && /\.(jpg|jpeg|png|gif|webp)$/i.test(a.url));
-                const firstImg = imgAttachments[0];
-                const extraImgs = imgAttachments.slice(1, 4);
-                const moreCount = imgAttachments.length - 4;
+                      // 画像添付を抽出
+                      const imgAttachments = (p.attachments || []).filter(
+                        (a) =>
+                          a.url && /\.(jpg|jpeg|png|gif|webp)$/i.test(a.url),
+                      );
+                      const firstImg = imgAttachments[0];
+                      const extraImgs = imgAttachments.slice(1, 4);
+                      const moreCount = imgAttachments.length - 4;
 
-                return `
-                <div class="bd-card${p.pinned ? ' pinned' : ''}">
+                      return `
+                <div class="bd-card${p.pinned ? " pinned" : ""}">
                     <div class="bd-card-body">
                         <div class="bd-card-top">
                             <div class="bd-card-left" style="flex:1;min-width:0">
@@ -764,20 +878,28 @@ router.get('/board', requireLogin, async (req, res) => {
                                     <span>${escapeHtml(authorName)}</span>
                                     <span>·</span>
                                     <span>${dateStr}</span>
-                                    ${p.pinned ? '<span style="color:#f59e0b;font-weight:700">📌 ピン留め</span>' : ''}
+                                    ${p.pinned ? '<span style="color:#f59e0b;font-weight:700">📌 ピン留め</span>' : ""}
                                 </div>
                                 <div class="bd-card-excerpt">${escapeHtml(excerpt)}</div>
-                                ${(p.tags||[]).length ? `<div class="bd-tags">${(p.tags||[]).map(t=>`<span class="bd-tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
-                                ${ extraImgs.length ? `
+                                ${(p.tags || []).length ? `<div class="bd-tags">${(p.tags || []).map((t) => `<span class="bd-tag">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
+                                ${
+                                  extraImgs.length
+                                    ? `
                                 <div class="bd-card-thumbs-row">
-                                    ${extraImgs.map(a=>`<a href="/board/${p._id}"><img src="${a.url}" class="bd-card-thumb-sm" alt="添付画像"></a>`).join('')}
-                                    ${moreCount > 0 ? `<a href="/board/${p._id}" class="bd-thumb-more">+${moreCount}</a>` : ''}
-                                </div>` : '' }
+                                    ${extraImgs.map((a) => `<a href="/board/${p._id}"><img src="${a.url}" class="bd-card-thumb-sm" alt="添付画像"></a>`).join("")}
+                                    ${moreCount > 0 ? `<a href="/board/${p._id}" class="bd-thumb-more">+${moreCount}</a>` : ""}
+                                </div>`
+                                    : ""
+                                }
                             </div>
-                            ${ firstImg ? `
+                            ${
+                              firstImg
+                                ? `
                             <a href="/board/${p._id}" style="flex-shrink:0">
                                 <img src="${firstImg.url}" class="bd-card-thumb" alt="添付画像">
-                            </a>` : '' }
+                            </a>`
+                                : ""
+                            }
                         </div>
                     </div>
                     <div class="bd-card-foot">
@@ -785,51 +907,69 @@ router.get('/board', requireLogin, async (req, res) => {
                             <span class="bd-stat">👁 ${p.views || 0}</span>
                             <span class="bd-stat">❤️ ${p.likes || 0}</span>
                             <span class="bd-stat">💬 ${commentCount}</span>
-                            ${ imgAttachments.length ? `<span class="bd-stat">🖼 ${imgAttachments.length}枚</span>` : '' }
+                            ${imgAttachments.length ? `<span class="bd-stat">🖼 ${imgAttachments.length}枚</span>` : ""}
                         </div>
                         <div class="bd-actions">
                             <form action="/board/${p._id}/like" method="post" style="display:inline">
                                 <button class="bd-btn bd-btn-like">❤️ いいね</button>
                             </form>
                             <a href="/board/${p._id}" class="bd-btn bd-btn-edit" style="background:#f0fdf4;color:#16a34a">💬 詳細・コメント</a>
-                            ${ (req.session.user?.isAdmin || String(req.session.user?._id) === String(p.authorId?._id)) ? `
+                            ${
+                              req.session.isAdmin ||
+                              String(req.session.userId) ===
+                                String(p.authorId?._id)
+                                ? `
                                 <a href="/board/${p._id}/edit" class="bd-btn bd-btn-edit">✏️ 編集</a>
                                 <form action="/board/${p._id}/delete" method="post" style="display:inline">
                                     <button class="bd-btn bd-btn-del" onclick="return confirm('削除しますか？')">🗑</button>
                                 </form>
-                            ` : '' }
-                            ${ req.session.user?.isAdmin ? `
+                            `
+                                : ""
+                            }
+                            ${
+                              req.session.isAdmin
+                                ? `
                                 <form action="/board/${p._id}/pin" method="post" style="display:inline">
-                                    <button class="bd-btn bd-btn-pin">${p.pinned ? '📌 解除' : '📌 ピン'}</button>
+                                    <button class="bd-btn bd-btn-pin">${p.pinned ? "📌 解除" : "📌 ピン"}</button>
                                 </form>
-                            ` : '' }
+                            `
+                                : ""
+                            }
                         </div>
                     </div>
                 </div>`;
-            }).join('') }
+                    })
+                    .join("")
+            }
 
             <!-- ページネーション -->
             <div class="bd-pager">
-                <div class="bd-pager-info">${(page-1)*perPage+1}〜${Math.min(page*perPage,total)} 件表示 / 全 ${total} 件</div>
+                <div class="bd-pager-info">${(page - 1) * perPage + 1}〜${Math.min(page * perPage, total)} 件表示 / 全 ${total} 件</div>
                 <div class="bd-pager-btns">
-                    ${ page > 1 ? `<a href="?page=${page-1}&perPage=${perPage}&q=${encodeURIComponent(q)}&sort=${encodeURIComponent(sort)}" class="bd-pager-btn">← 前へ</a>` : '' }
-                    ${ page*perPage < total ? `<a href="?page=${page+1}&perPage=${perPage}&q=${encodeURIComponent(q)}&sort=${encodeURIComponent(sort)}" class="bd-pager-btn">次へ →</a>` : '' }
+                    ${page > 1 ? `<a href="?page=${page - 1}&perPage=${perPage}&q=${encodeURIComponent(q)}&sort=${encodeURIComponent(sort)}" class="bd-pager-btn">← 前へ</a>` : ""}
+                    ${page * perPage < total ? `<a href="?page=${page + 1}&perPage=${perPage}&q=${encodeURIComponent(q)}&sort=${encodeURIComponent(sort)}" class="bd-pager-btn">次へ →</a>` : ""}
                 </div>
             </div>
         </div>
-    `);
+    `,
+  );
 });
 // --- 投稿編集フォーム ---
-router.get('/board/:id/edit', requireLogin, async (req, res) => {
-    const post = await BoardPost.findById(req.params.id);
-    if (!post) return res.status(404).send("投稿が見つかりません");
+router.get("/board/:id/edit", requireLogin, async (req, res) => {
+  const post = await BoardPost.findById(req.params.id);
+  if (!post) return res.status(404).send("投稿が見つかりません");
 
-    // 権限チェック
-    if (!req.session.user.isAdmin && req.session.user._id != post.authorId.toString()) {
-        return res.status(403).send("権限がありません");
-    }
+  // 権限チェック
+  if (!req.session.isAdmin && req.session.userId != post.authorId.toString()) {
+    return res.status(403).send("権限がありません");
+  }
 
-    renderPage(req, res, "投稿編集", "掲示板編集", `
+  renderPage(
+    req,
+    res,
+    "投稿編集",
+    "掲示板編集",
+    `
         <style>
             .bn-wrap{max-width:760px;margin:0 auto}
             .bn-card{background:#fff;border-radius:20px;box-shadow:0 8px 40px rgba(11,36,64,.10);overflow:hidden}
@@ -873,54 +1013,50 @@ router.get('/board/:id/edit', requireLogin, async (req, res) => {
                 </div>
             </div>
         </div>
-    `);
+    `,
+  );
 });
 
 // --- 投稿編集処理 ---
-router.post('/board/:id/edit', requireLogin, async (req, res) => {
-    const post = await BoardPost.findById(req.params.id);
-    if (!post) return res.status(404).send("投稿が見つかりません");
+router.post("/board/:id/edit", requireLogin, async (req, res) => {
+  const post = await BoardPost.findById(req.params.id);
+  if (!post) return res.status(404).send("投稿が見つかりません");
 
-    if (!req.session.user.isAdmin && req.session.user._id != post.authorId.toString()) {
-        return res.status(403).send("権限がありません");
-    }
+  if (!req.session.isAdmin && req.session.userId != post.authorId.toString()) {
+    return res.status(403).send("権限がありません");
+  }
 
-    const { title, content } = req.body;
-    post.title = title;
-    post.content = content;
-    await post.save();
-    res.redirect(`/board/${post._id}`);
+  const { title, content } = req.body;
+  post.title = title;
+  post.content = content;
+  await post.save();
+  res.redirect(`/board/${post._id}`);
 });
 
 // --- 投稿削除 ---
-router.post('/board/:id/delete', requireLogin, async (req, res) => {
-    const post = await BoardPost.findById(req.params.id);
-    if (!post) return res.status(404).send("投稿が見つかりません");
+router.post("/board/:id/delete", requireLogin, async (req, res) => {
+  const post = await BoardPost.findById(req.params.id);
+  if (!post) return res.status(404).send("投稿が見つかりません");
 
-    if (!req.session.user.isAdmin && req.session.user._id != post.authorId.toString()) {
-        return res.status(403).send("権限がありません");
-    }
+  if (!req.session.isAdmin && req.session.userId != post.authorId.toString()) {
+    return res.status(403).send("権限がありません");
+  }
 
-    await BoardPost.findByIdAndDelete(req.params.id);
-    // 関連コメントも削除
-    await BoardComment.deleteMany({ postId: req.params.id });
+  await BoardPost.findByIdAndDelete(req.params.id);
+  // 関連コメントも削除
+  await BoardComment.deleteMany({ postId: req.params.id });
 
-    res.redirect('/board');
+  res.redirect("/board");
 });
 // --- 投稿ピン／解除 ---
-router.post('/board/:id/pin', requireLogin, async (req, res) => {
-    if (!req.session.user.isAdmin) return res.status(403).send("権限がありません");
+router.post("/board/:id/pin", requireLogin, isAdmin, async (req, res) => {
+  const post = await BoardPost.findById(req.params.id);
+  if (!post) return res.status(404).send("投稿が見つかりません");
 
-    const post = await BoardPost.findById(req.params.id);
-    if (!post) return res.status(404).send("投稿が見つかりません");
-
-    post.pinned = !post.pinned;
-    await post.save();
-    res.redirect('/board');
+  post.pinned = !post.pinned;
+  await post.save();
+  res.redirect("/board");
 });
-
-
-
 
 // 人事システム
 // 人事管理画面

@@ -81,11 +81,11 @@ dxpro-attendance/
 ├── middleware/
 │   └── auth.js                  # requireLogin / isAdmin / requireRole ミドルウェア
 ├── models/
-│   └── index.js                 # 全 Mongoose スキーマ・モデル定義（43モデル、1526行）
+│   └── index.js                 # 全 Mongoose スキーマ・モデル定義（43モデル、1580行）
 ├── lib/
-│   ├── helpers.js               # ユーティリティ関数・AI計算エンジン（1202行）
-│   ├── renderPage.js            # HTML ページ生成（共通レイアウト）（1923行）
-│   ├── notificationScheduler.js # cron スケジューラー（306行）
+│   ├── helpers.js               # ユーティリティ関数・AI計算エンジン（1278行）
+│   ├── renderPage.js            # HTML ページ生成（共通レイアウト）（2024行）
+│   ├── notificationScheduler.js # cron スケジューラー（345行）
 │   ├── payrollEngine.js         # 給与計算バッチエンジン
 │   ├── auditLog.js              # 監査ログヘルパー
 │   ├── emailHelper.js           # メール送信ヘルパー
@@ -94,9 +94,9 @@ dxpro-attendance/
 │   └── dailyReportSummary.js    # 日報 AI サマリーヘルパー
 ├── routes/
 │   ├── auth.js                  # 認証・ユーザー登録（507行）
-│   ├── attendance.js            # 勤怠打刻・集計・承認申請（2446行）
-│   ├── dashboard.js             # ダッシュボード・半期評価（2364行）
-│   ├── admin.js                 # 管理者機能（1962行）
+│   ├── attendance.js            # 勤怠打刻・集計・承認申請（2668行）
+│   ├── dashboard.js             # ダッシュボード・半期評価（2502行）
+│   ├── admin.js                 # 管理者機能（2097行）
 │   ├── hr.js                    # 人事・給与・日報（5895行）
 │   ├── leave.js                 # 休暇申請・承認（874行）
 │   ├── goals.js                 # 目標管理（1850行）

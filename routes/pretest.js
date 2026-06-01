@@ -1,54 +1,94 @@
 // ==============================
 // routes/pretest.js - 入社前テスト
 // ==============================
-const router = require('express').Router();
-const moment = require('moment-timezone');
-const { User, Employee, PretestSubmission } = require('../models');
-const { requireLogin, isAdmin } = require('../middleware/auth');
-const { computePretestScore, escapeHtml } = require('../lib/helpers');
-const { renderPage } = require('../lib/renderPage');
+const router = require("express").Router();
+const moment = require("moment-timezone");
+const { User, Employee, PretestSubmission } = require("../models");
+const { requireLogin, isAdmin } = require("../middleware/auth");
+const { computePretestScore, escapeHtml } = require("../lib/helpers");
+const { renderPage } = require("../lib/renderPage");
 
+router.get("/pretest/answers", requireLogin, (req, res) => {
+  const langs = [
+    "common",
+    "java",
+    "javascript",
+    "python",
+    "php",
+    "csharp",
+    "android",
+    "swift",
+  ];
+  const links = langs
+    .map(
+      (l) =>
+        `<a class="btn" href="/pretest/answers/${l}" style="margin-right:8px;border-radius:999px;padding:8px 12px;font-weight:700">${l.toUpperCase()}</a>`,
+    )
+    .join("");
 
-router.get('/pretest/answers', requireLogin, (req, res) => {
-    const langs = ['common','java','javascript','python','php','csharp','android','swift'];
-    const links = langs.map(l=>`<a class="btn" href="/pretest/answers/${l}" style="margin-right:8px;border-radius:999px;padding:8px 12px;font-weight:700">${l.toUpperCase()}</a>`).join('');
-
-    renderPage(req, res, '入社前テスト 模範解答（言語別）', '模範解答（言語別）', `
+  renderPage(
+    req,
+    res,
+    "入社前テスト 模範解答（言語別）",
+    "模範解答（言語別）",
+    `
         <div class="card-enterprise">
             <h5 style="margin-bottom:12px">入社前テスト - 模範解答（言語別）</h5>
             <p style="color:var(--muted)">以下から言語を選んで、Q1〜Q40 の簡潔な模範解答を表示します。</p>
             <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">${links}</div>
             <div style="margin-top:12px;display:flex;justify-content:flex-end"><a class="btn btn-primary" href="/pretest">共通テストに戻る</a></div>
         </div>
-    `);
+    `,
+  );
 });
 
 // 言語別模範解答ルート
 // ⚠️ /pretest/answers/common は静的ルートだが Express のルート順序上 :lang に先に捕捉されるため
 //    ここで lang==='common' を判定して共通解答ページを直接レンダリングする
-router.get('/pretest/answers/:lang', requireLogin, (req, res) => {
-    const lang = (req.params.lang||'').toLowerCase();
+router.get("/pretest/answers/:lang", requireLogin, (req, res) => {
+  const lang = (req.params.lang || "").toLowerCase();
 
-    // ── common ルートをここで処理（登録順序の問題でこのハンドラが先に捕捉するため）──
-    if (lang === 'common') {
-        const { LANG_TESTS: LT } = require('../lib/pretestQuestions');
-        const cconf = LT['common'];
-        if (!cconf) return res.status(404).send('Not found');
-        const diffLabel = { VE: '非常に易しい', EM: '中間', H: '難しい', VH: '非常に難しい' };
-        const diffColor = { VE: '#22c55e', EM: '#3b82f6', H: '#f59e0b', VH: '#ef4444' };
-        const mcHtml = cconf.mc.map((item, idx) => {
-            const badge = `<span style="font-size:10px;font-weight:700;background:${diffColor[item.diff]}22;color:${diffColor[item.diff]};border:1px solid ${diffColor[item.diff]}44;border-radius:999px;padding:1px 8px;margin-left:8px">${diffLabel[item.diff]}</span>`;
-            const optsHtml = item.opts.map(o => {
-                const isCorrect = o.startsWith(item.ans + '.');
-                return `<div style="padding:4px 8px;border-radius:6px;${isCorrect ? 'background:#d1fae5;font-weight:700;color:#065f46' : 'color:#6b7280'}">${isCorrect ? '✅ ' : '　'}${escapeHtml(o)}</div>`;
-            }).join('');
-            return `<div style="background:#fff;border-radius:8px;padding:12px;margin-top:8px;border:1.5px solid #e5e7eb"><div style="font-weight:700;margin-bottom:6px">Q${idx+1}. ${escapeHtml(item.q)}${badge}</div>${optsHtml}</div>`;
-        }).join('');
-        const essayHtml = cconf.essay.map((item, idx) => {
-            const kw = (item.keywords||[]).join('、');
-            return `<div style="background:#fff;border-radius:8px;padding:12px;margin-top:8px;border:1.5px solid #ede9fe"><div style="font-weight:700;margin-bottom:4px">Q${idx+31}. ${escapeHtml(item.q)}<span style="font-size:10px;font-weight:700;background:#7c3aed22;color:#7c3aed;border:1px solid #7c3aed44;border-radius:999px;padding:1px 8px;margin-left:8px">記述式</span></div><div style="font-size:.85rem;color:#6b7280">採点キーワード: ${escapeHtml(kw)}</div></div>`;
-        }).join('');
-        return renderPage(req, res, '入社前テスト 模範解答（共通）', 'Q1〜Q40 模範解答', `
+  // ── common ルートをここで処理（登録順序の問題でこのハンドラが先に捕捉するため）──
+  if (lang === "common") {
+    const { LANG_TESTS: LT } = require("../lib/pretestQuestions");
+    const cconf = LT["common"];
+    if (!cconf) return res.status(404).send("Not found");
+    const diffLabel = {
+      VE: "非常に易しい",
+      EM: "中間",
+      H: "難しい",
+      VH: "非常に難しい",
+    };
+    const diffColor = {
+      VE: "#22c55e",
+      EM: "#3b82f6",
+      H: "#f59e0b",
+      VH: "#ef4444",
+    };
+    const mcHtml = cconf.mc
+      .map((item, idx) => {
+        const badge = `<span style="font-size:10px;font-weight:700;background:${diffColor[item.diff]}22;color:${diffColor[item.diff]};border:1px solid ${diffColor[item.diff]}44;border-radius:999px;padding:1px 8px;margin-left:8px">${diffLabel[item.diff]}</span>`;
+        const optsHtml = item.opts
+          .map((o) => {
+            const isCorrect = o.startsWith(item.ans + ".");
+            return `<div style="padding:4px 8px;border-radius:6px;${isCorrect ? "background:#d1fae5;font-weight:700;color:#065f46" : "color:#6b7280"}">${isCorrect ? "✅ " : "　"}${escapeHtml(o)}</div>`;
+          })
+          .join("");
+        return `<div style="background:#fff;border-radius:8px;padding:12px;margin-top:8px;border:1.5px solid #e5e7eb"><div style="font-weight:700;margin-bottom:6px">Q${idx + 1}. ${escapeHtml(item.q)}${badge}</div>${optsHtml}</div>`;
+      })
+      .join("");
+    const essayHtml = cconf.essay
+      .map((item, idx) => {
+        const kw = (item.keywords || []).join("、");
+        return `<div style="background:#fff;border-radius:8px;padding:12px;margin-top:8px;border:1.5px solid #ede9fe"><div style="font-weight:700;margin-bottom:4px">Q${idx + 31}. ${escapeHtml(item.q)}<span style="font-size:10px;font-weight:700;background:#7c3aed22;color:#7c3aed;border:1px solid #7c3aed44;border-radius:999px;padding:1px 8px;margin-left:8px">記述式</span></div><div style="font-size:.85rem;color:#6b7280">採点キーワード: ${escapeHtml(kw)}</div></div>`;
+      })
+      .join("");
+    return renderPage(
+      req,
+      res,
+      "入社前テスト 模範解答（共通）",
+      "Q1〜Q40 模範解答",
+      `
             <div class="card-enterprise">
                 <h5 style="margin-bottom:12px">入社前テスト - 模範解答（共通）</h5>
                 <p style="color:var(--muted)">選択式Q1〜Q30は正解選択肢（✅）、記述式Q31〜Q40は採点キーワードを表示します。</p>
@@ -58,120 +98,151 @@ router.get('/pretest/answers/:lang', requireLogin, (req, res) => {
                 ${essayHtml}
                 <div style="margin-top:16px;display:flex;justify-content:flex-end"><a class="btn btn-primary" href="/pretest/answers">言語一覧に戻る</a></div>
             </div>
-        `);
-    }
-    // ── ここから旧common固定データは削除済み ──
-    if (false) {
-        const commonQuestions = [
-            'Javaでメモリ管理はどのように行われますか？',
-            'Javaのガベージコレクションとは何ですか？',
-            'Javaの例外（checked/unchecked）の違いを説明してください',
-            'JavaScriptのイベントループを簡潔に説明してください',
-            'this の挙動（JavaScript）について説明してください',
-            'Spring Bootの主な利点を2つ挙げてください',
-            'DI（依存性注入）とは何ですか？',
-            'RESTとSOAPの主な違いを説明してください',
-            'GETとPOSTの使い分けを説明してください',
-            'トランザクションの隔離レベルとは何ですか？簡単に',
-            'SQLインデックスの利点と欠点を1つずつ述べてください',
-            'XSS攻撃を防ぐ一般的な対策を述べてください',
-            '非同期処理を行う際の注意点を1つ挙げてください',
-            'クロスプラットフォームでの文字コード問題の対処法を挙げてください',
-            'マイクロサービスの利点を2つ挙げてください',
-            'オブジェクトの不変性（immutable）の利点を説明してください',
-            '依存関係のバージョン衝突（dependency hell）にどう対処しますか？',
-            'CI/CDで必須だと思うチェックを1つ挙げてください',
-            'ロギングで重要なポイントは何ですか？',
-            'パフォーマンスチューニングで最初に見る指標は何ですか？',
-            'NullPointerExceptionを回避する修正（簡単なJavaメソッド）',
-            '配列の重複を取り除くJavaScript関数（短め）',
-            '簡単なRESTエンドポイントの雛形（Spring Boot）',
-            'PreparedStatementを使ったSELECT例（Java）',
-            '非同期にAPIを取得してconsole.logするfetch例（JS）',
-            'リストをソートして返すJavaメソッド',
-            'フォーム入力のサニタイズ簡易例（JS）',
-            '例外処理を追加したファイル読み込み例（Java）',
-            'JSONを解析してフィールドを取得するJSの例',
-            '簡単なクエリを実行して結果を処理する擬似コード（任意言語）',
-            '小さなアルゴリズム: 配列の最大値を返す関数（JS）',
-            '文字列を逆順にするメソッド（Java）',
-            '認証用のJWTを検証する擬似コード（任意言語）',
-            '再帰を使った階乗実装（JS）',
-            'スレッドセーフなカウンタの実装（Java、概念で可）',
-            'バルク挿入を行う擬似コード（SQL/Java）',
-            'APIから取得したデータをページネートするロジック（JS）',
-            '簡単な例外ログの書き方（Java）',
-            '同じ処理を同期→非同期に切り替える例（JS、概念可）',
-            'ユーティリティ関数の実装例'
-        ];
-        const commonAnswers = [
-            'JVMがヒープ管理を行い、ガベージコレクタが不要なオブジェクトを回収する。参照と寿命を意識してメモリ使用を抑える。',
-            '不要になったオブジェクトを自動検出してメモリを解放する仕組み。世代別収集やマーク&スイープ等がある。',
-            'checkedはコンパイル時に捕捉/宣言が必要（例: IOException）、uncheckedはRuntimeException系で宣言不要。',
-            '実行スタックとタスクキューで非同期イベントを処理する仕組み。マクロ/マイクロタスクの順序に注意。',
-            '呼び出し方法で決まる（グローバル、メソッド、コンストラクタ、call/apply/bind）。arrow関数はレキシカル束縛。',
-            '自動設定で起動が速い。組み込みサーバやパッケージ化が容易でプロダクション化しやすい。',
-            '依存オブジェクトを外部から注入して疎結合・テスト容易性を高めるパターン。',
-            'RESTは軽量でHTTP/JSON中心、SOAPはXMLベースで標準仕様や拡張が豊富。',
-            'GETは取得（冪等）、POSTは作成/副作用あり（ペイロード送信）。',
-            '同時実行時のデータ整合性を制御する設定（例: READ COMMITTED, SERIALIZABLE 等）。',
-            '利点: 検索高速化。欠点: INSERT/UPDATEでのオーバーヘッドやディスク消費。',
-            '出力時のHTMLエスケープ、入力サニタイズ、Content-Security-Policyの導入。',
-            'レースコンディションやエラーハンドリング（タイムアウト・再試行）を設計する。',
-            'UTF-8を全体で統一し、API/DB/ファイルでエンコーディングを明示する。',
-            '独立デプロイやスケーリングの柔軟性、チーム分離で開発速度向上。',
-            'スレッドセーフ性が向上し、バグの局所化と予測可能性が高まる。',
-            'lockfileや依存の固定、互換性テスト、アップグレード計画で管理。',
-            '自動テスト（ユニット＋統合）の実行が必須。',
-            '構造化ログと適切なログレベル、機密情報はマスクすること。',
-            'レイテンシ（応答時間）とスループット、CPU/メモリの利用状況を確認する。',
-            'public static int safeLen(String s) { return s == null ? 0 : s.length(); }',
-            'function unique(arr){ return Array.from(new Set(arr)); }',
-            '@RestController @RequestMapping("/api") public class DemoController { @GetMapping("/hello") public String hello(){ return "ok"; } }',
-            'String sql = "SELECT id,name FROM users WHERE id = ?"; PreparedStatement ps = conn.prepareStatement(sql); ps.setInt(1, userId);',
-            'async function fetchAndLog(url){ try { const r = await fetch(url); console.log(await r.json()); } catch(e){ console.error(e); } }',
-            'public List<Integer> sortList(List<Integer> a){ List<Integer> b = new ArrayList<>(a); Collections.sort(b); return b; }',
-            'function escapeHtml(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }',
-            'try (BufferedReader r = Files.newBufferedReader(Paths.get(path))) { String l; while((l=r.readLine())!=null){} } catch(IOException e){ logger.error("error",e); }',
-            'const obj = JSON.parse(jsonStr); const name = obj.name;',
-            'PreparedStatement ps = conn.prepareStatement("SELECT * FROM t WHERE x=?"); ps.setString(1,val); ResultSet rs = ps.executeQuery();',
-            'function max(arr){ return arr.reduce((m,x)=>x>m?x:m, arr[0]); }',
-            'public String reverse(String s){ return new StringBuilder(s).reverse().toString(); }',
-            'トークン分解→署名検証→exp等クレーム検証→ユーザID取得。ライブラリで署名を検証する。',
-            'function fact(n){ return n<=1?1:n*fact(n-1); }',
-            'AtomicInteger cnt = new AtomicInteger(0); cnt.incrementAndGet();',
-            'autoCommitを切り、バッチサイズ単位でexecuteBatch()+commitする。',
-            'function paginate(items,page,size){ const from=(page-1)*size; return items.slice(from,from+size); }',
-            'try { /* ... */ } catch(Exception e){ logger.error("処理失敗", e); }',
-            'for (const id of ids) { await processAsync(id); } // 並列はPromise.all等を検討',
-            'function safeLen(s){ return s == null ? 0 : s.length; }'
-        ];
-        // (dead code - kept for reference)
-    }
+        `,
+    );
+  }
+  // ── ここから旧common固定データは削除済み ──
+  if (false) {
+    const commonQuestions = [
+      "Javaでメモリ管理はどのように行われますか？",
+      "Javaのガベージコレクションとは何ですか？",
+      "Javaの例外（checked/unchecked）の違いを説明してください",
+      "JavaScriptのイベントループを簡潔に説明してください",
+      "this の挙動（JavaScript）について説明してください",
+      "Spring Bootの主な利点を2つ挙げてください",
+      "DI（依存性注入）とは何ですか？",
+      "RESTとSOAPの主な違いを説明してください",
+      "GETとPOSTの使い分けを説明してください",
+      "トランザクションの隔離レベルとは何ですか？簡単に",
+      "SQLインデックスの利点と欠点を1つずつ述べてください",
+      "XSS攻撃を防ぐ一般的な対策を述べてください",
+      "非同期処理を行う際の注意点を1つ挙げてください",
+      "クロスプラットフォームでの文字コード問題の対処法を挙げてください",
+      "マイクロサービスの利点を2つ挙げてください",
+      "オブジェクトの不変性（immutable）の利点を説明してください",
+      "依存関係のバージョン衝突（dependency hell）にどう対処しますか？",
+      "CI/CDで必須だと思うチェックを1つ挙げてください",
+      "ロギングで重要なポイントは何ですか？",
+      "パフォーマンスチューニングで最初に見る指標は何ですか？",
+      "NullPointerExceptionを回避する修正（簡単なJavaメソッド）",
+      "配列の重複を取り除くJavaScript関数（短め）",
+      "簡単なRESTエンドポイントの雛形（Spring Boot）",
+      "PreparedStatementを使ったSELECT例（Java）",
+      "非同期にAPIを取得してconsole.logするfetch例（JS）",
+      "リストをソートして返すJavaメソッド",
+      "フォーム入力のサニタイズ簡易例（JS）",
+      "例外処理を追加したファイル読み込み例（Java）",
+      "JSONを解析してフィールドを取得するJSの例",
+      "簡単なクエリを実行して結果を処理する擬似コード（任意言語）",
+      "小さなアルゴリズム: 配列の最大値を返す関数（JS）",
+      "文字列を逆順にするメソッド（Java）",
+      "認証用のJWTを検証する擬似コード（任意言語）",
+      "再帰を使った階乗実装（JS）",
+      "スレッドセーフなカウンタの実装（Java、概念で可）",
+      "バルク挿入を行う擬似コード（SQL/Java）",
+      "APIから取得したデータをページネートするロジック（JS）",
+      "簡単な例外ログの書き方（Java）",
+      "同じ処理を同期→非同期に切り替える例（JS、概念可）",
+      "ユーティリティ関数の実装例",
+    ];
+    const commonAnswers = [
+      "JVMがヒープ管理を行い、ガベージコレクタが不要なオブジェクトを回収する。参照と寿命を意識してメモリ使用を抑える。",
+      "不要になったオブジェクトを自動検出してメモリを解放する仕組み。世代別収集やマーク&スイープ等がある。",
+      "checkedはコンパイル時に捕捉/宣言が必要（例: IOException）、uncheckedはRuntimeException系で宣言不要。",
+      "実行スタックとタスクキューで非同期イベントを処理する仕組み。マクロ/マイクロタスクの順序に注意。",
+      "呼び出し方法で決まる（グローバル、メソッド、コンストラクタ、call/apply/bind）。arrow関数はレキシカル束縛。",
+      "自動設定で起動が速い。組み込みサーバやパッケージ化が容易でプロダクション化しやすい。",
+      "依存オブジェクトを外部から注入して疎結合・テスト容易性を高めるパターン。",
+      "RESTは軽量でHTTP/JSON中心、SOAPはXMLベースで標準仕様や拡張が豊富。",
+      "GETは取得（冪等）、POSTは作成/副作用あり（ペイロード送信）。",
+      "同時実行時のデータ整合性を制御する設定（例: READ COMMITTED, SERIALIZABLE 等）。",
+      "利点: 検索高速化。欠点: INSERT/UPDATEでのオーバーヘッドやディスク消費。",
+      "出力時のHTMLエスケープ、入力サニタイズ、Content-Security-Policyの導入。",
+      "レースコンディションやエラーハンドリング（タイムアウト・再試行）を設計する。",
+      "UTF-8を全体で統一し、API/DB/ファイルでエンコーディングを明示する。",
+      "独立デプロイやスケーリングの柔軟性、チーム分離で開発速度向上。",
+      "スレッドセーフ性が向上し、バグの局所化と予測可能性が高まる。",
+      "lockfileや依存の固定、互換性テスト、アップグレード計画で管理。",
+      "自動テスト（ユニット＋統合）の実行が必須。",
+      "構造化ログと適切なログレベル、機密情報はマスクすること。",
+      "レイテンシ（応答時間）とスループット、CPU/メモリの利用状況を確認する。",
+      "public static int safeLen(String s) { return s == null ? 0 : s.length(); }",
+      "function unique(arr){ return Array.from(new Set(arr)); }",
+      '@RestController @RequestMapping("/api") public class DemoController { @GetMapping("/hello") public String hello(){ return "ok"; } }',
+      'String sql = "SELECT id,name FROM users WHERE id = ?"; PreparedStatement ps = conn.prepareStatement(sql); ps.setInt(1, userId);',
+      "async function fetchAndLog(url){ try { const r = await fetch(url); console.log(await r.json()); } catch(e){ console.error(e); } }",
+      "public List<Integer> sortList(List<Integer> a){ List<Integer> b = new ArrayList<>(a); Collections.sort(b); return b; }",
+      'function escapeHtml(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }',
+      'try (BufferedReader r = Files.newBufferedReader(Paths.get(path))) { String l; while((l=r.readLine())!=null){} } catch(IOException e){ logger.error("error",e); }',
+      "const obj = JSON.parse(jsonStr); const name = obj.name;",
+      'PreparedStatement ps = conn.prepareStatement("SELECT * FROM t WHERE x=?"); ps.setString(1,val); ResultSet rs = ps.executeQuery();',
+      "function max(arr){ return arr.reduce((m,x)=>x>m?x:m, arr[0]); }",
+      "public String reverse(String s){ return new StringBuilder(s).reverse().toString(); }",
+      "トークン分解→署名検証→exp等クレーム検証→ユーザID取得。ライブラリで署名を検証する。",
+      "function fact(n){ return n<=1?1:n*fact(n-1); }",
+      "AtomicInteger cnt = new AtomicInteger(0); cnt.incrementAndGet();",
+      "autoCommitを切り、バッチサイズ単位でexecuteBatch()+commitする。",
+      "function paginate(items,page,size){ const from=(page-1)*size; return items.slice(from,from+size); }",
+      'try { /* ... */ } catch(Exception e){ logger.error("処理失敗", e); }',
+      "for (const id of ids) { await processAsync(id); } // 並列はPromise.all等を検討",
+      "function safeLen(s){ return s == null ? 0 : s.length; }",
+    ];
+    // (dead code - kept for reference)
+  }
 
-    const langs = ['common','java','javascript','python','php','csharp','android','swift'];
-    if (!langs.includes(lang)) return res.status(404).send('Not found');
+  const langs = [
+    "common",
+    "java",
+    "javascript",
+    "python",
+    "php",
+    "csharp",
+    "android",
+    "swift",
+  ];
+  if (!langs.includes(lang)) return res.status(404).send("Not found");
 
-    // ── LANG_TESTS から正解を生成 ──
-    {
-        const { LANG_TESTS: LT2 } = require('../lib/pretestQuestions');
-        const lconf = LT2[lang];
-        if (!lconf) return res.status(404).send('Not found');
-        const diffLabel = { VE: '非常に易しい', EM: '中間', H: '難しい', VH: '非常に難しい' };
-        const diffColor = { VE: '#22c55e', EM: '#3b82f6', H: '#f59e0b', VH: '#ef4444' };
-        const mcHtml = lconf.mc.map((item, idx) => {
-            const badge = `<span style="font-size:10px;font-weight:700;background:${diffColor[item.diff]}22;color:${diffColor[item.diff]};border:1px solid ${diffColor[item.diff]}44;border-radius:999px;padding:1px 8px;margin-left:8px">${diffLabel[item.diff]}</span>`;
-            const optsHtml = item.opts.map(o => {
-                const isCorrect = o.trim().startsWith(item.ans + '.');
-                return `<div style="padding:4px 8px;border-radius:6px;${isCorrect ? 'background:#d1fae5;font-weight:700;color:#065f46' : 'color:#6b7280'}">${isCorrect ? '✅ ' : '　'}${escapeHtml(o)}</div>`;
-            }).join('');
-            return `<div style="background:#fff;border-radius:8px;padding:12px;margin-top:8px;border:1.5px solid #e5e7eb"><div style="font-weight:700;margin-bottom:6px">Q${idx+1}. ${escapeHtml(item.q)}${badge}</div>${optsHtml}</div>`;
-        }).join('');
-        const essayHtml = lconf.essay.map((item, idx) => {
-            const kw = (item.keywords||[]).join('、');
-            return `<div style="background:#fff;border-radius:8px;padding:12px;margin-top:8px;border:1.5px solid #ede9fe"><div style="font-weight:700;margin-bottom:4px">Q${idx+31}. ${escapeHtml(item.q)}<span style="font-size:10px;font-weight:700;background:#7c3aed22;color:#7c3aed;border:1px solid #7c3aed44;border-radius:999px;padding:1px 8px;margin-left:8px">記述式</span></div><div style="font-size:.85rem;color:#6b7280">採点キーワード: ${escapeHtml(kw)}</div></div>`;
-        }).join('');
-        return renderPage(req, res, `入社前テスト 模範解答（${lang.toUpperCase()}）`, `${lang.toUpperCase()} 模範解答`, `
+  // ── LANG_TESTS から正解を生成 ──
+  {
+    const { LANG_TESTS: LT2 } = require("../lib/pretestQuestions");
+    const lconf = LT2[lang];
+    if (!lconf) return res.status(404).send("Not found");
+    const diffLabel = {
+      VE: "非常に易しい",
+      EM: "中間",
+      H: "難しい",
+      VH: "非常に難しい",
+    };
+    const diffColor = {
+      VE: "#22c55e",
+      EM: "#3b82f6",
+      H: "#f59e0b",
+      VH: "#ef4444",
+    };
+    const mcHtml = lconf.mc
+      .map((item, idx) => {
+        const badge = `<span style="font-size:10px;font-weight:700;background:${diffColor[item.diff]}22;color:${diffColor[item.diff]};border:1px solid ${diffColor[item.diff]}44;border-radius:999px;padding:1px 8px;margin-left:8px">${diffLabel[item.diff]}</span>`;
+        const optsHtml = item.opts
+          .map((o) => {
+            const isCorrect = o.trim().startsWith(item.ans + ".");
+            return `<div style="padding:4px 8px;border-radius:6px;${isCorrect ? "background:#d1fae5;font-weight:700;color:#065f46" : "color:#6b7280"}">${isCorrect ? "✅ " : "　"}${escapeHtml(o)}</div>`;
+          })
+          .join("");
+        return `<div style="background:#fff;border-radius:8px;padding:12px;margin-top:8px;border:1.5px solid #e5e7eb"><div style="font-weight:700;margin-bottom:6px">Q${idx + 1}. ${escapeHtml(item.q)}${badge}</div>${optsHtml}</div>`;
+      })
+      .join("");
+    const essayHtml = lconf.essay
+      .map((item, idx) => {
+        const kw = (item.keywords || []).join("、");
+        return `<div style="background:#fff;border-radius:8px;padding:12px;margin-top:8px;border:1.5px solid #ede9fe"><div style="font-weight:700;margin-bottom:4px">Q${idx + 31}. ${escapeHtml(item.q)}<span style="font-size:10px;font-weight:700;background:#7c3aed22;color:#7c3aed;border:1px solid #7c3aed44;border-radius:999px;padding:1px 8px;margin-left:8px">記述式</span></div><div style="font-size:.85rem;color:#6b7280">採点キーワード: ${escapeHtml(kw)}</div></div>`;
+      })
+      .join("");
+    return renderPage(
+      req,
+      res,
+      `入社前テスト 模範解答（${lang.toUpperCase()}）`,
+      `${lang.toUpperCase()} 模範解答`,
+      `
             <div class="card-enterprise">
                 <h5 style="margin-bottom:12px">入社前テスト 模範解答（${lang.toUpperCase()}）</h5>
                 <p style="color:var(--muted)">選択式Q1〜Q30は正解選択肢（✅）、記述式Q31〜Q40は採点キーワードを表示します。</p>
@@ -181,422 +252,456 @@ router.get('/pretest/answers/:lang', requireLogin, (req, res) => {
                 ${essayHtml}
                 <div style="margin-top:16px;display:flex;justify-content:flex-end"><a class="btn btn-primary" href="/pretest/answers">言語一覧に戻る</a></div>
             </div>
-        `);
-    }
+        `,
+    );
+  }
 
-    // ── 以下は旧ハードコード（dead code）──
-    if (false) {
+  // ── 以下は旧ハードコード（dead code）──
+  if (false) {
     const per_dead = {
-        java: [
-            'JVMのヒープとメタスペースを理解し、参照スコープを管理する。',
-            'GCは不要オブジェクトを回収する。世代別収集が一般的。',
-            'checkedは宣言/捕捉必須、uncheckedはRuntimeException系で任意。',
-            'マルチスレッドでの同期・競合回避を意識する。',
-            'finalやimmutable設計で副作用を減らす。',
-            'Spring Bootは自動設定と簡単な起動が利点。',
-            'DIでテストと疎結合を実現する。',
-            'REST設計（ステータス/URIの設計）に注力する。',
-            'GETは安全/冪等、POSTは副作用あり。',
-            '隔離レベルで一貫性と並行性を調整する。',
-            'インデックスは検索高速化だが更新コスト増。',
-            '出力時にHTML/XMLをエスケープする。',
-            '例外をログと共に適切にハンドリングする。',
-            'UTF-8で統一しバイナリ/文字列の境界を明確にする。',
-            'マイクロサービスは分割と独立デプロイが利点。',
-            '不変性でスレッド安全を確保する。',
-            '依存解決はlockfileやCIで固定化する。',
-            'CIで自動テストと静的解析を組み込む。',
-            '構造化ログで検索性を高める。',
-            'レスポンス時間とGC/スレッドの利用を監視する。',
+      java: [
+        "JVMのヒープとメタスペースを理解し、参照スコープを管理する。",
+        "GCは不要オブジェクトを回収する。世代別収集が一般的。",
+        "checkedは宣言/捕捉必須、uncheckedはRuntimeException系で任意。",
+        "マルチスレッドでの同期・競合回避を意識する。",
+        "finalやimmutable設計で副作用を減らす。",
+        "Spring Bootは自動設定と簡単な起動が利点。",
+        "DIでテストと疎結合を実現する。",
+        "REST設計（ステータス/URIの設計）に注力する。",
+        "GETは安全/冪等、POSTは副作用あり。",
+        "隔離レベルで一貫性と並行性を調整する。",
+        "インデックスは検索高速化だが更新コスト増。",
+        "出力時にHTML/XMLをエスケープする。",
+        "例外をログと共に適切にハンドリングする。",
+        "UTF-8で統一しバイナリ/文字列の境界を明確にする。",
+        "マイクロサービスは分割と独立デプロイが利点。",
+        "不変性でスレッド安全を確保する。",
+        "依存解決はlockfileやCIで固定化する。",
+        "CIで自動テストと静的解析を組み込む。",
+        "構造化ログで検索性を高める。",
+        "レスポンス時間とGC/スレッドの利用を監視する。",
 
-            'public static int safeLen(String s){ return s==null?0:s.length(); }',
-            'List<Integer>の合計はストリームで逐次計算する。',
-            'ConcurrentHashMapや同期化でスレッド安全を確保する。',
-            'usersリストはコンストラクタで初期化してNPE回避。',
-            'PreparedStatementでプレースホルダを利用する。',
-            'Files.newBufferedReaderで逐次読み込みメモリ節約。',
-            'BlockingQueueを使った生産者/消費者モデル。',
-            'バルク挿入はバッチとトランザクションで処理する。',
-            'Transactionで全部成功を保証し失敗でロールバック。',
-            'Jackson/GsonでJSONパースしフィールド取得。',
-            'ヒープダンプやプロファイラでメモリリークを検出する。',
-            '非同期I/O（NIO/Asynchronous）で高並列処理を行う。',
-            'TTLやLRUでキャッシュの有効期限管理を設計する。',
-            'StringBuilderで大量連結を効率化する。',
-            '簡易ベンチはJMHや単純なループで計測する。'
-        ],
-        javascript: [
-            'コードスタイルはESLint等でルール化しCIで自動チェックする。',
-            '非同期はエラーハンドリングとキャンセルを設計する。',
-            '重要度と影響範囲でバグ優先度を決める。',
-            '具体的で再現手順を含む指摘が良い。',
-            'API仕様はOpenAPI等で契約を明確にする。',
-            'ロールバック手順はデータ整合性を考慮する。',
-            'ステートは単一責任で最小化する。',
-            '入力サニタイズと出力時のエスケープを行う。',
-            '依存脆弱性は定期スキャンとアップデートで対応。',
-            'Chrome DevToolsやプロファイラで改善点を探す。',
+        "public static int safeLen(String s){ return s==null?0:s.length(); }",
+        "List<Integer>の合計はストリームで逐次計算する。",
+        "ConcurrentHashMapや同期化でスレッド安全を確保する。",
+        "usersリストはコンストラクタで初期化してNPE回避。",
+        "PreparedStatementでプレースホルダを利用する。",
+        "Files.newBufferedReaderで逐次読み込みメモリ節約。",
+        "BlockingQueueを使った生産者/消費者モデル。",
+        "バルク挿入はバッチとトランザクションで処理する。",
+        "Transactionで全部成功を保証し失敗でロールバック。",
+        "Jackson/GsonでJSONパースしフィールド取得。",
+        "ヒープダンプやプロファイラでメモリリークを検出する。",
+        "非同期I/O（NIO/Asynchronous）で高並列処理を行う。",
+        "TTLやLRUでキャッシュの有効期限管理を設計する。",
+        "StringBuilderで大量連結を効率化する。",
+        "簡易ベンチはJMHや単純なループで計測する。",
+      ],
+      javascript: [
+        "コードスタイルはESLint等でルール化しCIで自動チェックする。",
+        "非同期はエラーハンドリングとキャンセルを設計する。",
+        "重要度と影響範囲でバグ優先度を決める。",
+        "具体的で再現手順を含む指摘が良い。",
+        "API仕様はOpenAPI等で契約を明確にする。",
+        "ロールバック手順はデータ整合性を考慮する。",
+        "ステートは単一責任で最小化する。",
+        "入力サニタイズと出力時のエスケープを行う。",
+        "依存脆弱性は定期スキャンとアップデートで対応。",
+        "Chrome DevToolsやプロファイラで改善点を探す。",
 
-            'イベントループはスタック→マイクロタスク→マクロタスクの流れ。',
-            'thisは呼び出し形態やbind/arrowで変わる。',
-            'Promiseは抽象、async/awaitは構文糖で可読性向上。',
-            'クロージャは状態保持に便利だがメモリに注意。',
-            '未解除のタイマーやDOM参照がリーク原因。',
-            'ESモジュールは静的解析が可能、CommonJSは動的ロード中心。',
-            'CORSはサーバ側でAccess-Control-Allow-*を設定する。',
-            '頻繁なDOM更新はバッチ化や仮想DOMで最適化する。',
-            'デバッガはブレークポイントとウォッチで使い分ける。',
-            'ストリームはメモリ効率が良くI/Oで有効。',
+        "イベントループはスタック→マイクロタスク→マクロタスクの流れ。",
+        "thisは呼び出し形態やbind/arrowで変わる。",
+        "Promiseは抽象、async/awaitは構文糖で可読性向上。",
+        "クロージャは状態保持に便利だがメモリに注意。",
+        "未解除のタイマーやDOM参照がリーク原因。",
+        "ESモジュールは静的解析が可能、CommonJSは動的ロード中心。",
+        "CORSはサーバ側でAccess-Control-Allow-*を設定する。",
+        "頻繁なDOM更新はバッチ化や仮想DOMで最適化する。",
+        "デバッガはブレークポイントとウォッチで使い分ける。",
+        "ストリームはメモリ効率が良くI/Oで有効。",
 
-            'function debounce(fn,ms){ let t; return function(...a){ clearTimeout(t); t=setTimeout(()=>fn.apply(this,a),ms); } }',
-            '一度のループでmap+filterをreduceにまとめると効率化可能。',
-            'Promise.allは一部失敗で全体が失敗するため個別ハンドリングを加える。',
-            'ストリームで大ファイルを逐次処理することでメモリ保護。',
-            'クロージャの解放やWeakRefでメモリリーク対策。',
-            '逐次処理用の非同期キュー（Promiseチェーン）を実装する。',
-            'JWTは署名とexp検証を行いペイロードを使用する。',
-            'ページネーションはlimit/offsetまたはcursor方式を使う。',
-            '入力はエスケープして表示時に安全化する。',
-            'サーバサイドはキャッシュ(HTTP/Redis)で応答高速化する。'
-        ],
-        python: [
-            'コード整合性はLint/フォーマッタとレビューで保つ。',
-            'データパイプラインはメモリとI/Oを意識する。',
-            '例外時はコンテキストを含めてログ出力する。',
-            '大規模データはチャンク処理やストリームを使う。',
-            'テスト自動化はCIで定期実行する。',
-            'プロファイラでボトルネックを特定する。',
-            '外部API障害はリトライとフォールバックを用意する。',
-            'レビューで重い処理やN+1をチェックする。',
-            '依存はlockファイルで固定し脆弱性を監視する。',
-            'デプロイ前に環境差異を確認する。',
+        "function debounce(fn,ms){ let t; return function(...a){ clearTimeout(t); t=setTimeout(()=>fn.apply(this,a),ms); } }",
+        "一度のループでmap+filterをreduceにまとめると効率化可能。",
+        "Promise.allは一部失敗で全体が失敗するため個別ハンドリングを加える。",
+        "ストリームで大ファイルを逐次処理することでメモリ保護。",
+        "クロージャの解放やWeakRefでメモリリーク対策。",
+        "逐次処理用の非同期キュー（Promiseチェーン）を実装する。",
+        "JWTは署名とexp検証を行いペイロードを使用する。",
+        "ページネーションはlimit/offsetまたはcursor方式を使う。",
+        "入力はエスケープして表示時に安全化する。",
+        "サーバサイドはキャッシュ(HTTP/Redis)で応答高速化する。",
+      ],
+      python: [
+        "コード整合性はLint/フォーマッタとレビューで保つ。",
+        "データパイプラインはメモリとI/Oを意識する。",
+        "例外時はコンテキストを含めてログ出力する。",
+        "大規模データはチャンク処理やストリームを使う。",
+        "テスト自動化はCIで定期実行する。",
+        "プロファイラでボトルネックを特定する。",
+        "外部API障害はリトライとフォールバックを用意する。",
+        "レビューで重い処理やN+1をチェックする。",
+        "依存はlockファイルで固定し脆弱性を監視する。",
+        "デプロイ前に環境差異を確認する。",
 
-            'リストは可変、タプルは不変。',
-            'GILは同時実行を制約するがI/Oバウンドでは有効。',
-            'デコレータは横断的関心事（ログ/認証）に有用。',
-            'withでリソース自動解放を行う。',
-            '例外は具体的に捕捉してロギングと再送出を使い分ける。',
-            'ジェネレータは遅延評価でメモリを節約する。',
-            'コンテキストマネージャはwithで実装する。',
-            '型ヒントは可読性と静的解析を助ける。',
-            'venvで隔離された仮想環境を作る。',
-            'ファイルI/Oはエンコーディングと例外処理に注意。',
+        "リストは可変、タプルは不変。",
+        "GILは同時実行を制約するがI/Oバウンドでは有効。",
+        "デコレータは横断的関心事（ログ/認証）に有用。",
+        "withでリソース自動解放を行う。",
+        "例外は具体的に捕捉してロギングと再送出を使い分ける。",
+        "ジェネレータは遅延評価でメモリを節約する。",
+        "コンテキストマネージャはwithで実装する。",
+        "型ヒントは可読性と静的解析を助ける。",
+        "venvで隔離された仮想環境を作る。",
+        "ファイルI/Oはエンコーディングと例外処理に注意。",
 
-            'def read_lines(path):\n    with open(path) as f:\n        for l in f:\n            yield l.strip()',
-            'ijson等のストリーミングパーサで大きなJSONを処理する。',
-            'ThreadPoolExecutorでI/Oバウンドを並列化する。',
-            'DBはチャンクで取得してメモリを節約する。',
-            'psutilでプロセスのメモリ使用を計測する。',
-            '再帰は深さに注意しループで代替できる。',
-            'asyncioで多数I/Oを効率処理するがイベントループ設計に注意。',
-            'read(size)でチャンク処理してメモリ節約。',
-            'コネクションプールで接続確立コストを削減する。',
-            '構成されたロギングでstacktraceを残す。'
-        ],
-        php: [
-            'コード品質はコードレビューと静的解析で担保する。',
-            '脆弱性は即時パッチとテストで対応する。',
-            'セッションはSecure/HttpOnly属性を設定する。',
-            'プロファイラでボトルネックを特定する。',
-            '環境ごとに設定ファイルを分ける。',
-            'デプロイ前チェックにDBマイグレーション確認を含める。',
-            'フェイルオーバーは冗長構成とタイムアウトで制御する。',
-            'マイグレーションはロールフォワード/ロールバックを用意する。',
-            'エラートラッキングで問題検出を自動化する。',
-            'タスク分担は所有権とレビュー体制で効率化する。',
+        "def read_lines(path):\n    with open(path) as f:\n        for l in f:\n            yield l.strip()",
+        "ijson等のストリーミングパーサで大きなJSONを処理する。",
+        "ThreadPoolExecutorでI/Oバウンドを並列化する。",
+        "DBはチャンクで取得してメモリを節約する。",
+        "psutilでプロセスのメモリ使用を計測する。",
+        "再帰は深さに注意しループで代替できる。",
+        "asyncioで多数I/Oを効率処理するがイベントループ設計に注意。",
+        "read(size)でチャンク処理してメモリ節約。",
+        "コネクションプールで接続確立コストを削減する。",
+        "構成されたロギングでstacktraceを残す。",
+      ],
+      php: [
+        "コード品質はコードレビューと静的解析で担保する。",
+        "脆弱性は即時パッチとテストで対応する。",
+        "セッションはSecure/HttpOnly属性を設定する。",
+        "プロファイラでボトルネックを特定する。",
+        "環境ごとに設定ファイルを分ける。",
+        "デプロイ前チェックにDBマイグレーション確認を含める。",
+        "フェイルオーバーは冗長構成とタイムアウトで制御する。",
+        "マイグレーションはロールフォワード/ロールバックを用意する。",
+        "エラートラッキングで問題検出を自動化する。",
+        "タスク分担は所有権とレビュー体制で効率化する。",
 
-            'trim等で文字列を扱う際にエンコーディングに注意。',
-            'PDOはプリペアドステートメントでSQL注入対策になる。',
-            'XSSは出力時のエスケープが基本。',
-            'セッション固定はID再生成で対処する。',
-            'Composerで依存を管理しautoloadを利用する。',
-            'Namespaceは衝突を避け構造化する。',
-            '例外はキャッチしてログとユーザ向けメッセージを分ける。',
-            'アップロードはMIME/typeとサイズを検査する。',
-            'UTF-8を標準にしてバイト/文字列を明確に扱う。',
-            '簡易ルーティングはパスとメソッドで制御する。',
+        "trim等で文字列を扱う際にエンコーディングに注意。",
+        "PDOはプリペアドステートメントでSQL注入対策になる。",
+        "XSSは出力時のエスケープが基本。",
+        "セッション固定はID再生成で対処する。",
+        "Composerで依存を管理しautoloadを利用する。",
+        "Namespaceは衝突を避け構造化する。",
+        "例外はキャッチしてログとユーザ向けメッセージを分ける。",
+        "アップロードはMIME/typeとサイズを検査する。",
+        "UTF-8を標準にしてバイト/文字列を明確に扱う。",
+        "簡易ルーティングはパスとメソッドで制御する。",
 
-            'function safe_trim($s){ return $s===null? \'\':trim($s); }',
-            'fgetcsvで逐次読み込みしメモリ節約する。',
-            'セッションはcookie属性と再生成で保護する。',
-            'PDOのプリペアでSQLインジェクションを回避する。',
-            'アップロードはMIME/サイズ/拡張子で検証する。',
-            'ログローテーションでディスク使用を制御する。',
-            'レスポンスキャッシュで負荷を軽減する。',
-            'マイグレーションはバージョン管理して実行する。',
-            'LOAD DATA等でバルクインサートを高速化する。',
-            'JWT検証は署名と期限をチェックする。'
-        ],
-        csharp: [
-            '設計レビューは仕様と影響範囲を明確にして進める。',
-            'async/awaitでデッドロックや例外伝播に注意する。',
-            '例外は適切にハンドルしログとユーザ通知を分ける。',
-            'DIは疎結合とテスト容易性を高める。',
-            'ユニットテストは小さい単位で頻繁に実行する。',
-            'APIのバージョンは互換性と移行戦略で管理する。',
-            'ログレベルは運用で使いやすく設計する。',
-            'DB変更はマイグレーションとバックアップ計画を伴う。',
-            'プロファイリングでボトルネックを特定する。',
-            'リファクタは安全性とカバレッジを確認して実施する。',
+        "function safe_trim($s){ return $s===null? '':trim($s); }",
+        "fgetcsvで逐次読み込みしメモリ節約する。",
+        "セッションはcookie属性と再生成で保護する。",
+        "PDOのプリペアでSQLインジェクションを回避する。",
+        "アップロードはMIME/サイズ/拡張子で検証する。",
+        "ログローテーションでディスク使用を制御する。",
+        "レスポンスキャッシュで負荷を軽減する。",
+        "マイグレーションはバージョン管理して実行する。",
+        "LOAD DATA等でバルクインサートを高速化する。",
+        "JWT検証は署名と期限をチェックする。",
+      ],
+      csharp: [
+        "設計レビューは仕様と影響範囲を明確にして進める。",
+        "async/awaitでデッドロックや例外伝播に注意する。",
+        "例外は適切にハンドルしログとユーザ通知を分ける。",
+        "DIは疎結合とテスト容易性を高める。",
+        "ユニットテストは小さい単位で頻繁に実行する。",
+        "APIのバージョンは互換性と移行戦略で管理する。",
+        "ログレベルは運用で使いやすく設計する。",
+        "DB変更はマイグレーションとバックアップ計画を伴う。",
+        "プロファイリングでボトルネックを特定する。",
+        "リファクタは安全性とカバレッジを確認して実施する。",
 
-            '値型はスタック、参照型はヒープに配置される点に注意。',
-            'async/awaitは非同期フローを簡潔に記述する。',
-            'LINQでクエリ風の集計が簡潔になる。',
-            'GCは不要オブジェクトを回収する（世代別）。',
-            'インターフェースは契約、抽象クラスは共通実装向け。',
-            'デリゲートはコールバックやイベントに有用。',
-            '例外は狭い範囲で捕捉する。',
-            'Jsonやバイナリでシリアライズを行う。',
-            'Concurrentコレクションやlockでスレッド安全を保つ。',
-            'DIでモジュール性とテスト性を向上する。',
+        "値型はスタック、参照型はヒープに配置される点に注意。",
+        "async/awaitは非同期フローを簡潔に記述する。",
+        "LINQでクエリ風の集計が簡潔になる。",
+        "GCは不要オブジェクトを回収する（世代別）。",
+        "インターフェースは契約、抽象クラスは共通実装向け。",
+        "デリゲートはコールバックやイベントに有用。",
+        "例外は狭い範囲で捕捉する。",
+        "Jsonやバイナリでシリアライズを行う。",
+        "Concurrentコレクションやlockでスレッド安全を保つ。",
+        "DIでモジュール性とテスト性を向上する。",
 
-            'public static int Len(string s)=> s==null?0:s.Length;',
-            'async I/Oの例ではConfigureAwaitやキャンセルを検討する。',
-            'DIコンテナでサービス登録と解決を行う。',
-            'ストリーミング処理で大データを逐次処理する。',
-            'TransactionScopeやDBトランザクションで整合性を保つ。',
-            'Concurrentコレクションやlockで競合を回避する。',
-            '構造化ログで検索可能なログを残す。',
-            'プロファイラでヒープ増加を解析する。',
-            'キャッシュやSQL最適化でAPI性能を改善する。',
-            '循環参照はカスタムシリアライズで対処する。'
-        ],
-        android: [
-            'ライフサイクルの適切な処理とビュー参照の解放に注意する。',
-            '大きなオブジェクトはActivityに保持せず参照を解放する。',
-            'Async処理はUIスレッドでの更新を意識して行う。',
-            'リソース削減とProguard/R8でAPKを最適化する。',
-            '依存のバージョンは互換性とCIで検証する。',
-            '自動化テストは重要なフローを優先する。',
-            '署名鍵は安全に保管しCIで扱う際は秘匿する。',
-            'WorkManager等で適切にバックグラウンド処理を行う。',
-            'Gradleでビルド時間短縮とキャッシュを利用する。',
-            '起動時間やレンダリング時間を監視指標にする。',
+        "public static int Len(string s)=> s==null?0:s.Length;",
+        "async I/Oの例ではConfigureAwaitやキャンセルを検討する。",
+        "DIコンテナでサービス登録と解決を行う。",
+        "ストリーミング処理で大データを逐次処理する。",
+        "TransactionScopeやDBトランザクションで整合性を保つ。",
+        "Concurrentコレクションやlockで競合を回避する。",
+        "構造化ログで検索可能なログを残す。",
+        "プロファイラでヒープ増加を解析する。",
+        "キャッシュやSQL最適化でAPI性能を改善する。",
+        "循環参照はカスタムシリアライズで対処する。",
+      ],
+      android: [
+        "ライフサイクルの適切な処理とビュー参照の解放に注意する。",
+        "大きなオブジェクトはActivityに保持せず参照を解放する。",
+        "Async処理はUIスレッドでの更新を意識して行う。",
+        "リソース削減とProguard/R8でAPKを最適化する。",
+        "依存のバージョンは互換性とCIで検証する。",
+        "自動化テストは重要なフローを優先する。",
+        "署名鍵は安全に保管しCIで扱う際は秘匿する。",
+        "WorkManager等で適切にバックグラウンド処理を行う。",
+        "Gradleでビルド時間短縮とキャッシュを利用する。",
+        "起動時間やレンダリング時間を監視指標にする。",
 
-            'onCreate/onResumeなど主要ライフサイクルを理解する。',
-            'ViewModelはUIデータの保持と回転耐性に利点がある。',
-            'strings/dimensでリソースを分離し再利用性を高める。',
-            'UIスレッドで重い処理を行わない。',
-            'Hilt等でDIを導入し依存性を管理する。',
-            '永続化はRoomやSharedPreferencesを使い分ける。',
-            '描画負荷はRecyclerViewとDiffUtilで低減する。',
-            'LeakCanary等でメモリリークを検出する。',
-            'ビルドタイプ/フレーバーで設定を分ける。',
-            '画像のダウンサンプリングやキャッシュで表示負荷を下げる。',
+        "onCreate/onResumeなど主要ライフサイクルを理解する。",
+        "ViewModelはUIデータの保持と回転耐性に利点がある。",
+        "strings/dimensでリソースを分離し再利用性を高める。",
+        "UIスレッドで重い処理を行わない。",
+        "Hilt等でDIを導入し依存性を管理する。",
+        "永続化はRoomやSharedPreferencesを使い分ける。",
+        "描画負荷はRecyclerViewとDiffUtilで低減する。",
+        "LeakCanary等でメモリリークを検出する。",
+        "ビルドタイプ/フレーバーで設定を分ける。",
+        "画像のダウンサンプリングやキャッシュで表示負荷を下げる。",
 
-            '大きなBitmapは適切にリサイズして解放する。',
-            '非同期で取得しLiveData/FlowでUIに反映する。',
-            'Glide等で画像をリサイズ・キャッシュする。',
-            'RoomのマイグレーションはSQLで移行処理を書く。',
-            'WorkManagerでバッテリー効率を考慮した同期を行う。',
-            'ジョブ合算やバックオフでバッテリー消費を抑える。',
-            'DiffUtil/RecyclerViewの最適化でリスト表示を高速化する。',
-            '同期には同期化/atomic操作で競合を防ぐ。',
-            '指数バックオフでリトライ戦略を実装する。',
-            'ページングライブラリで大データを分割して処理する。'
-        ],
-        swift: [
-            'Optionalは存在しない値を明示的に扱える。安全なアンラップを行う。',
-            'ARCは参照カウントでメモリを管理する。循環参照に注意。',
-            'クロージャキャプチャでweak/unownedを用いて循環参照を避ける。',
-            '値型と参照型の振る舞いを設計で使い分ける。',
-            'do/try/catchでエラーを適切に扱う。',
-            'CocoaPods/SwiftPMは用途により使い分ける。',
-            'プロファイラでメモリとCPUを監視する。',
-            'JSONパースでは型安全性と例外処理を行う。',
-            'バックグラウンド処理は適切なAPIで実装する。',
-            '署名やプロビジョニングに注意してリリースする。',
+        "大きなBitmapは適切にリサイズして解放する。",
+        "非同期で取得しLiveData/FlowでUIに反映する。",
+        "Glide等で画像をリサイズ・キャッシュする。",
+        "RoomのマイグレーションはSQLで移行処理を書く。",
+        "WorkManagerでバッテリー効率を考慮した同期を行う。",
+        "ジョブ合算やバックオフでバッテリー消費を抑える。",
+        "DiffUtil/RecyclerViewの最適化でリスト表示を高速化する。",
+        "同期には同期化/atomic操作で競合を防ぐ。",
+        "指数バックオフでリトライ戦略を実装する。",
+        "ページングライブラリで大データを分割して処理する。",
+      ],
+      swift: [
+        "Optionalは存在しない値を明示的に扱える。安全なアンラップを行う。",
+        "ARCは参照カウントでメモリを管理する。循環参照に注意。",
+        "クロージャキャプチャでweak/unownedを用いて循環参照を避ける。",
+        "値型と参照型の振る舞いを設計で使い分ける。",
+        "do/try/catchでエラーを適切に扱う。",
+        "CocoaPods/SwiftPMは用途により使い分ける。",
+        "プロファイラでメモリとCPUを監視する。",
+        "JSONパースでは型安全性と例外処理を行う。",
+        "バックグラウンド処理は適切なAPIで実装する。",
+        "署名やプロビジョニングに注意してリリースする。",
 
-            'Optionalのアンラップはif let, guard let, ?? を使い分ける。',
-            'ARCは参照カウントで自動解放するが循環参照に注意。',
-            '構造体は値渡し、クラスは参照渡しを意識する。',
-            'do/try/catchでエラーを処理する。',
-            'クロージャはcapture listで循環参照を避ける。',
-            '型推論は可読性と明示性のバランスで使う。',
-            'async/awaitやCombineで非同期処理を扱う。',
-            'SwiftPM等で依存管理を行う。',
-            'UI更新はMain Threadで行う。',
-            'クラッシュログはCrashlytics等で収集する。',
+        "Optionalのアンラップはif let, guard let, ?? を使い分ける。",
+        "ARCは参照カウントで自動解放するが循環参照に注意。",
+        "構造体は値渡し、クラスは参照渡しを意識する。",
+        "do/try/catchでエラーを処理する。",
+        "クロージャはcapture listで循環参照を避ける。",
+        "型推論は可読性と明示性のバランスで使う。",
+        "async/awaitやCombineで非同期処理を扱う。",
+        "SwiftPM等で依存管理を行う。",
+        "UI更新はMain Threadで行う。",
+        "クラッシュログはCrashlytics等で収集する。",
 
-            'func safeAppend(_ arr: inout [String]?, _ v: String){ if arr==nil{ arr=[] } arr?.append(v) }',
-            'async/awaitでネットワークリクエストを行いエラーをハンドリングする。',
-            '大画像はダウンサンプリングして表示負荷を下げる。',
-            'Codableは小さなJSON、CoreDataは複雑な永続化に利用する。',
-            'バックグラウンドで取得して通知でUIを更新する。',
-            '遅延評価やストリーミングでメモリを節約する。',
-            'AsyncSequenceで逐次処理を行う。',
-            'ログにカテゴリやレベルを付けてフィルタ可能にする。',
-            '指数バックオフでリトライ戦略を組む。',
-            '描画負荷を減らしスクロール性能を改善する。'
-        ]
+        "func safeAppend(_ arr: inout [String]?, _ v: String){ if arr==nil{ arr=[] } arr?.append(v) }",
+        "async/awaitでネットワークリクエストを行いエラーをハンドリングする。",
+        "大画像はダウンサンプリングして表示負荷を下げる。",
+        "Codableは小さなJSON、CoreDataは複雑な永続化に利用する。",
+        "バックグラウンドで取得して通知でUIを更新する。",
+        "遅延評価やストリーミングでメモリを節約する。",
+        "AsyncSequenceで逐次処理を行う。",
+        "ログにカテゴリやレベルを付けてフィルタ可能にする。",
+        "指数バックオフでリトライ戦略を組む。",
+        "描画負荷を減らしスクロール性能を改善する。",
+      ],
     };
 
     const answers = per[lang] || [];
     // ensure exactly 40 items
-    while (answers.length < 40) answers.push('追加の模範解答（例示）');
+    while (answers.length < 40) answers.push("追加の模範解答（例示）");
 
-    const qaHtml = answers.map((a, i) => {
-        const qNum = i+1;
+    const qaHtml = answers
+      .map((a, i) => {
+        const qNum = i + 1;
         const qText = `Q${qNum}.`;
         return `<div style="background:#fff;border-radius:8px;padding:12px;margin-top:8px"><div style="font-weight:700;margin-bottom:8px">${qText}</div><pre style="white-space:pre-wrap;margin:0">${escapeHtml(a)}</pre></div>`;
-    }).join('\n');
+      })
+      .join("\n");
 
-    renderPage(req, res, `入社前テスト 模範解答（${lang.toUpperCase()}）`, `${lang.toUpperCase()} 模範解答`, `
+    renderPage(
+      req,
+      res,
+      `入社前テスト 模範解答（${lang.toUpperCase()}）`,
+      `${lang.toUpperCase()} 模範解答`,
+      `
         <div class="card-enterprise">
             <h5 style="margin-bottom:12px">入社前テスト 模範解答（${lang.toUpperCase()}）</h5>
             <p style="color:var(--muted)">${lang.toUpperCase()} 向けの Q1〜Q40 の簡潔な模範解答です。</p>
             ${qaHtml}
             <div style="margin-top:12px;display:flex;justify-content:flex-end"><a class="btn btn-primary" href="/pretest/answers">言語一覧に戻る</a></div>
         </div>
-    `);
-    } // end if (false)
+    `,
+    );
+  } // end if (false)
 });
 
 // 共通問答: 質問と模範解答を順に表示（Q1-Q40）
-router.get('/pretest/answers/common', requireLogin, (req, res) => {
-    const questions = [
-        'Javaでメモリ管理はどのように行われますか？',
-        'Javaのガベージコレクションとは何ですか？',
-        'Javaの例外（checked/unchecked）の違いを説明してください',
-        'JavaScriptのイベントループを簡潔に説明してください',
-        'this の挙動（JavaScript）について説明してください',
-        'Spring Bootの主な利点を2つ挙げてください',
-        'DI（依存性注入）とは何ですか？',
-        'RESTとSOAPの主な違いを説明してください',
-        'GETとPOSTの使い分けを説明してください',
-        'トランザクションの隔離レベルとは何ですか？簡単に',
-        'SQLインデックスの利点と欠点を1つずつ述べてください',
-        'XSS攻撃を防ぐ一般的な対策を述べてください',
-        '非同期処理を行う際の注意点を1つ挙げてください',
-        'クロスプラットフォームでの文字コード問題の対処法を挙げてください',
-        'マイクロサービスの利点を2つ挙げてください',
-        'オブジェクトの不変性（immutable）の利点を説明してください',
-        '依存関係のバージョン衝突（dependency hell）にどう対処しますか？',
-        'CI/CDで必須だと思うチェックを1つ挙げてください',
-        'ロギングで重要なポイントは何ですか？',
-        'パフォーマンスチューニングで最初に見る指標は何ですか？',
-        'NullPointerExceptionを回避する修正（簡単なJavaメソッド）',
-        '配列の重複を取り除くJavaScript関数（短め）',
-        '簡単なRESTエンドポイントの雛形（Spring Boot）',
-        'PreparedStatementを使ったSELECT例（Java）',
-        '非同期にAPIを取得してconsole.logするfetch例（JS）',
-        'リストをソートして返すJavaメソッド',
-        'フォーム入力のサニタイズ簡易例（JS）',
-        '例外処理を追加したファイル読み込み例（Java）',
-        'JSONを解析してフィールドを取得するJSの例',
-        '簡単なクエリを実行して結果を処理する擬似コード（任意言語）',
-        '小さなアルゴリズム: 配列の最大値を返す関数（JS）',
-        '文字列を逆順にするメソッド（Java）',
-        '認証用のJWTを検証する擬似コード（任意言語）',
-        '再帰を使った階乗実装（JS）',
-        'スレッドセーフなカウンタの実装（Java、概念で可）',
-        'バルク挿入を行う擬似コード（SQL/Java）',
-        'APIから取得したデータをページネートするロジック（JS）',
-        '簡単な例外ログの書き方（Java）',
-        '同じ処理を同期→非同期に切り替える例（JS、概念可）',
-        'ユーティリティ関数の実装例'
-    ];
+router.get("/pretest/answers/common", requireLogin, (req, res) => {
+  const questions = [
+    "Javaでメモリ管理はどのように行われますか？",
+    "Javaのガベージコレクションとは何ですか？",
+    "Javaの例外（checked/unchecked）の違いを説明してください",
+    "JavaScriptのイベントループを簡潔に説明してください",
+    "this の挙動（JavaScript）について説明してください",
+    "Spring Bootの主な利点を2つ挙げてください",
+    "DI（依存性注入）とは何ですか？",
+    "RESTとSOAPの主な違いを説明してください",
+    "GETとPOSTの使い分けを説明してください",
+    "トランザクションの隔離レベルとは何ですか？簡単に",
+    "SQLインデックスの利点と欠点を1つずつ述べてください",
+    "XSS攻撃を防ぐ一般的な対策を述べてください",
+    "非同期処理を行う際の注意点を1つ挙げてください",
+    "クロスプラットフォームでの文字コード問題の対処法を挙げてください",
+    "マイクロサービスの利点を2つ挙げてください",
+    "オブジェクトの不変性（immutable）の利点を説明してください",
+    "依存関係のバージョン衝突（dependency hell）にどう対処しますか？",
+    "CI/CDで必須だと思うチェックを1つ挙げてください",
+    "ロギングで重要なポイントは何ですか？",
+    "パフォーマンスチューニングで最初に見る指標は何ですか？",
+    "NullPointerExceptionを回避する修正（簡単なJavaメソッド）",
+    "配列の重複を取り除くJavaScript関数（短め）",
+    "簡単なRESTエンドポイントの雛形（Spring Boot）",
+    "PreparedStatementを使ったSELECT例（Java）",
+    "非同期にAPIを取得してconsole.logするfetch例（JS）",
+    "リストをソートして返すJavaメソッド",
+    "フォーム入力のサニタイズ簡易例（JS）",
+    "例外処理を追加したファイル読み込み例（Java）",
+    "JSONを解析してフィールドを取得するJSの例",
+    "簡単なクエリを実行して結果を処理する擬似コード（任意言語）",
+    "小さなアルゴリズム: 配列の最大値を返す関数（JS）",
+    "文字列を逆順にするメソッド（Java）",
+    "認証用のJWTを検証する擬似コード（任意言語）",
+    "再帰を使った階乗実装（JS）",
+    "スレッドセーフなカウンタの実装（Java、概念で可）",
+    "バルク挿入を行う擬似コード（SQL/Java）",
+    "APIから取得したデータをページネートするロジック（JS）",
+    "簡単な例外ログの書き方（Java）",
+    "同じ処理を同期→非同期に切り替える例（JS、概念可）",
+    "ユーティリティ関数の実装例",
+  ];
 
-    const answers = [
-        'JVMがヒープ管理を行い、ガベージコレクタが不要なオブジェクトを回収する。参照と寿命を意識してメモリ使用を抑える。',
-        '不要になったオブジェクトを自動検出してメモリを解放する仕組み。世代別収集やマーク&スイープ等がある。',
-        'checkedはコンパイル時に捕捉/宣言が必要（例: IOException）、uncheckedはRuntimeException系で宣言不要。',
-        '実行スタックとタスクキューで非同期イベントを処理する仕組み。マクロ/マイクロタスクの順序に注意。',
-        '呼び出し方法で決まる（グローバル、メソッド、コンストラクタ、call/apply/bind）。arrow関数はレキシカル束縛。',
-        '自動設定で起動が速い。組み込みサーバやパッケージ化が容易でプロダクション化しやすい。',
-        '依存オブジェクトを外部から注入して疎結合・テスト容易性を高めるパターン。',
-        'RESTは軽量でHTTP/JSON中心、SOAPはXMLベースで標準仕様や拡張が豊富。',
-        'GETは取得（冪等）、POSTは作成/副作用あり（ペイロード送信）。',
-        '同時実行時のデータ整合性を制御する設定（例: READ COMMITTED, SERIALIZABLE 等）。',
-        '利点: 検索高速化。欠点: INSERT/UPDATEでのオーバーヘッドやディスク消費。',
-        '出力時のHTMLエスケープ、入力サニタイズ、Content-Security-Policyの導入。',
-        'レースコンディションやエラーハンドリング（タイムアウト・再試行）を設計する。',
-        'UTF-8を全体で統一し、API/DB/ファイルでエンコーディングを明示する。',
-        '独立デプロイやスケーリングの柔軟性、チーム分離で開発速度向上。',
-        'スレッドセーフ性が向上し、バグの局所化と予測可能性が高まる。',
-        'lockfileや依存の固定、互換性テスト、アップグレード計画で管理。',
-        '自動テスト（ユニット＋統合）の実行が必須。',
-        '構造化ログと適切なログレベル、機密情報はマスクすること。',
-        'レイテンシ（応答時間）とスループット、CPU/メモリの利用状況を確認する。',
-        'public static int safeLen(String s) { return s == null ? 0 : s.length(); }',
-        'function unique(arr){ return Array.from(new Set(arr)); }',
-        '@RestController\\n@RequestMapping("/api")\\npublic class DemoController {\\n  @GetMapping("/hello")\\n  public String hello(){ return "ok"; }\\n}',
-        'String sql = "SELECT id,name FROM users WHERE id = ?"; try (PreparedStatement ps = conn.prepareStatement(sql)) { ps.setInt(1, userId); try (ResultSet rs = ps.executeQuery()) { if (rs.next()) { /* process */ } } }',
-        'async function fetchAndLog(url){ try { const r = await fetch(url); const j = await r.json(); console.log(j); } catch(e){ console.error(e); } }',
-        'public List<Integer> sortList(List<Integer> a){ List<Integer> b = new ArrayList<>(a); Collections.sort(b); return b; }',
-        'function escapeHtml(s){ return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }',
-        'try (BufferedReader r = Files.newBufferedReader(Paths.get(path))) { String line; while ((line = r.readLine()) != null){ /* process */ } } catch (IOException e){ logger.error("file read error", e); }',
-        'const obj = JSON.parse(jsonStr); const name = obj.name;',
-        'PreparedStatement ps = conn.prepareStatement("SELECT * FROM t WHERE x=?"); ps.setString(1, val); ResultSet rs = ps.executeQuery(); while(rs.next()){ /* map fields */ }',
-        'function max(arr){ return arr.length? arr.reduce((m,x)=> x>m?x:m, arr[0]) : undefined; }',
-        'public String reverse(String s){ return new StringBuilder(s).reverse().toString(); }',
-        'トークン分解→署名検証→exp等クレーム検証→ユーザID取得。ライブラリで署名を検証する。',
-        'function fact(n){ return n<=1?1:n*fact(n-1); } // 大きいnはループやBigIntを検討',
-        'AtomicInteger cnt = new AtomicInteger(0); cnt.incrementAndGet();',
-        'トランザクションとバッチサイズを使い、autoCommitを切って一定件数ごとにexecuteBatch/commitする。',
-        'function paginate(items, page, size){ const from=(page-1)*size; return items.slice(from, from+size); }',
-        'try { /* ... */ } catch(Exception e){ logger.error("処理失敗", e); }',
-        'for (const id of ids) { await processAsync(id); } // 並列はPromise.all等を検討',
-        'function safeLen(s){ return s == null ? 0 : s.length; }'
-    ];
+  const answers = [
+    "JVMがヒープ管理を行い、ガベージコレクタが不要なオブジェクトを回収する。参照と寿命を意識してメモリ使用を抑える。",
+    "不要になったオブジェクトを自動検出してメモリを解放する仕組み。世代別収集やマーク&スイープ等がある。",
+    "checkedはコンパイル時に捕捉/宣言が必要（例: IOException）、uncheckedはRuntimeException系で宣言不要。",
+    "実行スタックとタスクキューで非同期イベントを処理する仕組み。マクロ/マイクロタスクの順序に注意。",
+    "呼び出し方法で決まる（グローバル、メソッド、コンストラクタ、call/apply/bind）。arrow関数はレキシカル束縛。",
+    "自動設定で起動が速い。組み込みサーバやパッケージ化が容易でプロダクション化しやすい。",
+    "依存オブジェクトを外部から注入して疎結合・テスト容易性を高めるパターン。",
+    "RESTは軽量でHTTP/JSON中心、SOAPはXMLベースで標準仕様や拡張が豊富。",
+    "GETは取得（冪等）、POSTは作成/副作用あり（ペイロード送信）。",
+    "同時実行時のデータ整合性を制御する設定（例: READ COMMITTED, SERIALIZABLE 等）。",
+    "利点: 検索高速化。欠点: INSERT/UPDATEでのオーバーヘッドやディスク消費。",
+    "出力時のHTMLエスケープ、入力サニタイズ、Content-Security-Policyの導入。",
+    "レースコンディションやエラーハンドリング（タイムアウト・再試行）を設計する。",
+    "UTF-8を全体で統一し、API/DB/ファイルでエンコーディングを明示する。",
+    "独立デプロイやスケーリングの柔軟性、チーム分離で開発速度向上。",
+    "スレッドセーフ性が向上し、バグの局所化と予測可能性が高まる。",
+    "lockfileや依存の固定、互換性テスト、アップグレード計画で管理。",
+    "自動テスト（ユニット＋統合）の実行が必須。",
+    "構造化ログと適切なログレベル、機密情報はマスクすること。",
+    "レイテンシ（応答時間）とスループット、CPU/メモリの利用状況を確認する。",
+    "public static int safeLen(String s) { return s == null ? 0 : s.length(); }",
+    "function unique(arr){ return Array.from(new Set(arr)); }",
+    '@RestController\\n@RequestMapping("/api")\\npublic class DemoController {\\n  @GetMapping("/hello")\\n  public String hello(){ return "ok"; }\\n}',
+    'String sql = "SELECT id,name FROM users WHERE id = ?"; try (PreparedStatement ps = conn.prepareStatement(sql)) { ps.setInt(1, userId); try (ResultSet rs = ps.executeQuery()) { if (rs.next()) { /* process */ } } }',
+    "async function fetchAndLog(url){ try { const r = await fetch(url); const j = await r.json(); console.log(j); } catch(e){ console.error(e); } }",
+    "public List<Integer> sortList(List<Integer> a){ List<Integer> b = new ArrayList<>(a); Collections.sort(b); return b; }",
+    'function escapeHtml(s){ return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }',
+    'try (BufferedReader r = Files.newBufferedReader(Paths.get(path))) { String line; while ((line = r.readLine()) != null){ /* process */ } } catch (IOException e){ logger.error("file read error", e); }',
+    "const obj = JSON.parse(jsonStr); const name = obj.name;",
+    'PreparedStatement ps = conn.prepareStatement("SELECT * FROM t WHERE x=?"); ps.setString(1, val); ResultSet rs = ps.executeQuery(); while(rs.next()){ /* map fields */ }',
+    "function max(arr){ return arr.length? arr.reduce((m,x)=> x>m?x:m, arr[0]) : undefined; }",
+    "public String reverse(String s){ return new StringBuilder(s).reverse().toString(); }",
+    "トークン分解→署名検証→exp等クレーム検証→ユーザID取得。ライブラリで署名を検証する。",
+    "function fact(n){ return n<=1?1:n*fact(n-1); } // 大きいnはループやBigIntを検討",
+    "AtomicInteger cnt = new AtomicInteger(0); cnt.incrementAndGet();",
+    "トランザクションとバッチサイズを使い、autoCommitを切って一定件数ごとにexecuteBatch/commitする。",
+    "function paginate(items, page, size){ const from=(page-1)*size; return items.slice(from, from+size); }",
+    'try { /* ... */ } catch(Exception e){ logger.error("処理失敗", e); }',
+    "for (const id of ids) { await processAsync(id); } // 並列はPromise.all等を検討",
+    "function safeLen(s){ return s == null ? 0 : s.length; }",
+  ];
 
-    const qa = questions.map((q,i)=>{
-        return `<div style="background:#fff;border-radius:8px;padding:12px;margin-top:8px"><div style="font-weight:700">Q${i+1}. ${escapeHtml(q)}</div><div style="margin-top:8px"><pre style="white-space:pre-wrap">${escapeHtml(answers[i]||'')}</pre></div></div>`;
-    }).join('\n');
+  const qa = questions
+    .map((q, i) => {
+      return `<div style="background:#fff;border-radius:8px;padding:12px;margin-top:8px"><div style="font-weight:700">Q${i + 1}. ${escapeHtml(q)}</div><div style="margin-top:8px"><pre style="white-space:pre-wrap">${escapeHtml(answers[i] || "")}</pre></div></div>`;
+    })
+    .join("\n");
 
-    renderPage(req, res, '入社前テスト 模範解答（共通）', 'Q1〜Q40 質問と模範解答', `
+  renderPage(
+    req,
+    res,
+    "入社前テスト 模範解答（共通）",
+    "Q1〜Q40 質問と模範解答",
+    `
         <div class="card-enterprise">
             <h5 style="margin-bottom:12px">入社前テスト - 質問と模範解答（共通）</h5>
             <p style="color:var(--muted)">各設問に対する簡潔な模範解答を質問→解答の順で表示します。</p>
             ${qa}
             <div style="margin-top:12px;display:flex;justify-content:flex-end"><a class="btn btn-primary" href="/pretest/answers">言語一覧に戻る</a></div>
         </div>
-    `);
+    `,
+  );
 });
 
 // Language-specific interview + script pretest pages（候補者は未ログインのためrequireLoginなし）
 // 新形式: 選択式30問（Q1-Q30）+ 記述式10問（Q31-Q40）= 満点40点
-router.get('/pretest/:lang', (req, res) => {
-    const lang = (req.params.lang || '').toLowerCase();
-    const { LANG_TESTS } = require('../lib/pretestQuestions');
-    if (!LANG_TESTS[lang]) return res.status(404).send('Not found');
-    const conf = LANG_TESTS[lang];
+router.get("/pretest/:lang", (req, res) => {
+  const lang = (req.params.lang || "").toLowerCase();
+  const { LANG_TESTS } = require("../lib/pretestQuestions");
+  if (!LANG_TESTS[lang]) return res.status(404).send("Not found");
+  const conf = LANG_TESTS[lang];
 
-    // 難易度バッジ
-    const diffLabel = { VE: '非常に易しい', EM: '中間', H: '難しい', VH: '非常に難しい' };
-    const diffColor = { VE: '#22c55e', EM: '#3b82f6', H: '#f59e0b', VH: '#ef4444' };
+  // 難易度バッジ
+  const diffLabel = {
+    VE: "非常に易しい",
+    EM: "中間",
+    H: "難しい",
+    VH: "非常に難しい",
+  };
+  const diffColor = {
+    VE: "#22c55e",
+    EM: "#3b82f6",
+    H: "#f59e0b",
+    VH: "#ef4444",
+  };
 
-    // 選択式 Q1-Q30
-    const mcCards = conf.mc.map((item, idx) => {
-        const qNum = idx + 1;
-        const badge = `<span style="font-size:10px;font-weight:700;background:${diffColor[item.diff]}22;color:${diffColor[item.diff]};border:1px solid ${diffColor[item.diff]}44;border-radius:999px;padding:1px 8px;margin-left:8px">${diffLabel[item.diff]}</span>`;
-        const opts = item.opts.map(o => {
-            const val = o.charAt(0); // 'A', 'B', 'C', 'D'
-            return `<label class="pt-opt-label"><input type="radio" name="q${qNum}" value="${val}" onchange="ptMarkAnswered(${qNum},this)" style="margin-right:6px"><span>${escapeHtml(o)}</span></label>`;
-        }).join('');
-        return `
+  // 選択式 Q1-Q30
+  const mcCards = conf.mc.map((item, idx) => {
+    const qNum = idx + 1;
+    const badge = `<span style="font-size:10px;font-weight:700;background:${diffColor[item.diff]}22;color:${diffColor[item.diff]};border:1px solid ${diffColor[item.diff]}44;border-radius:999px;padding:1px 8px;margin-left:8px">${diffLabel[item.diff]}</span>`;
+    const opts = item.opts
+      .map((o) => {
+        const val = o.charAt(0); // 'A', 'B', 'C', 'D'
+        return `<label class="pt-opt-label"><input type="radio" name="q${qNum}" value="${val}" onchange="ptMarkAnswered(${qNum},this)" style="margin-right:6px"><span>${escapeHtml(o)}</span></label>`;
+      })
+      .join("");
+    return `
 <div class="pt-qcard" id="ptcard-q${qNum}">
   <div class="pt-qtitle"><span class="pt-qnum">Q${qNum}</span>${badge}<div class="pt-qtext">${escapeHtml(item.q)}</div></div>
   <div class="pt-opts">${opts}</div>
 </div>`;
-    });
-    const mcHtml1 = mcCards.slice(0, 10).join('');
-    const mcHtml2 = mcCards.slice(10, 20).join('');
-    const mcHtml3 = mcCards.slice(20, 30).join('');
+  });
+  const mcHtml1 = mcCards.slice(0, 10).join("");
+  const mcHtml2 = mcCards.slice(10, 20).join("");
+  const mcHtml3 = mcCards.slice(20, 30).join("");
 
-    // 記述式 Q31-Q40
-    const essayCards = conf.essay.map((item, idx) => {
-        const qNum = idx + 31;
-        return `
+  // 記述式 Q31-Q40
+  const essayCards = conf.essay.map((item, idx) => {
+    const qNum = idx + 31;
+    return `
 <div class="pt-qcard" id="ptcard-q${qNum}">
   <div class="pt-qtitle"><span class="pt-qnum code">Q${qNum}</span><span style="font-size:10px;font-weight:700;background:#7c3aed22;color:#7c3aed;border:1px solid #7c3aed44;border-radius:999px;padding:1px 8px;margin-left:8px">記述式</span><div class="pt-qtext">${escapeHtml(item.q)}</div></div>
   <textarea name="q${qNum}" id="pt-q${qNum}" placeholder="簡潔に説明してください" style="width:100%;min-height:110px;padding:10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:.9rem;resize:vertical;box-sizing:border-box" oninput="ptMarkAnswered(${qNum},this)"></textarea>
 </div>`;
-    });
-    const essayHtml1 = essayCards.slice(0, 5).join('');
-    const essayHtml2 = essayCards.slice(5, 10).join('');
+  });
+  const essayHtml1 = essayCards.slice(0, 5).join("");
+  const essayHtml2 = essayCards.slice(5, 10).join("");
 
-    renderPage(req, res, conf.title, conf.title, `
+  renderPage(
+    req,
+    res,
+    conf.title,
+    conf.title,
+    `
 <style>
 .pt-hero{background:linear-gradient(135deg,#1e40af 0%,#7c3aed 100%);border-radius:16px;padding:28px 24px;color:#fff;margin-bottom:20px}
 .pt-hero h2{font-size:1.4rem;font-weight:800;margin:0 0 6px}
@@ -845,83 +950,151 @@ router.get('/pretest/:lang', (req, res) => {
     });
 })();
 </script>
-    `);
+    `,
+  );
 });
 
 // 入社前テスト実施ページ（候補者は未ログインのためrequireLoginなし）
-router.get('/pretest', (req, res) => {
-    // 共通テスト（IT基礎）に統合 → /pretest/common にリダイレクト
-    return res.redirect('/pretest/common');
+router.get("/pretest", (req, res) => {
+  // 共通テスト（IT基礎）に統合 → /pretest/common にリダイレクト
+  return res.redirect("/pretest/common");
 });
 
-
 // 入社前テスト送信API（候補者は未ログインのためrequireLoginなし）
-router.post('/pretest/submit', async (req, res) => {
-    try {
-        // Capture body in multiple ways for robust debugging (JSON/form)
-        const payload = (req.body && Object.keys(req.body).length) ? req.body : {};
-        console.log('pretest submit - session:', { userId: req.session && req.session.userId, isAdmin: req.session && req.session.isAdmin });
-        console.log('pretest submit - headers:', { 'content-type': req.headers['content-type'], referer: req.headers['referer'] });
-        console.log('pretest submit - raw body keys:', Object.keys(payload));
+router.post("/pretest/submit", async (req, res) => {
+  try {
+    // Capture body in multiple ways for robust debugging (JSON/form)
+    const payload = req.body && Object.keys(req.body).length ? req.body : {};
+    console.log("pretest submit - session:", {
+      userId: req.session && req.session.userId,
+      isAdmin: req.session && req.session.isAdmin,
+    });
+    console.log("pretest submit - headers:", {
+      "content-type": req.headers["content-type"],
+      referer: req.headers["referer"],
+    });
+    console.log("pretest submit - raw body keys:", Object.keys(payload));
 
-        // Support both JSON body and form-encoded payloads
-        const name = payload.name || (req.body && req.body.name) || '';
-        const email = payload.email || (req.body && req.body.email) || '';
-        const answers = payload.answers || (req.body && req.body.answers) || {};
-        const score = typeof payload.score !== 'undefined' ? payload.score : (typeof req.body.score !== 'undefined' ? req.body.score : null);
-        const total = typeof payload.total !== 'undefined' ? payload.total : (typeof req.body.total !== 'undefined' ? req.body.total : null);
+    // Support both JSON body and form-encoded payloads
+    const name = payload.name || (req.body && req.body.name) || "";
+    const email = payload.email || (req.body && req.body.email) || "";
+    const answers = payload.answers || (req.body && req.body.answers) || {};
+    const score =
+      typeof payload.score !== "undefined"
+        ? payload.score
+        : typeof req.body.score !== "undefined"
+          ? req.body.score
+          : null;
+    const total =
+      typeof payload.total !== "undefined"
+        ? payload.total
+        : typeof req.body.total !== "undefined"
+          ? req.body.total
+          : null;
 
     // Basic validation for visibility during debugging
-        if (!name || !email) {
-            console.warn('pretest submit missing name/email', { name, email, payloadKeys: Object.keys(payload) });
-            return res.status(400).json({ ok: false, error: 'missing_name_or_email', details: { payloadKeys: Object.keys(payload) } });
-        }
+    if (!name || !email) {
+      console.warn("pretest submit missing name/email", {
+        name,
+        email,
+        payloadKeys: Object.keys(payload),
+      });
+      return res
+        .status(400)
+        .json({
+          ok: false,
+          error: "missing_name_or_email",
+          details: { payloadKeys: Object.keys(payload) },
+        });
+    }
 
     // DBに保存して返す（メール送信は行わない）
-        // accept timing fields if supplied
-        const startedAtVal = payload.startedAt || req.body.startedAt || null;
-        const endedAtVal = payload.endedAt || req.body.endedAt || null;
-        const durationSecondsVal = typeof payload.durationSeconds !== 'undefined' ? payload.durationSeconds : (typeof req.body.durationSeconds !== 'undefined' ? req.body.durationSeconds : null);
+    // accept timing fields if supplied
+    const startedAtVal = payload.startedAt || req.body.startedAt || null;
+    const endedAtVal = payload.endedAt || req.body.endedAt || null;
+    const durationSecondsVal =
+      typeof payload.durationSeconds !== "undefined"
+        ? payload.durationSeconds
+        : typeof req.body.durationSeconds !== "undefined"
+          ? req.body.durationSeconds
+          : null;
 
-        // Server-side grading: compute per-question partials and total score if answers present
-        const langVal = payload.lang || req.body.lang || 'common';
-        const gradingResult = computePretestScore(answers, langVal);
+    // Server-side grading: compute per-question partials and total score if answers present
+    const langVal = payload.lang || req.body.lang || "common";
+    const gradingResult = computePretestScore(answers, langVal);
 
-        const doc = new PretestSubmission({
-            name,
-            email,
-            answers,
-            // prefer server-computed score when available
-            score: (gradingResult && typeof gradingResult.score === 'number') ? gradingResult.score : Number(score),
-            total: (gradingResult && typeof gradingResult.total === 'number') ? gradingResult.total : Number(total),
-            lang: langVal,
-            perQuestionScores: gradingResult && gradingResult.perQuestionScores ? gradingResult.perQuestionScores : undefined,
-            startedAt: startedAtVal ? new Date(startedAtVal) : undefined,
-            endedAt: endedAtVal ? new Date(endedAtVal) : undefined,
-            durationSeconds: durationSecondsVal !== null ? Number(durationSecondsVal) : undefined
-        });
-        const saved = await doc.save();
-        console.log('pretest saved id=', saved._id.toString(), 'doc:', { name: saved.name, email: saved.email, score: saved.score, total: saved.total });
+    const doc = new PretestSubmission({
+      name,
+      email,
+      answers,
+      // prefer server-computed score when available
+      score:
+        gradingResult && typeof gradingResult.score === "number"
+          ? gradingResult.score
+          : Number(score),
+      total:
+        gradingResult && typeof gradingResult.total === "number"
+          ? gradingResult.total
+          : Number(total),
+      lang: langVal,
+      perQuestionScores:
+        gradingResult && gradingResult.perQuestionScores
+          ? gradingResult.perQuestionScores
+          : undefined,
+      startedAt: startedAtVal ? new Date(startedAtVal) : undefined,
+      endedAt: endedAtVal ? new Date(endedAtVal) : undefined,
+      durationSeconds:
+        durationSecondsVal !== null ? Number(durationSecondsVal) : undefined,
+    });
+    const saved = await doc.save();
+    console.log("pretest saved id=", saved._id.toString(), "doc:", {
+      name: saved.name,
+      email: saved.email,
+      score: saved.score,
+      total: saved.total,
+    });
 
-        return res.json({ ok: true, saved: true, id: saved._id.toString(), session: { userId: req.session && req.session.userId } });
-    } catch (err) {
-        console.error('pretest submit save error', err && (err.stack || err.message) || err);
-        // return the raw error message for local debugging (do not expose in production)
-        return res.status(500).json({ ok: false, error: 'save_failed', message: err && (err.message || String(err)) });
-    }
+    return res.json({
+      ok: true,
+      saved: true,
+      id: saved._id.toString(),
+      session: { userId: req.session && req.session.userId },
+    });
+  } catch (err) {
+    console.error(
+      "pretest submit save error",
+      (err && (err.stack || err.message)) || err,
+    );
+    // return the raw error message for local debugging (do not expose in production)
+    return res
+      .status(500)
+      .json({
+        ok: false,
+        error: "save_failed",
+        message: err && (err.message || String(err)),
+      });
+  }
 });
 
 // 管理者用: 入社前テスト一覧
-router.get('/admin/pretests', isAdmin, async (req, res) => {
-    try {
-        const PASS_PERCENT = 60; // 合格ライン固定（40点満点の60% = 24点以上）
-        const items = await PretestSubmission.find().sort({ createdAt: -1 }).limit(200).lean();
-        const passLine = `合格ライン: ${PASS_PERCENT}%（${Math.round(40 * PASS_PERCENT / 100)}点以上）`;
-        function isPassed(it) {
-            if (it.score === null || it.score === undefined || !it.total) return null;
-            return it.score >= (it.total * PASS_PERCENT / 100);
-        }
-        renderPage(req, res, '入社前テスト一覧', '入社前テスト提出一覧', `
+router.get("/admin/pretests", requireLogin, isAdmin, async (req, res) => {
+  try {
+    const PASS_PERCENT = 60; // 合格ライン固定（40点満点の60% = 24点以上）
+    const items = await PretestSubmission.find()
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .lean();
+    const passLine = `合格ライン: ${PASS_PERCENT}%（${Math.round((40 * PASS_PERCENT) / 100)}点以上）`;
+    function isPassed(it) {
+      if (it.score === null || it.score === undefined || !it.total) return null;
+      return it.score >= (it.total * PASS_PERCENT) / 100;
+    }
+    renderPage(
+      req,
+      res,
+      "入社前テスト一覧",
+      "入社前テスト提出一覧",
+      `
             <style>
                 .pt-admin-page{max-width:1100px;margin:0 auto}
                 .pt-admin-header{margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
@@ -975,21 +1148,39 @@ router.get('/admin/pretests', isAdmin, async (req, res) => {
                             </tr>
                         </thead>
                         <tbody>
-                            ${items.length === 0 ? `<tr><td colspan="10" class="pt-empty">提出がありません</td></tr>` : items.map(it => {
-                                const started = it.startedAt ? moment(it.startedAt).format('MM/DD HH:mm') : '-';
-                                const ended = it.endedAt ? moment(it.endedAt).format('MM/DD HH:mm') : '-';
-                                const dur = typeof it.durationSeconds !== 'undefined' && it.durationSeconds !== null ? it.durationSeconds : '-';
-                                const lang = it.lang || 'common';
-                                const passed = isPassed(it);
-                                const passBadge = passed === null
-                                    ? '<span style="color:#9ca3af;font-size:12px">-</span>'
-                                    : passed
-                                        ? '<span class="pt-pass-badge">✅ 合格</span>'
-                                        : '<span class="pt-fail-badge">❌ 不合格</span>';
-                                return `<tr>
-                                    <td class="date-col">${moment(it.createdAt).format('YYYY/MM/DD HH:mm')}</td>
-                                    <td class="name-col" title="${escapeHtml(it.name||'')}">${escapeHtml(it.name||'')}</td>
-                                    <td class="email-col" title="${escapeHtml(it.email||'')}">${escapeHtml(it.email||'')}</td>
+                            ${
+                              items.length === 0
+                                ? `<tr><td colspan="10" class="pt-empty">提出がありません</td></tr>`
+                                : items
+                                    .map((it) => {
+                                      const started = it.startedAt
+                                        ? moment(it.startedAt).format(
+                                            "MM/DD HH:mm",
+                                          )
+                                        : "-";
+                                      const ended = it.endedAt
+                                        ? moment(it.endedAt).format(
+                                            "MM/DD HH:mm",
+                                          )
+                                        : "-";
+                                      const dur =
+                                        typeof it.durationSeconds !==
+                                          "undefined" &&
+                                        it.durationSeconds !== null
+                                          ? it.durationSeconds
+                                          : "-";
+                                      const lang = it.lang || "common";
+                                      const passed = isPassed(it);
+                                      const passBadge =
+                                        passed === null
+                                          ? '<span style="color:#9ca3af;font-size:12px">-</span>'
+                                          : passed
+                                            ? '<span class="pt-pass-badge">✅ 合格</span>'
+                                            : '<span class="pt-fail-badge">❌ 不合格</span>';
+                                      return `<tr>
+                                    <td class="date-col">${moment(it.createdAt).format("YYYY/MM/DD HH:mm")}</td>
+                                    <td class="name-col" title="${escapeHtml(it.name || "")}">${escapeHtml(it.name || "")}</td>
+                                    <td class="email-col" title="${escapeHtml(it.email || "")}">${escapeHtml(it.email || "")}</td>
                                     <td class="lang-col"><span class="pt-lang-badge">${escapeHtml(lang)}</span></td>
                                     <td class="score-col">${it.score} / ${it.total}</td>
                                     <td>${passBadge}</td>
@@ -998,50 +1189,64 @@ router.get('/admin/pretests', isAdmin, async (req, res) => {
                                     <td class="date-col">${dur}</td>
                                     <td class="action-col"><a href="/admin/pretest/${it._id}" class="pt-view-btn">表示</a></td>
                                 </tr>`;
-                            }).join('')}
+                                    })
+                                    .join("")
+                            }
                         </tbody>
                     </table>
                 </div>
             </div>
-        `);
-    } catch (e) {
-        console.error(e);
-        res.status(500).send('エラー');
-    }
+        `,
+    );
+  } catch (e) {
+    console.error(e);
+    res.status(500).send("エラー");
+  }
 });
 
 // 管理者: 個別入社前テスト詳細表示
-router.get('/admin/pretest/:id', isAdmin, async (req, res) => {
-    try {
-        const id = req.params.id;
-        const it = await PretestSubmission.findById(id).lean();
-        if (!it) return res.status(404).send('Not found');
+router.get("/admin/pretest/:id", requireLogin, isAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const it = await PretestSubmission.findById(id).lean();
+    if (!it) return res.status(404).send("Not found");
 
-        const answers = it.answers || {};
-        const per = it.perQuestionScores || {};
+    const answers = it.answers || {};
+    const per = it.perQuestionScores || {};
 
-        const rows = [];
-        const qCount = 40; // 選択式30問（Q1-Q30）+ 記述式10問（Q31-Q40）= 40問
-        for (let i=1;i<=qCount;i++){
-            const k = 'q'+i;
-            const ans = escapeHtml((answers[k]||'').toString());
-            const p = typeof per[k] !== 'undefined' ? per[k] : '-';
-            rows.push(`<tr><td>Q${i}</td><td style="min-width:400px;white-space:pre-wrap">${ans}</td><td style="text-align:center">${p}</td></tr>`);
-        }
+    const rows = [];
+    const qCount = 40; // 選択式30問（Q1-Q30）+ 記述式10問（Q31-Q40）= 40問
+    for (let i = 1; i <= qCount; i++) {
+      const k = "q" + i;
+      const ans = escapeHtml((answers[k] || "").toString());
+      const p = typeof per[k] !== "undefined" ? per[k] : "-";
+      rows.push(
+        `<tr><td>Q${i}</td><td style="min-width:400px;white-space:pre-wrap">${ans}</td><td style="text-align:center">${p}</td></tr>`,
+      );
+    }
 
-        renderPage(req, res, '提出詳細', `提出詳細 - ${escapeHtml(it.name||'')}`, `
+    renderPage(
+      req,
+      res,
+      "提出詳細",
+      `提出詳細 - ${escapeHtml(it.name || "")}`,
+      `
             <div class="card-enterprise">
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap;gap:10px">
-                    <h5 style="margin:0">提出者: ${escapeHtml(it.name||'')}</h5>
+                    <h5 style="margin:0">提出者: ${escapeHtml(it.name || "")}</h5>
 
                 </div>
-                <div>メール: ${escapeHtml(it.email||'')}</div>
-                <div>言語: ${escapeHtml(it.lang||'common')}</div>
-                <div style="margin-top:12px"><table class="history-table"><thead><tr><th>問題</th><th>回答</th><th>得点(部分)</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>
+                <div>メール: ${escapeHtml(it.email || "")}</div>
+                <div>言語: ${escapeHtml(it.lang || "common")}</div>
+                <div style="margin-top:12px"><table class="history-table"><thead><tr><th>問題</th><th>回答</th><th>得点(部分)</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>
                 <div style="margin-top:12px">合計スコア: ${it.score}/${it.total}</div>
             </div>
-        `);
-    } catch (e){ console.error(e); res.status(500).send('エラー'); }
+        `,
+    );
+  } catch (e) {
+    console.error(e);
+    res.status(500).send("エラー");
+  }
 });
 
 // /admin/pretest-config は廃止（不要機能のため削除）

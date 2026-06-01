@@ -72,7 +72,8 @@ POST /change-password
   │     → 短すぎ: redirect /change-password?error=password_too_short
   ├── bcryptjs.hash(newPassword, 10)
   ├── user.password = hashed; user.save()
-  └── redirect /change-password?success=true
+  ├── redirect /change-password?success=true
+  └── 例外発生時（catch）: redirect /change-password?error=server_error
        エラー時は getPasswordErrorMessage(code) でメッセージ表示
 ```
 

@@ -1,6 +1,6 @@
 # 05. ダッシュボード・半期評価
 
-関連ファイル: `routes/dashboard.js`（2502行）、`lib/helpers.js`、`services/uiOptimizer.js`
+関連ファイル: `routes/dashboard.js`（2502行）、`lib/helpers.js`、`routes/ui_optimizer.js`
 
 ---
 
@@ -30,7 +30,7 @@
 | 出勤トレンド           | Attendance（過去6か月）                      | 月別出勤日数 Chart.js 折れ線グラフ                   |
 | 月間カレンダー         | Attendance（今月）                           | 日別勤怠状況・残業時間                               |
 | アクティビティフィード | BoardPost / LeaveRequest / Goal / Attendance | 4件/ページ・ページング付き（activityPage クエリ）    |
-| AI個人最適化レイアウト | `getPersonalizedLayout(user._id)`            | services/uiOptimizer.js から取得                     |
+| AI個人最適化レイアウト | `getPersonalizedLayout(user._id)`            | routes/ui_optimizer.js から取得                      |
 | 過去フィードバック履歴 | SemiAnnualFeedback（最新6件）                | 半期評価フィードバック一覧                           |
 
 ---
