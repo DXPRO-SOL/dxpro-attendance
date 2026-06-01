@@ -40,24 +40,48 @@ async function sendMail({ to, from, subject, text, html, attachments } = {}) {
         }
         if (useBrevoApiKey) {
             try {
-                const SibApiV3Sdk = require('sib-api-v3-sdk');
-                SibApiV3Sdk.ApiClient.instance.authentications['api-key'].apiKey = rawApiKey;
-                const brevoClient = new SibApiV3Sdk.TransactionalEmailsApi();
-                const sendSmtpEmail = {
-                    sender: { email: from },
+                const https = require('https');
+                const senderEmail = from || process.env.MAIL_FROM || process.env.EMAIL_USER || 'info@dxpro-sol.com';
+                const body = JSON.stringify({
+                    sender: { email: senderEmail },
                     to: [{ email: to }],
                     subject: subject,
                     htmlContent: html || text,
                     textContent: text
-                };
-                await brevoClient.sendTransacEmail(sendSmtpEmail);
-                console.log('Brevo: メール送信成功', to);
+                });
+                await new Promise((resolve, reject) => {
+                    const req = https.request({
+                        hostname: 'api.brevo.com',
+                        path: '/v3/smtp/email',
+                        method: 'POST',
+                        headers: {
+                            'accept': 'application/json',
+                            'api-key': rawApiKey,
+                            'content-type': 'application/json',
+                            'content-length': Buffer.byteLength(body)
+                        }
+                    }, (res) => {
+                        let data = '';
+                        res.on('data', chunk => data += chunk);
+                        res.on('end', () => {
+                            if (res.statusCode >= 200 && res.statusCode < 300) {
+                                resolve(data);
+                            } else {
+                                reject(new Error(`Brevo API エラー: ${res.statusCode} ${data}`));
+                            }
+                        });
+                    });
+                    req.on('error', reject);
+                    req.write(body);
+                    req.end();
+                });
+                console.log('Brevo REST API: メール送信成功', to);
                 return;
             } catch (brevoErr) {
                 console.warn('Brevo REST送信エラー、SMTPへフォールバックします:', brevoErr && (brevoErr.response || brevoErr.message) || brevoErr);
             }
         }
-        const smtpFrom = from || process.env.SMTP_USER || 'no-reply@dxpro-sol.com';
+        const smtpFrom = from || process.env.MAIL_FROM || process.env.EMAIL_USER || 'info@dxpro-sol.com';
         const info = await transporter.sendMail({ from: smtpFrom, to, subject, text, html, attachments });
         console.log('SMTP: メール送信成功', to, 'messageId=', info && info.messageId, 'response=', info && info.response);
     } catch (err) {
