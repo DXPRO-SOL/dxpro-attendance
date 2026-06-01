@@ -158,13 +158,6 @@ router.post("/admin/register-employee", requireLogin, isAdmin, (req, res) => {
   res.redirect("/hr/add");
 });
 
-router.get("/admin/register-employee", requireLogin, isAdmin, (req, res) => {
-  res.redirect("/hr/add");
-});
-router.post("/admin/register-employee", requireLogin, isAdmin, (req, res) => {
-  res.redirect("/hr/add");
-});
-
 // ── AI評価 自己評価レポート（管理者閲覧）──
 router.get(
   "/admin/semi-assessments",
