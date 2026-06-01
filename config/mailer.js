@@ -1,25 +1,25 @@
 const nodemailer = require('nodemailer');
+const https = require('https');
+
+// --- サービス判定 ---
+const resendApiKey = process.env.RESEND_API_KEY || '';
+const useResend = resendApiKey.startsWith('re_');
 
 const rawApiKey = process.env.SENDGRID_API_KEY || '';
-const useSendGrid = typeof rawApiKey === 'string' && rawApiKey.startsWith('SG.');
-const useBrevoApiKey = typeof rawApiKey === 'string' && rawApiKey.startsWith('xkeysib-');
+const useSendGrid = rawApiKey.startsWith('SG.');
+const useBrevoApiKey = rawApiKey.startsWith('xkeysib-');
 
-let sgMail = null;
-if (useSendGrid) {
-    try {
-        sgMail = require('@sendgrid/mail');
-        sgMail.setApiKey(rawApiKey);
-        console.log('メール送信: SendGrid を使用します');
-    } catch (e) {
-        console.warn('SendGrid モジュール初期化エラー:', e.message);
-        sgMail = null;
-    }
+if (useResend) {
+    console.log('メール送信: Resend を使用します');
+} else if (useSendGrid) {
+    console.log('メール送信: SendGrid を使用します');
 } else if (useBrevoApiKey) {
-    console.log('メール送信: Brevo APIキーが設定されています（SMTP/RESTどちらでも利用可）。SMTP情報を優先します。');
+    console.log('メール送信: Brevo REST API を使用します（IP制限が無効化されている必要があります）');
 } else {
-    console.log('メール送信: SendGrid/Brevo の API キーが見つかりません。SMTP フォールバックを使用します。');
+    console.log('メール送信: SMTP を使用します');
 }
 
+// SMTP transporter（フォールバック用）
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp-relay.brevo.com',
     port: Number(process.env.SMTP_PORT || 587),
@@ -30,67 +30,87 @@ const transporter = nodemailer.createTransport({
     }
 });
 
+// --- HTTPSでREST APIを呼び出す共通関数 ---
+function httpsPost(hostname, path, headers, body) {
+    return new Promise((resolve, reject) => {
+        const bodyStr = JSON.stringify(body);
+        const req = https.request({
+            hostname,
+            path,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(bodyStr),
+                ...headers
+            }
+        }, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                    resolve(data);
+                } else {
+                    reject(new Error(`API エラー ${res.statusCode}: ${data}`));
+                }
+            });
+        });
+        req.on('error', reject);
+        req.write(bodyStr);
+        req.end();
+    });
+}
+
 async function sendMail({ to, from, subject, text, html, attachments } = {}) {
-    const msg = { to, from, subject, text, html, attachments };
-    try {
-        if (useSendGrid && sgMail) {
-            await sgMail.send(msg);
+    const senderEmail = from || process.env.MAIL_FROM || process.env.EMAIL_USER || 'info@dxpro-sol.com';
+
+    // 1) Resend（推奨：IP制限なし、Renderで安定動作）
+    if (useResend) {
+        await httpsPost('api.resend.com', '/emails', {
+            'Authorization': `Bearer ${resendApiKey}`
+        }, {
+            from: senderEmail,
+            to: [to],
+            subject,
+            html: html || text,
+            text
+        });
+        console.log('Resend: メール送信成功', to);
+        return;
+    }
+
+    // 2) SendGrid
+    if (useSendGrid) {
+        try {
+            const sgMail = require('@sendgrid/mail');
+            sgMail.setApiKey(rawApiKey);
+            await sgMail.send({ to, from: senderEmail, subject, text, html, attachments });
             console.log('SendGrid: メール送信成功', to);
             return;
+        } catch (e) {
+            console.error('SendGrid エラー:', e.message);
+            throw e;
         }
-        if (useBrevoApiKey) {
-            try {
-                const https = require('https');
-                const senderEmail = from || process.env.MAIL_FROM || process.env.EMAIL_USER || 'info@dxpro-sol.com';
-                const body = JSON.stringify({
-                    sender: { email: senderEmail },
-                    to: [{ email: to }],
-                    subject: subject,
-                    htmlContent: html || text,
-                    textContent: text
-                });
-                await new Promise((resolve, reject) => {
-                    const req = https.request({
-                        hostname: 'api.brevo.com',
-                        path: '/v3/smtp/email',
-                        method: 'POST',
-                        headers: {
-                            'accept': 'application/json',
-                            'api-key': rawApiKey,
-                            'content-type': 'application/json',
-                            'content-length': Buffer.byteLength(body)
-                        }
-                    }, (res) => {
-                        let data = '';
-                        res.on('data', chunk => data += chunk);
-                        res.on('end', () => {
-                            if (res.statusCode >= 200 && res.statusCode < 300) {
-                                resolve(data);
-                            } else {
-                                reject(new Error(`Brevo API エラー: ${res.statusCode} ${data}`));
-                            }
-                        });
-                    });
-                    req.on('error', reject);
-                    req.write(body);
-                    req.end();
-                });
-                console.log('Brevo REST API: メール送信成功', to);
-                return;
-            } catch (brevoErr) {
-                console.warn('Brevo REST送信エラー:', brevoErr && (brevoErr.response || brevoErr.message) || brevoErr);
-                throw brevoErr;
-            }
-        }
-        // SMTPフォールバック（Renderでは587/465ポートがブロックされる場合があります）
-        const smtpFrom = from || process.env.MAIL_FROM || process.env.EMAIL_USER || 'info@dxpro-sol.com';
-        console.warn('SMTP フォールバック使用（Renderでは動作しない場合があります）');
-        const info = await transporter.sendMail({ from: smtpFrom, to, subject, text, html, attachments });
-        console.log('SMTP: メール送信成功', to, 'messageId=', info && info.messageId, 'response=', info && info.response);
-    } catch (err) {
-        console.error('メール送信エラー:', err && (err.response || err.message) || err);
-        throw err;
     }
+
+    // 3) Brevo REST API（※Brevoダッシュボードでip制限を無効化が必要）
+    if (useBrevoApiKey) {
+        await httpsPost('api.brevo.com', '/v3/smtp/email', {
+            'api-key': rawApiKey,
+            'accept': 'application/json'
+        }, {
+            sender: { email: senderEmail },
+            to: [{ email: to }],
+            subject,
+            htmlContent: html || text,
+            textContent: text
+        });
+        console.log('Brevo REST API: メール送信成功', to);
+        return;
+    }
+
+    // 4) SMTP フォールバック
+    const info = await transporter.sendMail({ from: senderEmail, to, subject, text, html, attachments });
+    console.log('SMTP: メール送信成功', to, 'messageId=', info && info.messageId);
 }
 
 module.exports = { sendMail, transporter };
