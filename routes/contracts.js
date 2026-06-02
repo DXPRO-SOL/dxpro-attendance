@@ -696,6 +696,12 @@ const COMMON_STYLE = `
 @media(max-width:768px){
   .ct-form-grid,.ct-form-grid-3,.ct-detail-grid{grid-template-columns:1fr}
   .ct-hero{padding:20px 18px}
+  .ct-filter{flex-wrap:wrap;overflow-x:visible}
+  .ct-filter-item{flex:1 1 calc(50% - 8px);min-width:140px}
+  .ct-table-wrap{-webkit-overflow-scrolling:touch}
+  .ct-card-body{padding:14px 16px}
+  .ct-form-actions{flex-wrap:wrap;gap:8px}
+  .ct-form-actions .ct-btn{flex:1;justify-content:center}
 }
 </style>
 `;
