@@ -2406,7 +2406,12 @@ router.get("/links", requireLogin, (req, res) => {
 
                     <style>
                         /* links grid: two columns by default, 1 column on narrow screens */
-                        @media (max-width:560px){ .links-grid{ grid-template-columns: 1fr !important; } }
+                        .links-grid .btn>div{min-width:0;overflow-wrap:break-word}
+                        @media (max-width:560px){
+                            .links-grid{ grid-template-columns: 1fr !important; }
+                            .links-grid .btn{padding:12px;gap:8px}
+                            .links-grid .btn>div>div:first-child{font-size:15px !important}
+                        }
                     </style>
                     <div class="links-grid" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
                         <a class="btn" href="https://dxpro-sol.com" target="_blank" rel="noopener" style="display:flex;gap:14px;align-items:center;justify-content:flex-start;border:1px solid #e6eefc;background:#fff;color:#0b2540;padding:18px;border-radius:12px">
@@ -2446,7 +2451,7 @@ router.get("/links", requireLogin, (req, res) => {
                     </div>
                 </div>
 
-                <div style="width:420px;min-width:260px">
+                <div style="flex:1;min-width:260px">
                     <h5 style="margin:0 0 8px 0">入社前テスト（面談向け）</h5>
                     <p style="color:var(--muted);margin:0 0 12px 0">各言語ごとに面談想定の質問＋長めのスクリプト問題を用意しています。選択して詳細へ移動してください。</p>
 
@@ -2460,7 +2465,7 @@ router.get("/links", requireLogin, (req, res) => {
                         <a class="btn" href="/pretest/swift" style="background:#ef4444;color:#fff;border-radius:999px;padding:8px 12px;font-weight:700">Swift</a>
                     </div>
 
-                    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+                    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
                         <a class="btn btn-primary" href="/pretest">共通テストを実施</a>
                         <a class="btn" href="/pretest/answers" style="background:#f3f4f6;color:#0b2540;border-radius:999px;padding:8px 12px;font-weight:700">模範解答（共通）</a>
                     </div>

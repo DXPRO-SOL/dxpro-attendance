@@ -58,7 +58,13 @@ router.get("/skillsheet", requireLogin, async (req, res) => {
       const sheetSet = new Set(sheets.map((s) => String(s.employeeId)));
       const lang = req.lang || req.session?.lang || "ja";
       const html = buildAdminListPage(employees, sheetSet, lang);
-      return renderPage(req, res, t("skillsheet.admin_title", lang), t("skillsheet.admin_title", lang), html);
+      return renderPage(
+        req,
+        res,
+        t("skillsheet.admin_title", lang),
+        t("skillsheet.admin_title", lang),
+        html,
+      );
     }
 
     // 一般ユーザー → 自分のシートを表示
@@ -68,7 +74,13 @@ router.get("/skillsheet", requireLogin, async (req, res) => {
     const sheet = await getOrCreate(emp._id, req.session.userId);
     const lang = req.lang || req.session?.lang || "ja";
     const html = buildEditPage(emp, sheet, req, false, lang);
-    renderPage(req, res, t("skillsheet.edit_title", lang), t("skillsheet.admin_title", lang), html);
+    renderPage(
+      req,
+      res,
+      t("skillsheet.edit_title", lang),
+      t("skillsheet.admin_title", lang),
+      html,
+    );
   } catch (e) {
     console.error(e);
     res.status(500).send("エラーが発生しました");
@@ -949,14 +961,33 @@ function buildEditPage(emp, sheet, req, isAdminView = false, lang = "ja") {
 .ss-alert-ok{background:#f0fdf4;border:1px solid #86efac;border-radius:9px;padding:11px 16px;margin-bottom:16px;display:flex;align-items:center;gap:9px;color:#166534;font-size:13.5px}
 @media(max-width:640px){
   .ss-card{padding:14px 12px}
-  .ss-grid2,.ss-grid3,.ss-grid4{grid-template-columns:1fr}
+  .ss-grid2{grid-template-columns:1fr 1fr}
+  .ss-grid3,.ss-grid4{grid-template-columns:1fr 1fr}
+  .ss-grid4 > [style*="grid-column"]{grid-column:1/-1 !important}
   .ss-proj-card{padding:12px 10px}
   .ss-save-bar{flex-direction:column;gap:8px}
-  .ss-save-bar button,.ss-save-bar a{width:100%;text-align:center;box-sizing:border-box}
+  .ss-save-bar button,.ss-save-bar a{width:100%;text-align:center;box-sizing:border-box;justify-content:center}
   .ss-page-header{flex-direction:column;align-items:flex-start}
-  .ss-skill-table{min-width:420px}
-  .ss-skill-tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .ss-page-header-left{gap:8px;width:100%}
+  .ss-page-title{font-size:17px}
+  .ss-page-meta{font-size:12px;gap:8px;flex-wrap:wrap}
+  .ss-back-btn{font-size:12px;padding:6px 12px}
+  .ss-export-btn{width:100%;justify-content:center;font-size:13px;padding:10px 16px;box-sizing:border-box}
+  /* テーブルを画面内に収める（横スクロール廃止） */
+  .ss-skill-table{min-width:0;width:100%;table-layout:fixed}
+  .ss-skill-tbl-wrap{overflow-x:visible}
+  .ss-skill-table th,.ss-skill-table td{padding:4px 5px;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* レベル列の固定幅をモバイルで縮小 */
+  .ss-skill-table th:nth-child(2),.ss-skill-table td:nth-child(2){width:90px !important}
+  /* 削除ボタン列 */
+  .ss-skill-table th:last-child,.ss-skill-table td:last-child{width:32px !important}
+  /* テーブル内inputをコンパクトに */
+  .ss-skill-table .ss-input,.ss-skill-table .ss-select{font-size:12px;padding:5px 6px}
   .ss-form-wrap{padding:0 4px;box-sizing:border-box}
+  .ss-proj-header{flex-wrap:nowrap;align-items:center}
+}
+@media(max-width:380px){
+  .ss-grid2,.ss-grid3,.ss-grid4{grid-template-columns:1fr}
 }
 </style>
 
@@ -1355,11 +1386,11 @@ router.get("/skillsheet/map", requireLogin, async (req, res) => {
 
     const content = `
 <div style="max-width:100%;margin:0 auto">
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
+<div class="sk-map-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
     <h2 style="margin:0;font-size:22px;font-weight:800">
         <i class="fa fa-chart-radar" style="color:#0f6fff"></i> スキルマップ
     </h2>
-    <div style="display:flex;gap:8px">
+    <div class="sk-tab-group" style="display:flex;gap:8px;flex-wrap:wrap">
         <button id="btnPersonal" class="tab-btn active" onclick="switchTab('personal')">個人レーダー</button>
         ${isAdmin ? '<button id="btnTeam" class="tab-btn" onclick="switchTab(\'team\')">チーム全体</button>' : ""}
         <a href="/skillsheet" class="tab-btn" style="text-decoration:none">${t("skillsheet.edit_title", lang)}</a>
@@ -1383,11 +1414,11 @@ router.get("/skillsheet/map", requireLogin, async (req, res) => {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:40px 60px" id="personalGrid">
         <div class="sk-card">
             <h4>カテゴリ別スキルレベル（レーダー）</h4>
-            <canvas id="radarChart" width="500" height="500"></canvas>
+            <div class="sk-chart-wrap"><canvas id="radarChart"></canvas></div>
         </div>
         <div class="sk-card">
             <h4>担当工程実績</h4>
-            <canvas id="taskChart" width="500" height="500"></canvas>
+            <div class="sk-chart-wrap"><canvas id="taskChart"></canvas></div>
         </div>
         <div class="sk-card" style="grid-column:1/-1">
             <h4>スキルTop10</h4>
@@ -1404,18 +1435,18 @@ ${
   isAdmin
     ? `
 <div id="tabTeam" style="display:none">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+    <div id="teamGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
         <div class="sk-card" style="grid-column:1/-1">
             <h4>カテゴリ別スキル保有者数 ＆ 平均レベル</h4>
-            <canvas id="catBarChart" height="200"></canvas>
+            <div class="sk-chart-wrap sk-chart-wrap--bar"><canvas id="catBarChart"></canvas></div>
         </div>
         <div class="sk-card" style="grid-column:1/-1">
             <h4>スキル人気ランキング Top20（バブル＝保有者数）</h4>
-            <canvas id="bubbleChart" height="300"></canvas>
+            <div class="sk-chart-wrap sk-chart-wrap--bar"><canvas id="bubbleChart"></canvas></div>
         </div>
         <div class="sk-card" style="grid-column:1/-1">
             <h4>メンバー別 スキル概要</h4>
-            <div id="memberTable"></div>
+            <div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><div id="memberTable" style="min-width:480px"></div></div>
         </div>
     </div>
 </div>`
@@ -1434,12 +1465,21 @@ ${
 .skill-bar-fill{height:10px;border-radius:6px;background:linear-gradient(90deg,#0f6fff,#38bdf8);transition:width .4s}
 .member-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid #f1f5f9}
 .member-row:hover{background:#f8fafc}
+.sk-chart-wrap{position:relative;width:100%;height:300px}
+.sk-chart-wrap--bar{position:relative;width:100%;height:320px}
 @media(max-width:640px){
   .sk-card{padding:18px 12px}
   #personalGrid{grid-template-columns:1fr!important}
-  .member-row{flex-wrap:wrap}
+  #teamGrid{grid-template-columns:1fr!important}
+  .sk-map-header{flex-direction:column;align-items:flex-start!important;gap:10px!important}
+  .sk-map-header h2{font-size:17px!important}
+  .sk-tab-group{flex-wrap:wrap;gap:6px!important}
+  .tab-btn{font-size:12px;padding:6px 12px}
+  .skill-bar-label{font-size:11px}
+  .sk-chart-wrap{height:260px}
+  .sk-chart-wrap--bar{height:280px}
 }
-@media(max-width:700px){#personalGrid{grid-template-columns:1fr!important}}
+@media(max-width:700px){#personalGrid{grid-template-columns:1fr!important}#teamGrid{grid-template-columns:1fr!important}}
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
@@ -1476,7 +1516,7 @@ async function loadPersonal(empId) {
                 backgroundColor: 'rgba(15,111,255,0.15)', borderColor: '#0f6fff',
                 pointBackgroundColor: '#0f6fff', borderWidth: 2 }]
         },
-        options: { scales: { r: { min: 0, max: 5, ticks: { stepSize: 1 } } }, plugins: { legend: { display: false } } }
+        options: { responsive: true, maintainAspectRatio: true, scales: { r: { min: 0, max: 5, ticks: { stepSize: 1 } } }, plugins: { legend: { display: false } } }
     });
 
     // 工程棒グラフ
@@ -1488,7 +1528,7 @@ async function loadPersonal(empId) {
             datasets: [{ label: '担当案件数', data: d.tasks.map(t => t.count),
                 backgroundColor: '#0f6fff', borderRadius: 6 }]
         },
-        options: { indexAxis: 'y', plugins: { legend: { display: false } },
+        options: { responsive: true, maintainAspectRatio: true, indexAxis: 'y', plugins: { legend: { display: false } },
                    scales: { x: { ticks: { stepSize: 1 } } } }
     });
 
@@ -1523,7 +1563,7 @@ async function loadTeam() {
                   tension: 0.3, yAxisID: 'y1' }
             ]
         },
-        options: { scales: {
+        options: { responsive: true, maintainAspectRatio: false, scales: {
             y: { beginAtZero: true, title: { display: true, text: '保有者数' } },
             y1: { beginAtZero: true, max: 5, position: 'right', title: { display: true, text: '平均レベル' }, grid: { drawOnChartArea: false } }
         }}
@@ -1543,7 +1583,7 @@ async function loadTeam() {
                   tension: 0.3, yAxisID: 'y1' }
             ]
         },
-        options: { indexAxis: 'y', scales: {
+        options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', scales: {
             y: { ticks: { font: { size: 11 } } },
             y1: { beginAtZero: true, max: 5, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: '平均レベル' } }
         }}

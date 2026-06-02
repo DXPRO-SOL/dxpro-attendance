@@ -250,7 +250,7 @@ router.get("/chat/agent/download", requireLogin, (req, res) => {
 // エージェント セットアップページ
 router.get("/chat/agent/setup", requireLogin, async (req, res) => {
   const { renderPage } = require("../lib/renderPage");
-  const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
+  const lang = req.session && req.session.lang ? req.session.lang : "ja";
   const myId = req.session.userId;
   const myUser = await require("../models").User.findById(myId).lean();
   const SERVER_URL =
@@ -440,7 +440,10 @@ fetch('/api/chat/agent-status')
   });
 </script>
 `;
-  return renderPage(req, res, { title: t("chat_page.remote_setup_title", lang), body: html });
+  return renderPage(req, res, {
+    title: t("chat_page.remote_setup_title", lang),
+    body: html,
+  });
 });
 
 router.get("/chat", requireLogin, async (req, res) => {
@@ -3341,12 +3344,14 @@ function buildStampPickerModal() {
 // ── スタンプ管理ページ ──────────────────────────────────────
 router.get("/chat/stamps", requireLogin, async (req, res) => {
   const { renderPage } = require("../lib/renderPage");
-  const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
+  const lang = req.session && req.session.lang ? req.session.lang : "ja";
 
   const body = `
 <style>
 .smp-wrap{max-width:860px;margin:0 auto;padding:28px 16px}
-.smp-header{display:flex;align-items:center;gap:16px;margin-bottom:28px}
+.smp-header{display:flex;align-items:center;gap:10px;margin-bottom:28px;flex-wrap:nowrap;min-width:0}
+.smp-header h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.smp-back{white-space:nowrap;flex-shrink:0}
 .smp-back{display:inline-flex;align-items:center;gap:6px;padding:7px 16px;background:#f5f5f4;border:1.5px solid #e7e5e0;border-radius:8px;font-size:.88rem;font-weight:600;color:#44403c;text-decoration:none;transition:.15s}
 .smp-back:hover{background:#e7e5e0;color:#1c1917}
 .smp-header h1{font-size:1.45rem;font-weight:700;margin:0}
@@ -3551,7 +3556,13 @@ loadStamps();
 </script>
 `;
 
-  return renderPage(req, res, t("chat_page.stamp_management", lang), t("chat_page.stamp_management", lang), body);
+  return renderPage(
+    req,
+    res,
+    t("chat_page.stamp_management", lang),
+    t("chat_page.stamp_management", lang),
+    body,
+  );
 });
 
 function buildStampManagerModal() {

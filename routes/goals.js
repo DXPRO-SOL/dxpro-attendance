@@ -120,7 +120,7 @@ body { margin: 0; font-family: 'Inter','Noto Sans JP',system-ui,sans-serif; back
 .g-badge-rejected { background: var(--g-danger-light); color: var(--g-danger); }
 
 /* ── テーブル ── */
-.g-table-wrap { overflow-x: auto; }
+.g-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .g-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .g-table thead th { padding: 10px 14px; font-weight: 700; color: var(--g-muted); text-align: left; border-bottom: 2px solid var(--g-border); background: #f8fafc; white-space: nowrap; }
 .g-table tbody td { padding: 12px 14px; border-bottom: 1px solid var(--g-border); vertical-align: middle; }

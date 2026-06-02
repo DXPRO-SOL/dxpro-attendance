@@ -230,6 +230,7 @@ router.get("/hr", requireLogin, async (req, res) => {
 
                 /* ── メインレイアウト ── */
                 .hrp-layout{display:grid;grid-template-columns:1fr 240px;gap:22px}
+                .hrp-layout>div{min-width:0}
 
                 /* ── カード共通 ── */
                 .hrp-card{
@@ -470,6 +471,18 @@ router.get("/hr", requireLogin, async (req, res) => {
                     .hrp-search{padding:10px 16px}
                     .hrp-hero-stats{width:100%;margin-top:10px}
                     .hrp-hero-stat{flex:1;padding:8px 12px}
+                    /* サイドカード */
+                    .hrp-side-card{margin-bottom:14px}
+                    .hrp-side-head{padding:12px 14px;flex-wrap:wrap;gap:6px}
+                    .hrp-side-body{padding:6px 10px}
+                    /* クイックアクション */
+                    .hrp-qa-btn{padding:8px 6px;gap:8px}
+                    .hrp-qa-icon{width:30px;height:30px;font-size:14px;border-radius:8px;flex-shrink:0}
+                    .hrp-qa-label{font-size:12.5px}
+                    /* 休暇申請リスト */
+                    .hrp-leave-name{font-size:12.5px}
+                    .hrp-leave-date{font-size:10px}
+                    .hrp-status-badge{font-size:10.5px;padding:2px 8px;flex-shrink:0}
                 }
             </style>
 
@@ -925,7 +938,7 @@ router.get("/hr", requireLogin, async (req, res) => {
 
 // 社員追加（統合フォーム）
 router.get("/hr/add", requireLogin, isAdmin, (req, res) => {
-  const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
+  const lang = req.session && req.session.lang ? req.session.lang : "ja";
   const html = `
 <style>
 .hradd-wrap{max-width:700px;margin:0 auto;padding:0 0 60px}
@@ -1058,7 +1071,13 @@ router.get("/hr/add", requireLogin, isAdmin, (req, res) => {
     </form>
 </div>
 `;
-  renderPage(req, res, t("hr.add_employee_title", lang), t("hr.add_employee_title", lang), html);
+  renderPage(
+    req,
+    res,
+    t("hr.add_employee_title", lang),
+    t("hr.add_employee_title", lang),
+    html,
+  );
 });
 
 router.post("/hr/add", requireLogin, isAdmin, async (req, res) => {
@@ -1106,7 +1125,7 @@ router.post("/hr/add", requireLogin, isAdmin, async (req, res) => {
 
 // 社員編集
 router.get("/hr/edit/:id", requireLogin, async (req, res) => {
-  const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
+  const lang = req.session && req.session.lang ? req.session.lang : "ja";
   const id = req.params.id;
   const employee = await Employee.findById(id);
   if (!employee) return res.redirect("/hr");
@@ -1184,7 +1203,13 @@ router.get("/hr/edit/:id", requireLogin, async (req, res) => {
             </form>
         </div>
     `;
-  renderPage(req, res, t("hr.edit_employee_title", lang), t("hr.edit_employee_heading", lang), html);
+  renderPage(
+    req,
+    res,
+    t("hr.edit_employee_title", lang),
+    t("hr.edit_employee_heading", lang),
+    html,
+  );
 });
 
 router.post("/hr/edit/:id", requireLogin, async (req, res) => {
@@ -1227,7 +1252,7 @@ router.get("/hr/delete/:id", requireLogin, async (req, res) => {
 
 // 統計
 router.get("/hr/statistics", requireLogin, async (req, res) => {
-  const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
+  const lang = req.session && req.session.lang ? req.session.lang : "ja";
   const employees = await Employee.find();
   const deptCount = {};
   const posCount = {};
@@ -1247,7 +1272,13 @@ router.get("/hr/statistics", requireLogin, async (req, res) => {
           .join("")}</ul>
         <a href="/hr">社員一覧に戻る</a>
     `;
-  renderPage(req, res, t("hr.stats_title", lang), t("hr.stats_heading", lang), html);
+  renderPage(
+    req,
+    res,
+    t("hr.stats_title", lang),
+    t("hr.stats_heading", lang),
+    html,
+  );
 });
 
 // 有給更新
@@ -1585,7 +1616,7 @@ router.post("/hr/payroll/admin/add", requireLogin, async (req, res) => {
 
 router.get("/hr/payroll/admin/new", requireLogin, async (req, res) => {
   if (!req.session.isAdmin) return res.redirect("/hr/payroll");
-  const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
+  const lang = req.session && req.session.lang ? req.session.lang : "ja";
   const employees = await Employee.find();
   const preselect = req.query.employeeId || "";
 
@@ -1730,14 +1761,20 @@ router.get("/hr/payroll/admin/new", requireLogin, async (req, res) => {
             </form>
         </div>
     `;
-  renderPage(req, res, t("hr.payroll_title", lang), t("hr.payroll_new_heading", lang), html);
+  renderPage(
+    req,
+    res,
+    t("hr.payroll_title", lang),
+    t("hr.payroll_new_heading", lang),
+    html,
+  );
 });
 
 // 管理者用 給与明細編集画面
 router.get("/hr/payroll/admin/edit/:slipId", requireLogin, async (req, res) => {
   if (!req.session.isAdmin)
     return res.status(403).send("アクセス権限がありません");
-  const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
+  const lang = req.session && req.session.lang ? req.session.lang : "ja";
 
   const slip = await PayrollSlip.findById(req.params.slipId).populate(
     "employeeId runId",
@@ -1863,7 +1900,13 @@ router.get("/hr/payroll/admin/edit/:slipId", requireLogin, async (req, res) => {
             </form>
         </div>
     `;
-  renderPage(req, res, t("hr.payroll_title", lang), t("hr.payroll_edit_heading", lang), html);
+  renderPage(
+    req,
+    res,
+    t("hr.payroll_title", lang),
+    t("hr.payroll_edit_heading", lang),
+    html,
+  );
 });
 
 // 管理者用 給与明細更新
@@ -4156,10 +4199,14 @@ router.get("/hr/daily-report/summary", requireLogin, async (req, res) => {
   .hero{padding:16px 18px;flex-direction:column;align-items:flex-start}
   .hero h1{font-size:17px}
   .row2{flex-direction:column}
-  .seg{min-width:100%;width:100%}
+  .seg{min-width:100%;width:100%;flex-wrap:wrap}
+  .seg-btn{white-space:normal;font-size:11px;padding:6px 4px;text-align:center;line-height:1.3;flex:1 1 calc(50% - 4px)}
   .ph{flex-wrap:wrap;gap:6px;padding:10px 14px}
   .pb{padding:14px}
   .chip{font-size:11px;padding:5px 10px}
+  .stream-toolbar{flex-wrap:wrap;gap:6px}
+  .actions{flex-direction:column}
+  .actions .btn{width:100%;justify-content:center}
 }
 .kpi{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px 18px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
 .kpi-l{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:5px}

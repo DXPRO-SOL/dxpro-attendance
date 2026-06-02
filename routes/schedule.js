@@ -380,6 +380,34 @@ form label.sch-att-add-btn, .form-group label.sch-att-add-btn { display:inline-f
 .sch-cmt-mention-dd { position:absolute; z-index:1000; background:#fff; border:1px solid #e2e8f0; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,.1); max-height:160px; overflow-y:auto; min-width:160px; }
 .sch-cmt-mention-item { padding:6px 12px; cursor:pointer; font-size:13px; }
 .sch-cmt-mention-item:hover { background:#f1f5f9; }
+/* ===== レスポンシブ（スケジュール） ===== */
+.sch-page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:10px; }
+.sch-page-header-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+@media(max-width:768px) {
+    .sch-wrap { flex-direction:column; }
+    .sch-side-col { width:100% !important; }
+    .sch-page-header { flex-direction:column; align-items:flex-start; }
+    .sch-page-header-actions { width:100%; flex-wrap:wrap; gap:6px; }
+    .sch-page-header-actions .btn { flex:1; padding:6px 10px; font-size:12px; white-space:nowrap; justify-content:center; text-align:center; min-width:0; }
+    .sch-page-header-actions .btn-primary { flex:1 0 100%; justify-content:center; }
+    .sch-form-grid { grid-template-columns:1fr !important; }
+    .sch-form-full { grid-column:1 !important; }
+    .sch-modal-header { padding:14px 16px 12px; }
+    .sch-modal-body { padding:12px 16px; }
+    .sch-form-body { padding:12px 16px 16px; }
+    .sch-form-header { padding:12px 16px 10px; }
+    .sch-respond-row { flex-wrap:wrap; }
+    .sch-respond-row .btn { flex:1; min-width:0; justify-content:center; }
+    .sch-bulk-bar { padding:10px 14px; gap:8px; flex-wrap:wrap; }
+    .sch-bulk-actions { flex-wrap:wrap; gap:6px; width:100%; }
+    .sch-bulk-btn { flex:1; min-width:0; }
+    /* FullCalendar ツールバー縦積み */
+    #sch-calendar .fc-toolbar { flex-direction:column !important; gap:6px; }
+    #sch-calendar .fc-toolbar-chunk { display:flex !important; justify-content:center; }
+    #sch-calendar .fc-toolbar-title { font-size:14px !important; }
+    #sch-calendar .fc-button { padding:4px 8px !important; font-size:12px !important; }
+    .sch-select-btn { font-size:12px; padding:5px 10px; white-space:nowrap; flex-shrink:0; }
+}
 </style>`;
 
   const shell = buildPageShell({
@@ -395,17 +423,17 @@ form label.sch-att-add-btn, .form-group label.sch-att-add-btn { display:inline-f
 
   const content = `
 <div class="main"><div class="page-content">
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+<div class="sch-page-header">
     <div>
         <h2 style="font-size:20px;font-weight:700;color:#0f172a;margin:0 0 4px;">📅 ${t("nav.schedule", lang)}</h2>
         <p style="color:#64748b;font-size:13px;margin:0;">${t("schedule.subtitle", lang)}</p>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;">
+    <div class="sch-page-header-actions">
         <button class="btn" style="background:#fff;border:1.5px solid #e2e8f0;color:#475569;" onclick="openExportModal()">
-            <i class="fa-solid fa-download"></i> ${t("schedule.csv_export", lang)}
+            <i class="fa-solid fa-download"></i><span class="sch-btn-label"> ${t("schedule.csv_export", lang)}</span>
         </button>
         <button class="btn" style="background:#fff;border:1.5px solid #e2e8f0;color:#475569;" onclick="openImportModal()">
-            <i class="fa-solid fa-upload"></i> ${t("schedule.csv_import", lang)}
+            <i class="fa-solid fa-upload"></i><span class="sch-btn-label"> ${t("schedule.csv_import", lang)}</span>
         </button>
         <button class="btn btn-primary" onclick="openNewForm()">
             <i class="fa-solid fa-plus"></i> ${t("schedule.new_schedule", lang)}
