@@ -24,6 +24,7 @@ const {
   isStepComplete,
   getNextStep,
 } = require("../services/workflow-engine");
+const { t } = require("../lib/i18n");
 
 // ─── ファイルアップロード設定（経費添付用） ───────────────────────────────────
 const wfUploadDir = path.join("uploads", "workflow");
@@ -243,14 +244,15 @@ router.get("/workflow/:id", requireLogin, (req, res) => {
 
 router.get("/workflow", requireLogin, async (req, res) => {
   try {
+    const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
     const isAdmin = req.session.isAdmin || req.session.orgRole === "admin";
 
     renderPage(
       req,
       res,
-      "ワークフロー",
-      "ワークフロー",
-      buildWorkflowPage(isAdmin, applicationTypes),
+      t("workflow.title", lang),
+      t("workflow.heading", lang),
+      buildWorkflowPage(isAdmin, applicationTypes, lang),
     );
   } catch (e) {
     console.error("[workflow]", e);
@@ -1113,7 +1115,8 @@ router.put("/api/workflow/flows/:id", requireLogin, async (req, res) => {
 // ════════════════════════════════════════════════════════════════════════════
 // フロントエンド HTML ビルダー
 // ════════════════════════════════════════════════════════════════════════════
-function buildWorkflowPage(isAdmin, applicationTypes) {
+function buildWorkflowPage(isAdmin, applicationTypes, lang) {
+  lang = lang || "ja";
   return `
 <style>
 .wf-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
@@ -1163,93 +1166,94 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
 
 <div style="padding:20px;">
     <div class="wf-header">
-        <h1><i class="fa-solid fa-diagram-project" style="margin-right:8px;color:#2563eb;"></i>ワークフロー</h1>
+        <h1><i class="fa-solid fa-diagram-project" style="margin-right:8px;color:#2563eb;"></i>${t("workflow.heading", lang)}</h1>
         <button class="wf-btn wf-btn-primary" onclick="wfOpenNewModal()">
-            <i class="fa-solid fa-plus" style="margin-right:6px;"></i>新規申請
+            <i class="fa-solid fa-plus" style="margin-right:6px;"></i>${t("workflow.new_title", lang)}
         </button>
     </div>
 
     <!-- タブ -->
     <div class="wf-tabs">
-        <button class="wf-tab active" id="tab-mine"      onclick="wfSwitchTab('mine')">自分の申請</button>
-        <button class="wf-tab"        id="tab-approving" onclick="wfSwitchTab('approving')">承認待ち</button>
-        <button class="wf-tab"        id="tab-done"      onclick="wfSwitchTab('done')">承認済み</button>
-        ${isAdmin ? `<button class="wf-tab" id="tab-all" onclick="wfSwitchTab('all')">全件（管理者）</button>` : ""}
+        <button class="wf-tab active" id="tab-mine"      onclick="wfSwitchTab('mine')">${t("workflow.my_workflows", lang)}</button>
+        <button class="wf-tab"        id="tab-approving" onclick="wfSwitchTab('approving')">${t("workflow.pending_approve", lang)}</button>
+        <button class="wf-tab"        id="tab-done"      onclick="wfSwitchTab('done')">${t("workflow.tabs_approved", lang)}</button>
+        ${isAdmin ? `<button class="wf-tab" id="tab-all" onclick="wfSwitchTab('all')">${t("workflow.all_workflows", lang)}</button>` : ""}
     </div>
 
     <!-- フィルタ -->
     <div class="wf-filters" id="wf-filters">
         <select id="wf-filter-type" onchange="currentPage=1;wfLoadList()">
-            <option value="">申請種別（全て）</option>
-            ${applicationTypes.map((t) => `<option value="${t}">${t}</option>`).join("")}
+            <option value="">${t("workflow.select_type_placeholder", lang)}</option>
+            ${applicationTypes.map((tp) => `<option value="${tp}">${tp}</option>`).join("")}
         </select>
         <select id="wf-filter-status" onchange="currentPage=1;wfLoadList()" style="display:none;">
-            <option value="">ステータス（全て）</option>
-            <option value="draft">下書き</option>
-            <option value="submitted">申請中</option>
-            <option value="approved">承認済み</option>
-            <option value="returned">差し戻し</option>
-            <option value="rejected">却下</option>
+            <option value="">${t("workflow.tabs_all", lang)}</option>
+            <option value="draft">${t("workflow.tabs_draft", lang)}</option>
+            <option value="submitted">${t("workflow.tabs_pending", lang)}</option>
+            <option value="approved">${t("workflow.tabs_approved", lang)}</option>
+            <option value="returned">${t("workflow.tabs_returned", lang)}</option>
+            <option value="rejected">${t("workflow.tabs_rejected", lang)}</option>
         </select>
         <div class="wf-filter-keyword">
             <i class="fa-solid fa-magnifying-glass" style="color:#9ca3af;"></i>
-            <input type="text" id="wf-filter-keyword" placeholder="キーワード検索" oninput="wfKeywordInput()">
+            <input type="text" id="wf-filter-keyword" placeholder="${t("workflow.form_title_placeholder", lang)}" oninput="wfKeywordInput()">
         </div>
     </div>
 
     <!-- 一覧テーブル -->
     <div id="wf-list-container">
-        <div class="wf-empty"><i class="fa-solid fa-spinner fa-spin"></i> 読み込み中...</div>
+        <div class="wf-empty"><i class="fa-solid fa-spinner fa-spin"></i></div>
     </div>
 </div>
 
 <!-- 新規申請・編集・再申請モーダル -->
 <div class="wf-modal-bg" id="wf-new-modal">
     <div class="wf-modal">
-        <h2 id="wf-new-modal-title"><i class="fa-solid fa-file-signature" style="margin-right:8px;color:#2563eb;"></i>新規ワークフロー申請</h2>
+        <h2 id="wf-new-modal-title"><i class="fa-solid fa-file-signature" style="margin-right:8px;color:#2563eb;"></i>${t("workflow.new_title", lang)}</h2>
         <div class="wf-form-group">
-            <label>申請種別 <span style="color:#ef4444;">*</span></label>
+            <label>${t("workflow.form_type_label", lang)} <span style="color:#ef4444;">*</span></label>
             <select id="new-type" onchange="wfOnTypeChange()">
-                <option value="">選択してください</option>
-                ${applicationTypes.map((t) => `<option value="${t}">${t}</option>`).join("")}
+                <option value="">${t("workflow.select_type_placeholder", lang)}</option>
+                ${applicationTypes.map((tp) => `<option value="${tp}">${tp}</option>`).join("")}
             </select>
         </div>
         <div class="wf-form-group">
-            <label>件名 <span style="color:#ef4444;">*</span></label>
-            <input type="text" id="new-title" placeholder="例：〇〇についての申請" maxlength="100">
+            <label>${t("workflow.form_title_label", lang)} <span style="color:#ef4444;">*</span></label>
+            <input type="text" id="new-title" placeholder="${t("workflow.form_title_placeholder", lang)}" maxlength="100">
         </div>
         <div class="wf-form-group">
-            <label>内容 <span style="color:#ef4444;">*</span></label>
-            <textarea id="new-desc" placeholder="申請の詳細内容を記載してください"></textarea>
+            <label>${t("workflow.form_desc_label", lang)} <span style="color:#ef4444;">*</span></label>
+            <textarea id="new-desc" placeholder="${t("workflow.form_desc_placeholder", lang)}"></textarea>
         </div>
         <!-- 申請種別固有フィールド -->
         <div id="wf-type-fields-container"></div>
         <!-- 添付ファイル（経費のみ） -->
         <div class="wf-file-section" id="wf-file-section" style="display:none;">
-            <label style="font-size:12px;font-weight:600;color:#15803d;display:block;margin-bottom:6px;"><i class="fa-solid fa-paperclip" style="margin-right:4px;"></i>領収書・添付ファイル</label>
+            <label style="font-size:12px;font-weight:600;color:#15803d;display:block;margin-bottom:6px;"><i class="fa-solid fa-paperclip" style="margin-right:4px;"></i>${t("workflow.form_attachment_label", lang)}</label>
             <input type="file" id="wf-file-input" onchange="wfUploadFile(this)" accept=".jpg,.jpeg,.png,.gif,.pdf,.xlsx,.xls,.docx,.doc,.csv,.zip" multiple style="font-size:12px;">
+            <div style="font-size:11px;color:#6b7280;margin-top:4px;">${t("workflow.form_file_hint", lang)}</div>
             <div id="wf-attachment-list" style="margin-top:6px;"></div>
         </div>
         <div class="wf-form-group">
-            <label>承認者（ステップ順）<span style="font-size:11px;color:#6b7280;font-weight:400;margin-left:8px;">同じ番号にすると並列承認</span></label>
+            <label>${t("workflow.approver_settings", lang)}<span style="font-size:11px;color:#6b7280;font-weight:400;margin-left:8px;">${t("workflow.approver_step", lang)}</span></label>
             <div id="approver-rows">
                 <div class="wf-approver-row">
                     <input type="number" data-field="stepNo" value="1" min="1" max="99" style="width:52px;padding:8px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;text-align:center;">
                     <div class="wf-ac-wrap" style="flex:1;position:relative;">
-                        <input type="text" class="ac-name" placeholder="名前で検索…" oninput="wfAcSearch(this)" onblur="wfAcBlur(this)" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
+                        <input type="text" class="ac-name" placeholder="${t("workflow.select_approver", lang)}" oninput="wfAcSearch(this)" onblur="wfAcBlur(this)" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
                         <input type="hidden" class="ac-userid">
                         <div class="wf-ac-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #d1d5db;border-radius:6px;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,.1);max-height:180px;overflow-y:auto;"></div>
                     </div>
-                    <input type="text" data-field="roleName" placeholder="役割名（任意）" style="flex:0.7;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
+                    <input type="text" data-field="roleName" placeholder="${t("workflow.approver_name", lang)}" style="flex:0.7;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
                     <button type="button" onclick="this.closest('.wf-approver-row').remove()" style="padding:6px 10px;border:1px solid #fca5a5;border-radius:5px;cursor:pointer;background:#fff1f2;color:#ef4444;">✕</button>
                 </div>
             </div>
-            <button type="button" onclick="wfAddApproverRow()" style="margin-top:6px;padding:5px 12px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#f8fafc;font-size:13px;">＋ 承認者を追加</button>
+            <button type="button" onclick="wfAddApproverRow()" style="margin-top:6px;padding:5px 12px;border:1px solid #d1d5db;border-radius:5px;cursor:pointer;background:#f8fafc;font-size:13px;">${t("workflow.add_approver_btn", lang)}</button>
         </div>
         <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;">
-            <button class="wf-btn" style="background:#f3f4f6;color:#374151;" onclick="wfCloseNewModal()">キャンセル</button>
-            <button class="wf-btn" id="wf-draft-btn" style="background:#6b7280;color:#fff;" onclick="wfSaveDraft()">下書き保存</button>
-            <button class="wf-btn wf-btn-primary" id="wf-submit-btn" onclick="wfSubmitNew()">申請する</button>
+            <button class="wf-btn" style="background:#f3f4f6;color:#374151;" onclick="wfCloseNewModal()">${t("workflow.tabs_all", lang) === "All" ? "Cancel" : "キャンセル"}</button>
+            <button class="wf-btn" id="wf-draft-btn" style="background:#6b7280;color:#fff;" onclick="wfSaveDraft()">${t("workflow.save_draft_btn", lang)}</button>
+            <button class="wf-btn wf-btn-primary" id="wf-submit-btn" onclick="wfSubmitNew()">${t("workflow.submit_btn", lang)}</button>
         </div>
     </div>
 </div>
@@ -1267,12 +1271,12 @@ function buildWorkflowPage(isAdmin, applicationTypes) {
     <div class="wf-modal" style="max-width:440px;">
         <h2 id="wf-action-title"></h2>
         <div class="wf-form-group">
-            <label>コメント</label>
-            <textarea id="wf-action-comment" placeholder="コメント（任意）" style="min-height:80px;"></textarea>
+            <label>${t("workflow.approver_comment", lang)}</label>
+            <textarea id="wf-action-comment" placeholder="${t("workflow.reject_reason_placeholder", lang)}" style="min-height:80px;"></textarea>
         </div>
         <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
-            <button class="wf-btn" style="background:#f3f4f6;color:#374151;" onclick="wfCloseActionModal()">キャンセル</button>
-            <button class="wf-btn" id="wf-action-confirm-btn" onclick="wfDoAction()">実行</button>
+            <button class="wf-btn" style="background:#f3f4f6;color:#374151;" onclick="wfCloseActionModal()">${t("overtime.cancel_link", lang)}</button>
+            <button class="wf-btn" id="wf-action-confirm-btn" onclick="wfDoAction()">${t("workflow.approve_btn", lang)}</button>
         </div>
     </div>
 </div>

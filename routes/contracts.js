@@ -11,6 +11,7 @@ const { requireLogin, isAdmin } = require("../middleware/auth");
 const { renderPage } = require("../lib/renderPage");
 const { escapeHtml } = require("../lib/helpers");
 const { createNotification } = require("./notifications");
+const { t } = require("../lib/i18n");
 
 // ── アップロードディレクトリ ─────────────────────────────────────
 const CONTRACT_UPLOAD_DIR = path.join(__dirname, "..", "uploads", "contracts");
@@ -419,6 +420,18 @@ const STATUS_LABEL = {
   renewed: "更新済み",
   canceled: "解約済み",
 };
+function getStatusLabel(status, lang) {
+  const keyMap = {
+    draft: "contracts.status_draft",
+    active: "contracts.status_active",
+    pending_approval: "contracts.status_pending_approval",
+    expiring_soon: "contracts.status_expiring_soon",
+    expired: "contracts.status_expired",
+    renewed: "contracts.status_renewed",
+    canceled: "contracts.status_canceled",
+  };
+  return keyMap[status] ? t(keyMap[status], lang) : (STATUS_LABEL[status] || status);
+}
 const STATUS_COLOR = {
   draft: "#9ca3af",
   active: "#16a34a",
@@ -541,18 +554,20 @@ function daysUntil(date) {
   const diff = new Date(date) - new Date();
   return Math.ceil(diff / (1000 * 60 * 60 * 24));
 }
-function deadlineBadge(contract) {
+function deadlineBadge(contract, lang) {
+  lang = lang || "ja";
   if (!contract.endDate) return "";
   const days = daysUntil(contract.endDate);
+  const daysUnit = t("contracts.days_unit", lang);
   if (days < 0)
-    return `<span style="background:#fee2e2;color:#ef4444;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">期限切れ(${Math.abs(days)}日前)</span>`;
+    return `<span style="background:#fee2e2;color:#ef4444;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">${t("contracts.filter_expired", lang)}(${Math.abs(days)}${daysUnit})</span>`;
   if (days === 0)
-    return `<span style="background:#fee2e2;color:#ef4444;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">本日期限</span>`;
+    return `<span style="background:#fee2e2;color:#ef4444;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">${t("contracts.expiry_banner", lang)}</span>`;
   if (days <= 7)
-    return `<span style="background:#ffedd5;color:#ea580c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">あと${days}日</span>`;
+    return `<span style="background:#ffedd5;color:#ea580c;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">${t("contracts.days_remaining", lang)} ${days}${daysUnit}</span>`;
   if (days <= 30)
-    return `<span style="background:#fef9c3;color:#ca8a04;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">あと${days}日</span>`;
-  return `<span style="background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">あと${days}日</span>`;
+    return `<span style="background:#fef9c3;color:#ca8a04;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">${t("contracts.days_remaining", lang)} ${days}${daysUnit}</span>`;
+  return `<span style="background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">${t("contracts.days_remaining", lang)} ${days}${daysUnit}</span>`;
 }
 
 // ── 共通スタイル ───────────────────────────────────────────────────
@@ -690,6 +705,7 @@ const COMMON_STYLE = `
 // =====================================================================
 router.get("/contracts", requireLogin, async (req, res) => {
   try {
+    const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
     const isAdminUser = req.session.isAdmin;
     const orgRole = req.session.orgRole || (isAdminUser ? "admin" : "employee");
     const canView =
@@ -745,19 +761,19 @@ router.get("/contracts", requireLogin, async (req, res) => {
     renderPage(
       req,
       res,
-      "契約管理",
-      "契約管理",
+      t("contracts.title", lang),
+      t("contracts.title", lang),
       `${COMMON_STYLE}
       <div class="ct">
         <!-- ヒーロー -->
         <div class="ct-hero">
           <div style="position:relative;z-index:1">
             <div style="font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;opacity:.6;margin-bottom:6px">HUMAN RESOURCES</div>
-            <div class="ct-hero-title">📋 契約管理</div>
-            <div class="ct-hero-sub">全契約の一元管理・期限アラート・PDF保管</div>
+            <div class="ct-hero-title">📋 ${t("contracts.title", lang)}</div>
+            <div class="ct-hero-sub">${t("contracts.hero_sub", lang)}</div>
           </div>
           <div class="ct-hero-actions">
-            ${isAdminUser ? `<a href="/contracts/new" class="ct-btn ct-btn-primary">＋ 新規契約登録</a><a href="/admin/contract-types" class="ct-btn ct-btn-secondary">⚙️ 種別管理</a>` : ""}
+            ${isAdminUser ? `<a href="/contracts/new" class="ct-btn ct-btn-primary">＋ ${t("contracts.new_title", lang)}</a><a href="/admin/contract-types" class="ct-btn ct-btn-secondary">${t("contracts.type_mgmt_btn", lang)}</a>` : ""}
           </div>
         </div>
 
@@ -765,19 +781,19 @@ router.get("/contracts", requireLogin, async (req, res) => {
         <div class="ct-kpi-row">
           <div class="ct-kpi">
             <div class="ct-kpi-icon" style="background:#eff6ff;color:#2563eb">📋</div>
-            <div><div class="ct-kpi-val">${total}</div><div class="ct-kpi-lbl">契約総数</div></div>
+            <div><div class="ct-kpi-val">${total}</div><div class="ct-kpi-lbl">${t("contracts.kpi_total", lang)}</div></div>
           </div>
           <div class="ct-kpi">
             <div class="ct-kpi-icon" style="background:#f0fdf4;color:#16a34a">✅</div>
-            <div><div class="ct-kpi-val">${activeCount}</div><div class="ct-kpi-lbl">有効契約</div></div>
+            <div><div class="ct-kpi-val">${activeCount}</div><div class="ct-kpi-lbl">${t("contracts.kpi_active", lang)}</div></div>
           </div>
           <div class="ct-kpi">
             <div class="ct-kpi-icon" style="background:#ffedd5;color:#ea580c">⚠️</div>
-            <div><div class="ct-kpi-val">${expiringSoon}</div><div class="ct-kpi-lbl">期限切れ間近</div></div>
+            <div><div class="ct-kpi-val">${expiringSoon}</div><div class="ct-kpi-lbl">${t("contracts.filter_expiring", lang)}</div></div>
           </div>
           <div class="ct-kpi">
             <div class="ct-kpi-icon" style="background:#fee2e2;color:#ef4444">❌</div>
-            <div><div class="ct-kpi-val">${expiredCount}</div><div class="ct-kpi-lbl">期限切れ</div></div>
+            <div><div class="ct-kpi-val">${expiredCount}</div><div class="ct-kpi-lbl">${t("contracts.filter_expired", lang)}</div></div>
           </div>
         </div>
 
@@ -787,7 +803,7 @@ router.get("/contracts", requireLogin, async (req, res) => {
         <!-- 近日期限アラート -->
         <div class="ct-card" style="margin-bottom:20px">
           <div class="ct-card-head">
-            <div class="ct-card-title">⏰ 近日中に期限を迎える契約（30日以内）</div>
+            <div class="ct-card-title">⏰ ${t("contracts.upcoming_title", lang)}</div>
           </div>
           <div style="padding:16px 20px">
             <div class="ct-cal-row">
@@ -797,7 +813,7 @@ router.get("/contracts", requireLogin, async (req, res) => {
               <a href="/contracts/${c._id}" class="ct-cal-card">
                 <div class="ct-cal-card-name">${escapeHtml(c.name)}</div>
                 <div class="ct-cal-card-meta">${escapeHtml(c.counterparty)} · ${CONTRACT_TYPE_LABEL[c.contractType] || c.contractType}</div>
-                <div class="ct-cal-card-deadline">${deadlineBadge(c)}</div>
+                <div class="ct-cal-card-deadline">${deadlineBadge(c, lang)}</div>
               </a>`,
                 )
                 .join("")}
@@ -810,13 +826,13 @@ router.get("/contracts", requireLogin, async (req, res) => {
         <!-- フィルター -->
         <form method="get" action="/contracts" class="ct-filter">
           <div class="ct-filter-item">
-            <label>キーワード検索</label>
-            <input type="text" name="q" value="${escapeHtml(q.q || "")}" placeholder="契約者・契約先...">
+            <label>${t("contracts.col_name", lang)}</label>
+            <input type="text" name="q" value="${escapeHtml(q.q || "")}" placeholder="${t("contracts.col_name", lang)}...">
           </div>
           <div class="ct-filter-item">
-            <label>契約種別</label>
+            <label>${t("contracts.field_type", lang)}</label>
             <select name="type">
-              <option value="all" ${!q.type || q.type === "all" ? "selected" : ""}>すべて</option>
+              <option value="all" ${!q.type || q.type === "all" ? "selected" : ""}>${t("contracts.filter_all", lang)}</option>
               ${activeTypes
                 .map(
                   (t) =>
@@ -826,9 +842,9 @@ router.get("/contracts", requireLogin, async (req, res) => {
             </select>
           </div>
           <div class="ct-filter-item">
-            <label>ステータス</label>
+            <label>${t("contracts.field_status", lang)}</label>
             <select name="status">
-              <option value="all" ${!q.status || q.status === "all" ? "selected" : ""}>すべて</option>
+              <option value="all" ${!q.status || q.status === "all" ? "selected" : ""}>${t("contracts.filter_all", lang)}</option>
               ${Object.entries(STATUS_LABEL)
                 .map(
                   ([v, l]) =>
@@ -838,30 +854,30 @@ router.get("/contracts", requireLogin, async (req, res) => {
             </select>
           </div>
           <div class="ct-filter-item">
-            <label>並び替え</label>
+            <label>${t("contracts.sort_label", lang)}</label>
             <select name="sort">
-              <option value="endDate" ${q.sort === "endDate" || !q.sort ? "selected" : ""}>終了日順</option>
-              <option value="name" ${q.sort === "name" ? "selected" : ""}>契約者順</option>
-              <option value="status" ${q.sort === "status" ? "selected" : ""}>ステータス順</option>
+              <option value="endDate" ${q.sort === "endDate" || !q.sort ? "selected" : ""}>${t("contracts.sort_end_date", lang)}</option>
+              <option value="name" ${q.sort === "name" ? "selected" : ""}>${t("contracts.sort_name", lang)}</option>
+              <option value="status" ${q.sort === "status" ? "selected" : ""}>${t("contracts.sort_status", lang)}</option>
             </select>
           </div>
           <div class="ct-filter-item">
-            <label>順序</label>
+            <label>${t("contracts.sort_label", lang)}</label>
             <select name="dir">
-              <option value="asc" ${q.dir === "asc" || !q.dir ? "selected" : ""}>昇順</option>
-              <option value="desc" ${q.dir === "desc" ? "selected" : ""}>降順</option>
+              <option value="asc" ${q.dir === "asc" || !q.dir ? "selected" : ""}>${t("contracts.sort_asc", lang)}</option>
+              <option value="desc" ${q.dir === "desc" ? "selected" : ""}>${t("contracts.sort_desc", lang)}</option>
             </select>
           </div>
           <div style="display:flex;gap:8px;margin-top:auto;align-items:flex-end">
-            <button type="submit" class="ct-btn ct-btn-outline">🔍 絞り込む</button>
-            <a href="/contracts" class="ct-btn ct-btn-outline">リセット</a>
+            <button type="submit" class="ct-btn ct-btn-outline">🔍 ${t("contracts.search_btn", lang)}</button>
+            <a href="/contracts" class="ct-btn ct-btn-outline">${t("contracts.reset_btn", lang)}</a>
           </div>
         </form>
 
         <!-- 一覧テーブル -->
         <div class="ct-card">
           <div class="ct-card-head">
-            <div class="ct-card-title">契約一覧 <span style="font-size:13px;font-weight:500;color:#6b7280;margin-left:6px">${contracts.length}件</span></div>
+            <div class="ct-card-title">${t("contracts.list_heading", lang)} <span style="font-size:13px;font-weight:500;color:#6b7280;margin-left:6px">${contracts.length}${t("contracts.items_count_suffix", lang)}</span></div>
           </div>
           <div class="ct-table-wrap">
             ${
@@ -869,22 +885,22 @@ router.get("/contracts", requireLogin, async (req, res) => {
                 ? `
             <div style="text-align:center;padding:48px;color:#9ca3af">
               <div style="font-size:40px;margin-bottom:12px">📂</div>
-              <div style="font-size:15px;font-weight:600">契約が登録されていません</div>
-              ${isAdminUser ? `<a href="/contracts/new" class="ct-btn ct-btn-primary" style="margin-top:16px;display:inline-flex">＋ 最初の契約を登録する</a>` : ""}
+              <div style="font-size:15px;font-weight:600">${t("contracts.no_contracts", lang)}</div>
+              ${isAdminUser ? `<a href="/contracts/new" class="ct-btn ct-btn-primary" style="margin-top:16px;display:inline-flex">${t("contracts.no_contracts_action", lang)}</a>` : ""}
             </div>`
                 : `
             <table class="ct-table">
               <thead>
                 <tr>
-                  <th>契約者</th>
-                  <th>種別</th>
-                  <th>契約先</th>
-                  <th>開始日</th>
-                  <th>終了日</th>
-                  <th>残日数</th>
-                  <th>担当者</th>
-                  <th>ステータス</th>
-                  <th>操作</th>
+                  <th>${t("contracts.col_name", lang)}</th>
+                  <th>${t("contracts.col_type", lang)}</th>
+                  <th>${t("contracts.col_counterparty", lang)}</th>
+                  <th>${t("contracts.col_start_date", lang)}</th>
+                  <th>${t("contracts.col_end_date", lang)}</th>
+                  <th>${t("contracts.col_remaining", lang)}</th>
+                  <th>${t("contracts.col_responsible", lang)}</th>
+                  <th>${t("contracts.col_status", lang)}</th>
+                  <th>${t("contracts.col_actions", lang)}</th>
                 </tr>
               </thead>
               <tbody>
@@ -894,7 +910,7 @@ router.get("/contracts", requireLogin, async (req, res) => {
                       CONTRACT_TYPE_COLOR_DYN[c.contractType] || "#6b7280";
                     const stColor = STATUS_COLOR[c.status] || "#6b7280";
                     const stBg = STATUS_BG[c.status] || "#f3f4f6";
-                    const stLabel = STATUS_LABEL[c.status] || c.status;
+                    const stLabel = getStatusLabel(c.status, lang);
                     return `
                   <tr>
                     <td style="font-weight:700;color:#0b2540;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
@@ -904,16 +920,16 @@ router.get("/contracts", requireLogin, async (req, res) => {
                     <td style="color:#374151">${escapeHtml(c.counterparty)}</td>
                     <td style="font-size:12px;color:#6b7280">${c.startDate ? moment.tz(c.startDate, "Asia/Tokyo").format("YYYY/MM/DD") : "—"}</td>
                     <td style="font-size:12px;color:#374151;font-weight:600">${c.endDate ? moment.tz(c.endDate, "Asia/Tokyo").format("YYYY/MM/DD") : "—"}</td>
-                    <td>${deadlineBadge(c)}</td>
+                    <td>${deadlineBadge(c, lang)}</td>
                     <td style="font-size:12px;color:#6b7280">${c.responsibleUser ? escapeHtml(c.responsibleUser) : "—"}</td>
                     <td><span class="ct-status-badge" style="background:${stBg};color:${stColor}">${stLabel}</span></td>
                     <td>
                       <div class="ct-action-row">
-                        <a href="/contracts/${c._id}" class="ct-tbl-btn ct-tbl-btn-view">👁 詳細</a>
+                        <a href="/contracts/${c._id}" class="ct-tbl-btn ct-tbl-btn-view">👁 ${t("contracts.view_btn", lang)}</a>
                         ${
                           isAdminUser
                             ? `
-                        <a href="/contracts/${c._id}/edit" class="ct-tbl-btn ct-tbl-btn-edit">✏️ 編集</a>
+                        <a href="/contracts/${c._id}/edit" class="ct-tbl-btn ct-tbl-btn-edit">✏️ ${t("contracts.edit_btn", lang)}</a>
                         <form method="post" action="/contracts/${c._id}/delete" style="display:inline" onsubmit="return confirm('「${escapeHtml(c.name)}」を削除しますか？この操作は取り消せません。')">
                           <button type="submit" class="ct-tbl-btn ct-tbl-btn-del">🗑</button>
                         </form>`
@@ -967,8 +983,8 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
     renderPage(
       req,
       res,
-      "契約管理 - 新規登録",
-      "契約管理",
+      t("contracts.new_title", lang),
+      t("contracts.title", lang),
       `${COMMON_STYLE}
       <style>
         /* ── コンボボックス ── */
@@ -1003,16 +1019,16 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
         <div class="ct-hero">
           <div style="position:relative;z-index:1">
             <div style="font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;opacity:.6;margin-bottom:6px">CONTRACT MANAGEMENT</div>
-            <div class="ct-hero-title">📋 新規契約登録</div>
+            <div class="ct-hero-title">📋 ${t("contracts.new_title", lang)}</div>
           </div>
           <div class="ct-hero-actions">
-            <a href="/contracts" class="ct-btn ct-btn-secondary">← 一覧に戻る</a>
+            <a href="/contracts" class="ct-btn ct-btn-secondary">${t("contracts.back_to_list", lang)}</a>
           </div>
         </div>
 
         <div class="ct-card">
           <div class="ct-card-head">
-            <div class="ct-card-title">📝 契約情報入力</div>
+            <div class="ct-card-title">📝 ${t("contracts.form_info_title", lang)}</div>
           </div>
           <div class="ct-card-body">
             <form method="post" action="/contracts" enctype="multipart/form-data">
@@ -1027,7 +1043,7 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
                 <div class="ct-form-group">
                   <label>契約種別<span class="req">*</span></label>
                   <select name="contractType" id="contractTypeSelect" required onchange="updateDynamicFields(this.value)">
-                    <option value="">-- 選択してください --</option>
+                    <option value="">${t("contracts.select_placeholder", lang)}</option>
                     ${activeTypes
                       .map(
                         (t) => `<option value="${t.key}">${t.label}</option>`,
@@ -1048,15 +1064,15 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
                 <!-- ── 承認フロー設定 ── -->
                 <div class="ct-form-group full" style="border-top:2px solid #e5e7eb;padding-top:16px">
                   <label style="font-size:14px;font-weight:800;color:#0b2540;margin-bottom:10px">
-                    ✅ 承認フロー設定
-                    <span style="font-size:11px;font-weight:400;color:#9ca3af;margin-left:8px">承認者を設定すると、登録後「承認中」ステータスになります</span>
+                    ${t("contracts.approval_flow_label", lang)}
+                    <span style="font-size:11px;font-weight:400;color:#9ca3af;margin-left:8px">${t("contracts.approval_flow_hint", lang)}</span>
                   </label>
                   <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
                     <!-- 承認者候補 -->
                     <div>
                       <div style="font-size:11px;font-weight:700;color:#6b7280;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">承認者候補（部門長・管理者）</div>
                       <div style="position:relative">
-                        <input type="text" id="approver-filter" placeholder="名前を入力して候補を選択..." oninput="filterApproverOptions()" onfocus="showApproverSuggestions()" onblur="hideApproverSuggestions()" autocomplete="off" style="width:100%;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;background:#fff;color:#374151;outline:none;box-sizing:border-box">
+                        <input type="text" id="approver-filter" placeholder="${t("contracts.approver_search_placeholder", lang)}" oninput="filterApproverOptions()" onfocus="showApproverSuggestions()" onblur="hideApproverSuggestions()" autocomplete="off" style="width:100%;padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;background:#fff;color:#374151;outline:none;box-sizing:border-box">
                         <div id="approver-suggestions" style="display:none;position:absolute;top:calc(100% + 2px);left:0;right:0;z-index:200;background:#fff;border:1.5px solid #e5e7eb;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.1);max-height:200px;overflow-y:auto"></div>
                       </div>
                     </div>
@@ -1083,8 +1099,8 @@ router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
                 </div>
               </div>
               <div class="ct-form-actions">
-                <a href="/contracts" class="ct-btn ct-btn-outline">キャンセル</a>
-                <button type="submit" class="ct-btn ct-btn-primary" style="background:#2563eb;color:#fff">💾 登録する</button>
+                <a href="/contracts" class="ct-btn ct-btn-outline">${t("contracts.cancel_btn", lang)}</a>
+                <button type="submit" class="ct-btn ct-btn-primary" style="background:#2563eb;color:#fff">${t("contracts.register_btn", lang)}</button>
               </div>
             </form>
           </div>
@@ -1390,6 +1406,9 @@ router.post("/contracts/:id/return", requireLogin, async (req, res) =>
 
 // =====================================================================
 // GET /contracts/:id - 詳細
+// (lang added below)
+// (lang added below)
+// (lang added below)
 // =====================================================================
 router.get("/contracts/:id", requireLogin, async (req, res) => {
   try {
@@ -1397,7 +1416,7 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
     const orgRole = req.session.orgRole || (isAdminUser ? "admin" : "employee");
     const canView =
       isAdminUser || ["admin", "manager", "team_leader"].includes(orgRole);
-    if (!canView) return res.status(403).send("閲覧権限がありません。");
+    if (!canView) return res.status(403).send("Access denied.");
 
     const contract = await Contract.findById(req.params.id)
       .populate("createdBy", "username")
@@ -1433,7 +1452,7 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
       CONTRACT_TYPE_COLOR_DYN[contract.contractType] || "#6b7280";
     const stColor = STATUS_COLOR[contract.status] || "#6b7280";
     const stBg = STATUS_BG[contract.status] || "#f3f4f6";
-    const stLabel = STATUS_LABEL[contract.status] || contract.status;
+    const stLabel = getStatusLabel(contract.status, lang);
     const customFields =
       contract.customFields instanceof Map
         ? Object.fromEntries(contract.customFields)
@@ -1442,12 +1461,12 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
     renderPage(
       req,
       res,
-      `契約詳細 - ${contract.name}`,
-      "契約管理",
+      `${t("contracts.detail_title", lang)} - ${contract.name}`,
+      t("contracts.title", lang),
       `${COMMON_STYLE}
       <div class="ct">
-        ${req.query.created ? `<div class="ct-alert ct-alert-warn" style="background:#f0fdf4;border-color:#86efac;color:#15803d">✅ 契約を登録しました。${contract.approvalStatus === "pending" ? " 承認者に通知を送りました。" : ""}</div>` : ""}
-        ${req.query.updated ? `<div class="ct-alert ct-alert-warn" style="background:#f0fdf4;border-color:#86efac;color:#15803d">✅ 契約情報を更新しました。</div>` : ""}
+        ${req.query.created ? `<div class="ct-alert ct-alert-warn" style="background:#f0fdf4;border-color:#86efac;color:#15803d">✅ ${t("contracts.registered_msg", lang)}${contract.approvalStatus === "pending" ? " 承認者に通知を送りました。" : ""}</div>` : ""}
+        ${req.query.updated ? `<div class="ct-alert ct-alert-warn" style="background:#f0fdf4;border-color:#86efac;color:#15803d">✅ ${t("contracts.updated_msg", lang)}</div>` : ""}
 
         <!-- ヒーロー -->
         <div class="ct-hero">
@@ -1457,7 +1476,7 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
             <div class="ct-hero-sub">${CONTRACT_TYPE_LABEL[contract.contractType] || contract.contractType} · ${escapeHtml(contract.counterparty)}</div>
           </div>
           <div class="ct-hero-actions">
-            <a href="/contracts" class="ct-btn ct-btn-secondary">← 一覧に戻る</a>
+            <a href="/contracts" class="ct-btn ct-btn-secondary">${t("contracts.back_to_list", lang)}</a>
             ${isAdminUser ? `<a href="/contracts/${contract._id}/edit" class="ct-btn ct-btn-primary">✏️ 編集</a>` : ""}
             ${isAdminUser ? `<form method="post" action="/contracts/${contract._id}/delete" onsubmit="return confirm('「${escapeHtml(contract.name)}」を完全に削除しますか？この操作は取り消せません。')" style="display:inline;margin:0"><button type="submit" class="ct-btn ct-btn-danger">🗑 削除</button></form>` : ""}
           </div>
@@ -1468,55 +1487,55 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
           <div>
             <div class="ct-card">
               <div class="ct-card-head">
-                <div class="ct-card-title">📄 契約情報</div>
+                <div class="ct-card-title">📄 ${t("contracts.info_section", lang)}</div>
                 <span class="ct-status-badge" style="background:${stBg};color:${stColor};font-size:13px;padding:5px 14px">${stLabel}</span>
               </div>
               <div class="ct-card-body">
                 <div class="ct-info-row">
                   <div class="ct-info-item">
-                    <div class="ct-info-label">契約者</div>
+                    <div class="ct-info-label">${t("contracts.col_name", lang)}</div>
                     <div class="ct-info-val" style="font-size:16px;font-weight:700">${escapeHtml(contract.name)}</div>
                   </div>
                   <div class="ct-info-item">
-                    <div class="ct-info-label">契約種別</div>
+                    <div class="ct-info-label">${t("contracts.field_type", lang)}</div>
                     <div class="ct-info-val"><span class="ct-type-badge" style="background:${typeColor}18;color:${typeColor};font-size:13px;padding:4px 12px">${CONTRACT_TYPE_LABEL[contract.contractType] || contract.contractType}</span></div>
                   </div>
                   <div class="ct-info-item">
-                    <div class="ct-info-label">契約先</div>
+                    <div class="ct-info-label">${t("contracts.detail_counterparty", lang)}</div>
                     <div class="ct-info-val">${escapeHtml(contract.counterparty)}</div>
                   </div>
                   <div class="ct-info-item">
-                    <div class="ct-info-label">契約期間</div>
+                    <div class="ct-info-label">${t("contracts.period_label", lang)}</div>
                     <div class="ct-info-val">
                       ${contract.startDate ? moment.tz(contract.startDate, "Asia/Tokyo").format("YYYY年MM月DD日") : "開始日未設定"}
                       〜
                       ${contract.endDate ? moment.tz(contract.endDate, "Asia/Tokyo").format("YYYY年MM月DD日") : "終了日未設定"}
-                      ${contract.endDate ? " " + deadlineBadge(contract) : ""}
+                      ${contract.endDate ? " " + deadlineBadge(contract, lang) : ""}
                     </div>
                   </div>
                   <div class="ct-info-item">
-                    <div class="ct-info-label">自動更新</div>
-                    <div class="ct-info-val">${contract.autoRenew ? `✅ あり（${contract.renewalPeriodMonths || 12}ヶ月ごと）` : "なし"}</div>
+                    <div class="ct-info-label">${t("contracts.field_auto_renew", lang)}</div>
+                    <div class="ct-info-val">${contract.autoRenew ? `✅ ${t("contracts.auto_renew_yes", lang)}（${contract.renewalPeriodMonths || 12}${t("contracts.monthly_suffix", lang)}）` : t("contracts.auto_renew_no", lang)}</div>
                   </div>
                   <div class="ct-info-item">
-                    <div class="ct-info-label">契約担当者</div>
-                    <div class="ct-info-val">${contract.responsibleUser ? escapeHtml(contract.responsibleUser) : "未設定"}</div>
+                    <div class="ct-info-label">${t("contracts.field_responsible", lang)}</div>
+                    <div class="ct-info-val">${contract.responsibleUser ? escapeHtml(contract.responsibleUser) : "—"}</div>
                   </div>
                   <div class="ct-info-item">
-                    <div class="ct-info-label">部署</div>
+                    <div class="ct-info-label">${t("contracts.department_label", lang)}</div>
                     <div class="ct-info-val">${contract.department ? escapeHtml(contract.department) : "—"}</div>
                   </div>
                   ${
                     contract.notes
                       ? `
                   <div class="ct-info-item">
-                    <div class="ct-info-label">備考・メモ</div>
+                    <div class="ct-info-label">${t("contracts.field_notes", lang)}</div>
                     <div class="ct-info-val" style="white-space:pre-wrap;font-size:13px;color:#374151">${escapeHtml(contract.notes)}</div>
                   </div>`
                       : ""
                   }
                   <div class="ct-info-item">
-                    <div class="ct-info-label">登録日時</div>
+                    <div class="ct-info-label">${t("contracts.registered_at", lang)}</div>
                     <div class="ct-info-val" style="font-size:12px;color:#9ca3af">${moment.tz(contract.createdAt, "Asia/Tokyo").format("YYYY年MM月DD日 HH:mm")} ${contract.createdBy ? `by ${escapeHtml(contract.createdBy.username)}` : ""}</div>
                   </div>
                   ${
@@ -1544,7 +1563,7 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
             <!-- 添付ファイル -->
             <div class="ct-card">
               <div class="ct-card-head">
-                <div class="ct-card-title">📎 添付ファイル <span style="font-size:13px;font-weight:500;color:#6b7280">${contract.attachments.length}件</span></div>
+                <div class="ct-card-title">📎 ${t("contracts.attachment_section", lang)} <span style="font-size:13px;font-weight:500;color:#6b7280">${contract.attachments.length}${t("contracts.items_count_suffix", lang)}</span></div>
                 ${
                   isAdminUser
                     ? `
@@ -1560,14 +1579,14 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
                   <form method="post" action="/contracts/${contract._id}/upload" enctype="multipart/form-data">
                     <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
                       <div style="flex:1;min-width:200px">
-                        <label style="font-size:11px;font-weight:700;color:#6b7280;display:block;margin-bottom:4px">ファイル選択（複数可）</label>
+                        <label style="font-size:11px;font-weight:700;color:#6b7280;display:block;margin-bottom:4px">${t("contracts.file_label_field", lang)}</label>
                         <input type="file" name="attachments" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" required style="font-size:12px;width:100%">
                       </div>
                       <div style="min-width:160px">
-                        <label style="font-size:11px;font-weight:700;color:#6b7280;display:block;margin-bottom:4px">ラベル（任意）</label>
-                        <input type="text" name="label" placeholder="例：最新版、旧版" style="padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:7px;font-size:13px;width:100%">
+                        <label style="font-size:11px;font-weight:700;color:#6b7280;display:block;margin-bottom:4px">${t("contracts.field_label_label", lang)}</label>
+                        <input type="text" name="label" placeholder="${t("contracts.file_label_placeholder", lang)}" style="padding:8px 10px;border:1.5px solid #e5e7eb;border-radius:7px;font-size:13px;width:100%">
                       </div>
-                      <button type="submit" class="ct-btn ct-btn-outline ct-btn-sm" style="background:#2563eb;color:#fff;border:none">アップロード</button>
+                      <button type="submit" class="ct-btn ct-btn-outline ct-btn-sm" style="background:#2563eb;color:#fff;border:none">${t("contracts.upload_submit_btn", lang)}</button>
                     </div>
                   </form>
                 </div>`
@@ -1595,12 +1614,12 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
                           ${formatSize(f.size)}
                           ${f.uploadedAt ? " · " + moment.tz(f.uploadedAt, "Asia/Tokyo").format("YYYY/MM/DD") : ""}
                           ${f.label ? ` · <span style="color:#2563eb;font-weight:600">${escapeHtml(f.label)}</span>` : ""}
-                          ${f.isCurrent ? ` · <span style="color:#16a34a;font-weight:600">現行版</span>` : `<span style="color:#9ca3af"> · 旧版</span>`}
+                          ${f.isCurrent ? ` · <span style="color:#16a34a;font-weight:600">${t("contracts.current_version", lang)}</span>` : `<span style="color:#9ca3af"> · ${t("contracts.old_version", lang)}</span>`}
                         </div>
                       </div>
                     </div>
                     <div class="ct-file-actions">
-                      <a href="/uploads/contracts/${escapeHtml(f.filename)}" target="_blank" rel="noopener" class="ct-tbl-btn ct-tbl-btn-view">👁 開く</a>
+                      <a href="/uploads/contracts/${escapeHtml(f.filename)}" target="_blank" rel="noopener" class="ct-tbl-btn ct-tbl-btn-view">👁 ${t("contracts.open_btn", lang)}</a>
                       <a href="/uploads/contracts/${escapeHtml(f.filename)}" download="${escapeHtml(f.originalName || f.filename)}" class="ct-tbl-btn" style="background:#f0fdf4;color:#16a34a">⬇ DL</a>
                       ${
                         isAdminUser
@@ -1634,10 +1653,10 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
                       String(currentStep.userId) === currentUserId;
 
                     const ASTATUS_LABEL = {
-                      pending: "⏳ 承認待ち",
-                      approved: "✅ 承認済み",
-                      rejected: "❌ 却下",
-                      returned: "🔄 差し戻し",
+                      pending: t("contracts.step_waiting", lang),
+                      approved: t("contracts.step_approved", lang),
+                      rejected: t("contracts.step_rejected", lang),
+                      returned: t("contracts.step_returned", lang),
                     };
                     const ASTATUS_COLOR = {
                       pending: "#9ca3af",
@@ -1690,7 +1709,7 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
                     return `
             <div class="ct-card">
               <div class="ct-card-head">
-                <div class="ct-card-title">✅ 承認フロー</div>
+                <div class="ct-card-title">✅ ${t("contracts.approval_section", lang)}</div>
                 <span style="background:${overallBg};color:${overallColor};padding:4px 14px;border-radius:20px;font-size:12px;font-weight:700">${overallLabel}</span>
               </div>
               <div class="ct-card-body">
@@ -1741,18 +1760,18 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
                     ? `
                 <!-- 承認アクションフォーム -->
                 <div style="background:#f0f9ff;border:1.5px solid #bae6fd;border-radius:12px;padding:18px">
-                  <div style="font-size:13px;font-weight:700;color:#0369a1;margin-bottom:12px">📝 あなたの番です — 承認・却下・差し戻しを選択してください</div>
+                  <div style="font-size:13px;font-weight:700;color:#0369a1;margin-bottom:12px">📝 ${t("contracts.approval_action_header", lang)}</div>
                   <textarea id="approval-comment" placeholder="コメント（任意）" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;resize:vertical;min-height:70px;font-family:inherit;margin-bottom:12px"></textarea>
                   <div style="display:flex;gap:8px;flex-wrap:wrap">
                     <form method="post" action="/contracts/${contract._id}/approve" style="display:contents">
                       <input type="hidden" name="comment" id="comment-approve">
                       <button type="submit" onclick="document.getElementById('comment-approve').value=document.getElementById('approval-comment').value" class="ct-btn" style="background:#16a34a;color:#fff;padding:10px 20px">✅ 承認する</button>
                     </form>
-                    <form method="post" action="/contracts/${contract._id}/reject" style="display:contents" onsubmit="return confirm('却下しますか？この操作は取り消せません。')">
+                    <form method="post" action="/contracts/${contract._id}/reject" style="display:contents" onsubmit="return confirm(t('contracts.reject_confirm', lang))">
                       <input type="hidden" name="comment" id="comment-reject">
                       <button type="submit" onclick="document.getElementById('comment-reject').value=document.getElementById('approval-comment').value" class="ct-btn ct-btn-danger" style="padding:10px 20px">❌ 却下する</button>
                     </form>
-                    <form method="post" action="/contracts/${contract._id}/return" style="display:contents" onsubmit="return confirm('差し戻しますか？')">
+                    <form method="post" action="/contracts/${contract._id}/return" style="display:contents" onsubmit="return confirm(t('contracts.return_confirm', lang))">
                       <input type="hidden" name="comment" id="comment-return">
                       <button type="submit" onclick="document.getElementById('comment-return').value=document.getElementById('approval-comment').value" class="ct-btn" style="background:#ea580c;color:#fff;padding:10px 20px">🔄 差し戻す</button>
                     </form>
@@ -1811,8 +1830,8 @@ router.get("/contracts/:id/edit", requireLogin, isAdmin, async (req, res) => {
     renderPage(
       req,
       res,
-      `契約編集 - ${contract.name}`,
-      "契約管理",
+      `${t("contracts.edit_title", lang)} - ${contract.name}`,
+      t("contracts.title", lang),
       `${COMMON_STYLE}
       <style>
         .ct-combo{position:relative}
@@ -1837,16 +1856,16 @@ router.get("/contracts/:id/edit", requireLogin, isAdmin, async (req, res) => {
         <div class="ct-hero">
           <div style="position:relative;z-index:1">
             <div style="font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;opacity:.6;margin-bottom:6px">CONTRACT MANAGEMENT</div>
-            <div class="ct-hero-title">✏️ 契約編集</div>
+            <div class="ct-hero-title">${t("contracts.edit_hero_title", lang)}</div>
           </div>
           <div class="ct-hero-actions">
-            <a href="/contracts/${contract._id}" class="ct-btn ct-btn-secondary">← 詳細に戻る</a>
+            <a href="/contracts/${contract._id}" class="ct-btn ct-btn-secondary">${t("contracts.back_to_detail", lang)}</a>
           </div>
         </div>
 
         <div class="ct-card">
           <div class="ct-card-head">
-            <div class="ct-card-title">📝 契約情報編集</div>
+            <div class="ct-card-title">📝 ${t("contracts.edit_form_title", lang)}</div>
           </div>
           <div class="ct-card-body">
             <form method="post" action="/contracts/${contract._id}/edit" enctype="multipart/form-data">
@@ -1877,7 +1896,7 @@ router.get("/contracts/:id/edit", requireLogin, isAdmin, async (req, res) => {
                   <label>契約担当者</label>
                   <div class="ct-combo" id="respCombo">
                     <div class="ct-combo-input-wrap">
-                      <input type="text" name="responsibleUser" id="respInput" value="${currentRespName}" placeholder="担当者を選択または入力..." autocomplete="off" maxlength="100">
+                      <input type="text" name="responsibleUser" id="respInput" value="${currentRespName}" placeholder="${t("contracts.responsible_search_placeholder", lang)}" autocomplete="off" maxlength="100">
                       <button type="button" class="ct-combo-arrow" id="respArrow" tabindex="-1">▾</button>
                     </div>
                     <div class="ct-combo-dropdown" id="respDropdown"></div>
@@ -1982,8 +2001,8 @@ router.get("/contracts/:id/edit", requireLogin, isAdmin, async (req, res) => {
                 </div>
               </div>
               <div class="ct-form-actions">
-                <a href="/contracts/${contract._id}" class="ct-btn ct-btn-outline">キャンセル</a>
-                <button type="submit" class="ct-btn" style="background:#2563eb;color:#fff">💾 変更を保存</button>
+                <a href="/contracts/${contract._id}" class="ct-btn ct-btn-outline">${t("contracts.cancel_btn", lang)}</a>
+                <button type="submit" class="ct-btn" style="background:#2563eb;color:#fff">${t("contracts.save_changes_btn", lang)}</button>
               </div>
             </form>
           </div>
@@ -2004,7 +2023,7 @@ router.get("/contracts/:id/edit", requireLogin, isAdmin, async (req, res) => {
             ? SUGGESTIONS.filter(function(s){ return s.name.toLowerCase().indexOf(q) !== -1 || s.dept.toLowerCase().indexOf(q) !== -1; })
             : SUGGESTIONS;
           if(items.length === 0){
-            dropdown.innerHTML = '<div class="ct-combo-empty">候補なし（そのまま入力できます）</div>';
+            dropdown.innerHTML = '<div class="ct-combo-empty">' + (window.__ctLang && window.__ctLang.no_match_hint || '候補なし') + '</div>';
           } else {
             dropdown.innerHTML = items.map(function(s, i){
               var nameEsc = s.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -2062,7 +2081,7 @@ router.get("/contracts/:id/edit", requireLogin, isAdmin, async (req, res) => {
             ? USERS.filter(function(s){ return s.name.toLowerCase().indexOf(q) !== -1 || s.dept.toLowerCase().indexOf(q) !== -1; })
             : USERS;
           if(items.length === 0){
-            dropdown.innerHTML = '<div class="ct-combo-empty">候補なし</div>';
+            dropdown.innerHTML = '<div class="ct-combo-empty">' + (window.__ctLang && window.__ctLang.no_match_short || '候補なし') + '</div>';
           } else {
             dropdown.innerHTML = items.map(function(s, i){
               var nameEsc = s.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -2410,8 +2429,8 @@ router.get("/admin/contract-types", requireLogin, isAdmin, async (req, res) => {
     renderPage(
       req,
       res,
-      "契約種別管理",
-      "契約管理",
+      t("contracts.admin_types_title", lang),
+      t("contracts.title", lang),
       `${ADMIN_CT_STYLE}
       <style>
         .adct-sort-list{display:flex;flex-direction:column;gap:8px}
@@ -2432,18 +2451,18 @@ router.get("/admin/contract-types", requireLogin, isAdmin, async (req, res) => {
         ${req.query.deleted ? `<div class="adct-alert-ok">✅ 削除しました。</div>` : ""}
         <div class="adct-hero">
           <div>
-            <div class="adct-hero-title">⚙️ 契約種別管理</div>
-            <div class="adct-hero-sub">ドラッグで順番を変更できます</div>
+            <div class="adct-hero-title">${t("contracts.admin_types_hero_title", lang)}</div>
+            <div class="adct-hero-sub">${t("contracts.admin_types_sub", lang)}</div>
           </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <a href="/contracts" class="adct-btn adct-btn-secondary">← 契約一覧</a>
-            <a href="/admin/contract-types/new" class="adct-btn adct-btn-primary">＋ 種別を追加</a>
+            <a href="/contracts" class="adct-btn adct-btn-secondary">${t("contracts.back_to_contracts_list", lang)}</a>
+            <a href="/admin/contract-types/new" class="adct-btn adct-btn-primary">${t("contracts.add_type_btn", lang)}</a>
           </div>
         </div>
 
         <div class="adct-card">
           <div class="adct-card-head">
-            <div class="adct-card-title">📋 登録済み種別 <span style="font-size:12px;font-weight:500;color:#9ca3af;margin-left:4px">ドラッグで並び替え</span></div>
+            <div class="adct-card-title">📋 ${t("contracts.registered_types_title", lang)} <span style="font-size:12px;font-weight:500;color:#9ca3af;margin-left:4px">${t("contracts.drag_hint", lang)}</span></div>
           </div>
           <div class="adct-card-body">
             <div class="adct-sort-list" id="sortList">
@@ -2451,12 +2470,12 @@ router.get("/admin/contract-types", requireLogin, isAdmin, async (req, res) => {
                 .map(
                   (t) => `
               <div class="adct-sort-item" draggable="true" data-key="${escapeHtml(t.key)}">
-                <span class="adct-drag-handle" title="ドラッグして並び替え">⠿</span>
+                <span class="adct-drag-handle" title="${t("contracts.drag_hint", lang)}">⠿</span>
                 <div style="flex:1;min-width:0">
                   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                     <span class="adct-sort-badge" style="background:${t.color || "#6b7280"}20;color:${t.color || "#6b7280"}">${escapeHtml(t.label)}</span>
-                    ${t.isBuiltin ? `<span style="font-size:10px;color:#9ca3af">組み込み</span>` : ""}
-                    ${!t.isActive ? `<span style="font-size:10px;color:#ef4444">無効</span>` : ""}
+                    ${t.isBuiltin ? `<span style="font-size:10px;color:#9ca3af">${t("contracts.builtin_badge", lang)}</span>` : ""}
+                    ${!t.isActive ? `<span style="font-size:10px;color:#ef4444">${t("contracts.disabled_badge", lang)}</span>` : ""}
                     <span style="font-size:11px;color:#cbd5e1">|</span>
                     <span style="font-size:11px;color:#9ca3af">キー: <code>${escapeHtml(t.key)}</code></span>
                     <span style="font-size:11px;color:#9ca3af">項目: ${(t.fields || []).filter((f) => f.enabled !== false).length}個</span>
@@ -2481,10 +2500,10 @@ router.get("/admin/contract-types", requireLogin, isAdmin, async (req, res) => {
 
             <!-- 順番変更後の保存バー -->            
             <div class="adct-save-bar" id="saveBar">
-              <span>📌 並び順が変更されました</span>
+              <span>📌 ${t("contracts.order_changed_msg", lang)}</span>
               <div style="display:flex;gap:8px">
-                <button onclick="resetOrder()" class="adct-btn adct-btn-secondary adct-btn-sm">元に戻す</button>
-                <button onclick="saveOrder()" class="adct-btn adct-btn-primary adct-btn-sm" id="saveBtn">💾 順番を保存</button>
+                <button onclick="resetOrder()" class="adct-btn adct-btn-secondary adct-btn-sm">${t("contracts.reset_order_btn", lang)}</button>
+                <button onclick="saveOrder()" class="adct-btn adct-btn-primary adct-btn-sm" id="saveBtn">${t("contracts.save_order_btn", lang)}</button>
               </div>
             </div>
           </div>
@@ -2541,7 +2560,7 @@ router.get("/admin/contract-types", requireLogin, isAdmin, async (req, res) => {
       }
       function saveOrder() {
         var btn = document.getElementById('saveBtn');
-        btn.disabled = true; btn.textContent = '保存中...';
+        btn.disabled = true; btn.textContent = '${t("contracts.saving_order", lang)}';
         fetch('/admin/contract-types/reorder', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2550,16 +2569,16 @@ router.get("/admin/contract-types", requireLogin, isAdmin, async (req, res) => {
           if (r.ok) {
             originalOrder = getCurrentOrder();
             saveBar.classList.remove('visible');
-            btn.disabled = false; btn.textContent = '💾 順番を保存';
+            btn.disabled = false; btn.textContent = '${t("contracts.save_order_btn", lang)}';
             var msg = document.createElement('div');
             msg.className = 'adct-alert-ok';
-            msg.textContent = '✅ 並び順を保存しました。';
+            msg.textContent = '${t("contracts.order_saved_msg", lang)}';
             document.querySelector('.adct').insertBefore(msg, document.querySelector('.adct-hero'));
             setTimeout(function(){ msg.remove(); }, 3000);
           } else {
-            alert('保存に失敗しました'); btn.disabled = false; btn.textContent = '💾 順番を保存';
+            alert('保存に失敗しました'); btn.disabled = false; btn.textContent = '${t("contracts.save_order_btn", lang)}';
           }
-        }).catch(function(){ alert('通信エラー'); btn.disabled = false; btn.textContent = '💾 順番を保存'; });
+        }).catch(function(){ alert('通信エラー'); btn.disabled = false; btn.textContent = '${t("contracts.save_order_btn", lang)}'; });
       }
       </script>
       `,
@@ -2597,52 +2616,52 @@ router.get("/admin/contract-types/new", requireLogin, isAdmin, (req, res) => {
   renderPage(
     req,
     res,
-    "契約種別追加",
-    "契約管理",
+    t("contracts.add_type_title", lang),
+    t("contracts.title", lang),
     `${ADMIN_CT_STYLE}
     <div class="adct">
       <div class="adct-hero">
         <div>
-          <div class="adct-hero-title">＋ 契約種別を追加</div>
-          <div class="adct-hero-sub">新しい契約種別と入力項目を定義します</div>
+          <div class="adct-hero-title">${t("contracts.add_type_title", lang)}</div>
+          <div class="adct-hero-sub">${t("contracts.add_type_sub", lang)}</div>
         </div>
-        <a href="/admin/contract-types" class="adct-btn adct-btn-secondary">← 種別一覧</a>
+        <a href="/admin/contract-types" class="adct-btn adct-btn-secondary">${t("contracts.back_to_type_list", lang)}</a>
       </div>
       <div class="adct-card">
-        <div class="adct-card-head"><div class="adct-card-title">種別情報</div></div>
+        <div class="adct-card-head"><div class="adct-card-title">${t("contracts.type_info_section", lang)}</div></div>
         <div class="adct-card-body">
           <form method="post" action="/admin/contract-types" id="typeForm">
             <div class="adct-form-grid">
               <div class="adct-form-group">
-                <label>種別キー（英数字・アンダースコア）<span style="color:#ef4444">*</span></label>
+                <label>${t("contracts.type_key_label", lang)}<span style="color:#ef4444">*</span></label>
                 <input type="text" name="key" required pattern="[a-zA-Z0-9_]+" placeholder="例：service_agreement" maxlength="50">
               </div>
               <div class="adct-form-group">
-                <label>表示名<span style="color:#ef4444">*</span></label>
-                <input type="text" name="label" required placeholder="例：サービス契約" maxlength="50">
+                <label>${t("contracts.type_label_label", lang)}<span style="color:#ef4444">*</span></label>
+                <input type="text" name="label" required placeholder="e.g. Service Agreement" maxlength="50">
               </div>
               <div class="adct-form-group">
-                <label>バッジ色</label>
+                <label>${t("contracts.badge_color_label", lang)}</label>
                 <input type="color" name="color" value="#6b7280">
               </div>
               <div class="adct-form-group">
-                <label>有効・無効</label>
+                <label>${t("contracts.active_status_label", lang)}</label>
                 <select name="isActive">
-                  <option value="true">有効</option>
-                  <option value="false">無効</option>
+                  <option value="true">${t("contracts.active_option", lang)}</option>
+                  <option value="false">${t("contracts.inactive_option", lang)}</option>
                 </select>
               </div>
             </div>
 
             <div style="margin-top:20px;border-top:1px solid #f1f5f9;padding-top:16px">
-              <div style="font-size:14px;font-weight:800;color:#0b2540;margin-bottom:12px">入力項目の定義</div>
+              <div style="font-size:14px;font-weight:800;color:#0b2540;margin-bottom:12px">${t("contracts.fields_definition_title", lang)}</div>
               <div id="fieldsContainer"></div>
-              <button type="button" onclick="addField()" class="adct-btn adct-btn-outline" style="margin-top:8px">＋ 項目を追加</button>
+              <button type="button" onclick="addField()" class="adct-btn adct-btn-outline" style="margin-top:8px">${t("contracts.add_field_btn2", lang)}</button>
             </div>
 
             <div class="adct-form-actions">
-              <a href="/admin/contract-types" class="adct-btn adct-btn-outline">キャンセル</a>
-              <button type="submit" class="adct-btn adct-btn-primary" style="background:#2563eb;color:#fff">💾 保存</button>
+              <a href="/admin/contract-types" class="adct-btn adct-btn-outline">${t("contracts.cancel_btn", lang)}</a>
+              <button type="submit" class="adct-btn adct-btn-primary" style="background:#2563eb;color:#fff">${t("contracts.save_btn2", lang)}</button>
             </div>
           </form>
         </div>
@@ -2720,13 +2739,13 @@ router.get(
     try {
       const typeConfigs = await getTypeConfigs();
       const t = typeConfigs.find((c) => c.key === req.params.key);
-      if (!t) return res.status(404).send("契約種別が見つかりません");
+      if (!t) return res.status(404).send("Contract type not found");
 
       renderPage(
         req,
         res,
-        `契約種別編集 - ${t.label}`,
-        "契約管理",
+        `${t2("contracts.edit_type_title", lang)} - ${t.label}`,
+        t2("contracts.title", lang),
         `${ADMIN_CT_STYLE}
       <style>
         /* adct-fi: 入力欄ラベル付き縦スタック（.adct-field-rowのCSSは変更しない） */
@@ -2738,50 +2757,50 @@ router.get(
       <div class="adct">
         <div class="adct-hero">
           <div>
-            <div class="adct-hero-title">✏️ 種別編集：${escapeHtml(t.label)}</div>
-            <div class="adct-hero-sub">入力項目・設定を変更します</div>
+            <div class="adct-hero-title">${t2("contracts.edit_type_title_prefix", lang)}${escapeHtml(t.label)}</div>
+            <div class="adct-hero-sub">${t2("contracts.edit_type_sub", lang)}</div>
           </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <a href="/admin/contract-types" class="adct-btn adct-btn-secondary">← 種別一覧</a>
+            <a href="/admin/contract-types" class="adct-btn adct-btn-secondary">${t("contracts.back_to_type_list", lang)}</a>
             ${
               !t.isBuiltin
                 ? `
             <form method="post" action="/admin/contract-types/${encodeURIComponent(t.key)}/delete" style="display:inline" onsubmit="return confirm('「${escapeHtml(t.label)}」を削除しますか？既存契約データには影響しません。')">
-              <button type="submit" class="adct-btn adct-btn-danger">🗑 削除</button>
+              <button type="submit" class="adct-btn adct-btn-danger">${t2("contracts.delete_type_btn", lang)}</button>
             </form>`
                 : ""
             }
           </div>
         </div>
         <div class="adct-card">
-          <div class="adct-card-head"><div class="adct-card-title">種別情報</div></div>
+          <div class="adct-card-head"><div class="adct-card-title">${t("contracts.type_info_section", lang)}</div></div>
           <div class="adct-card-body">
             <form method="post" action="/admin/contract-types/${encodeURIComponent(t.key)}/edit" id="typeForm">
               <div class="adct-form-grid">
                 <div class="adct-form-group">
-                  <label>種別キー</label>
+                  <label>${t2("contracts.type_key_label", lang)}</label>
                   <input type="text" value="${escapeHtml(t.key)}" disabled style="background:#f3f4f6;color:#9ca3af">
                 </div>
                 <div class="adct-form-group">
-                  <label>表示名<span style="color:#ef4444">*</span></label>
+                  <label>${t2("contracts.type_label_label", lang)}<span style="color:#ef4444">*</span></label>
                   <input type="text" name="label" required value="${escapeHtml(t.label)}" maxlength="50">
                 </div>
                 <div class="adct-form-group">
-                  <label>バッジ色</label>
+                  <label>${t("contracts.badge_color_label", lang)}</label>
                   <input type="color" name="color" value="${escapeHtml(t.color || "#6b7280")}">
                 </div>
                 <div class="adct-form-group">
-                  <label>有効・無効</label>
+                  <label>${t2("contracts.active_status_label", lang)}</label>
                   <select name="isActive">
-                    <option value="true" ${t.isActive !== false ? "selected" : ""}>有効</option>
-                    <option value="false" ${t.isActive === false ? "selected" : ""}>無効</option>
+                    <option value="true" ${t.isActive !== false ? "selected" : ""}>${t2("contracts.active_option", lang)}</option>
+                    <option value="false" ${t.isActive === false ? "selected" : ""}>${t2("contracts.inactive_option", lang)}</option>
                   </select>
                 </div>
               </div>
 
               <div style="margin-top:20px;border-top:1px solid #f1f5f9;padding-top:16px">
-                <div style="font-size:14px;font-weight:800;color:#0b2540;margin-bottom:4px">入力項目の定義</div>
-                <div style="font-size:12px;color:#9ca3af;margin-bottom:12px">項目の追加・削除・並び替えができます。「有効」のチェックを外すと非表示になります。</div>
+                <div style="font-size:14px;font-weight:800;color:#0b2540;margin-bottom:4px">${t2("contracts.fields_definition_title", lang)}</div>
+                <div style="font-size:12px;color:#9ca3af;margin-bottom:12px">${t2("contracts.fields_change_hint", lang)}</div>
                 <div id="fieldsContainer">
                   ${(t.fields || [])
                     .sort((a, b) => (a.order || 0) - (b.order || 0))
@@ -2823,12 +2842,12 @@ router.get(
                     )
                     .join("")}
                 </div>
-                <button type="button" onclick="addField()" class="adct-btn adct-btn-outline" style="margin-top:8px">＋ 項目を追加</button>
+                <button type="button" onclick="addField()" class="adct-btn adct-btn-outline" style="margin-top:8px">${t("contracts.add_field_btn2", lang)}</button>
               </div>
 
               <div class="adct-form-actions">
-                <a href="/admin/contract-types" class="adct-btn adct-btn-outline">キャンセル</a>
-                <button type="submit" class="adct-btn adct-btn-primary" style="background:#2563eb;color:#fff">💾 保存</button>
+                <a href="/admin/contract-types" class="adct-btn adct-btn-outline">${t2("contracts.cancel_btn", lang)}</a>
+                <button type="submit" class="adct-btn adct-btn-primary" style="background:#2563eb;color:#fff">${t2("contracts.save_btn2", lang)}</button>
               </div>
             </form>
           </div>

@@ -17,6 +17,7 @@ const { escapeHtml } = require("../lib/helpers");
 const { createNotification } = require("./notifications");
 const { notifyEvent } = require("../lib/integrations");
 const { sendEmailToUser } = require("../lib/emailHelper");
+const { t } = require("../lib/i18n");
 
 // ── 休暇種別→残日数フィールドのマッピング ──────────
 const leaveTypeToField = {
@@ -88,7 +89,8 @@ function tenureLabel(joinDate) {
   return y > 0 ? `${y}年${m}ヶ月` : `${m}ヶ月`;
 }
 // 次回付与バナーHTML生成
-function buildNextGrantBanner(joinDate) {
+function buildNextGrantBanner(joinDate, lang) {
+  lang = lang || "ja";
   const next = calcNextPaidLeaveGrant(joinDate);
   if (!next) return "";
   const urgent = next.daysUntil <= 30;
@@ -100,14 +102,14 @@ function buildNextGrantBanner(joinDate) {
   return `
 <div style="background:${bg};border:1.5px solid ${border};border-radius:12px;padding:14px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <div>
-        <div style="font-weight:700;font-size:15px;color:${color}">${icon} 次回有給付与のお知らせ</div>
+        <div style="font-weight:700;font-size:15px;color:${color}">${icon} ${t("leave.next_grant_notice", lang)}</div>
         <div style="font-size:13px;color:${color};margin-top:4px">
-            勤続 <strong>${tenure}</strong> ／ 付与日：<strong>${next.grantDate}</strong>（あと <strong style="font-size:16px">${next.daysUntil}</strong> 日）
+            ${t("leave.tenure_label", lang)} <strong>${tenure}</strong> ／ ${t("leave.grant_date_label", lang)}<strong>${next.grantDate}</strong>（${t("leave.days_until_label", lang)} <strong style="font-size:16px">${next.daysUntil}</strong> ${t("leave.days_unit", lang)}）
         </div>
     </div>
     <div style="background:${color};color:#fff;border-radius:10px;padding:10px 20px;text-align:center;min-width:90px">
-        <div style="font-size:22px;font-weight:900;line-height:1">${next.grantDays}日</div>
-        <div style="font-size:11px;margin-top:2px;opacity:.85">付与予定</div>
+        <div style="font-size:22px;font-weight:900;line-height:1">${next.grantDays}${t("leave.days_unit", lang)}</div>
+        <div style="font-size:11px;margin-top:2px;opacity:.85">${t("leave.grant_scheduled", lang)}</div>
     </div>
 </div>`;
 }
@@ -124,6 +126,7 @@ async function getOrCreateBalance(employeeId) {
 // ────────────────────────────────────────────────────────────
 router.get("/leave/apply", requireLogin, async (req, res) => {
   try {
+    const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
     const user = await User.findById(req.session.userId);
     const employee = await Employee.findOne({ userId: user._id });
     if (!employee) return res.status(400).send("社員情報がありません");
@@ -133,8 +136,8 @@ router.get("/leave/apply", requireLogin, async (req, res) => {
     renderPage(
       req,
       res,
-      "休暇申請",
-      "休暇申請",
+      t("leave.page_title", lang),
+      t("leave.page_title", lang),
       `
             <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
             <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
@@ -159,69 +162,68 @@ router.get("/leave/apply", requireLogin, async (req, res) => {
             </style>
 
             <div style="max-width:900px;margin:0 auto">
-                <h3 style="margin-bottom:16px">休暇残日数</h3>
+                <h3 style="margin-bottom:16px">${t("leave.balance_heading", lang)}</h3>
                 <div class="bal-grid">
-                    <div class="bal-card"><div class="bal-num">${bal.paid}</div><div class="bal-label">有給（日）</div></div>
-                    <div class="bal-card"><div class="bal-num">${bal.sick}</div><div class="bal-label">病欠（日）</div></div>
-                    <div class="bal-card"><div class="bal-num">${bal.special}</div><div class="bal-label">慶弔（日）</div></div>
-                    <div class="bal-card"><div class="bal-num">${bal.other}</div><div class="bal-label">その他（日）</div></div>
+                    <div class="bal-card"><div class="bal-num">${bal.paid}</div><div class="bal-label">${t("leave.paid_days", lang)}</div></div>
+                    <div class="bal-card"><div class="bal-num">${bal.sick}</div><div class="bal-label">${t("leave.sick_days", lang)}</div></div>
+                    <div class="bal-card"><div class="bal-num">${bal.special}</div><div class="bal-label">${t("leave.special_days", lang)}</div></div>
+                    <div class="bal-card"><div class="bal-num">${bal.other}</div><div class="bal-label">${t("leave.other_days", lang)}</div></div>
                 </div>
 
-                ${buildNextGrantBanner(employee.joinDate)}
+                ${buildNextGrantBanner(employee.joinDate, lang)}
 
                 <!-- 早退申請バナー -->
                 <div class="early-banner">
                     <div>
-                        <div style="font-weight:700;font-size:15px;color:#92400e">🚪 早退申請はこちら</div>
-                        <div style="font-size:13px;color:#b45309;margin-top:2px">早退予定時刻・理由を入力して申請できます（有給 0.5日消費）</div>
+                        <div style="font-weight:700;font-size:15px;color:#92400e">${t("leave.early_banner_title", lang)}</div>
+                        <div style="font-size:13px;color:#b45309;margin-top:2px">${t("leave.early_banner_desc", lang)}</div>
                     </div>
-                    <a href="/leave/early" style="padding:9px 20px;background:#f59e0b;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;white-space:nowrap;font-size:14px">早退申請フォームへ →</a>
+                    <a href="/leave/early" style="padding:9px 20px;background:#f59e0b;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;white-space:nowrap;font-size:14px">${t("leave.early_banner_link", lang)}</a>
                 </div>
 
                 <div class="form-card">
-                    <h3 style="margin-bottom:16px">休暇申請フォーム</h3>
-                    ${req.query.err === "balance" ? `<div style="background:#fef2f2;border-left:4px solid #ef4444;padding:10px;margin-bottom:14px;border-radius:6px;color:#b91c1c">残日数が不足しています</div>` : ""}
+                    <h3 style="margin-bottom:16px">${t("leave.apply_form_title", lang)}</h3>
+                    ${req.query.err === "balance" ? `<div style="background:#fef2f2;border-left:4px solid #ef4444;padding:10px;margin-bottom:14px;border-radius:6px;color:#b91c1c">${t("leave.err_balance", lang)}</div>` : ""}
                     <form action="/leave/apply" method="POST" id="leaveForm">
                         <input type="hidden" name="leaveType" id="leaveTypeHidden" required>
 
                         <div style="margin-bottom:16px">
-                            <label style="font-weight:600;display:block;margin-bottom:8px">申請種類を選択</label>
+                            <label style="font-weight:600;display:block;margin-bottom:8px">${t("leave.select_type", lang)}</label>
                             <div class="lv-type-grid">
-                                <button type="button" class="lv-type-btn" data-type="有給" onclick="selectType(this)">📅 有給休暇<br><small style="font-weight:400">残 ${bal.paid} 日</small></button>
-                                <button type="button" class="lv-type-btn" data-type="病欠" onclick="selectType(this)">🤒 病欠<br><small style="font-weight:400">残 ${bal.sick} 日</small></button>
-                                <button type="button" class="lv-type-btn" data-type="慶弔" onclick="selectType(this)">🎌 慶弔<br><small style="font-weight:400">残 ${bal.special} 日</small></button>
-                                <button type="button" class="lv-type-btn half" data-type="午前休" onclick="selectType(this)">🌅 午前休（AM）<br><small style="font-weight:400">0.5日消費</small></button>
-                                <button type="button" class="lv-type-btn half" data-type="午後休" onclick="selectType(this)">🌆 午後休（PM）<br><small style="font-weight:400">0.5日消費</small></button>
-                                <button type="button" class="lv-type-btn" data-type="その他" onclick="selectType(this)">📝 その他<br><small style="font-weight:400">残 ${bal.other} 日</small></button>
+                                <button type="button" class="lv-type-btn" data-type="有給" onclick="selectType(this)">${t("leave.type_paid_label", lang)}<br><small style="font-weight:400">${t("leave.remain_label", lang)} ${bal.paid} ${t("leave.days_unit", lang)}</small></button>
+                                <button type="button" class="lv-type-btn" data-type="病欠" onclick="selectType(this)">${t("leave.type_sick_label", lang)}<br><small style="font-weight:400">${t("leave.remain_label", lang)} ${bal.sick} ${t("leave.days_unit", lang)}</small></button>
+                                <button type="button" class="lv-type-btn" data-type="慶弔" onclick="selectType(this)">${t("leave.type_special_label", lang)}<br><small style="font-weight:400">${t("leave.remain_label", lang)} ${bal.special} ${t("leave.days_unit", lang)}</small></button>
+                                <button type="button" class="lv-type-btn half" data-type="午前休" onclick="selectType(this)">${t("leave.type_am_label", lang)}<br><small style="font-weight:400">${t("leave.half_day_consume", lang)}</small></button>
+                                <button type="button" class="lv-type-btn half" data-type="午後休" onclick="selectType(this)">${t("leave.type_pm_label", lang)}<br><small style="font-weight:400">${t("leave.half_day_consume", lang)}</small></button>
+                                <button type="button" class="lv-type-btn" data-type="その他" onclick="selectType(this)">${t("leave.type_other_label", lang)}<br><small style="font-weight:400">${t("leave.remain_label", lang)} ${bal.other} ${t("leave.days_unit", lang)}</small></button>
                             </div>
                         </div>
 
                         <div class="lv-hint" id="hint-half">
-                            🌗 <strong>半日休</strong>は有給残日数から <strong>0.5日</strong> 消費します。<br>
-                            午前休 = 午後から出社　／　午後休 = 午前出社し午後退社
+                            ${t("leave.half_day_hint", lang)}
                         </div>
 
                         <div class="form-row" style="margin-bottom:14px">
                             <div>
-                                <label style="font-weight:600;display:block;margin-bottom:6px">開始日</label>
+                                <label style="font-weight:600;display:block;margin-bottom:6px">${t("leave.start_date", lang)}</label>
                                 <input type="text" id="startDate" name="startDate" required style="width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;box-sizing:border-box">
                             </div>
                             <div id="endDateCol">
-                                <label style="font-weight:600;display:block;margin-bottom:6px">終了日</label>
+                                <label style="font-weight:600;display:block;margin-bottom:6px">${t("leave.end_date", lang)}</label>
                                 <input type="text" id="endDate" name="endDate" required style="width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;box-sizing:border-box">
                             </div>
                             <div>
-                                <label style="font-weight:600;display:block;margin-bottom:6px">日数</label>
+                                <label style="font-weight:600;display:block;margin-bottom:6px">${t("leave.days_count", lang)}</label>
                                 <input type="number" id="days" name="days" step="0.5" readonly style="width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;background:#f9fafb;box-sizing:border-box">
                             </div>
                         </div>
                         <div style="margin-bottom:18px">
-                            <label style="font-weight:600;display:block;margin-bottom:6px">理由</label>
+                            <label style="font-weight:600;display:block;margin-bottom:6px">${t("leave.reason", lang)}</label>
                             <textarea name="reason" rows="3" required style="width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;box-sizing:border-box"></textarea>
                         </div>
                         <div style="display:flex;gap:10px">
-                            <button type="submit" id="submitBtn" disabled style="padding:10px 24px;background:#cbd5e1;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:not-allowed;transition:all .2s">申請する</button>
-                            <a href="/leave/my-requests" style="padding:10px 24px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-weight:600">戻る</a>
+                            <button type="submit" id="submitBtn" disabled style="padding:10px 24px;background:#cbd5e1;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:not-allowed;transition:all .2s">${t("leave.apply", lang)}</button>
+                            <a href="/leave/my-requests" style="padding:10px 24px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-weight:600">${t("leave.back_btn", lang)}</a>
                         </div>
                     </form>
                 </div>
@@ -268,8 +270,8 @@ router.get("/leave/apply", requireLogin, async (req, res) => {
             });
             document.getElementById('endDate').addEventListener('change', recalcDays);
             document.getElementById('leaveForm').addEventListener('submit', function(e){
-                if(!currentType){ e.preventDefault(); alert('申請種類を選択してください'); return; }
-                if(!document.getElementById('startDate').value){ e.preventDefault(); alert('開始日を選択してください'); return; }
+                if(!currentType){ e.preventDefault(); alert('${t("leave.alert_select_type", lang)}'); return; }
+                if(!document.getElementById('startDate').value){ e.preventDefault(); alert('${t("leave.alert_select_start", lang)}'); return; }
                 if(HALF_TYPES.indexOf(currentType) !== -1){
                     document.getElementById('endDate').disabled = false;
                     fpEnd.setDate(document.getElementById('startDate').value, true);
@@ -290,6 +292,7 @@ router.get("/leave/apply", requireLogin, async (req, res) => {
 // ────────────────────────────────────────────────────────────
 router.get("/leave/early", requireLogin, async (req, res) => {
   try {
+    const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
     const user = await User.findById(req.session.userId);
     const employee = await Employee.findOne({ userId: user._id });
     if (!employee) return res.status(400).send("社員情報がありません");
@@ -298,8 +301,8 @@ router.get("/leave/early", requireLogin, async (req, res) => {
     renderPage(
       req,
       res,
-      "早退申請",
-      "早退申請",
+      t("leave.early_page_title", lang),
+      t("leave.early_page_title", lang),
       `
             <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
             <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
@@ -332,40 +335,40 @@ router.get("/leave/early", requireLogin, async (req, res) => {
                 <div class="el-hero">
                     <div class="el-hero-icon">🚪</div>
                     <div>
-                        <h2>早退申請</h2>
-                        <p>早退予定時刻と理由を入力して申請してください</p>
+                        <h2>${t("leave.early_page_title", lang)}</h2>
+                        <p>${t("leave.early_hero_desc", lang)}</p>
                     </div>
                 </div>
 
                 <div class="el-bal">
-                    🗓 有給残日数：<strong>${bal.paid} 日</strong>　（早退申請で <strong>0.5日</strong> 消費されます）
+                    ${t("leave.early_balance_label", lang)}<strong>${bal.paid} ${t("leave.days_unit", lang)}</strong>　${t("leave.early_balance_consume", lang)}
                 </div>
 
-                ${req.query.err === "balance" ? `<div class="el-alert-err">⚠️ 有給残日数が不足しています</div>` : ""}
-                ${req.query.ok ? `<div class="el-alert-ok">✅ 早退申請を送信しました</div>` : ""}
+                ${req.query.err === "balance" ? `<div class="el-alert-err">${t("leave.early_err_balance", lang)}</div>` : ""}
+                ${req.query.ok ? `<div class="el-alert-ok">${t("leave.early_ok", lang)}</div>` : ""}
 
                 <div class="el-card">
                     <form action="/leave/early" method="POST" id="earlyForm">
                         <div class="el-field">
-                            <label>📅 早退日 <span style="color:#ef4444">*</span></label>
-                            <input type="text" id="earlyDate" name="earlyDate" required placeholder="日付を選択">
+                            <label>${t("leave.early_date_label", lang)} <span style="color:#ef4444">*</span></label>
+                            <input type="text" id="earlyDate" name="earlyDate" required placeholder="${t("leave.early_date_label", lang)}">
                         </div>
                         <div class="el-field">
-                            <label>🕐 早退予定時刻 <span style="color:#ef4444">*</span></label>
+                            <label>${t("leave.early_time_label", lang)} <span style="color:#ef4444">*</span></label>
                             <input type="time" name="earlyLeaveTime" id="earlyLeaveTime" required>
-                            <div class="el-hint">通常勤務終了前の時刻を入力してください</div>
+                            <div class="el-hint">${t("leave.early_time_hint", lang)}</div>
                         </div>
                         <div class="el-note">
-                            上司への連絡は別途行ってください。この申請は有給残日数から <strong>0.5日</strong> 消費します。
+                            ${t("leave.early_note", lang)}
                         </div>
                         <div class="el-field">
-                            <label>📝 早退理由 <span style="color:#ef4444">*</span></label>
-                            <textarea name="reason" rows="4" required placeholder="例：体調不良のため、午後の診察のため　など"></textarea>
+                            <label>${t("leave.early_reason_label", lang)} <span style="color:#ef4444">*</span></label>
+                            <textarea name="reason" rows="4" required placeholder="${t("leave.early_reason_placeholder", lang)}"></textarea>
                         </div>
                         <div class="el-actions">
-                            <button type="submit" class="el-btn-primary">申請する</button>
-                            <a href="/leave/apply" class="el-btn-ghost">← 休暇申請へ</a>
-                            <a href="/leave/my-requests" class="el-btn-ghost">申請履歴</a>
+                            <button type="submit" class="el-btn-primary">${t("leave.early_submit_btn", lang)}</button>
+                            <a href="/leave/apply" class="el-btn-ghost">${t("leave.early_back_link", lang)}</a>
+                            <a href="/leave/my-requests" class="el-btn-ghost">${t("leave.early_history_link", lang)}</a>
                         </div>
                     </form>
                 </div>
@@ -467,6 +470,7 @@ router.post("/leave/apply", requireLogin, async (req, res) => {
 // ────────────────────────────────────────────────────────────
 router.get("/leave/my-requests", requireLogin, async (req, res) => {
   try {
+    const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
     const user = await User.findById(req.session.userId);
     const employee = await Employee.findOne({ userId: user._id });
     const requests = await LeaveRequest.find({ userId: user._id }).sort({
@@ -476,10 +480,10 @@ router.get("/leave/my-requests", requireLogin, async (req, res) => {
 
     const statusLabel = (s) =>
       ({
-        pending: "待機中",
-        approved: "承認済",
-        rejected: "拒否",
-        canceled: "キャンセル",
+        pending: t("leave.status_pending", lang),
+        approved: t("leave.status_approved", lang),
+        rejected: t("leave.status_refused", lang),
+        canceled: t("leave.status_canceled", lang),
       })[s] || s;
     const statusColor = (s) =>
       ({
@@ -492,8 +496,8 @@ router.get("/leave/my-requests", requireLogin, async (req, res) => {
     renderPage(
       req,
       res,
-      "休暇申請履歴",
-      "休暇申請履歴",
+      t("leave.history_title", lang),
+      t("leave.history_title", lang),
       `
             <style>
                 .bal-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
@@ -514,35 +518,35 @@ router.get("/leave/my-requests", requireLogin, async (req, res) => {
                 ${
                   bal
                     ? `
-                <h3 style="margin-bottom:12px">休暇残日数</h3>
+                <h3 style="margin-bottom:12px">${t("leave.balance_heading", lang)}</h3>
                 <div class="bal-grid">
-                    <div class="bal-card"><div class="bal-num">${bal.paid}</div><div class="bal-label">有給</div></div>
-                    <div class="bal-card"><div class="bal-num">${bal.sick}</div><div class="bal-label">病欠</div></div>
-                    <div class="bal-card"><div class="bal-num">${bal.special}</div><div class="bal-label">慶弔</div></div>
-                    <div class="bal-card"><div class="bal-num">${bal.other}</div><div class="bal-label">その他</div></div>
+                    <div class="bal-card"><div class="bal-num">${bal.paid}</div><div class="bal-label">${t("leave.col_paid", lang)}</div></div>
+                    <div class="bal-card"><div class="bal-num">${bal.sick}</div><div class="bal-label">${t("leave.col_sick", lang)}</div></div>
+                    <div class="bal-card"><div class="bal-num">${bal.special}</div><div class="bal-label">${t("leave.col_special", lang)}</div></div>
+                    <div class="bal-card"><div class="bal-num">${bal.other}</div><div class="bal-label">${t("leave.col_other", lang)}</div></div>
                 </div>
-                ${employee ? buildNextGrantBanner(employee.joinDate) : ""}
+                ${employee ? buildNextGrantBanner(employee.joinDate, lang) : ""}
                 `
                     : ""
                 }
 
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-                    <h3 style="margin:0">申請履歴</h3>
-                    <a href="/leave/apply" style="padding:9px 20px;background:#0b5fff;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">＋ 新規申請</a>
+                    <h3 style="margin:0">${t("leave.history_section", lang)}</h3>
+                    <a href="/leave/apply" style="padding:9px 20px;background:#0b5fff;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">${t("leave.new_request_btn", lang)}</a>
                 </div>
                 <div class="tbl-wrap">
                 <table class="tbl">
                     <thead><tr>
-                        <th>休暇種類</th><th>期間</th><th>日数</th><th>理由</th><th>状況</th><th>申請日</th><th>処理日</th><th>備考</th>
+                        <th>${t("leave.col_type", lang)}</th><th>${t("leave.col_period", lang)}</th><th>${t("leave.col_days", lang)}</th><th>${t("leave.col_reason", lang)}</th><th>${t("leave.col_status", lang)}</th><th>${t("leave.col_applied_date", lang)}</th><th>${t("leave.col_processed_date", lang)}</th><th>${t("leave.col_notes", lang)}</th>
                     </tr></thead>
                     <tbody>
-                        ${requests.length === 0 ? `<tr><td colspan="8" style="text-align:center;color:#6b7280">申請履歴がありません</td></tr>` : ""}
+                        ${requests.length === 0 ? `<tr><td colspan="8" style="text-align:center;color:#6b7280">${t("leave.no_history", lang)}</td></tr>` : ""}
                         ${requests
                           .map(
                             (r) => `<tr>
                             <td>${escapeHtml(r.leaveType)}${r.earlyLeaveTime ? `<br><small style="color:#f59e0b">🕐 ${r.earlyLeaveTime}</small>` : ""}</td>
                             <td>${moment(r.startDate).format("YYYY/MM/DD")}〜${moment(r.endDate).format("YYYY/MM/DD")}</td>
-                            <td>${r.days}日</td>
+                            <td>${r.days}${t("leave.days_unit", lang)}</td>
                             <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(r.reason)}</td>
                             <td><span style="background:${statusColor(r.status)}22;color:${statusColor(r.status)};padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px">${statusLabel(r.status)}</span></td>
                             <td>${moment(r.createdAt).format("YYYY/MM/DD")}</td>
@@ -568,6 +572,7 @@ router.get("/leave/my-requests", requireLogin, async (req, res) => {
 // ────────────────────────────────────────────────────────────
 router.get("/admin/leave-requests", requireLogin, isAdmin, async (req, res) => {
   try {
+    const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
     const requests = await LeaveRequest.find({ status: "pending" }).sort({
       createdAt: 1,
     });
@@ -575,8 +580,8 @@ router.get("/admin/leave-requests", requireLogin, isAdmin, async (req, res) => {
     renderPage(
       req,
       res,
-      "休暇承認管理",
-      "休暇承認管理",
+      t("leave.admin_approval_title", lang),
+      t("leave.admin_approval_title", lang),
       `
             <style>
                 .req-card{background:#fff;border-radius:12px;padding:18px;margin-bottom:14px;box-shadow:0 4px 14px rgba(11,36,48,.06)}
@@ -590,10 +595,10 @@ router.get("/admin/leave-requests", requireLogin, isAdmin, async (req, res) => {
             </style>
             <div style="max-width:900px;margin:0 auto">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
-                    <h3 style="margin:0">承認待ち申請一覧</h3>
-                    <a href="/admin/leave-balance" style="padding:9px 20px;background:#0b5fff;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;margin-top:10px">残日数管理</a>
+                    <h3 style="margin:0">${t("leave.pending_list_heading", lang)}</h3>
+                    <a href="/admin/leave-balance" style="padding:9px 20px;background:#0b5fff;color:#fff;border-radius:8px;text-decoration:none;font-weight:700;margin-top:10px">${t("leave.balance_mgmt_btn", lang)}</a>
                 </div>
-                ${requests.length === 0 ? `<div style="background:#f0fdf4;border-radius:12px;padding:24px;text-align:center;color:#16a34a;font-weight:600">承認待ちの申請はありません ✅</div>` : ""}
+                ${requests.length === 0 ? `<div style="background:#f0fdf4;border-radius:12px;padding:24px;text-align:center;color:#16a34a;font-weight:600">${t("leave.no_pending", lang)}</div>` : ""}
                 ${requests
                   .map(
                     (r) => `
@@ -604,16 +609,16 @@ router.get("/admin/leave-requests", requireLogin, isAdmin, async (req, res) => {
                     </div>
                     <div style="font-size:14px;color:#374151">
                         <span style="margin-right:16px">🏷 ${escapeHtml(r.leaveType)}${r.earlyLeaveTime ? ` <span style="color:#f59e0b">（早退 ${r.earlyLeaveTime}）</span>` : ""}</span>
-                        <span style="margin-right:16px">📅 ${moment(r.startDate).format("YYYY/MM/DD")}〜${moment(r.endDate).format("YYYY/MM/DD")}（${r.days}日）</span>
+                        <span style="margin-right:16px">📅 ${moment(r.startDate).format("YYYY/MM/DD")}〜${moment(r.endDate).format("YYYY/MM/DD")}（${r.days}${t("leave.days_unit", lang)}）</span>
                     </div>
-                    <div style="margin-top:6px;font-size:14px;color:#6b7280">理由: ${escapeHtml(r.reason)}</div>
+                    <div style="margin-top:6px;font-size:14px;color:#6b7280">${t("leave.reason_label", lang)} ${escapeHtml(r.reason)}</div>
                     <div class="req-actions">
                         <form action="/admin/approve-leave/${r._id}" method="POST" style="display:inline">
-                            <button style="padding:8px 20px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">承認</button>
+                            <button style="padding:8px 20px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">${t("leave.approve_btn", lang)}</button>
                         </form>
                         <form action="/admin/reject-leave/${r._id}" method="POST" style="display:inline">
-                            <input name="notes" placeholder="拒否理由（任意）" style="padding:7px 10px;border:1px solid #ddd;border-radius:8px;width:200px">
-                            <button style="padding:8px 20px;background:#ef4444;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">拒否</button>
+                            <input name="notes" placeholder="${t("leave.reject_placeholder", lang)}" style="padding:7px 10px;border:1px solid #ddd;border-radius:8px;width:200px">
+                            <button style="padding:8px 20px;background:#ef4444;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">${t("leave.reject_btn", lang)}</button>
                         </form>
                     </div>
                 </div>`,
@@ -806,6 +811,7 @@ router.post(
 // ────────────────────────────────────────────────────────────
 router.get("/admin/leave-balance", requireLogin, isAdmin, async (req, res) => {
   try {
+    const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
     const employees = await Employee.find().sort({ employeeId: 1 });
     const balMap = {};
     const bals = await LeaveBalance.find();
@@ -816,8 +822,8 @@ router.get("/admin/leave-balance", requireLogin, isAdmin, async (req, res) => {
     renderPage(
       req,
       res,
-      "休暇残日数管理",
-      "休暇残日数管理",
+      t("admin_page.leave_balance", lang),
+      t("admin_page.leave_balance", lang),
       `
             <style>
                 .tbl{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 14px rgba(11,36,48,.06)}
@@ -828,18 +834,18 @@ router.get("/admin/leave-balance", requireLogin, isAdmin, async (req, res) => {
             </style>
             <div style="max-width:1100px;margin:0 auto">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:8px">
-                    <h3 style="margin:0">全社員 休暇残日数</h3>
-                    <a href="/admin/leave-requests" style="padding:9px 20px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-weight:600">← 承認一覧へ</a>
+                    <h3 style="margin:0">${t("leave.all_employees_balance", lang)}</h3>
+                    <a href="/admin/leave-requests" style="padding:9px 20px;background:#f3f4f6;color:#374151;border-radius:8px;text-decoration:none;font-weight:600">${t("leave.back_to_approval_btn", lang)}</a>
                 </div>
                 <div class="tbl-wrap">
                 <table class="tbl">
                     <thead><tr>
-                        <th>社員ID</th><th>氏名</th><th>部署</th>
-                        <th style="text-align:center">有給</th>
-                        <th style="text-align:center">病欠</th>
-                        <th style="text-align:center">慶弔</th>
-                        <th style="text-align:center">その他</th>
-                        <th>付与・操作</th>
+                        <th>${t("leave.col_emp_id", lang)}</th><th>${t("leave.col_name", lang)}</th><th>${t("leave.col_dept", lang)}</th>
+                        <th style="text-align:center">${t("leave.col_paid", lang)}</th>
+                        <th style="text-align:center">${t("leave.col_sick", lang)}</th>
+                        <th style="text-align:center">${t("leave.col_special", lang)}</th>
+                        <th style="text-align:center">${t("leave.col_other", lang)}</th>
+                        <th>${t("leave.col_grant_ops", lang)}</th>
                     </tr></thead>
                     <tbody>
                         ${employees
@@ -862,14 +868,14 @@ router.get("/admin/leave-balance", requireLogin, isAdmin, async (req, res) => {
                                     <form action="/admin/leave-balance/grant" method="POST" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
                                         <input type="hidden" name="employeeId" value="${emp._id}">
                                         <select name="leaveType" style="padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
-                                            <option value="有給">有給</option>
-                                            <option value="病欠">病欠</option>
-                                            <option value="慶弔">慶弔</option>
-                                            <option value="その他">その他</option>
+                                            <option value="有給">${t("leave.opt_paid", lang)}</option>
+                                            <option value="病欠">${t("leave.opt_sick", lang)}</option>
+                                            <option value="慶弔">${t("leave.opt_special", lang)}</option>
+                                            <option value="その他">${t("leave.opt_other", lang)}</option>
                                         </select>
                                         <input type="number" name="delta" value="1" min="-99" max="99" class="num-input">
-                                        <input type="text" name="note" placeholder="メモ" style="padding:5px 8px;border:1px solid #ddd;border-radius:6px;width:100px;font-size:13px">
-                                        <button style="padding:5px 12px;background:#0b5fff;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px">付与</button>
+                                        <input type="text" name="note" placeholder="${t("leave.memo_placeholder", lang)}" style="padding:5px 8px;border:1px solid #ddd;border-radius:6px;width:100px;font-size:13px">
+                                        <button style="padding:5px 12px;background:#0b5fff;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px">${t("leave.grant_btn", lang)}</button>
                                     </form>
                                 </td>
                             </tr>`;
@@ -877,7 +883,7 @@ router.get("/admin/leave-balance", requireLogin, isAdmin, async (req, res) => {
                           .join("")}
                     </tbody>
                 </table>
-                <p style="margin-top:10px;color:#6b7280;font-size:13px">※ 付与日数欄にマイナス値を入力すると減算できます</p>
+                <p style="margin-top:10px;color:#6b7280;font-size:13px">${t("leave.grant_note", lang)}</p>
             </div>
             </div>
         `,
