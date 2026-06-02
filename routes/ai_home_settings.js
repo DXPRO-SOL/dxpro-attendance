@@ -67,7 +67,7 @@ router.get("/ai-home-settings", requireLogin, async (req, res) => {
       .sort((a, b) => b.count - a.count)
       .slice(0, 3);
 
-    // 利用頻度（全機能）リアル集計（過去30日）
+    // 利用頻度（全機能）リアルああああ集計（過去30日）
     const freqAgg = await UserBehaviorLog.aggregate([
       {
         $match: {
