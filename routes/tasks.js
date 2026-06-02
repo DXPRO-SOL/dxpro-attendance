@@ -1279,7 +1279,7 @@ router.get("/tasks/:tool", requireLogin, async (req, res) => {
 .tkl-due-unset { color:#94a3b8; font-style:italic; }
 .tkl-due-btn { background:none; border:none; cursor:pointer; color:#64748b; padding:2px 4px; border-radius:4px; font-size:12px; line-height:1; transition:color .15s,background .15s; vertical-align:middle; }
 .tkl-due-btn:hover { color:#1d4ed8; background:#eff6ff; }
-.tkl-due-popup { position:fixed; z-index:9999; background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,.15); padding:16px 18px; min-width:240px; }
+.tkl-due-popup { position:fixed; z-index:9999; background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,.15); padding:16px 18px; min-width:240px; max-width:calc(100vw - 16px); box-sizing:border-box; }
 .tkl-due-popup h4 { margin:0 0 12px; font-size:13px; font-weight:700; color:#0f172a; }
 .tkl-due-popup input[type=date] { width:100%; padding:8px 10px; border:1px solid #e2e8f0; border-radius:8px; font-size:13px; margin-bottom:10px; box-sizing:border-box; cursor:pointer; }
 .tkl-due-popup input[type=date]:focus { outline:none; border-color:#93c5fd; }
@@ -3213,7 +3213,7 @@ router.get("/tasks/:tool/:id", requireLogin, async (req, res) => {
 .tkl-due-unset { color:#94a3b8; font-style:italic; }
 .tkl-due-btn { background:none; border:none; cursor:pointer; color:#64748b; padding:2px 4px; border-radius:4px; font-size:13px; line-height:1; transition:color .15s,background .15s; }
 .tkl-due-btn:hover { color:#1d4ed8; background:#eff6ff; }
-.tkl-due-popup { position:fixed; z-index:9999; background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,.15); padding:16px 18px; min-width:220px; }
+.tkl-due-popup { position:fixed; z-index:9999; background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,.15); padding:16px 18px; min-width:220px; max-width:calc(100vw - 16px); box-sizing:border-box; }
 .tkl-due-popup h4 { margin:0 0 12px; font-size:13px; font-weight:700; color:#0f172a; }
 .tkl-due-popup input[type=date] { width:100%; padding:8px 10px; border:1px solid #e2e8f0; border-radius:8px; font-size:13px; margin-bottom:10px; box-sizing:border-box; }
 .tkl-due-popup-actions { display:flex; gap:8px; }
