@@ -1,5 +1,5 @@
 // ==============================
-// routes/schedule.js - スケジュール機能
+// routes/schedule.js - スケジュール機能　test
 // ==============================
 "use strict";
 const express = require("express");
