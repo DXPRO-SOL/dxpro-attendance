@@ -999,13 +999,11 @@ router.post("/pretest/submit", async (req, res) => {
         email,
         payloadKeys: Object.keys(payload),
       });
-      return res
-        .status(400)
-        .json({
-          ok: false,
-          error: "missing_name_or_email",
-          details: { payloadKeys: Object.keys(payload) },
-        });
+      return res.status(400).json({
+        ok: false,
+        error: "missing_name_or_email",
+        details: { payloadKeys: Object.keys(payload) },
+      });
     }
 
     // DBに保存して返す（メール送信は行わない）
@@ -1066,13 +1064,11 @@ router.post("/pretest/submit", async (req, res) => {
       (err && (err.stack || err.message)) || err,
     );
     // return the raw error message for local debugging (do not expose in production)
-    return res
-      .status(500)
-      .json({
-        ok: false,
-        error: "save_failed",
-        message: err && (err.message || String(err)),
-      });
+    return res.status(500).json({
+      ok: false,
+      error: "save_failed",
+      message: err && (err.message || String(err)),
+    });
   }
 });
 
@@ -1221,7 +1217,7 @@ router.get("/admin/pretest/:id", requireLogin, isAdmin, async (req, res) => {
       const ans = escapeHtml((answers[k] || "").toString());
       const p = typeof per[k] !== "undefined" ? per[k] : "-";
       rows.push(
-        `<tr><td>Q${i}</td><td style="min-width:400px;white-space:pre-wrap">${ans}</td><td style="text-align:center">${p}</td></tr>`,
+        `<tr><td style="white-space:nowrap">Q${i}</td><td style="white-space:pre-wrap;word-break:break-word">${ans}</td><td style="text-align:center;white-space:nowrap">${p}</td></tr>`,
       );
     }
 
@@ -1238,7 +1234,7 @@ router.get("/admin/pretest/:id", requireLogin, isAdmin, async (req, res) => {
                 </div>
                 <div>メール: ${escapeHtml(it.email || "")}</div>
                 <div>言語: ${escapeHtml(it.lang || "common")}</div>
-                <div style="margin-top:12px"><table class="history-table"><thead><tr><th>問題</th><th>回答</th><th>得点(部分)</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>
+                <div style="margin-top:12px;overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="history-table" style="width:100%;table-layout:fixed"><thead><tr><th style="width:50px">問題</th><th>回答</th><th style="width:80px">得点(部分)</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>
                 <div style="margin-top:12px">合計スコア: ${it.score}/${it.total}</div>
             </div>
         `,

@@ -45,7 +45,7 @@ router.get("/login", (req, res) => {
         <head>
             <meta charset="UTF-8">
             <title>${t("login.title", lang)}</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
             <style>
                 :root {
