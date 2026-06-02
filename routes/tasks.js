@@ -512,7 +512,9 @@ router.get("/tasks", requireLogin, async (req, res) => {
 }
 @media (max-width: 600px) {
     .tk-card-inner { flex-direction: column; align-items: flex-start; }
-    .tk-card-actions { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
+    .tk-card-actions { width: 100%; justify-content: flex-start; flex-wrap: nowrap; gap: 6px; }
+    .tk-badge { font-size: 10px; padding: 3px 8px; }
+    .tk-btn { font-size: 12px; padding: 6px 10px; gap: 4px; }
 }
 </style>`;
 

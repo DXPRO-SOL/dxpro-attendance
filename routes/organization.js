@@ -1,91 +1,113 @@
 // ==============================
 // routes/organization.js - 組織図・部署管理・権限管理
 // ==============================
-'use strict';
-const express = require('express');
-const router  = express.Router();
-const { buildPageShell, pageFooter } = require('../lib/renderPage');
-const { Department, Employee, User } = require('../models');
+"use strict";
+const express = require("express");
+const router = express.Router();
+const { buildPageShell, pageFooter } = require("../lib/renderPage");
+const { Department, Employee, User } = require("../models");
 
 function requireAdmin(req, res, next) {
-    if (!req.session || !req.session.isAdmin) return res.redirect('/');
-    next();
+  if (!req.session || !req.session.isAdmin) return res.redirect("/");
+  next();
 }
 function requireLogin(req, res, next) {
-    if (!req.session || !req.session.userId) return res.redirect('/login');
-    next();
+  if (!req.session || !req.session.userId) return res.redirect("/login");
+  next();
 }
 
 // ─────────────────────────────────────────────────────────────
 // GET /organization - 組織図（全員閲覧可）
 // ─────────────────────────────────────────────────────────────
-router.get('/organization', requireLogin, async (req, res) => {
-    const employee = await Employee.findOne({ userId: req.session.userId }).lean();
-    const depts    = await Department.find({ isActive: true }).sort({ order: 1 }).lean();
-    const employees = await Employee.find().lean();
-    const users = await User.find().lean();
+router.get("/organization", requireLogin, async (req, res) => {
+  const employee = await Employee.findOne({
+    userId: req.session.userId,
+  }).lean();
+  const depts = await Department.find({ isActive: true })
+    .sort({ order: 1 })
+    .lean();
+  const employees = await Employee.find().lean();
+  const users = await User.find().lean();
 
-    const userMap = Object.fromEntries(users.map(u => [u._id.toString(), u]));
+  const userMap = Object.fromEntries(users.map((u) => [u._id.toString(), u]));
 
-    // 部署ツリー構築
-    const deptMap  = Object.fromEntries(depts.map(d => [d._id.toString(), { ...d, children: [], members: [] }]));
-    const roots    = [];
-    for (const d of depts) {
-        if (d.parentId && deptMap[d.parentId.toString()]) {
-            deptMap[d.parentId.toString()].children.push(deptMap[d._id.toString()]);
-        } else {
-            roots.push(deptMap[d._id.toString()]);
-        }
+  // 部署ツリー構築
+  const deptMap = Object.fromEntries(
+    depts.map((d) => [d._id.toString(), { ...d, children: [], members: [] }]),
+  );
+  const roots = [];
+  for (const d of depts) {
+    if (d.parentId && deptMap[d.parentId.toString()]) {
+      deptMap[d.parentId.toString()].children.push(deptMap[d._id.toString()]);
+    } else {
+      roots.push(deptMap[d._id.toString()]);
     }
-    // 社員を部署にひも付け
-    for (const emp of employees) {
-        const key = emp.departmentId?.toString();
-        if (key && deptMap[key]) {
-            deptMap[key].members.push(emp);
-        }
+  }
+  // 社員を部署にひも付け
+  for (const emp of employees) {
+    const key = emp.departmentId?.toString();
+    if (key && deptMap[key]) {
+      deptMap[key].members.push(emp);
     }
+  }
 
-    const ROLE_LABEL = { admin: '管理者', manager: '部門長', team_leader: 'チームリーダー', employee: '社員' };
-    const ROLE_COLOR = { admin: '#7c3aed', manager: '#0f6fff', team_leader: '#0891b2', employee: '#64748b' };
+  const ROLE_LABEL = {
+    admin: "管理者",
+    manager: "部門長",
+    team_leader: "チームリーダー",
+    employee: "社員",
+  };
+  const ROLE_COLOR = {
+    admin: "#7c3aed",
+    manager: "#0f6fff",
+    team_leader: "#0891b2",
+    employee: "#64748b",
+  };
 
-    function renderNode(dept, level = 0) {
-        const indent = level * 28;
-        const mgr = dept.managerId ? employees.find(e => e._id.toString() === dept.managerId.toString()) : null;
-        const memberHtml = dept.members.map(m => {
-            const u = userMap[m.userId?.toString()] || {};
-            const role = m.orgRole || 'employee';
-            return `<div class="org-member">
-                <div class="org-avatar" style="background:${ROLE_COLOR[role] || '#64748b'}">${(m.name||'?').charAt(0)}</div>
+  function renderNode(dept, level = 0) {
+    const indent = level * 28;
+    const mgr = dept.managerId
+      ? employees.find((e) => e._id.toString() === dept.managerId.toString())
+      : null;
+    const memberHtml = dept.members
+      .map((m) => {
+        const u = userMap[m.userId?.toString()] || {};
+        const role = m.orgRole || "employee";
+        return `<div class="org-member">
+                <div class="org-avatar" style="background:${ROLE_COLOR[role] || "#64748b"}">${(m.name || "?").charAt(0)}</div>
                 <div>
                     <div class="org-member-name">${m.name}</div>
-                    <div class="org-member-role">${m.position} <span class="org-role-badge" style="background:${ROLE_COLOR[role]}">${ROLE_LABEL[role]||role}</span></div>
-                    ${m.concurrentDepts && m.concurrentDepts.length ? `<div class="org-concurrent">兼務: ${m.concurrentDepts.join('、')}</div>` : ''}
+                    <div class="org-member-role">${m.position} <span class="org-role-badge" style="background:${ROLE_COLOR[role]}">${ROLE_LABEL[role] || role}</span></div>
+                    ${m.concurrentDepts && m.concurrentDepts.length ? `<div class="org-concurrent">兼務: ${m.concurrentDepts.join("、")}</div>` : ""}
                 </div>
             </div>`;
-        }).join('');
+      })
+      .join("");
 
-        return `
+    return `
         <div class="org-dept-node" style="margin-left:${indent}px">
             <div class="org-dept-header">
                 <span class="org-dept-icon">🏢</span>
                 <span class="org-dept-name">${dept.name}</span>
-                ${dept.code ? `<span class="org-dept-code">${dept.code}</span>` : ''}
-                ${mgr ? `<span class="org-dept-mgr">👤 ${mgr.name}</span>` : ''}
+                ${dept.code ? `<span class="org-dept-code">${dept.code}</span>` : ""}
+                ${mgr ? `<span class="org-dept-mgr">👤 ${mgr.name}</span>` : ""}
                 <span class="org-dept-count">${dept.members.length}名</span>
             </div>
-            ${memberHtml ? `<div class="org-members">${memberHtml}</div>` : ''}
-            ${dept.children.map(c => renderNode(c, level + 1)).join('')}
+            ${memberHtml ? `<div class="org-members">${memberHtml}</div>` : ""}
+            ${dept.children.map((c) => renderNode(c, level + 1)).join("")}
         </div>`;
-    }
+  }
 
-    const treeHtml = roots.length ? roots.map(r => renderNode(r)).join('') : `
+  const treeHtml = roots.length
+    ? roots.map((r) => renderNode(r)).join("")
+    : `
         <div style="text-align:center;padding:60px;color:#94a3b8">
             <div style="font-size:40px;margin-bottom:12px">🏢</div>
             <div>部署がまだ登録されていません。</div>
-            ${req.session.isAdmin ? '<a href="/admin/departments" style="display:inline-block;margin-top:12px;padding:8px 20px;background:#0f6fff;color:#fff;border-radius:8px;text-decoration:none">部署を追加する</a>' : ''}
+            ${req.session.isAdmin ? '<a href="/admin/departments" style="display:inline-block;margin-top:12px;padding:8px 20px;background:#0f6fff;color:#fff;border-radius:8px;text-decoration:none">部署を追加する</a>' : ""}
         </div>`;
 
-    const content = `
+  const content = `
     <style>
         .page-content { max-width:100% !important; }
         .org-wrap { width:100%;max-width:100%;margin:0 auto;padding:24px 16px }
@@ -115,44 +137,65 @@ router.get('/organization', requireLogin, async (req, res) => {
     <div class="org-wrap">
         <div class="org-hero">
             <h1>🏢 組織図</h1>
-            ${req.session.isAdmin ? '<a href="/admin/departments" style="padding:8px 18px;background:rgba(255,255,255,.2);color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:13px">部署管理</a>' : ''}
+            ${req.session.isAdmin ? '<a href="/admin/departments" style="padding:8px 18px;background:rgba(255,255,255,.2);color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:13px">部署管理</a>' : ""}
         </div>
         ${treeHtml}
     </div>`;
 
-    res.send(buildPageShell({ title: '組織図', currentPath: '/organization', employee, isAdmin: req.session.isAdmin, role: req.session.orgRole || (req.session.isAdmin ? 'admin' : 'employee') }) + content + pageFooter());
+  res.send(
+    buildPageShell({
+      title: "組織図",
+      currentPath: "/organization",
+      employee,
+      isAdmin: req.session.isAdmin,
+      role: req.session.orgRole || (req.session.isAdmin ? "admin" : "employee"),
+    }) +
+      content +
+      pageFooter(),
+  );
 });
 
 // ─────────────────────────────────────────────────────────────
 // GET /admin/departments - 部署管理（管理者）
 // ─────────────────────────────────────────────────────────────
-router.get('/admin/departments', requireAdmin, async (req, res) => {
-    const employee  = null;
-    const depts     = await Department.find().sort({ order: 1 }).lean();
-    const employees = await Employee.find().lean();
-    const empMap    = Object.fromEntries(employees.map(e => [e._id.toString(), e]));
-    const deptMap   = Object.fromEntries(depts.map(d => [d._id.toString(), d]));
+router.get("/admin/departments", requireAdmin, async (req, res) => {
+  const employee = null;
+  const depts = await Department.find().sort({ order: 1 }).lean();
+  const employees = await Employee.find().lean();
+  const empMap = Object.fromEntries(
+    employees.map((e) => [e._id.toString(), e]),
+  );
+  const deptMap = Object.fromEntries(depts.map((d) => [d._id.toString(), d]));
 
-    const rows = depts.map(d => {
-        const mgr    = d.managerId ? empMap[d.managerId.toString()] : null;
-        const parent = d.parentId  ? deptMap[d.parentId.toString()] : null;
-        return `<tr>
+  const rows = depts
+    .map((d) => {
+      const mgr = d.managerId ? empMap[d.managerId.toString()] : null;
+      const parent = d.parentId ? deptMap[d.parentId.toString()] : null;
+      return `<tr>
             <td>${d.name}</td>
-            <td>${d.code || '—'}</td>
-            <td>${parent ? parent.name : '（ルート）'}</td>
-            <td>${mgr ? mgr.name : '—'}</td>
+            <td>${d.code || "—"}</td>
+            <td>${parent ? parent.name : "（ルート）"}</td>
+            <td>${mgr ? mgr.name : "—"}</td>
             <td>${d.isActive ? '<span style="color:#16a34a;font-weight:700">有効</span>' : '<span style="color:#94a3b8">無効</span>'}</td>
             <td>
                 <button class="dept-edit-btn" onclick='editDept(${JSON.stringify(d)})'>編集</button>
                 <button class="dept-del-btn" onclick="deleteDept('${d._id}','${d.name}')">削除</button>
             </td>
         </tr>`;
-    }).join('');
+    })
+    .join("");
 
-    const empOptions = employees.map(e => `<option value="${e._id}">${e.name}（${e.department}）</option>`).join('');
-    const deptOptions = ['<option value="">（なし・ルート）</option>', ...depts.map(d => `<option value="${d._id}">${d.name}</option>`)].join('');
+  const empOptions = employees
+    .map(
+      (e) => `<option value="${e._id}">${e.name}（${e.department}）</option>`,
+    )
+    .join("");
+  const deptOptions = [
+    '<option value="">（なし・ルート）</option>',
+    ...depts.map((d) => `<option value="${d._id}">${d.name}</option>`),
+  ].join("");
 
-    const content = `
+  const content = `
     <style>
         .page-content { max-width:100% !important; }
         .dept-wrap { width:100%;max-width:100%;margin:0 auto;padding:24px 16px }
@@ -213,7 +256,7 @@ router.get('/admin/departments', requireAdmin, async (req, res) => {
                         <select id="deptManager" class="dept-input"><option value="">（未設定）</option>${empOptions}</select>
                     </label>
                     <label class="dept-label">説明 <input type="text" id="deptDesc" class="dept-input"></label>
-                    <label class="dept-label"><input type="checkbox" id="deptActive" checked> 有効</label>
+                    <label class="dept-label" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="deptActive" checked> 有効</label>
                 </form>
                 <div class="dept-modal-footer">
                     <button class="dept-save-btn" onclick="saveDept(event)">保存</button>
@@ -267,89 +310,164 @@ router.get('/admin/departments', requireAdmin, async (req, res) => {
     });
     </script>`;
 
-    res.send(buildPageShell({ title: '部署管理', currentPath: '/admin/departments', employee, isAdmin: true, role: req.session.orgRole || 'admin' }) + content + pageFooter());
+  res.send(
+    buildPageShell({
+      title: "部署管理",
+      currentPath: "/admin/departments",
+      employee,
+      isAdmin: true,
+      role: req.session.orgRole || "admin",
+    }) +
+      content +
+      pageFooter(),
+  );
 });
 
 // ─────────────────────────────────────────────────────────────
 // Department CRUD API
 // ─────────────────────────────────────────────────────────────
-router.post('/admin/departments/api', requireAdmin, async (req, res) => {
-    try {
-        const { name, code, parentId, managerId, description, isActive } = req.body;
-        if (!name) return res.status(400).json({ error: '部署名は必須です' });
-        const dept = await Department.create({ name, code, parentId: parentId || null, managerId: managerId || null, description, isActive: isActive !== false, order: Date.now() });
-        res.json({ ok: true, dept });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+router.post("/admin/departments/api", requireAdmin, async (req, res) => {
+  try {
+    const { name, code, parentId, managerId, description, isActive } = req.body;
+    if (!name) return res.status(400).json({ error: "部署名は必須です" });
+    const dept = await Department.create({
+      name,
+      code,
+      parentId: parentId || null,
+      managerId: managerId || null,
+      description,
+      isActive: isActive !== false,
+      order: Date.now(),
+    });
+    res.json({ ok: true, dept });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-router.put('/admin/departments/api/:id', requireAdmin, async (req, res) => {
-    try {
-        const { name, code, parentId, managerId, description, isActive } = req.body;
-        await Department.findByIdAndUpdate(req.params.id, { name, code, parentId: parentId || null, managerId: managerId || null, description, isActive });
-        res.json({ ok: true });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+router.put("/admin/departments/api/:id", requireAdmin, async (req, res) => {
+  try {
+    const { name, code, parentId, managerId, description, isActive } = req.body;
+    await Department.findByIdAndUpdate(req.params.id, {
+      name,
+      code,
+      parentId: parentId || null,
+      managerId: managerId || null,
+      description,
+      isActive,
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
-router.delete('/admin/departments/api/:id', requireAdmin, async (req, res) => {
-    try {
-        await Department.findByIdAndDelete(req.params.id);
-        // 子部署のparentIdをnullにリセット
-        await Department.updateMany({ parentId: req.params.id }, { $set: { parentId: null } });
-        res.json({ ok: true });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+router.delete("/admin/departments/api/:id", requireAdmin, async (req, res) => {
+  try {
+    await Department.findByIdAndDelete(req.params.id);
+    // 子部署のparentIdをnullにリセット
+    await Department.updateMany(
+      { parentId: req.params.id },
+      { $set: { parentId: null } },
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────
 // GET /admin/organization/roles - 社員ロール・人事異動管理
 // ─────────────────────────────────────────────────────────────
-router.get('/admin/organization/roles', requireAdmin, async (req, res) => {
-    const employee  = null;
-    const employees = await Employee.find().lean();
-    const users     = await User.find().lean();
-    const depts     = await Department.find({ isActive: true }).lean();
-    const userMap   = Object.fromEntries(users.map(u => [u._id.toString(), u]));
+router.get("/admin/organization/roles", requireAdmin, async (req, res) => {
+  const employee = null;
+  const employees = await Employee.find().lean();
+  const users = await User.find().lean();
+  const depts = await Department.find({ isActive: true }).lean();
+  const userMap = Object.fromEntries(users.map((u) => [u._id.toString(), u]));
 
-    const ROLE_LABEL = { admin: '管理者', manager: '部門長', team_leader: 'チームリーダー', employee: '社員' };
-    const ROLE_COLOR = { admin: '#7c3aed', manager: '#0f6fff', team_leader: '#0891b2', employee: '#64748b' };
-    const ROLE_ICON  = { admin: '🔴', manager: '🔵', team_leader: '🟢', employee: '⚪' };
-    const AVT_COLORS = ['#6366f1','#8b5cf6','#ec4899','#0ea5e9','#10b981','#f59e0b','#ef4444','#0891b2'];
-    const deptOptions = depts.map(d => `<option value="${d._id}">${d.name}</option>`).join('');
-    const empOptions = employees.map(e => `<option value="${e._id}">${e.name}</option>`).join('');
+  const ROLE_LABEL = {
+    admin: "管理者",
+    manager: "部門長",
+    team_leader: "チームリーダー",
+    employee: "社員",
+  };
+  const ROLE_COLOR = {
+    admin: "#7c3aed",
+    manager: "#0f6fff",
+    team_leader: "#0891b2",
+    employee: "#64748b",
+  };
+  const ROLE_ICON = {
+    admin: "🔴",
+    manager: "🔵",
+    team_leader: "🟢",
+    employee: "⚪",
+  };
+  const AVT_COLORS = [
+    "#6366f1",
+    "#8b5cf6",
+    "#ec4899",
+    "#0ea5e9",
+    "#10b981",
+    "#f59e0b",
+    "#ef4444",
+    "#0891b2",
+  ];
+  const deptOptions = depts
+    .map((d) => `<option value="${d._id}">${d.name}</option>`)
+    .join("");
+  const empOptions = employees
+    .map((e) => `<option value="${e._id}">${e.name}</option>`)
+    .join("");
 
-    const rows = employees.map(emp => {
-        const role = emp.orgRole || 'employee';
-        const user = userMap[emp.userId?.toString()] || {};
-        const reportsToEmp = emp.reportsTo ? employees.find(e => e._id.toString() === emp.reportsTo.toString()) : null;
-        const avtColor = AVT_COLORS[(emp.name||'').charCodeAt(0) % AVT_COLORS.length];
-        const initials = (emp.name||'?').charAt(0);
-        const searchText = [emp.name, emp.department, emp.position, ROLE_LABEL[role]].join(' ').toLowerCase();
-        const modalData = JSON.stringify({ id: emp._id, name: emp.name, orgRole: emp.orgRole||'employee', departmentId: emp.departmentId||'', reportsTo: emp.reportsTo||'', concurrentDepts: emp.concurrentDepts||[] });
-        return `<tr data-role="${role}" data-text="${searchText}">
+  const rows = employees
+    .map((emp) => {
+      const role = emp.orgRole || "employee";
+      const user = userMap[emp.userId?.toString()] || {};
+      const reportsToEmp = emp.reportsTo
+        ? employees.find((e) => e._id.toString() === emp.reportsTo.toString())
+        : null;
+      const avtColor =
+        AVT_COLORS[(emp.name || "").charCodeAt(0) % AVT_COLORS.length];
+      const initials = (emp.name || "?").charAt(0);
+      const searchText = [
+        emp.name,
+        emp.department,
+        emp.position,
+        ROLE_LABEL[role],
+      ]
+        .join(" ")
+        .toLowerCase();
+      const modalData = JSON.stringify({
+        id: emp._id,
+        name: emp.name,
+        orgRole: emp.orgRole || "employee",
+        departmentId: emp.departmentId || "",
+        reportsTo: emp.reportsTo || "",
+        concurrentDepts: emp.concurrentDepts || [],
+      });
+      return `<tr data-role="${role}" data-text="${searchText}">
             <td>
                 <div class="rm-emp-cell">
                     <div class="rm-avatar" style="background:${avtColor}">${initials}</div>
                     <div>
                         <div class="rm-emp-name">${emp.name}</div>
-                        <div class="rm-emp-id">${emp.employeeId||''}</div>
+                        <div class="rm-emp-id">${emp.employeeId || ""}</div>
                     </div>
                 </div>
             </td>
-            <td>${emp.department||'—'}</td>
-            <td>${emp.position||'—'}</td>
-            <td><span class="rm-role-badge" style="background:${ROLE_COLOR[role]}22;color:${ROLE_COLOR[role]}">${ROLE_ICON[role]} ${ROLE_LABEL[role]||role}</span></td>
-            <td>${reportsToEmp ? reportsToEmp.name : '—'}</td>
-            <td style="font-size:12px;color:#64748b">${emp.concurrentDepts && emp.concurrentDepts.length ? emp.concurrentDepts.join('、') : '—'}</td>
+            <td>${emp.department || "—"}</td>
+            <td>${emp.position || "—"}</td>
+            <td><span class="rm-role-badge" style="background:${ROLE_COLOR[role]}22;color:${ROLE_COLOR[role]}">${ROLE_ICON[role]} ${ROLE_LABEL[role] || role}</span></td>
+            <td>${reportsToEmp ? reportsToEmp.name : "—"}</td>
+            <td style="font-size:12px;color:#64748b">${emp.concurrentDepts && emp.concurrentDepts.length ? emp.concurrentDepts.join("、") : "—"}</td>
             <td><button class="rm-edit-btn" onclick='openModal(${modalData})'>✏️ 編集</button></td>
         </tr>`;
-    }).join('');
+    })
+    .join("");
 
-    const content = `
+  const content = `
     <style>
         .rm-wrap { max-width:1400px;margin:0 auto;padding:24px 20px }
 
@@ -465,11 +583,11 @@ router.get('/admin/organization/roles', requireAdmin, async (req, res) => {
                     <div class="rm-stat-lbl">総社員数</div>
                 </div>
                 <div class="rm-stat-item">
-                    <div class="rm-stat-val">${employees.filter(e => (e.orgRole||'employee') === 'admin').length}</div>
+                    <div class="rm-stat-val">${employees.filter((e) => (e.orgRole || "employee") === "admin").length}</div>
                     <div class="rm-stat-lbl">管理者</div>
                 </div>
                 <div class="rm-stat-item">
-                    <div class="rm-stat-val">${employees.filter(e => (e.orgRole||'employee') === 'manager').length}</div>
+                    <div class="rm-stat-val">${employees.filter((e) => (e.orgRole || "employee") === "manager").length}</div>
                     <div class="rm-stat-lbl">部門長</div>
                 </div>
                 <div class="rm-stat-item">
@@ -627,60 +745,86 @@ router.get('/admin/organization/roles', requireAdmin, async (req, res) => {
     document.getElementById('rmModal').addEventListener('click', e => { if(e.target === document.getElementById('rmModal')) closeModal(); });
     </script>`;
 
-    res.send(buildPageShell({ title: 'ロール・人事異動管理', currentPath: '/admin/organization/roles', employee, isAdmin: true, role: req.session.orgRole || 'admin' }) + content + pageFooter());
+  res.send(
+    buildPageShell({
+      title: "ロール・人事異動管理",
+      currentPath: "/admin/organization/roles",
+      employee,
+      isAdmin: true,
+      role: req.session.orgRole || "admin",
+    }) +
+      content +
+      pageFooter(),
+  );
 });
 
 // ─────────────────────────────────────────────────────────────
 // PUT /admin/organization/api/employee/:id - 社員ロール・所属更新
 // ─────────────────────────────────────────────────────────────
-router.put('/admin/organization/api/employee/:id', requireAdmin, async (req, res) => {
+router.put(
+  "/admin/organization/api/employee/:id",
+  requireAdmin,
+  async (req, res) => {
     try {
-        const { orgRole, departmentId, reportsTo, concurrentDepts } = req.body;
-        const emp = await Employee.findByIdAndUpdate(req.params.id, {
-            orgRole, departmentId: departmentId || null,
-            reportsTo: reportsTo || null,
-            concurrentDepts: concurrentDepts || []
-        }, { new: true });
-        if (!emp) return res.status(404).json({ error: '社員が見つかりません' });
+      const { orgRole, departmentId, reportsTo, concurrentDepts } = req.body;
+      const emp = await Employee.findByIdAndUpdate(
+        req.params.id,
+        {
+          orgRole,
+          departmentId: departmentId || null,
+          reportsTo: reportsTo || null,
+          concurrentDepts: concurrentDepts || [],
+        },
+        { new: true },
+      );
+      if (!emp) return res.status(404).json({ error: "社員が見つかりません" });
 
-        // Userモデルのroleも同期
-        const VALID = ['admin', 'manager', 'team_leader', 'employee'];
-        if (orgRole && VALID.includes(orgRole)) {
-            await User.findByIdAndUpdate(emp.userId, {
-                role: orgRole,
-                isAdmin: orgRole === 'admin'
-            });
-        }
-        res.json({ ok: true });
+      // Userモデルのroleも同期
+      const VALID = ["admin", "manager", "team_leader", "employee"];
+      if (orgRole && VALID.includes(orgRole)) {
+        await User.findByIdAndUpdate(emp.userId, {
+          role: orgRole,
+          isAdmin: orgRole === "admin",
+        });
+      }
+      res.json({ ok: true });
     } catch (e) {
-        res.status(500).json({ error: e.message });
+      res.status(500).json({ error: e.message });
     }
-});
+  },
+);
 
 // ─────────────────────────────────────────────────────────────
 // GET /api/organization/tree - 組織ツリーJSONAPI
 // ─────────────────────────────────────────────────────────────
-router.get('/api/organization/tree', requireLogin, async (req, res) => {
-    try {
-        const depts    = await Department.find({ isActive: true }).lean();
-        const employees = await Employee.find().lean();
-        const deptMap  = Object.fromEntries(depts.map(d => [d._id.toString(), { ...d, children: [], members: [] }]));
-        const roots    = [];
-        for (const d of depts) {
-            if (d.parentId && deptMap[d.parentId.toString()]) {
-                deptMap[d.parentId.toString()].children.push(deptMap[d._id.toString()]);
-            } else {
-                roots.push(deptMap[d._id.toString()]);
-            }
-        }
-        for (const emp of employees) {
-            const key = emp.departmentId?.toString();
-            if (key && deptMap[key]) deptMap[key].members.push({ name: emp.name, position: emp.position, orgRole: emp.orgRole });
-        }
-        res.json({ tree: roots });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
+router.get("/api/organization/tree", requireLogin, async (req, res) => {
+  try {
+    const depts = await Department.find({ isActive: true }).lean();
+    const employees = await Employee.find().lean();
+    const deptMap = Object.fromEntries(
+      depts.map((d) => [d._id.toString(), { ...d, children: [], members: [] }]),
+    );
+    const roots = [];
+    for (const d of depts) {
+      if (d.parentId && deptMap[d.parentId.toString()]) {
+        deptMap[d.parentId.toString()].children.push(deptMap[d._id.toString()]);
+      } else {
+        roots.push(deptMap[d._id.toString()]);
+      }
     }
+    for (const emp of employees) {
+      const key = emp.departmentId?.toString();
+      if (key && deptMap[key])
+        deptMap[key].members.push({
+          name: emp.name,
+          position: emp.position,
+          orgRole: emp.orgRole,
+        });
+    }
+    res.json({ tree: roots });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 module.exports = router;

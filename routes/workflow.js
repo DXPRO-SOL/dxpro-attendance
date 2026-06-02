@@ -1164,7 +1164,7 @@ function buildWorkflowPage(isAdmin, applicationTypes, lang) {
 .wf-file-section { background:#f0fdf4; border:1px dashed #86efac; border-radius:8px; padding:12px; margin-bottom:14px; }
 /* ===== レスポンシブ（ワークフロー） ===== */
 .wf-tbl-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:10px; }
-.wf-tbl-scroll .wf-table { min-width:580px; }
+.wf-tbl-scroll .wf-table { min-width:680px; }
 @media(max-width:768px) {
     .wf-header { flex-wrap:wrap; gap:10px; }
     .wf-tabs { overflow-x:auto; -webkit-overflow-scrolling:touch; flex-shrink:0; padding-bottom:2px; }
@@ -1387,7 +1387,7 @@ function buildWorkflowPage(isAdmin, applicationTypes, lang) {
             const d = await r.json();
             if (!d.ok) { container.innerHTML = '<div class="wf-empty">取得失敗</div>'; return; }
             if (!d.items.length) { container.innerHTML = '<div class="wf-empty">該当する申請はありません</div>'; return; }
-            let html = '<table class="wf-table"><thead><tr>' +
+            let html = '<div class="wf-tbl-scroll"><table class="wf-table"><thead><tr>' +
                 '<th>受付番号</th><th>件名</th><th>申請種別</th><th>申請者</th><th>申請日</th><th>現在の承認者</th><th>ステータス</th><th>操作</th>' +
                 '</tr></thead><tbody>';
             for (const item of d.items) {
@@ -1416,7 +1416,7 @@ function buildWorkflowPage(isAdmin, applicationTypes, lang) {
                     <td><button class="wf-btn wf-btn-sm" style="background:#f3f4f6;color:#374151;" onclick="event.stopPropagation();wfDuplicate('\${id}')">\u6d41\u7528</button></td>
                 </tr>\`;
             }
-            html += '</tbody></table>';
+            html += '</tbody></table></div>';
             // ページネーション
             const total = d.total || 0;
             const totalPages = Math.ceil(total / PAGE_LIMIT);

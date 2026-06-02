@@ -387,8 +387,9 @@ form label.sch-att-add-btn, .form-group label.sch-att-add-btn { display:inline-f
     .sch-wrap { flex-direction:column; }
     .sch-side-col { width:100% !important; }
     .sch-page-header { flex-direction:column; align-items:flex-start; }
-    .sch-page-header-actions { width:100%; }
-    .sch-page-header-actions .btn { flex:1; min-width:0; justify-content:center; text-align:center; }
+    .sch-page-header-actions { width:100%; flex-wrap:wrap; gap:6px; }
+    .sch-page-header-actions .btn { flex:1; padding:6px 10px; font-size:12px; white-space:nowrap; justify-content:center; text-align:center; min-width:0; }
+    .sch-page-header-actions .btn-primary { flex:1 0 100%; justify-content:center; }
     .sch-form-grid { grid-template-columns:1fr !important; }
     .sch-form-full { grid-column:1 !important; }
     .sch-modal-header { padding:14px 16px 12px; }
@@ -405,7 +406,7 @@ form label.sch-att-add-btn, .form-group label.sch-att-add-btn { display:inline-f
     #sch-calendar .fc-toolbar-chunk { display:flex !important; justify-content:center; }
     #sch-calendar .fc-toolbar-title { font-size:14px !important; }
     #sch-calendar .fc-button { padding:4px 8px !important; font-size:12px !important; }
-    .sch-select-btn { font-size:12px; padding:5px 10px; }
+    .sch-select-btn { font-size:12px; padding:5px 10px; white-space:nowrap; flex-shrink:0; }
 }
 </style>`;
 
@@ -429,10 +430,10 @@ form label.sch-att-add-btn, .form-group label.sch-att-add-btn { display:inline-f
     </div>
     <div class="sch-page-header-actions">
         <button class="btn" style="background:#fff;border:1.5px solid #e2e8f0;color:#475569;" onclick="openExportModal()">
-            <i class="fa-solid fa-download"></i> ${t("schedule.csv_export", lang)}
+            <i class="fa-solid fa-download"></i><span class="sch-btn-label"> ${t("schedule.csv_export", lang)}</span>
         </button>
         <button class="btn" style="background:#fff;border:1.5px solid #e2e8f0;color:#475569;" onclick="openImportModal()">
-            <i class="fa-solid fa-upload"></i> ${t("schedule.csv_import", lang)}
+            <i class="fa-solid fa-upload"></i><span class="sch-btn-label"> ${t("schedule.csv_import", lang)}</span>
         </button>
         <button class="btn btn-primary" onclick="openNewForm()">
             <i class="fa-solid fa-plus"></i> ${t("schedule.new_schedule", lang)}
