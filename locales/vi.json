@@ -803,6 +803,7 @@
     "task_assignee_label": "Người phụ trách",
     "task_start_label": "Ngày bắt đầu",
     "task_due_label": "Hạn chót",
+    "task_status_label": "Trạng thái (cột)",
     "task_priority_label": "Độ ưu tiên",
     "task_priority_high": "Cao",
     "task_priority_medium": "Trung bình",

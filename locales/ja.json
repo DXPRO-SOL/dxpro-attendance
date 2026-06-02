@@ -838,6 +838,7 @@
     "task_assignee_label": "担当者",
     "task_start_label": "開始日",
     "task_due_label": "期限日",
+    "task_status_label": "ステータス（列）",
     "task_priority_label": "優先度",
     "task_priority_high": "高",
     "task_priority_medium": "中",

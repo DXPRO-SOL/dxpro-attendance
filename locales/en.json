@@ -838,6 +838,7 @@
     "task_assignee_label": "Assignee",
     "task_start_label": "Start Date",
     "task_due_label": "Due Date",
+    "task_status_label": "Status (column)",
     "task_priority_label": "Priority",
     "task_priority_high": "High",
     "task_priority_medium": "Medium",

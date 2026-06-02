@@ -803,6 +803,7 @@
     "task_assignee_label": "负责人",
     "task_start_label": "开始日期",
     "task_due_label": "截止日期",
+    "task_status_label": "状态（列）",
     "task_priority_label": "优先级",
     "task_priority_high": "高",
     "task_priority_medium": "中",

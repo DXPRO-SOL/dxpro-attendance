@@ -888,10 +888,24 @@ const PRIORITY_BG = {
 
 // ユーザー一覧取得ヘルパー
 async function getAllUsers() {
-  const { User } = require("../models");
-  return User.find({}, "_id username")
-    .lean()
-    .catch(() => []);
+  const { User, Employee } = require("../models");
+  const [users, employees] = await Promise.all([
+    User.find({}, "_id username")
+      .lean()
+      .catch(() => []),
+    Employee.find({}, "userId name department")
+      .lean()
+      .catch(() => []),
+  ]);
+  const empMap = {};
+  employees.forEach((e) => {
+    empMap[String(e.userId)] = { name: e.name, dept: e.department };
+  });
+  return users.map((u) => ({
+    ...u,
+    displayName: empMap[String(u._id)]?.name || u.username,
+    dept: empMap[String(u._id)]?.dept || "",
+  }));
 }
 
 // アバター文字列生成（頭文字）
@@ -968,7 +982,9 @@ router.get("/tasks/kanban", requireLogin, async (req, res) => {
 
     const extraHead = `
 <style>
-.kb-list-wrap { max-width:1100px; margin:0 auto; padding:28px 20px 56px; }
+.main { padding:0 !important; align-items:stretch !important; }
+.main-content { width:100%; }
+.kb-list-wrap { width:100%; padding:24px 32px 56px; box-sizing:border-box; }
 .kb-topbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
 .kb-topbar-title { font-size:20px; font-weight:700; color:#0f172a; display:flex; align-items:center; gap:10px; }
 .kb-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 18px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; border:none; text-decoration:none; transition:background .15s; }
@@ -976,7 +992,7 @@ router.get("/tasks/kanban", requireLogin, async (req, res) => {
 .kb-btn--primary:hover { background:#1e40af; }
 .kb-btn--ghost { background:#f1f5f9; color:#374151; }
 .kb-btn--ghost:hover { background:#e2e8f0; }
-.kb-board-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
+.kb-board-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:20px; }
 .kb-board-card { background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:20px; cursor:pointer; transition:box-shadow .15s,border-color .15s; position:relative; }
 .kb-board-card:hover { box-shadow:0 4px 20px rgba(0,0,0,.10); border-color:#c7d2fe; }
 .kb-board-card-top { display:flex; align-items:flex-start; gap:12px; margin-bottom:16px; }
@@ -1008,6 +1024,16 @@ router.get("/tasks/kanban", requireLogin, async (req, res) => {
 .kb-ctx-item:hover { background:#f1f5f9; }
 .kb-ctx-item--danger { color:#dc2626; }
 .kb-ctx-item--danger:hover { background:#fee2e2; }
+@media (max-width:640px) {
+  .kb-list-wrap { padding:14px 12px 40px; }
+  .kb-topbar { flex-direction:column; align-items:flex-start; gap:8px; }
+  .kb-topbar .kb-btn { width:100%; justify-content:center; }
+  .kb-board-grid { grid-template-columns:1fr; }
+  .kb-board-card { padding:16px; }
+  .kb-modal { padding:20px 16px; }
+  .kb-modal-actions { flex-wrap:wrap; }
+  .kb-modal-actions .kb-btn { flex:1; justify-content:center; }
+}
 </style>`;
 
     const noBoards = boards.length === 0;
@@ -1114,13 +1140,13 @@ router.get("/tasks/kanban", requireLogin, async (req, res) => {
 <div id="kb-ctx" class="kb-ctx-menu" style="display:none"></div>
 
 <script>
-function openBoardCreate(){document.getElementById('board-create-overlay').style.display='flex';}
-function selectBoardColor(c,el){
+window.openBoardCreate = function(){document.getElementById('board-create-overlay').style.display='flex';};
+window.selectBoardColor = function(c,el){
   document.querySelectorAll('.kb-color-swatch').forEach(s=>s.style.borderColor='transparent');
   el.style.borderColor='#0f172a';
   document.getElementById('bc-color').value=c;
 }
-async function submitCreateBoard(){
+window.submitCreateBoard = async function(){
   var name=document.getElementById('bc-name').value.trim();
   if(!name){alert(${JSON.stringify(t("tasks.board_name_required", lang))});return;}
   var desc=document.getElementById('bc-desc').value.trim();
@@ -1129,7 +1155,7 @@ async function submitCreateBoard(){
   var d=await r.json();
   if(d.ok){location.href='/tasks/kanban/'+d.id;}else{alert(d.error||${JSON.stringify(t("common.error", lang))});}
 }
-function openBoardMenu(e,id,name,desc,color){
+window.openBoardMenu = function(e,id,name,desc,color){
   e.preventDefault();
   var menu=document.getElementById('kb-ctx');
   menu.innerHTML=\`
@@ -1147,15 +1173,15 @@ function openBoardMenu(e,id,name,desc,color){
   menu.style.left=x+'px'; menu.style.top=y+'px';
   setTimeout(()=>document.addEventListener('click',closeBoardMenu,{once:true}),10);
 }
-function closeBoardMenu(){document.getElementById('kb-ctx').style.display='none';}
-function openBoardEdit(id,name,desc,color){
+window.closeBoardMenu = function(){document.getElementById('kb-ctx').style.display='none';};
+window.openBoardEdit = function(id,name,desc,color){
   document.getElementById('be-id').value=id;
   document.getElementById('be-name').value=name;
   document.getElementById('be-desc').value=desc;
   document.getElementById('be-color').value=color||'#1d4ed8';
   document.getElementById('board-edit-overlay').style.display='flex';
 }
-async function submitEditBoard(){
+window.submitEditBoard = async function(){
   var id=document.getElementById('be-id').value;
   var name=document.getElementById('be-name').value.trim();
   if(!name){alert(${JSON.stringify(t("tasks.board_name_required", lang))});return;}
@@ -1165,7 +1191,7 @@ async function submitEditBoard(){
   var d=await r.json();
   if(d.ok){location.reload();}else{alert(d.error||${JSON.stringify(t("common.error", lang))});}
 }
-async function deleteBoard(id,name){
+window.deleteBoard = async function(id,name){
   if(!confirm(${JSON.stringify(t("tasks.board_delete_confirm", lang))}+' ['+name+']'))return;
   var r=await fetch('/tasks/kanban/boards/'+id,{method:'DELETE'});
   var d=await r.json();
@@ -1214,7 +1240,7 @@ router.get("/tasks/kanban/:boardId", requireLogin, async (req, res) => {
     const allUsers = await getAllUsers();
     const userMap = {};
     allUsers.forEach((u) => {
-      userMap[String(u._id)] = u.username;
+      userMap[String(u._id)] = u.displayName || u.username;
     });
 
     // タスクを列ごとにグループ化
@@ -1331,7 +1357,10 @@ router.get("/tasks/kanban/:boardId", requireLogin, async (req, res) => {
 
     // ユーザー選択オプション
     const userOptions = allUsers
-      .map((u) => `<option value="${u._id}">${escapeHtml(u.username)}</option>`)
+      .map(
+        (u) =>
+          `<option value="${u._id}">${escapeHtml(u.displayName || u.username)}</option>`,
+      )
       .join("");
 
     // 依存タスク選択オプション
@@ -1386,6 +1415,36 @@ router.get("/tasks/kanban/:boardId", requireLogin, async (req, res) => {
 .kb-progress-wrap { display:flex; align-items:center; gap:8px; }
 .kb-progress-wrap input[type=range] { flex:1; }
 .kb-progress-val { font-size:13px; font-weight:600; color:#1d4ed8; min-width:36px; text-align:right; }
+/* 担当者チップ選択 */
+.tm-assignee-wrap { position:relative; }
+.tm-assignee-chips { display:flex; flex-wrap:wrap; gap:5px; min-height:36px; padding:5px 8px; border:1px solid #e2e8f0; border-radius:8px; background:#fafafa; cursor:pointer; align-items:center; }
+.tm-assignee-chips:focus-within { border-color:#93c5fd; }
+.tm-assignee-chip { display:flex; align-items:center; gap:4px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:999px; padding:2px 8px 2px 6px; font-size:12px; white-space:nowrap; }
+.tm-assignee-chip button { background:none; border:none; color:#64748b; cursor:pointer; padding:0; font-size:12px; line-height:1; }
+.tm-assignee-ph { color:#9ca3af; font-size:13px; padding:1px 2px; pointer-events:none; }
+.tm-assignee-dd { display:none; position:absolute; left:0; right:0; top:calc(100% + 4px); background:#fff; border:1px solid #e2e8f0; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.12); z-index:9020; max-height:200px; overflow-y:auto; }
+.tm-assignee-dd.open { display:block; }
+.tm-assignee-search { padding:7px 10px; border-bottom:1px solid #f1f5f9; }
+.tm-assignee-search input { width:100%; border:1px solid #e2e8f0; border-radius:6px; padding:5px 8px; font-size:12.5px; outline:none; font-family:inherit; box-sizing:border-box; }
+.tm-assignee-opt { padding:8px 12px; font-size:13px; cursor:pointer; display:flex; align-items:center; gap:8px; }
+.tm-assignee-opt:hover { background:#f8fafc; }
+.tm-assignee-opt.selected { background:#eff6ff; color:#1d4ed8; }
+@media (max-width:640px) {
+  .kb-topbar2 { padding:10px 12px; gap:0; flex-wrap:wrap; row-gap:6px; }
+  .kb-topbar2-title { font-size:15px; flex:0 0 100%; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .kb-topbar2-btns { display:flex; gap:8px; flex-wrap:wrap; flex:0 0 100%; justify-content:flex-end; }
+  .kb-topbar2 .kb-btn { padding:6px 12px; font-size:12px; }
+  .kb-board-area { padding:12px 8px; gap:10px; }
+  .kb-col { min-width:240px; max-width:260px; }
+  .kb-col { max-height:calc(100vh - 110px); }
+  .kb-overlay { padding:0; align-items:flex-end; }
+  .kb-modal { border-radius:16px 16px 0 0; padding:20px 14px 24px; max-height:88vh; }
+  .kb-modal-grid { grid-template-columns:1fr; }
+  .kb-modal-label--full { grid-column:1; }
+  .kb-modal-actions { flex-wrap:wrap; margin-top:14px; }
+  .kb-modal-actions .kb-btn { flex:1; justify-content:center; min-width:70px; }
+  .tm-assignee-dd { position:fixed; left:10px; right:10px; top:auto; max-height:38vh; z-index:9999; }
+}
 </style>`;
 
     const html =
@@ -1405,11 +1464,12 @@ router.get("/tasks/kanban/:boardId", requireLogin, async (req, res) => {
       <span class="kb-board-dot" style="background:${escapeHtml(board.color || "#1d4ed8")}"></span>
       ${escapeHtml(board.name)}
     </div>
-    <a href="/tasks/kanban" class="kb-btn kb-btn--ghost"><i class="fa-solid fa-arrow-left"></i> ${t("tasks.back_to_boards", lang)}</a>
-    <a href="/tasks/gantt/${board._id}" class="kb-btn kb-btn--green"><i class="fa-solid fa-chart-gantt"></i> ${t("tasks.go_gantt_view", lang)}</a>
-    <button class="kb-btn kb-btn--primary" onclick="openTaskCreate(${JSON.stringify(columns[0] ? columns[0].id : "todo")})">
-      <i class="fa-solid fa-plus"></i> ${t("tasks.task_add", lang)}
-    </button>
+    <div class="kb-topbar2-btns">
+      <a href="/tasks/kanban" class="kb-btn kb-btn--ghost"><i class="fa-solid fa-arrow-left"></i> ${t("tasks.back_to_boards", lang)}</a>
+      <a href="/tasks/gantt/${board._id}" class="kb-btn kb-btn--green"><i class="fa-solid fa-chart-gantt"></i> ${t("tasks.go_gantt_view", lang)}</a>
+      <button class="kb-btn kb-btn--primary" onclick="openTaskCreate('${escapeHtml(columns[0] ? columns[0].id : "todo")}')">\n        <i class="fa-solid fa-plus"></i> ${t("tasks.task_add", lang)}
+      </button>
+    </div>
   </div>
   <div class="kb-board-area">
     ${columnsHtml}
@@ -1429,16 +1489,27 @@ router.get("/tasks/kanban/:boardId", requireLogin, async (req, res) => {
       <label class="kb-modal-label kb-modal-label--full">${t("tasks.task_desc_label", lang)}
         <textarea id="tm-desc" class="kb-modal-textarea"></textarea>
       </label>
-      <label class="kb-modal-label kb-modal-label--full">${t("tasks.task_assignee_label", lang)}
-        <select id="tm-assignees" class="kb-modal-select" multiple style="height:90px">
-          ${userOptions}
-        </select>
-      </label>
+      <div class="kb-modal-label kb-modal-label--full">${t("tasks.task_assignee_label", lang)}
+        <div class="tm-assignee-wrap">
+          <div class="tm-assignee-chips" id="tm-assignee-chips" onclick="tmToggleAssigneeDD(event)">
+            <span class="tm-assignee-ph" id="tm-assignee-ph">${t("tasks.task_assignee_label", lang)}を選択...</span>
+          </div>
+          <div class="tm-assignee-dd" id="tm-assignee-dd">
+            <div class="tm-assignee-search"><input type="text" id="tm-assignee-search" placeholder="名前で絞り込み..." oninput="tmFilterAssignees(this.value)"></div>
+            <div id="tm-assignee-opts"></div>
+          </div>
+        </div>
+      </div>
       <label class="kb-modal-label">${t("tasks.task_start_label", lang)}
         <input type="date" id="tm-start" class="kb-modal-input">
       </label>
       <label class="kb-modal-label">${t("tasks.task_due_label", lang)}
         <input type="date" id="tm-due" class="kb-modal-input">
+      </label>
+      <label class="kb-modal-label">${t("tasks.task_status_label", lang)}
+        <select id="tm-status" class="kb-modal-select">
+          ${columns.map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join("")}
+        </select>
       </label>
       <label class="kb-modal-label">${t("tasks.task_priority_label", lang)}
         <select id="tm-priority" class="kb-modal-select">
@@ -1482,12 +1553,97 @@ var _errMsg = ${JSON.stringify(t("common.error", lang))};
 var _titleRequired = ${JSON.stringify(t("tasks.task_title_required", lang))};
 var _editLabel = ${JSON.stringify(t("tasks.task_edit", lang))};
 var _addLabel = ${JSON.stringify(t("tasks.task_add", lang))};
+var _allUsers = ${JSON.stringify(allUsers.map((u) => ({ id: String(u._id), name: u.displayName || u.username, dept: u.dept || "" })))};
+var _columns = ${JSON.stringify(columns.map((c) => ({ id: c.id, name: c.name })))};
+var _selectedAssignees = []; // [{id, name}]
 
-function openTaskCreate(colId){
+// ── 担当者チップUI ──
+function tmRenderAssigneeOpts(q) {
+  var container = document.getElementById('tm-assignee-opts');
+  var filtered = _allUsers.filter(function(u){ return !q || u.name.indexOf(q) !== -1; });
+  container.innerHTML = '';
+  if (!filtered.length) { container.innerHTML = '<div style="padding:10px 12px;color:#94a3b8;font-size:13px;">該当なし</div>'; return; }
+  filtered.forEach(function(u){
+    var sel = _selectedAssignees.some(function(a){ return a.id === u.id; });
+    var div = document.createElement('div');
+    div.className = 'tm-assignee-opt' + (sel ? ' selected' : '');
+    var chk = document.createElement('span');
+    chk.style.cssText = 'width:18px;text-align:center;flex-shrink:0';
+    chk.textContent = sel ? '✅' : '⬜';
+    var info = document.createElement('span');
+    info.style.cssText = 'display:flex;flex-direction:column;gap:1px;min-width:0';
+    var nm = document.createElement('span');
+    nm.textContent = u.name;
+    nm.style.cssText = 'font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    info.appendChild(nm);
+    if (u.dept) {
+      var dp = document.createElement('span');
+      dp.textContent = u.dept;
+      dp.style.cssText = 'font-size:11px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      info.appendChild(dp);
+    }
+    div.appendChild(chk);
+    div.appendChild(info);
+    div.addEventListener('mousedown', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      tmToggleAssignee(u.id, u.name);
+    });
+    div.addEventListener('click', function(e){ e.stopPropagation(); e.preventDefault(); });
+    container.appendChild(div);
+  });
+}
+function tmRenderAssigneeChips() {
+  var container = document.getElementById('tm-assignee-chips');
+  var ph = document.getElementById('tm-assignee-ph');
+  container.querySelectorAll('.tm-assignee-chip').forEach(function(c){ c.remove(); });
+  if (!_selectedAssignees.length) {
+    if (ph) ph.style.display = '';
+    return;
+  }
+  if (ph) ph.style.display = 'none';
+  _selectedAssignees.forEach(function(a){
+    var span = document.createElement('span');
+    span.className = 'tm-assignee-chip';
+    span.textContent = a.name;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = '×';
+    btn.addEventListener('click', function(ev){ ev.stopPropagation(); tmToggleAssignee(a.id, a.name); });
+    span.appendChild(btn);
+    container.insertBefore(span, ph);
+  });
+}
+window.tmToggleAssignee = function(id, name) {
+  var idx = _selectedAssignees.findIndex(function(a){ return a.id === id; });
+  if (idx >= 0) _selectedAssignees.splice(idx, 1);
+  else _selectedAssignees.push({ id: id, name: name });
+  tmRenderAssigneeChips();
+  tmRenderAssigneeOpts(document.getElementById('tm-assignee-search').value);
+};
+window.tmToggleAssigneeDD = function(e) {
+  if (e.target.tagName === 'BUTTON') return;
+  var dd = document.getElementById('tm-assignee-dd');
+  dd.classList.toggle('open');
+  if (dd.classList.contains('open')) {
+    document.getElementById('tm-assignee-search').focus();
+    tmRenderAssigneeOpts('');
+  }
+};
+window.tmFilterAssignees = function(q) { tmRenderAssigneeOpts(q); };
+document.addEventListener('click', function(e) {
+  var chips = document.getElementById('tm-assignee-chips');
+  var dd = document.getElementById('tm-assignee-dd');
+  if (!chips || !dd) return;
+  if (!chips.contains(e.target) && !dd.contains(e.target)) dd.classList.remove('open');
+});
+
+window.openTaskCreate = function(colId){
   var ov=document.getElementById('task-overlay');
   document.getElementById('task-modal-title').innerHTML='<i class="fa-solid fa-plus" style="color:#1d4ed8;margin-right:6px"></i>'+_addLabel;
   document.getElementById('tm-task-id').value='';
   document.getElementById('tm-col-id').value=colId;
+  document.getElementById('tm-status').value=colId;
   document.getElementById('tm-title').value='';
   document.getElementById('tm-desc').value='';
   document.getElementById('tm-start').value='';
@@ -1497,14 +1653,15 @@ function openTaskCreate(colId){
   document.getElementById('tm-progress').value=0;
   document.getElementById('tm-progress-val').textContent='0%';
   document.getElementById('tm-milestone').checked=false;
-  Array.from(document.getElementById('tm-assignees').options).forEach(o=>o.selected=false);
+  _selectedAssignees = [];
+  tmRenderAssigneeChips();
   Array.from(document.getElementById('tm-deps').options).forEach(o=>o.selected=false);
   document.getElementById('tm-delete-btn').style.display='none';
   ov.style.display='flex';
   setTimeout(()=>document.getElementById('tm-title').focus(),50);
 }
 
-function openTaskEdit(taskId){
+window.openTaskEdit = function(taskId){
   fetch('/tasks/kanban/tasks/'+taskId+'/json')
     .then(r=>r.json()).then(d=>{
       if(!d.ok||!d.task) return;
@@ -1512,6 +1669,7 @@ function openTaskEdit(taskId){
       document.getElementById('task-modal-title').innerHTML='<i class="fa-solid fa-pen" style="color:#1d4ed8;margin-right:6px"></i>'+_editLabel;
       document.getElementById('tm-task-id').value=tk._id;
       document.getElementById('tm-col-id').value=tk.columnId;
+      document.getElementById('tm-status').value=tk.columnId;
       document.getElementById('tm-title').value=tk.title||'';
       document.getElementById('tm-desc').value=tk.description||'';
       document.getElementById('tm-start').value=tk.startDate?tk.startDate.slice(0,10):'';
@@ -1522,7 +1680,8 @@ function openTaskEdit(taskId){
       document.getElementById('tm-progress-val').textContent=(tk.progress||0)+'%';
       document.getElementById('tm-milestone').checked=!!tk.isMilestone;
       var assigneeIds=(tk.assigneeIds||[]).map(String);
-      Array.from(document.getElementById('tm-assignees').options).forEach(o=>{ o.selected=assigneeIds.includes(o.value); });
+      _selectedAssignees = _allUsers.filter(function(u){ return assigneeIds.includes(u.id); });
+      tmRenderAssigneeChips();
       var depIds=(tk.dependencies||[]).map(String);
       Array.from(document.getElementById('tm-deps').options).forEach(o=>{ o.selected=depIds.includes(o.value); });
       document.getElementById('tm-delete-btn').style.display='inline-flex';
@@ -1530,12 +1689,12 @@ function openTaskEdit(taskId){
     }).catch(()=>{});
 }
 
-async function submitTask(){
+window.submitTask = async function(){
   var title=document.getElementById('tm-title').value.trim();
   if(!title){alert(_titleRequired);return;}
   var taskId=document.getElementById('tm-task-id').value;
-  var colId=document.getElementById('tm-col-id').value;
-  var assigneeIds=Array.from(document.getElementById('tm-assignees').selectedOptions).map(o=>o.value);
+  var colId=document.getElementById('tm-status').value||document.getElementById('tm-col-id').value;
+  var assigneeIds=_selectedAssignees.map(function(a){ return a.id; });
   var depIds=Array.from(document.getElementById('tm-deps').selectedOptions).map(o=>o.value);
   var body={
     title,
@@ -1557,27 +1716,27 @@ async function submitTask(){
   if(d.ok){ location.reload(); } else { alert(d.error||_errMsg); }
 }
 
-async function deleteTask(taskId){
+window.deleteTask = async function(taskId){
   if(!confirm(_taskDeleteConfirm)) return;
   var r=await fetch('/tasks/kanban/tasks/'+taskId,{method:'DELETE'});
   var d=await r.json();
   if(d.ok){ location.reload(); } else { alert(d.error||_errMsg); }
 }
-function deleteCurrentTask(){
+window.deleteCurrentTask = function(){
   var id=document.getElementById('tm-task-id').value;
   if(id) deleteTask(id);
-}
+};
 
 // ── ドラッグ＆ドロップ ──
 var _dragId=null, _dragCol=null;
-function onDragStart(e){
+window.onDragStart = function(e){
   _dragId=e.currentTarget.dataset.taskId;
   _dragCol=e.currentTarget.dataset.col;
   e.currentTarget.classList.add('kb-dragging');
   e.dataTransfer.effectAllowed='move';
 }
-function onDragEnd(e){ e.currentTarget.classList.remove('kb-dragging'); }
-function onDragOver(e){
+window.onDragEnd = function(e){ e.currentTarget.classList.remove('kb-dragging'); };
+window.onDragOver = function(e){
   e.preventDefault();
   e.dataTransfer.dropEffect='move';
   var col=e.currentTarget;
@@ -1586,14 +1745,14 @@ function onDragOver(e){
     if(body) body.classList.add('kb-drag-over');
   }
 }
-function onDragLeave(e){
+window.onDragLeave = function(e){
   var col=e.currentTarget;
   if(!col.contains(e.relatedTarget)){
     var body=col.querySelector('.kb-col-body');
     if(body) body.classList.remove('kb-drag-over');
   }
 }
-async function onDrop(e){
+window.onDrop = async function(e){
   e.preventDefault();
   var col=e.currentTarget;
   var body=col.querySelector('.kb-col-body');
@@ -1876,7 +2035,7 @@ router.get("/tasks/gantt/:boardId", requireLogin, async (req, res) => {
     const allUsers = await getAllUsers();
     const userMap = {};
     allUsers.forEach((u) => {
-      userMap[String(u._id)] = u.username;
+      userMap[String(u._id)] = u.displayName || u.username;
     });
 
     // ボード一覧（タブ切り替え用）
@@ -2147,6 +2306,19 @@ body { overflow: hidden; height: 100vh; }
 .gantt-right { flex:1; overflow:auto; }
 .gantt-svg-wrap { position:relative; min-width:100%; }
 .gantt-empty { display:flex; align-items:center; justify-content:center; flex:1; padding:40px 20px; color:#94a3b8; font-size:14px; text-align:center; }
+@media (max-width:640px) {
+  .gantt-topbar { padding:10px 12px; gap:0; flex-wrap:wrap; row-gap:6px; }
+  .gantt-topbar-title { font-size:14px; flex:0 0 100%; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .gantt-topbar-btns { display:flex; gap:8px; flex-wrap:wrap; flex:0 0 100%; justify-content:flex-end; }
+  .gantt-btn { padding:6px 12px; font-size:12px; }
+  .gantt-tabs { padding:0 8px; }
+  .gantt-tab { padding:7px 10px; font-size:12px; }
+  .gantt-left { width:160px; }
+  .gantt-left-header { padding:0 6px; font-size:11px; }
+  .gantt-row-name { padding:4px 6px 2px; font-size:12px; }
+  .gantt-row-meta { grid-template-columns:1fr auto 48px; padding:2px 6px 4px; font-size:10px; }
+  .gantt-row-meta > :nth-child(2) { display:none; }
+}
 </style>`;
 
     const html =
@@ -2166,8 +2338,10 @@ body { overflow: hidden; height: 100vh; }
       <i class="fa-solid fa-chart-gantt" style="color:#059669"></i>
       ${t("tasks.gantt_title", lang)} - ${escapeHtml(board.name)}
     </div>
-    <a href="/tasks/kanban/${board._id}" class="gantt-btn gantt-btn--blue"><i class="fa-solid fa-table-columns"></i> ${t("tasks.go_kanban_view", lang)}</a>
-    <a href="/tasks/kanban" class="gantt-btn gantt-btn--ghost"><i class="fa-solid fa-arrow-left"></i> ${t("tasks.back_to_boards", lang)}</a>
+    <div class="gantt-topbar-btns">
+      <a href="/tasks/kanban/${board._id}" class="gantt-btn gantt-btn--blue"><i class="fa-solid fa-table-columns"></i> ${t("tasks.go_kanban_view", lang)}</a>
+      <a href="/tasks/kanban" class="gantt-btn gantt-btn--ghost"><i class="fa-solid fa-arrow-left"></i> ${t("tasks.back_to_boards", lang)}</a>
+    </div>
   </div>
   ${boardTabsHtml ? `<div class="gantt-tabs">${boardTabsHtml}</div>` : ""}
   ${

@@ -803,6 +803,7 @@
     "task_assignee_label": "담당자",
     "task_start_label": "시작일",
     "task_due_label": "마감일",
+    "task_status_label": "상태 (열)",
     "task_priority_label": "우선순위",
     "task_priority_high": "높음",
     "task_priority_medium": "보통",
