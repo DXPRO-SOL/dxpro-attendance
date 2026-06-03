@@ -5,7 +5,12 @@
 const express = require("express");
 const router = express.Router();
 const { buildPageShell, pageFooter } = require("../lib/renderPage");
-const { UserTaskConfig, TaskDueDate } = require("../models");
+const {
+  UserTaskConfig,
+  TaskDueDate,
+  KanbanBoard,
+  KanbanTask,
+} = require("../models");
 const { requireLogin } = require("../middleware/auth");
 const { encrypt, decrypt } = require("../lib/integrations");
 const { escapeHtml } = require("../lib/helpers");
@@ -323,7 +328,7 @@ async function fetchBacklogTasks(cfg, query) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// GET /tasks - タスク管理メイン画面
+// GET /tasks - タスク管理メイン画面（カンバン・ガントチャート対応版）
 // ─────────────────────────────────────────────────────────────
 router.get("/tasks", requireLogin, async (req, res) => {
   try {
@@ -336,6 +341,14 @@ router.get("/tasks", requireLogin, async (req, res) => {
       : null;
     const isAdmin = req.session.isAdmin || false;
     const role = req.session.orgRole || (isAdmin ? "admin" : "employee");
+
+    // ボード数・タスク数を取得
+    const boardCount = await KanbanBoard.countDocuments({
+      archived: false,
+    }).catch(() => 0);
+    const taskCount = await KanbanTask.countDocuments({
+      archived: false,
+    }).catch(() => 0);
 
     // 各ツールの接続設定状態を確認（ログインユーザー別）
     const configMap = {};
@@ -382,139 +395,48 @@ router.get("/tasks", requireLogin, async (req, res) => {
 
     const extraHead = `
 <style>
-.tk-wrap {
-    max-width: 860px;
-    margin: 0 auto;
-    padding: 32px 20px 56px;
-}
-.tk-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 28px;
-}
-.tk-header-icon {
-    width: 44px;
-    height: 44px;
-    background: linear-gradient(135deg, #1d4ed8 0%, #7c3aed 100%);
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-size: 20px;
-    flex-shrink: 0;
-}
-.tk-header h1 {
-    font-size: 22px;
-    font-weight: 700;
-    color: #0f172a;
-    margin: 0;
-}
-.tk-header p {
-    font-size: 13px;
-    color: #64748b;
-    margin: 2px 0 0;
-}
-.tk-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-}
-.tk-card {
-    background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    box-shadow: 0 1px 3px rgba(0,0,0,.05), 0 4px 12px rgba(0,0,0,.03);
-    overflow: hidden;
-    transition: box-shadow .15s, border-color .15s;
-}
-.tk-card:hover {
-    box-shadow: 0 4px 16px rgba(0,0,0,.10);
-    border-color: #c7d2fe;
-}
-.tk-card-inner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 20px 24px;
-}
-.tk-card-tool {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    flex: 1;
-    min-width: 0;
-}
-.tk-tool-icon {
-    font-size: 36px;
-    width: 48px;
-    text-align: center;
-    flex-shrink: 0;
-    line-height: 1;
-}
-.tk-tool-name {
-    font-size: 16px;
-    font-weight: 600;
-    color: #0f172a;
-}
-.tk-tool-desc {
-    font-size: 12px;
-    color: #64748b;
-    margin-top: 2px;
-}
-.tk-card-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
-}
-.tk-badge {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 999px;
-    font-size: 11px;
-    font-weight: 600;
-    white-space: nowrap;
-}
-.tk-badge--on  { background: #dcfce7; color: #166534; }
-.tk-badge--off { background: #fef3c7; color: #92400e; }
-.tk-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 7px 14px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 500;
-    text-decoration: none;
-    transition: background .15s, opacity .15s;
-    white-space: nowrap;
-    cursor: pointer;
-}
-.tk-btn--config {
-    background: #eff6ff;
-    color: #1d4ed8;
-    border: 1px solid #bfdbfe;
-}
-.tk-btn--config:hover { background: #dbeafe; }
-.tk-btn--list {
-    background: #1d4ed8;
-    color: #fff;
-    border: 1px solid transparent;
-}
-.tk-btn--list:hover { background: #1e40af; color: #fff; }
-.tk-btn--disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-    pointer-events: none;
-}
-@media (max-width: 600px) {
-    .tk-card-inner { flex-direction: column; align-items: flex-start; }
-    .tk-card-actions { width: 100%; justify-content: flex-start; flex-wrap: nowrap; gap: 6px; }
-    .tk-badge { font-size: 10px; padding: 3px 8px; }
-    .tk-btn { font-size: 12px; padding: 6px 10px; gap: 4px; }
+.tk-home-wrap { max-width: 900px; margin: 0 auto; padding: 32px 20px 56px; }
+.tk-header { display:flex; align-items:center; gap:12px; margin-bottom:28px; }
+.tk-header-icon { width:44px; height:44px; background:linear-gradient(135deg,#1d4ed8 0%,#7c3aed 100%); border-radius:12px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:20px; flex-shrink:0; }
+.tk-header h1 { font-size:22px; font-weight:700; color:#0f172a; margin:0; }
+.tk-header p { font-size:13px; color:#64748b; margin:2px 0 0; }
+.tk-section-title { font-size:13px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:.06em; margin:28px 0 12px; display:flex; align-items:center; gap:8px; }
+.tk-section-title::after { content:''; flex:1; height:1px; background:#e2e8f0; }
+.tk-pm-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:8px; }
+.tk-pm-card { background:#fff; border:1px solid #e2e8f0; border-radius:14px; box-shadow:0 1px 4px rgba(0,0,0,.05); padding:24px; display:flex; flex-direction:column; gap:12px; transition:box-shadow .15s,border-color .15s; text-decoration:none; color:inherit; }
+.tk-pm-card:hover { box-shadow:0 4px 20px rgba(0,0,0,.10); border-color:#c7d2fe; }
+.tk-pm-icon { width:48px; height:48px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:22px; color:#fff; flex-shrink:0; }
+.tk-pm-icon--kanban { background:linear-gradient(135deg,#0ea5e9,#1d4ed8); }
+.tk-pm-icon--gantt  { background:linear-gradient(135deg,#10b981,#0d9488); }
+.tk-pm-name { font-size:17px; font-weight:700; color:#0f172a; }
+.tk-pm-desc { font-size:12px; color:#64748b; line-height:1.6; }
+.tk-pm-meta { font-size:12px; color:#94a3b8; }
+.tk-pm-go { display:inline-flex; align-items:center; gap:5px; font-size:13px; font-weight:600; padding:7px 16px; border-radius:8px; margin-top:auto; border:none; cursor:pointer; }
+.tk-pm-go--kanban { background:#eff6ff; color:#1d4ed8; }
+.tk-pm-go--gantt  { background:#f0fdf4; color:#059669; }
+.tk-cards { display:flex; flex-direction:column; gap:14px; }
+.tk-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.05); overflow:hidden; transition:box-shadow .15s,border-color .15s; }
+.tk-card:hover { box-shadow:0 4px 16px rgba(0,0,0,.10); border-color:#c7d2fe; }
+.tk-card-inner { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:20px 24px; }
+.tk-card-tool { display:flex; align-items:center; gap:16px; flex:1; min-width:0; }
+.tk-tool-icon { font-size:36px; width:48px; text-align:center; flex-shrink:0; line-height:1; }
+.tk-tool-name { font-size:16px; font-weight:600; color:#0f172a; }
+.tk-tool-desc { font-size:12px; color:#64748b; margin-top:2px; }
+.tk-card-actions { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+.tk-badge { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:600; white-space:nowrap; }
+.tk-badge--on  { background:#dcfce7; color:#166534; }
+.tk-badge--off { background:#fef3c7; color:#92400e; }
+.tk-btn { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:8px; font-size:13px; font-weight:500; text-decoration:none; transition:background .15s,opacity .15s; white-space:nowrap; cursor:pointer; }
+.tk-btn--config { background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; }
+.tk-btn--config:hover { background:#dbeafe; }
+.tk-btn--list { background:#1d4ed8; color:#fff; border:1px solid transparent; }
+.tk-btn--list:hover { background:#1e40af; color:#fff; }
+.tk-btn--disabled { opacity:0.4; cursor:not-allowed; pointer-events:none; }
+@media (max-width:640px) {
+  .tk-pm-grid { grid-template-columns:1fr; }
+  .tk-card-inner { flex-direction:column; align-items:flex-start; }
+  .tk-card-actions { width:100%; flex-wrap:wrap; gap:6px; }
+  .tk-btn { font-size:12px; padding:6px 10px; }
 }
 </style>`;
 
@@ -530,7 +452,7 @@ router.get("/tasks", requireLogin, async (req, res) => {
       }) +
       `
 <div class="main-content">
-<div class="tk-wrap">
+<div class="tk-home-wrap">
     <div class="tk-header">
         <div class="tk-header-icon"><i class="fa-solid fa-list-check"></i></div>
         <div>
@@ -538,6 +460,34 @@ router.get("/tasks", requireLogin, async (req, res) => {
             <p>${t("tasks.subtitle", lang)}</p>
         </div>
     </div>
+
+    <div class="tk-section-title"><i class="fa-solid fa-diagram-project"></i> ${t("tasks.home_pm_section", lang)}</div>
+    <div class="tk-pm-grid">
+        <a href="/tasks/kanban" class="tk-pm-card">
+            <div style="display:flex;align-items:center;gap:14px">
+                <div class="tk-pm-icon tk-pm-icon--kanban"><i class="fa-solid fa-table-columns"></i></div>
+                <div>
+                    <div class="tk-pm-name">${t("tasks.kanban_title", lang)}</div>
+                    <div class="tk-pm-meta">${boardCount} ${t("tasks.board_count_unit", lang)} / ${taskCount} ${t("tasks.task_count_unit", lang)}</div>
+                </div>
+            </div>
+            <div class="tk-pm-desc">${t("tasks.kanban_desc", lang)}</div>
+            <span class="tk-pm-go tk-pm-go--kanban"><i class="fa-solid fa-arrow-right"></i> ${t("tasks.go_kanban", lang)}</span>
+        </a>
+        <a href="/tasks/gantt" class="tk-pm-card">
+            <div style="display:flex;align-items:center;gap:14px">
+                <div class="tk-pm-icon tk-pm-icon--gantt"><i class="fa-solid fa-chart-gantt"></i></div>
+                <div>
+                    <div class="tk-pm-name">${t("tasks.gantt_title", lang)}</div>
+                    <div class="tk-pm-meta">${boardCount} ${t("tasks.board_count_unit", lang)}</div>
+                </div>
+            </div>
+            <div class="tk-pm-desc">${t("tasks.gantt_desc", lang)}</div>
+            <span class="tk-pm-go tk-pm-go--gantt"><i class="fa-solid fa-arrow-right"></i> ${t("tasks.go_gantt", lang)}</span>
+        </a>
+    </div>
+
+    <div class="tk-section-title"><i class="fa-solid fa-plug"></i> ${t("tasks.home_tools_section", lang)}</div>
     <div class="tk-cards">
         ${cardsHtml}
     </div>
@@ -907,6 +857,1543 @@ router.post("/tasks/settings/:tool", requireLogin, async (req, res) => {
   } catch (err) {
     console.error("[tasks] POST /tasks/settings error:", err);
     res.redirect("/tasks/settings/" + tool + "?error=1");
+  }
+});
+
+// ═════════════════════════════════════════════════════════════
+// カンバン・ガントチャート機能
+// ═════════════════════════════════════════════════════════════
+
+// デフォルトカラム定義
+const DEFAULT_COLUMNS = [
+  { id: "todo", name: "未着手", order: 0, color: "#f1f5f9" },
+  { id: "inprogress", name: "進行中", order: 1, color: "#dbeafe" },
+  { id: "review", name: "レビュー", order: 2, color: "#fef3c7" },
+  { id: "done", name: "完了", order: 3, color: "#dcfce7" },
+];
+
+// 優先度バッジ色
+const PRIORITY_COLOR = {
+  high: "#dc2626",
+  medium: "#f59e0b",
+  low: "#22c55e",
+  "": "#94a3b8",
+};
+const PRIORITY_BG = {
+  high: "#fee2e2",
+  medium: "#fef3c7",
+  low: "#dcfce7",
+  "": "#f1f5f9",
+};
+
+// ユーザー一覧取得ヘルパー
+async function getAllUsers() {
+  const { User, Employee } = require("../models");
+  const [users, employees] = await Promise.all([
+    User.find({}, "_id username")
+      .lean()
+      .catch(() => []),
+    Employee.find({}, "userId name department")
+      .lean()
+      .catch(() => []),
+  ]);
+  const empMap = {};
+  employees.forEach((e) => {
+    empMap[String(e.userId)] = { name: e.name, dept: e.department };
+  });
+  return users.map((u) => ({
+    ...u,
+    displayName: empMap[String(u._id)]?.name || u.username,
+    dept: empMap[String(u._id)]?.dept || "",
+  }));
+}
+
+// アバター文字列生成（頭文字）
+function userInitial(name) {
+  return (name || "?").charAt(0).toUpperCase();
+}
+
+// ─────────────────────────────────────────────────────────────
+// GET /tasks/kanban - ボード一覧
+// ─────────────────────────────────────────────────────────────
+router.get("/tasks/kanban", requireLogin, async (req, res) => {
+  try {
+    const lang = req.lang || req.session?.lang || "ja";
+    const { Employee } = require("../models");
+    const employee = req.session.userId
+      ? await Employee.findOne({ userId: req.session.userId })
+          .lean()
+          .catch(() => null)
+      : null;
+    const isAdmin = req.session.isAdmin || false;
+    const role = req.session.orgRole || (isAdmin ? "admin" : "employee");
+
+    const boards = await KanbanBoard.find({ archived: false })
+      .sort({ createdAt: -1 })
+      .lean()
+      .catch(() => []);
+
+    // ボードごとにタスク数を取得
+    const boardIds = boards.map((b) => b._id);
+    const taskCounts = {};
+    if (boardIds.length > 0) {
+      const agg = await KanbanTask.aggregate([
+        { $match: { boardId: { $in: boardIds }, archived: false } },
+        { $group: { _id: "$boardId", count: { $sum: 1 } } },
+      ]).catch(() => []);
+      agg.forEach((a) => {
+        taskCounts[String(a._id)] = a.count;
+      });
+    }
+
+    const boardCardsHtml = boards
+      .map((b) => {
+        const cnt = taskCounts[String(b._id)] || 0;
+        const colDots = (b.columns || DEFAULT_COLUMNS)
+          .slice(0, 4)
+          .map(
+            (c) =>
+              `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${escapeHtml(c.color || "#e2e8f0")};border:1px solid rgba(0,0,0,.1)"></span>`,
+          )
+          .join("");
+        const initials = (b.name || "B").substring(0, 2).toUpperCase();
+        return `
+<div class="kb-board-card" onclick="location.href='/tasks/kanban/${b._id}'">
+  <div class="kb-board-card-top">
+    <div class="kb-board-avatar" style="background:${escapeHtml(b.color || "#1d4ed8")}">${initials}</div>
+    <div class="kb-board-info">
+      <div class="kb-board-name">${escapeHtml(b.name)}</div>
+      <div class="kb-board-desc">${escapeHtml(b.description || "")}</div>
+    </div>
+    <button class="kb-board-menu-btn" onclick="event.stopPropagation();openBoardMenu(event,'${b._id}','${escapeHtml(b.name)}','${escapeHtml(b.description || "")}','${escapeHtml(b.color || "#1d4ed8")}')">
+      <i class="fa-solid fa-ellipsis-vertical"></i>
+    </button>
+  </div>
+  <div class="kb-board-card-bottom">
+    <span class="kb-board-task-count"><i class="fa-solid fa-check-square"></i> ${cnt} ${t("tasks.task_count_unit", lang)}</span>
+    <span class="kb-board-cols">${colDots}</span>
+    <a href="/tasks/gantt/${b._id}" class="kb-gantt-link" onclick="event.stopPropagation()">
+      <i class="fa-solid fa-chart-gantt"></i> ${t("tasks.go_gantt_view", lang)}
+    </a>
+  </div>
+</div>`;
+      })
+      .join("");
+
+    const extraHead = `
+<style>
+.main { padding:0 !important; align-items:stretch !important; }
+.main-content { width:100%; }
+.kb-list-wrap { width:100%; padding:24px 32px 56px; box-sizing:border-box; }
+.kb-topbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
+.kb-topbar-title { font-size:20px; font-weight:700; color:#0f172a; display:flex; align-items:center; gap:10px; }
+.kb-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 18px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; border:none; text-decoration:none; transition:background .15s; }
+.kb-btn--primary { background:#1d4ed8; color:#fff; }
+.kb-btn--primary:hover { background:#1e40af; }
+.kb-btn--ghost { background:#f1f5f9; color:#374151; }
+.kb-btn--ghost:hover { background:#e2e8f0; }
+.kb-board-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:20px; }
+.kb-board-card { background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:20px; cursor:pointer; transition:box-shadow .15s,border-color .15s; position:relative; }
+.kb-board-card:hover { box-shadow:0 4px 20px rgba(0,0,0,.10); border-color:#c7d2fe; }
+.kb-board-card-top { display:flex; align-items:flex-start; gap:12px; margin-bottom:16px; }
+.kb-board-avatar { width:42px; height:42px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:700; color:#fff; flex-shrink:0; }
+.kb-board-info { flex:1; min-width:0; }
+.kb-board-name { font-size:15px; font-weight:700; color:#0f172a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.kb-board-desc { font-size:12px; color:#64748b; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.kb-board-menu-btn { background:none; border:none; cursor:pointer; color:#94a3b8; padding:4px 8px; border-radius:6px; font-size:16px; line-height:1; margin-left:auto; flex-shrink:0; }
+.kb-board-menu-btn:hover { background:#f1f5f9; color:#374151; }
+.kb-board-card-bottom { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.kb-board-task-count { font-size:12px; color:#64748b; }
+.kb-board-cols { display:flex; gap:4px; flex:1; }
+.kb-gantt-link { font-size:11px; color:#059669; font-weight:600; text-decoration:none; display:inline-flex; align-items:center; gap:4px; padding:3px 8px; background:#f0fdf4; border-radius:6px; white-space:nowrap; }
+.kb-gantt-link:hover { background:#dcfce7; }
+.kb-empty { text-align:center; padding:64px 20px; color:#94a3b8; }
+.kb-empty-icon { font-size:48px; margin-bottom:16px; }
+.kb-empty p { font-size:14px; margin-bottom:20px; }
+/* ボード作成・編集モーダル */
+.kb-overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1000; display:flex; align-items:center; justify-content:center; padding:16px; }
+.kb-modal { background:#fff; border-radius:16px; padding:28px; width:100%; max-width:460px; box-shadow:0 20px 60px rgba(0,0,0,.2); }
+.kb-modal h3 { margin:0 0 20px; font-size:17px; font-weight:700; color:#0f172a; }
+.kb-modal-label { font-size:13px; font-weight:600; color:#374151; display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
+.kb-modal-input { padding:9px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px; width:100%; box-sizing:border-box; }
+.kb-modal-input:focus { outline:none; border-color:#93c5fd; }
+.kb-modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+/* コンテキストメニュー */
+.kb-ctx-menu { position:fixed; background:#fff; border:1px solid #e2e8f0; border-radius:10px; box-shadow:0 8px 32px rgba(0,0,0,.15); z-index:2000; min-width:160px; padding:6px; }
+.kb-ctx-item { display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:6px; font-size:13px; cursor:pointer; color:#374151; }
+.kb-ctx-item:hover { background:#f1f5f9; }
+.kb-ctx-item--danger { color:#dc2626; }
+.kb-ctx-item--danger:hover { background:#fee2e2; }
+@media (max-width:640px) {
+  .kb-list-wrap { padding:14px 12px 40px; }
+  .kb-topbar { flex-direction:column; align-items:flex-start; gap:8px; }
+  .kb-topbar .kb-btn { width:100%; justify-content:center; }
+  .kb-board-grid { grid-template-columns:1fr; }
+  .kb-board-card { padding:16px; }
+  .kb-modal { padding:20px 16px; }
+  .kb-modal-actions { flex-wrap:wrap; }
+  .kb-modal-actions .kb-btn { flex:1; justify-content:center; }
+}
+</style>`;
+
+    const noBoards = boards.length === 0;
+    const html =
+      buildPageShell({
+        title: t("tasks.kanban_title", lang),
+        currentPath: "/tasks",
+        employee,
+        isAdmin,
+        role,
+        extraHead,
+        lang,
+      }) +
+      `
+<div class="main-content">
+<div class="kb-list-wrap">
+  <div class="kb-topbar">
+    <div class="kb-topbar-title">
+      <i class="fa-solid fa-table-columns" style="color:#1d4ed8"></i>
+      ${t("tasks.kanban_title", lang)}
+    </div>
+    <div style="display:flex;gap:8px;">
+      <a href="/tasks" class="kb-btn kb-btn--ghost"><i class="fa-solid fa-arrow-left"></i> ${t("tasks.back_to_main", lang)}</a>
+      <button class="kb-btn kb-btn--primary" onclick="openBoardCreate()">
+        <i class="fa-solid fa-plus"></i> ${t("tasks.new_board", lang)}
+      </button>
+    </div>
+  </div>
+  ${
+    noBoards
+      ? `
+  <div class="kb-empty">
+    <div class="kb-empty-icon"><i class="fa-solid fa-table-columns" style="color:#cbd5e1"></i></div>
+    <p>${t("tasks.no_boards", lang)}</p>
+    <button class="kb-btn kb-btn--primary" onclick="openBoardCreate()">
+      <i class="fa-solid fa-plus"></i> ${t("tasks.new_board", lang)}
+    </button>
+  </div>`
+      : `
+  <div class="kb-board-grid">${boardCardsHtml}</div>`
+  }
+</div>
+</div>
+
+<!-- ボード作成モーダル -->
+<div id="board-create-overlay" class="kb-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="kb-modal">
+    <h3><i class="fa-solid fa-plus" style="color:#1d4ed8;margin-right:8px"></i>${t("tasks.new_board", lang)}</h3>
+    <label class="kb-modal-label">${t("tasks.board_name_label", lang)} <span style="color:#dc2626">*</span>
+      <input type="text" id="bc-name" class="kb-modal-input" placeholder="${t("tasks.board_name_placeholder", lang)}" maxlength="60">
+    </label>
+    <label class="kb-modal-label">${t("tasks.board_desc_label", lang)}
+      <input type="text" id="bc-desc" class="kb-modal-input" placeholder="${t("tasks.board_desc_placeholder", lang)}" maxlength="120">
+    </label>
+    <label class="kb-modal-label">${t("tasks.board_color_label", lang)}
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        ${[
+          "#1d4ed8",
+          "#7c3aed",
+          "#db2777",
+          "#dc2626",
+          "#ea580c",
+          "#ca8a04",
+          "#16a34a",
+          "#0891b2",
+        ]
+          .map(
+            (c) =>
+              `<span class="kb-color-swatch" data-color="${c}" style="width:24px;height:24px;border-radius:50%;background:${c};cursor:pointer;border:2px solid transparent;" onclick="selectBoardColor('${c}',this)"></span>`,
+          )
+          .join("")}
+        <input type="color" id="bc-color" value="#1d4ed8" style="width:28px;height:28px;border:none;padding:0;cursor:pointer;border-radius:50%" oninput="document.querySelectorAll('.kb-color-swatch').forEach(s=>s.style.borderColor='transparent');this.dataset.selected='1'">
+      </div>
+    </label>
+    <div class="kb-modal-actions">
+      <button class="kb-btn kb-btn--ghost" onclick="document.getElementById('board-create-overlay').style.display='none'">${t("common.cancel", lang)}</button>
+      <button class="kb-btn kb-btn--primary" onclick="submitCreateBoard()">${t("tasks.board_create", lang)}</button>
+    </div>
+  </div>
+</div>
+
+<!-- ボード編集モーダル -->
+<div id="board-edit-overlay" class="kb-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="kb-modal">
+    <h3><i class="fa-solid fa-pen" style="color:#1d4ed8;margin-right:8px"></i>${t("tasks.board_edit", lang)}</h3>
+    <input type="hidden" id="be-id">
+    <label class="kb-modal-label">${t("tasks.board_name_label", lang)} <span style="color:#dc2626">*</span>
+      <input type="text" id="be-name" class="kb-modal-input" maxlength="60">
+    </label>
+    <label class="kb-modal-label">${t("tasks.board_desc_label", lang)}
+      <input type="text" id="be-desc" class="kb-modal-input" maxlength="120">
+    </label>
+    <label class="kb-modal-label">${t("tasks.board_color_label", lang)}
+      <input type="color" id="be-color" value="#1d4ed8" style="width:36px;height:36px;border:none;padding:0;cursor:pointer;border-radius:8px">
+    </label>
+    <div class="kb-modal-actions">
+      <button class="kb-btn kb-btn--ghost" onclick="document.getElementById('board-edit-overlay').style.display='none'">${t("common.cancel", lang)}</button>
+      <button class="kb-btn kb-btn--primary" onclick="submitEditBoard()">${t("common.save", lang)}</button>
+    </div>
+  </div>
+</div>
+
+<!-- コンテキストメニュー -->
+<div id="kb-ctx" class="kb-ctx-menu" style="display:none"></div>
+
+<script>
+window.openBoardCreate = function(){document.getElementById('board-create-overlay').style.display='flex';};
+window.selectBoardColor = function(c,el){
+  document.querySelectorAll('.kb-color-swatch').forEach(s=>s.style.borderColor='transparent');
+  el.style.borderColor='#0f172a';
+  document.getElementById('bc-color').value=c;
+}
+window.submitCreateBoard = async function(){
+  var name=document.getElementById('bc-name').value.trim();
+  if(!name){alert(${JSON.stringify(t("tasks.board_name_required", lang))});return;}
+  var desc=document.getElementById('bc-desc').value.trim();
+  var color=document.getElementById('bc-color').value||'#1d4ed8';
+  var r=await fetch('/tasks/kanban/boards',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,description:desc,color})});
+  var d=await r.json();
+  if(d.ok){location.href='/tasks/kanban/'+d.id;}else{alert(d.error||${JSON.stringify(t("common.error", lang))});}
+}
+window.openBoardMenu = function(e,id,name,desc,color){
+  e.preventDefault();
+  var menu=document.getElementById('kb-ctx');
+  menu.innerHTML=\`
+    <div class="kb-ctx-item" onclick="closeBoardMenu();openBoardEdit('\${id}','\${name.replace(/'/g,"\\\\'")}','\${desc.replace(/'/g,"\\\\'")}','\${color}')">
+      <i class="fa-solid fa-pen"></i> ${t("tasks.board_edit", lang)}
+    </div>
+    <div class="kb-ctx-item" onclick="closeBoardMenu();location.href='/tasks/gantt/\${id}'">
+      <i class="fa-solid fa-chart-gantt"></i> ${t("tasks.go_gantt_view", lang)}
+    </div>
+    <div class="kb-ctx-item kb-ctx-item--danger" onclick="closeBoardMenu();deleteBoard('\${id}','\${name.replace(/'/g,"\\\\'")}')">
+      <i class="fa-solid fa-trash"></i> ${t("tasks.board_delete", lang)}
+    </div>\`;
+  menu.style.display='block';
+  var x=e.clientX, y=e.clientY;
+  menu.style.left=x+'px'; menu.style.top=y+'px';
+  setTimeout(()=>document.addEventListener('click',closeBoardMenu,{once:true}),10);
+}
+window.closeBoardMenu = function(){document.getElementById('kb-ctx').style.display='none';};
+window.openBoardEdit = function(id,name,desc,color){
+  document.getElementById('be-id').value=id;
+  document.getElementById('be-name').value=name;
+  document.getElementById('be-desc').value=desc;
+  document.getElementById('be-color').value=color||'#1d4ed8';
+  document.getElementById('board-edit-overlay').style.display='flex';
+}
+window.submitEditBoard = async function(){
+  var id=document.getElementById('be-id').value;
+  var name=document.getElementById('be-name').value.trim();
+  if(!name){alert(${JSON.stringify(t("tasks.board_name_required", lang))});return;}
+  var desc=document.getElementById('be-desc').value.trim();
+  var color=document.getElementById('be-color').value;
+  var r=await fetch('/tasks/kanban/boards/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,description:desc,color})});
+  var d=await r.json();
+  if(d.ok){location.reload();}else{alert(d.error||${JSON.stringify(t("common.error", lang))});}
+}
+window.deleteBoard = async function(id,name){
+  if(!confirm(${JSON.stringify(t("tasks.board_delete_confirm", lang))}+' ['+name+']'))return;
+  var r=await fetch('/tasks/kanban/boards/'+id,{method:'DELETE'});
+  var d=await r.json();
+  if(d.ok){location.reload();}else{alert(d.error||${JSON.stringify(t("common.error", lang))});}
+}
+</script>
+` +
+      pageFooter();
+    res.send(html);
+  } catch (err) {
+    console.error("[tasks] GET /tasks/kanban error:", err);
+    res.status(500).send("サーバーエラーが発生しました。");
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// GET /tasks/kanban/:boardId - カンバンボード表示
+// ─────────────────────────────────────────────────────────────
+router.get("/tasks/kanban/:boardId", requireLogin, async (req, res) => {
+  try {
+    const lang = req.lang || req.session?.lang || "ja";
+    const { Employee } = require("../models");
+    const employee = req.session.userId
+      ? await Employee.findOne({ userId: req.session.userId })
+          .lean()
+          .catch(() => null)
+      : null;
+    const isAdmin = req.session.isAdmin || false;
+    const role = req.session.orgRole || (isAdmin ? "admin" : "employee");
+
+    const board = await KanbanBoard.findById(req.params.boardId)
+      .lean()
+      .catch(() => null);
+    if (!board) return res.redirect("/tasks/kanban");
+
+    const columns =
+      board.columns && board.columns.length > 0
+        ? board.columns.sort((a, b) => a.order - b.order)
+        : DEFAULT_COLUMNS;
+
+    const tasks = await KanbanTask.find({ boardId: board._id, archived: false })
+      .sort({ order: 1 })
+      .lean()
+      .catch(() => []);
+
+    const allUsers = await getAllUsers();
+    const userMap = {};
+    allUsers.forEach((u) => {
+      userMap[String(u._id)] = u.displayName || u.username;
+    });
+
+    // タスクを列ごとにグループ化
+    const tasksByCol = {};
+    columns.forEach((c) => {
+      tasksByCol[c.id] = [];
+    });
+    tasks.forEach((tk) => {
+      if (tasksByCol[tk.columnId]) tasksByCol[tk.columnId].push(tk);
+      else {
+        if (!tasksByCol["__other__"]) tasksByCol["__other__"] = [];
+        tasksByCol["__other__"].push(tk);
+      }
+    });
+
+    // タスクIDマップ（依存関係表示用）
+    const taskMap = {};
+    tasks.forEach((tk) => {
+      taskMap[String(tk._id)] = tk;
+    });
+
+    function renderPriority(p) {
+      if (!p) return "";
+      const colors = { high: "#dc2626", medium: "#f59e0b", low: "#22c55e" };
+      const labels = {
+        high: t("tasks.task_priority_high", lang),
+        medium: t("tasks.task_priority_medium", lang),
+        low: t("tasks.task_priority_low", lang),
+      };
+      return `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${colors[p] || "#94a3b8"};margin-right:4px" title="${labels[p] || p}"></span>`;
+    }
+
+    function renderAssignees(ids) {
+      if (!ids || ids.length === 0) return "";
+      return (
+        ids
+          .slice(0, 3)
+          .map((id) => {
+            const name = userMap[String(id)] || "?";
+            const bg = ["#1d4ed8", "#7c3aed", "#db2777", "#059669", "#d97706"][
+              name.charCodeAt(0) % 5
+            ];
+            return `<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:${bg};color:#fff;font-size:10px;font-weight:700;margin-right:2px;border:2px solid #fff;flex-shrink:0" title="${escapeHtml(name)}">${userInitial(name)}</span>`;
+          })
+          .join("") +
+        (ids.length > 3
+          ? `<span style="font-size:10px;color:#94a3b8">+${ids.length - 3}</span>`
+          : "")
+      );
+    }
+
+    function renderLabel(l) {
+      return `<span style="display:inline-block;padding:1px 6px;border-radius:4px;background:#f1f5f9;color:#64748b;font-size:10px;font-weight:600;margin-right:3px;">${escapeHtml(l)}</span>`;
+    }
+
+    function renderCard(tk) {
+      const overdue =
+        tk.dueDate &&
+        new Date(tk.dueDate) < new Date() &&
+        tk.columnId !== "done";
+      const dueTxt = tk.dueDate
+        ? new Date(tk.dueDate).toLocaleDateString("ja-JP", {
+            month: "numeric",
+            day: "numeric",
+          })
+        : "";
+      const labelHtml = (tk.labels || []).slice(0, 3).map(renderLabel).join("");
+      const milestoneBadge = tk.isMilestone
+        ? `<i class="fa-solid fa-flag" style="color:#7c3aed;font-size:11px" title="${t("tasks.milestone_label", lang)}"></i>`
+        : "";
+      const progressBar =
+        tk.progress > 0
+          ? `<div style="width:100%;height:3px;background:#e2e8f0;border-radius:2px;margin-top:6px"><div style="width:${tk.progress}%;height:100%;background:#1d4ed8;border-radius:2px"></div></div>`
+          : "";
+      return `
+<div class="kb-card" draggable="true" data-task-id="${tk._id}" data-col="${escapeHtml(tk.columnId)}"
+     ondragstart="onDragStart(event)" ondragend="onDragEnd(event)"
+     onclick="openTaskEdit('${tk._id}')">
+  <div class="kb-card-top">
+    ${renderPriority(tk.priority)}${milestoneBadge}
+    <span class="kb-card-title">${escapeHtml(tk.title)}</span>
+    <button class="kb-card-del" onclick="event.stopPropagation();deleteTask('${tk._id}')" title="${t("tasks.task_delete", lang)}"><i class="fa-solid fa-xmark"></i></button>
+  </div>
+  ${labelHtml ? `<div style="margin-top:5px">${labelHtml}</div>` : ""}
+  <div class="kb-card-bottom">
+    <div class="kb-card-assignees">${renderAssignees(tk.assigneeIds || [])}</div>
+    ${dueTxt ? `<span class="kb-card-due ${overdue ? "kb-due-overdue" : ""}">${overdue ? "⚠" : ""}${dueTxt}</span>` : ""}
+    ${tk.progress > 0 ? `<span style="font-size:10px;color:#64748b;margin-left:auto">${tk.progress}%</span>` : ""}
+  </div>
+  ${progressBar}
+</div>`;
+    }
+
+    const columnsHtml = columns
+      .map((col) => {
+        const colTasks = tasksByCol[col.id] || [];
+        const cardsHtml = colTasks.map(renderCard).join("");
+        return `
+<div class="kb-col" data-col-id="${escapeHtml(col.id)}"
+     ondragover="onDragOver(event)" ondrop="onDrop(event)" ondragleave="onDragLeave(event)">
+  <div class="kb-col-header" style="background:${escapeHtml(col.color || "#f1f5f9")}">
+    <span class="kb-col-name">${escapeHtml(col.name)}</span>
+    <span class="kb-col-count">${colTasks.length}</span>
+  </div>
+  <div class="kb-col-body" id="col-${escapeHtml(col.id)}">
+    ${cardsHtml}
+  </div>
+  <button class="kb-add-card-btn" onclick="openTaskCreate('${escapeHtml(col.id)}')">
+    <i class="fa-solid fa-plus"></i> ${t("tasks.task_add", lang)}
+  </button>
+</div>`;
+      })
+      .join("");
+
+    // ユーザー選択オプション
+    const userOptions = allUsers
+      .map(
+        (u) =>
+          `<option value="${u._id}">${escapeHtml(u.displayName || u.username)}</option>`,
+      )
+      .join("");
+
+    // 依存タスク選択オプション
+    const taskOptions = tasks
+      .map((tk) => `<option value="${tk._id}">${escapeHtml(tk.title)}</option>`)
+      .join("");
+
+    const extraHead = `
+<style>
+.kb-wrap { display:flex; flex-direction:column; height:100%; }
+.main-content { display:flex; flex-direction:column; height:calc(100vh - 0px); overflow:hidden; }
+.kb-topbar2 { display:flex; align-items:center; gap:12px; padding:16px 24px; background:#fff; border-bottom:1px solid #e2e8f0; flex-shrink:0; flex-wrap:wrap; }
+.kb-topbar2-title { font-size:18px; font-weight:700; color:#0f172a; display:flex; align-items:center; gap:10px; flex:1; min-width:0; }
+.kb-topbar2-title .kb-board-dot { width:14px; height:14px; border-radius:4px; flex-shrink:0; }
+.kb-btn { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; border:none; text-decoration:none; transition:background .15s; white-space:nowrap; }
+.kb-btn--primary { background:#1d4ed8; color:#fff; }
+.kb-btn--primary:hover { background:#1e40af; }
+.kb-btn--ghost { background:#f1f5f9; color:#374151; }
+.kb-btn--ghost:hover { background:#e2e8f0; }
+.kb-btn--green { background:#f0fdf4; color:#059669; border:1px solid #bbf7d0; }
+.kb-btn--green:hover { background:#dcfce7; }
+.kb-board-area { display:flex; gap:16px; padding:20px 24px; overflow-x:auto; flex:1; align-items:flex-start; }
+.kb-col { display:flex; flex-direction:column; min-width:260px; max-width:300px; flex-shrink:0; background:#f8fafc; border-radius:12px; border:1px solid #e2e8f0; overflow:hidden; max-height:calc(100vh - 140px); }
+.kb-col-header { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; font-size:13px; font-weight:700; color:#374151; border-bottom:1px solid rgba(0,0,0,.06); }
+.kb-col-count { background:rgba(0,0,0,.08); color:#374151; border-radius:999px; padding:1px 8px; font-size:11px; font-weight:700; }
+.kb-col-body { flex:1; padding:10px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; min-height:60px; }
+.kb-col-body.kb-drag-over { background:#eff6ff; outline:2px dashed #93c5fd; outline-offset:-2px; border-radius:8px; }
+.kb-add-card-btn { display:flex; align-items:center; gap:6px; padding:10px 14px; background:none; border:none; border-top:1px solid #e2e8f0; color:#64748b; cursor:pointer; font-size:13px; font-weight:500; transition:background .15s,color .15s; width:100%; flex-shrink:0; }
+.kb-add-card-btn:hover { background:#f1f5f9; color:#1d4ed8; }
+.kb-card { background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:12px; cursor:pointer; transition:box-shadow .15s,border-color .15s; user-select:none; }
+.kb-card:hover { box-shadow:0 4px 12px rgba(0,0,0,.10); border-color:#c7d2fe; }
+.kb-card.kb-dragging { opacity:.5; transform:rotate(2deg); }
+.kb-card-top { display:flex; align-items:flex-start; gap:4px; }
+.kb-card-title { font-size:13px; font-weight:500; color:#1e293b; flex:1; line-height:1.4; word-break:break-word; }
+.kb-card-del { background:none; border:none; cursor:pointer; color:#cbd5e1; padding:0 2px; font-size:11px; flex-shrink:0; line-height:1; margin-top:1px; transition:color .15s; }
+.kb-card-del:hover { color:#dc2626; }
+.kb-card-bottom { display:flex; align-items:center; gap:6px; margin-top:8px; }
+.kb-card-assignees { display:flex; align-items:center; }
+.kb-card-due { font-size:11px; color:#64748b; margin-left:auto; display:flex; align-items:center; gap:3px; }
+.kb-due-overdue { color:#dc2626; font-weight:600; }
+/* モーダル */
+.kb-overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1000; display:flex; align-items:center; justify-content:center; padding:16px; }
+.kb-modal { background:#fff; border-radius:16px; padding:28px; width:100%; max-width:520px; max-height:90vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,.2); }
+.kb-modal h3 { margin:0 0 20px; font-size:17px; font-weight:700; color:#0f172a; display:flex; align-items:center; gap:8px; }
+.kb-modal-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.kb-modal-label { font-size:12px; font-weight:600; color:#374151; display:flex; flex-direction:column; gap:5px; }
+.kb-modal-label--full { grid-column:1/-1; }
+.kb-modal-input,.kb-modal-select,.kb-modal-textarea { padding:8px 10px; border:1px solid #e2e8f0; border-radius:8px; font-size:13px; width:100%; box-sizing:border-box; font-family:inherit; }
+.kb-modal-input:focus,.kb-modal-select:focus,.kb-modal-textarea:focus { outline:none; border-color:#93c5fd; }
+.kb-modal-textarea { resize:vertical; min-height:80px; }
+.kb-modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+.kb-progress-wrap { display:flex; align-items:center; gap:8px; }
+.kb-progress-wrap input[type=range] { flex:1; }
+.kb-progress-val { font-size:13px; font-weight:600; color:#1d4ed8; min-width:36px; text-align:right; }
+/* 担当者チップ選択 */
+.tm-assignee-wrap { position:relative; }
+.tm-assignee-chips { display:flex; flex-wrap:wrap; gap:5px; min-height:36px; padding:5px 8px; border:1px solid #e2e8f0; border-radius:8px; background:#fafafa; cursor:pointer; align-items:center; }
+.tm-assignee-chips:focus-within { border-color:#93c5fd; }
+.tm-assignee-chip { display:flex; align-items:center; gap:4px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:999px; padding:2px 8px 2px 6px; font-size:12px; white-space:nowrap; }
+.tm-assignee-chip button { background:none; border:none; color:#64748b; cursor:pointer; padding:0; font-size:12px; line-height:1; }
+.tm-assignee-ph { color:#9ca3af; font-size:13px; padding:1px 2px; pointer-events:none; }
+.tm-assignee-dd { display:none; position:absolute; left:0; right:0; top:calc(100% + 4px); background:#fff; border:1px solid #e2e8f0; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.12); z-index:9020; max-height:200px; overflow-y:auto; }
+.tm-assignee-dd.open { display:block; }
+.tm-assignee-search { padding:7px 10px; border-bottom:1px solid #f1f5f9; }
+.tm-assignee-search input { width:100%; border:1px solid #e2e8f0; border-radius:6px; padding:5px 8px; font-size:12.5px; outline:none; font-family:inherit; box-sizing:border-box; }
+.tm-assignee-opt { padding:8px 12px; font-size:13px; cursor:pointer; display:flex; align-items:center; gap:8px; }
+.tm-assignee-opt:hover { background:#f8fafc; }
+.tm-assignee-opt.selected { background:#eff6ff; color:#1d4ed8; }
+@media (max-width:640px) {
+  .kb-topbar2 { padding:10px 12px; gap:0; flex-wrap:wrap; row-gap:6px; }
+  .kb-topbar2-title { font-size:15px; flex:0 0 100%; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .kb-topbar2-btns { display:flex; gap:8px; flex-wrap:wrap; flex:0 0 100%; justify-content:flex-end; }
+  .kb-topbar2 .kb-btn { padding:6px 12px; font-size:12px; }
+  .kb-board-area { padding:12px 8px; gap:10px; }
+  .kb-col { min-width:240px; max-width:260px; }
+  .kb-col { max-height:calc(100vh - 110px); }
+  .kb-overlay { padding:0; align-items:flex-end; }
+  .kb-modal { border-radius:16px 16px 0 0; padding:20px 14px 24px; max-height:88vh; }
+  .kb-modal-grid { grid-template-columns:1fr; }
+  .kb-modal-label--full { grid-column:1; }
+  .kb-modal-actions { flex-wrap:wrap; margin-top:14px; }
+  .kb-modal-actions .kb-btn { flex:1; justify-content:center; min-width:70px; }
+  .tm-assignee-dd { position:fixed; left:10px; right:10px; top:auto; max-height:38vh; z-index:9999; }
+}
+</style>`;
+
+    const html =
+      buildPageShell({
+        title: `${escapeHtml(board.name)} | ${t("tasks.kanban_title", lang)}`,
+        currentPath: "/tasks",
+        employee,
+        isAdmin,
+        role,
+        extraHead,
+        lang,
+      }) +
+      `
+<div class="main-content" style="flex-direction:column;overflow:hidden;">
+  <div class="kb-topbar2">
+    <div class="kb-topbar2-title">
+      <span class="kb-board-dot" style="background:${escapeHtml(board.color || "#1d4ed8")}"></span>
+      ${escapeHtml(board.name)}
+    </div>
+    <div class="kb-topbar2-btns">
+      <a href="/tasks/kanban" class="kb-btn kb-btn--ghost"><i class="fa-solid fa-arrow-left"></i> ${t("tasks.back_to_boards", lang)}</a>
+      <a href="/tasks/gantt/${board._id}" class="kb-btn kb-btn--green"><i class="fa-solid fa-chart-gantt"></i> ${t("tasks.go_gantt_view", lang)}</a>
+      <button class="kb-btn kb-btn--primary" onclick="openTaskCreate('${escapeHtml(columns[0] ? columns[0].id : "todo")}')">\n        <i class="fa-solid fa-plus"></i> ${t("tasks.task_add", lang)}
+      </button>
+    </div>
+  </div>
+  <div class="kb-board-area">
+    ${columnsHtml}
+  </div>
+</div>
+
+<!-- タスクモーダル -->
+<div id="task-overlay" class="kb-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+  <div class="kb-modal">
+    <h3 id="task-modal-title"><i class="fa-solid fa-plus" style="color:#1d4ed8"></i>${t("tasks.task_add", lang)}</h3>
+    <input type="hidden" id="tm-task-id">
+    <input type="hidden" id="tm-col-id">
+    <div class="kb-modal-grid">
+      <label class="kb-modal-label kb-modal-label--full">${t("tasks.task_title_label", lang)} <span style="color:#dc2626">*</span>
+        <input type="text" id="tm-title" class="kb-modal-input" maxlength="120">
+      </label>
+      <label class="kb-modal-label kb-modal-label--full">${t("tasks.task_desc_label", lang)}
+        <textarea id="tm-desc" class="kb-modal-textarea"></textarea>
+      </label>
+      <div class="kb-modal-label kb-modal-label--full">${t("tasks.task_assignee_label", lang)}
+        <div class="tm-assignee-wrap">
+          <div class="tm-assignee-chips" id="tm-assignee-chips" onclick="tmToggleAssigneeDD(event)">
+            <span class="tm-assignee-ph" id="tm-assignee-ph">${t("tasks.task_assignee_label", lang)}を選択...</span>
+          </div>
+          <div class="tm-assignee-dd" id="tm-assignee-dd">
+            <div class="tm-assignee-search"><input type="text" id="tm-assignee-search" placeholder="名前で絞り込み..." oninput="tmFilterAssignees(this.value)"></div>
+            <div id="tm-assignee-opts"></div>
+          </div>
+        </div>
+      </div>
+      <label class="kb-modal-label">${t("tasks.task_start_label", lang)}
+        <input type="date" id="tm-start" class="kb-modal-input">
+      </label>
+      <label class="kb-modal-label">${t("tasks.task_due_label", lang)}
+        <input type="date" id="tm-due" class="kb-modal-input">
+      </label>
+      <label class="kb-modal-label">${t("tasks.task_status_label", lang)}
+        <select id="tm-status" class="kb-modal-select">
+          ${columns.map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join("")}
+        </select>
+      </label>
+      <label class="kb-modal-label">${t("tasks.task_priority_label", lang)}
+        <select id="tm-priority" class="kb-modal-select">
+          <option value="">-</option>
+          <option value="high">${t("tasks.task_priority_high", lang)}</option>
+          <option value="medium">${t("tasks.task_priority_medium", lang)}</option>
+          <option value="low">${t("tasks.task_priority_low", lang)}</option>
+        </select>
+      </label>
+      <label class="kb-modal-label">${t("tasks.task_labels_label", lang)}
+        <input type="text" id="tm-labels" class="kb-modal-input" placeholder="${t("tasks.task_labels_placeholder", lang)}">
+      </label>
+      <label class="kb-modal-label kb-modal-label--full">${t("tasks.task_progress_label", lang)}
+        <div class="kb-progress-wrap">
+          <input type="range" id="tm-progress" min="0" max="100" step="5" value="0" oninput="document.getElementById('tm-progress-val').textContent=this.value+'%'">
+          <span class="kb-progress-val" id="tm-progress-val">0%</span>
+        </div>
+      </label>
+      <label class="kb-modal-label kb-modal-label--full">${t("tasks.dependency_label", lang)}
+        <select id="tm-deps" class="kb-modal-select" multiple style="height:80px">
+          ${taskOptions}
+        </select>
+      </label>
+      <label class="kb-modal-label kb-modal-label--full" style="flex-direction:row;align-items:center;gap:8px;">
+        <input type="checkbox" id="tm-milestone" style="width:16px;height:16px;accent-color:#7c3aed;">
+        ${t("tasks.task_milestone_label", lang)}
+      </label>
+    </div>
+    <div class="kb-modal-actions">
+      <button class="kb-btn kb-btn--ghost" id="tm-delete-btn" style="display:none;background:#fee2e2;color:#dc2626" onclick="deleteCurrentTask()">${t("tasks.task_delete", lang)}</button>
+      <button class="kb-btn kb-btn--ghost" onclick="document.getElementById('task-overlay').style.display='none'">${t("common.cancel", lang)}</button>
+      <button class="kb-btn kb-btn--primary" onclick="submitTask()">${t("tasks.task_save", lang)}</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var _boardId = ${JSON.stringify(String(board._id))};
+var _taskDeleteConfirm = ${JSON.stringify(t("tasks.task_delete_confirm", lang))};
+var _errMsg = ${JSON.stringify(t("common.error", lang))};
+var _titleRequired = ${JSON.stringify(t("tasks.task_title_required", lang))};
+var _editLabel = ${JSON.stringify(t("tasks.task_edit", lang))};
+var _addLabel = ${JSON.stringify(t("tasks.task_add", lang))};
+var _allUsers = ${JSON.stringify(allUsers.map((u) => ({ id: String(u._id), name: u.displayName || u.username, dept: u.dept || "" })))};
+var _columns = ${JSON.stringify(columns.map((c) => ({ id: c.id, name: c.name })))};
+var _selectedAssignees = []; // [{id, name}]
+
+// ── 担当者チップUI ──
+function tmRenderAssigneeOpts(q) {
+  var container = document.getElementById('tm-assignee-opts');
+  var filtered = _allUsers.filter(function(u){ return !q || u.name.indexOf(q) !== -1; });
+  container.innerHTML = '';
+  if (!filtered.length) { container.innerHTML = '<div style="padding:10px 12px;color:#94a3b8;font-size:13px;">該当なし</div>'; return; }
+  filtered.forEach(function(u){
+    var sel = _selectedAssignees.some(function(a){ return a.id === u.id; });
+    var div = document.createElement('div');
+    div.className = 'tm-assignee-opt' + (sel ? ' selected' : '');
+    var chk = document.createElement('span');
+    chk.style.cssText = 'width:18px;text-align:center;flex-shrink:0';
+    chk.textContent = sel ? '✅' : '⬜';
+    var info = document.createElement('span');
+    info.style.cssText = 'display:flex;flex-direction:column;gap:1px;min-width:0';
+    var nm = document.createElement('span');
+    nm.textContent = u.name;
+    nm.style.cssText = 'font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+    info.appendChild(nm);
+    if (u.dept) {
+      var dp = document.createElement('span');
+      dp.textContent = u.dept;
+      dp.style.cssText = 'font-size:11px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      info.appendChild(dp);
+    }
+    div.appendChild(chk);
+    div.appendChild(info);
+    div.addEventListener('mousedown', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      tmToggleAssignee(u.id, u.name);
+    });
+    div.addEventListener('click', function(e){ e.stopPropagation(); e.preventDefault(); });
+    container.appendChild(div);
+  });
+}
+function tmRenderAssigneeChips() {
+  var container = document.getElementById('tm-assignee-chips');
+  var ph = document.getElementById('tm-assignee-ph');
+  container.querySelectorAll('.tm-assignee-chip').forEach(function(c){ c.remove(); });
+  if (!_selectedAssignees.length) {
+    if (ph) ph.style.display = '';
+    return;
+  }
+  if (ph) ph.style.display = 'none';
+  _selectedAssignees.forEach(function(a){
+    var span = document.createElement('span');
+    span.className = 'tm-assignee-chip';
+    span.textContent = a.name;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = '×';
+    btn.addEventListener('click', function(ev){ ev.stopPropagation(); tmToggleAssignee(a.id, a.name); });
+    span.appendChild(btn);
+    container.insertBefore(span, ph);
+  });
+}
+window.tmToggleAssignee = function(id, name) {
+  var idx = _selectedAssignees.findIndex(function(a){ return a.id === id; });
+  if (idx >= 0) _selectedAssignees.splice(idx, 1);
+  else _selectedAssignees.push({ id: id, name: name });
+  tmRenderAssigneeChips();
+  tmRenderAssigneeOpts(document.getElementById('tm-assignee-search').value);
+};
+window.tmToggleAssigneeDD = function(e) {
+  if (e.target.tagName === 'BUTTON') return;
+  var dd = document.getElementById('tm-assignee-dd');
+  dd.classList.toggle('open');
+  if (dd.classList.contains('open')) {
+    document.getElementById('tm-assignee-search').focus();
+    tmRenderAssigneeOpts('');
+  }
+};
+window.tmFilterAssignees = function(q) { tmRenderAssigneeOpts(q); };
+document.addEventListener('click', function(e) {
+  var chips = document.getElementById('tm-assignee-chips');
+  var dd = document.getElementById('tm-assignee-dd');
+  if (!chips || !dd) return;
+  if (!chips.contains(e.target) && !dd.contains(e.target)) dd.classList.remove('open');
+});
+
+window.openTaskCreate = function(colId){
+  var ov=document.getElementById('task-overlay');
+  document.getElementById('task-modal-title').innerHTML='<i class="fa-solid fa-plus" style="color:#1d4ed8;margin-right:6px"></i>'+_addLabel;
+  document.getElementById('tm-task-id').value='';
+  document.getElementById('tm-col-id').value=colId;
+  document.getElementById('tm-status').value=colId;
+  document.getElementById('tm-title').value='';
+  document.getElementById('tm-desc').value='';
+  document.getElementById('tm-start').value='';
+  document.getElementById('tm-due').value='';
+  document.getElementById('tm-priority').value='';
+  document.getElementById('tm-labels').value='';
+  document.getElementById('tm-progress').value=0;
+  document.getElementById('tm-progress-val').textContent='0%';
+  document.getElementById('tm-milestone').checked=false;
+  _selectedAssignees = [];
+  tmRenderAssigneeChips();
+  Array.from(document.getElementById('tm-deps').options).forEach(o=>o.selected=false);
+  document.getElementById('tm-delete-btn').style.display='none';
+  ov.style.display='flex';
+  setTimeout(()=>document.getElementById('tm-title').focus(),50);
+}
+
+window.openTaskEdit = function(taskId){
+  fetch('/tasks/kanban/tasks/'+taskId+'/json')
+    .then(r=>r.json()).then(d=>{
+      if(!d.ok||!d.task) return;
+      var tk=d.task;
+      document.getElementById('task-modal-title').innerHTML='<i class="fa-solid fa-pen" style="color:#1d4ed8;margin-right:6px"></i>'+_editLabel;
+      document.getElementById('tm-task-id').value=tk._id;
+      document.getElementById('tm-col-id').value=tk.columnId;
+      document.getElementById('tm-status').value=tk.columnId;
+      document.getElementById('tm-title').value=tk.title||'';
+      document.getElementById('tm-desc').value=tk.description||'';
+      document.getElementById('tm-start').value=tk.startDate?tk.startDate.slice(0,10):'';
+      document.getElementById('tm-due').value=tk.dueDate?tk.dueDate.slice(0,10):'';
+      document.getElementById('tm-priority').value=tk.priority||'';
+      document.getElementById('tm-labels').value=(tk.labels||[]).join(', ');
+      document.getElementById('tm-progress').value=tk.progress||0;
+      document.getElementById('tm-progress-val').textContent=(tk.progress||0)+'%';
+      document.getElementById('tm-milestone').checked=!!tk.isMilestone;
+      var assigneeIds=(tk.assigneeIds||[]).map(String);
+      _selectedAssignees = _allUsers.filter(function(u){ return assigneeIds.includes(u.id); });
+      tmRenderAssigneeChips();
+      var depIds=(tk.dependencies||[]).map(String);
+      Array.from(document.getElementById('tm-deps').options).forEach(o=>{ o.selected=depIds.includes(o.value); });
+      document.getElementById('tm-delete-btn').style.display='inline-flex';
+      document.getElementById('task-overlay').style.display='flex';
+    }).catch(()=>{});
+}
+
+window.submitTask = async function(){
+  var title=document.getElementById('tm-title').value.trim();
+  if(!title){alert(_titleRequired);return;}
+  var taskId=document.getElementById('tm-task-id').value;
+  var colId=document.getElementById('tm-status').value||document.getElementById('tm-col-id').value;
+  var assigneeIds=_selectedAssignees.map(function(a){ return a.id; });
+  var depIds=Array.from(document.getElementById('tm-deps').selectedOptions).map(o=>o.value);
+  var body={
+    title,
+    description: document.getElementById('tm-desc').value,
+    columnId: colId,
+    startDate: document.getElementById('tm-start').value||null,
+    dueDate: document.getElementById('tm-due').value||null,
+    priority: document.getElementById('tm-priority').value,
+    labels: document.getElementById('tm-labels').value.split(',').map(s=>s.trim()).filter(Boolean),
+    progress: parseInt(document.getElementById('tm-progress').value)||0,
+    isMilestone: document.getElementById('tm-milestone').checked,
+    assigneeIds, dependencies: depIds,
+  };
+  var url,method;
+  if(taskId){ url='/tasks/kanban/tasks/'+taskId; method='PUT'; }
+  else { url='/tasks/kanban/'+_boardId+'/tasks'; method='POST'; }
+  var r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  var d=await r.json();
+  if(d.ok){ location.reload(); } else { alert(d.error||_errMsg); }
+}
+
+window.deleteTask = async function(taskId){
+  if(!confirm(_taskDeleteConfirm)) return;
+  var r=await fetch('/tasks/kanban/tasks/'+taskId,{method:'DELETE'});
+  var d=await r.json();
+  if(d.ok){ location.reload(); } else { alert(d.error||_errMsg); }
+}
+window.deleteCurrentTask = function(){
+  var id=document.getElementById('tm-task-id').value;
+  if(id) deleteTask(id);
+};
+
+// ── ドラッグ＆ドロップ ──
+var _dragId=null, _dragCol=null;
+window.onDragStart = function(e){
+  _dragId=e.currentTarget.dataset.taskId;
+  _dragCol=e.currentTarget.dataset.col;
+  e.currentTarget.classList.add('kb-dragging');
+  e.dataTransfer.effectAllowed='move';
+}
+window.onDragEnd = function(e){ e.currentTarget.classList.remove('kb-dragging'); };
+window.onDragOver = function(e){
+  e.preventDefault();
+  e.dataTransfer.dropEffect='move';
+  var col=e.currentTarget;
+  if(col.classList.contains('kb-col')){
+    var body=col.querySelector('.kb-col-body');
+    if(body) body.classList.add('kb-drag-over');
+  }
+}
+window.onDragLeave = function(e){
+  var col=e.currentTarget;
+  if(!col.contains(e.relatedTarget)){
+    var body=col.querySelector('.kb-col-body');
+    if(body) body.classList.remove('kb-drag-over');
+  }
+}
+window.onDrop = async function(e){
+  e.preventDefault();
+  var col=e.currentTarget;
+  var body=col.querySelector('.kb-col-body');
+  if(body) body.classList.remove('kb-drag-over');
+  var newColId=col.dataset.colId;
+  if(!_dragId||newColId===_dragCol) return;
+  var r=await fetch('/tasks/kanban/tasks/'+_dragId,{
+    method:'PUT',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({columnId:newColId})
+  });
+  var d=await r.json();
+  if(d.ok){ location.reload(); } else { alert(d.error||_errMsg); }
+}
+</script>
+` +
+      pageFooter();
+    res.send(html);
+  } catch (err) {
+    console.error("[tasks] GET /tasks/kanban/:boardId error:", err);
+    res.status(500).send("サーバーエラーが発生しました。");
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// POST /tasks/kanban/boards - ボード作成 (API)
+// ─────────────────────────────────────────────────────────────
+router.post("/tasks/kanban/boards", requireLogin, async (req, res) => {
+  try {
+    const { name, description, color } = req.body;
+    if (!name || !name.trim())
+      return res.json({ ok: false, error: "ボード名は必須です" });
+    const board = await KanbanBoard.create({
+      name: name.trim().substring(0, 60),
+      description: (description || "").trim().substring(0, 120),
+      color: color || "#1d4ed8",
+      columns: DEFAULT_COLUMNS,
+      createdBy: req.session.userId,
+    });
+    res.json({ ok: true, id: board._id });
+  } catch (err) {
+    console.error("[tasks] POST /kanban/boards error:", err);
+    res.json({ ok: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// PUT /tasks/kanban/boards/:boardId - ボード更新 (API)
+// ─────────────────────────────────────────────────────────────
+router.put("/tasks/kanban/boards/:boardId", requireLogin, async (req, res) => {
+  try {
+    const { name, description, color } = req.body;
+    if (!name || !name.trim())
+      return res.json({ ok: false, error: "ボード名は必須です" });
+    await KanbanBoard.findByIdAndUpdate(req.params.boardId, {
+      $set: {
+        name: name.trim().substring(0, 60),
+        description: (description || "").trim().substring(0, 120),
+        color: color || "#1d4ed8",
+        updatedAt: new Date(),
+      },
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// DELETE /tasks/kanban/boards/:boardId - ボード削除 (API)
+// ─────────────────────────────────────────────────────────────
+router.delete(
+  "/tasks/kanban/boards/:boardId",
+  requireLogin,
+  async (req, res) => {
+    try {
+      const id = req.params.boardId;
+      await KanbanTask.updateMany(
+        { boardId: id },
+        { $set: { archived: true } },
+      );
+      await KanbanBoard.findByIdAndUpdate(id, { $set: { archived: true } });
+      res.json({ ok: true });
+    } catch (err) {
+      res.json({ ok: false, error: err.message });
+    }
+  },
+);
+
+// ─────────────────────────────────────────────────────────────
+// POST /tasks/kanban/:boardId/tasks - タスク作成 (API)
+// ─────────────────────────────────────────────────────────────
+router.post("/tasks/kanban/:boardId/tasks", requireLogin, async (req, res) => {
+  try {
+    const boardId = req.params.boardId;
+    const board = await KanbanBoard.findById(boardId)
+      .lean()
+      .catch(() => null);
+    if (!board) return res.json({ ok: false, error: "ボードが見つかりません" });
+
+    const {
+      title,
+      description,
+      columnId,
+      startDate,
+      dueDate,
+      priority,
+      labels,
+      progress,
+      isMilestone,
+      assigneeIds,
+      dependencies,
+    } = req.body;
+    if (!title || !title.trim())
+      return res.json({ ok: false, error: "タイトルは必須です" });
+
+    const maxOrder = await KanbanTask.findOne({ boardId, columnId })
+      .sort({ order: -1 })
+      .lean()
+      .catch(() => null);
+    const order = maxOrder ? maxOrder.order + 1 : 0;
+
+    await KanbanTask.create({
+      boardId,
+      columnId: columnId || "todo",
+      title: title.trim().substring(0, 120),
+      description: (description || "").substring(0, 2000),
+      assigneeIds: Array.isArray(assigneeIds)
+        ? assigneeIds.filter(Boolean)
+        : [],
+      startDate: startDate || null,
+      dueDate: dueDate || null,
+      priority: priority || "",
+      progress: Math.min(100, Math.max(0, parseInt(progress) || 0)),
+      labels: Array.isArray(labels) ? labels.filter(Boolean).slice(0, 10) : [],
+      dependencies: Array.isArray(dependencies)
+        ? dependencies.filter(Boolean)
+        : [],
+      isMilestone: !!isMilestone,
+      order,
+      createdBy: req.session.userId,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[tasks] POST /kanban/:boardId/tasks error:", err);
+    res.json({ ok: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// GET /tasks/kanban/tasks/:taskId/json - タスク詳細取得 (API)
+// ─────────────────────────────────────────────────────────────
+router.get(
+  "/tasks/kanban/tasks/:taskId/json",
+  requireLogin,
+  async (req, res) => {
+    try {
+      const task = await KanbanTask.findById(req.params.taskId)
+        .lean()
+        .catch(() => null);
+      if (!task)
+        return res.json({ ok: false, error: "タスクが見つかりません" });
+      res.json({ ok: true, task });
+    } catch (err) {
+      res.json({ ok: false, error: err.message });
+    }
+  },
+);
+
+// ─────────────────────────────────────────────────────────────
+// PUT /tasks/kanban/tasks/:taskId - タスク更新 (API)
+// ─────────────────────────────────────────────────────────────
+router.put("/tasks/kanban/tasks/:taskId", requireLogin, async (req, res) => {
+  try {
+    const task = await KanbanTask.findById(req.params.taskId)
+      .lean()
+      .catch(() => null);
+    if (!task) return res.json({ ok: false, error: "タスクが見つかりません" });
+
+    const {
+      title,
+      description,
+      columnId,
+      startDate,
+      dueDate,
+      priority,
+      labels,
+      progress,
+      isMilestone,
+      assigneeIds,
+      dependencies,
+    } = req.body;
+    const upd = { updatedAt: new Date() };
+    if (title !== undefined) upd.title = title.trim().substring(0, 120);
+    if (description !== undefined)
+      upd.description = description.substring(0, 2000);
+    if (columnId !== undefined) upd.columnId = columnId;
+    if (startDate !== undefined) upd.startDate = startDate || null;
+    if (dueDate !== undefined) upd.dueDate = dueDate || null;
+    if (priority !== undefined) upd.priority = priority;
+    if (labels !== undefined)
+      upd.labels = Array.isArray(labels)
+        ? labels.filter(Boolean).slice(0, 10)
+        : [];
+    if (progress !== undefined)
+      upd.progress = Math.min(100, Math.max(0, parseInt(progress) || 0));
+    if (isMilestone !== undefined) upd.isMilestone = !!isMilestone;
+    if (assigneeIds !== undefined)
+      upd.assigneeIds = Array.isArray(assigneeIds)
+        ? assigneeIds.filter(Boolean)
+        : [];
+    if (dependencies !== undefined)
+      upd.dependencies = Array.isArray(dependencies)
+        ? dependencies.filter(Boolean)
+        : [];
+
+    await KanbanTask.findByIdAndUpdate(req.params.taskId, { $set: upd });
+    res.json({ ok: true });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// DELETE /tasks/kanban/tasks/:taskId - タスク削除 (API)
+// ─────────────────────────────────────────────────────────────
+router.delete("/tasks/kanban/tasks/:taskId", requireLogin, async (req, res) => {
+  try {
+    await KanbanTask.findByIdAndUpdate(req.params.taskId, {
+      $set: { archived: true },
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// GET /tasks/gantt - ガントチャート（ボード一覧 → 最初のボードへリダイレクト）
+// ─────────────────────────────────────────────────────────────
+router.get("/tasks/gantt", requireLogin, async (req, res) => {
+  try {
+    const first = await KanbanBoard.findOne({ archived: false })
+      .sort({ createdAt: -1 })
+      .lean()
+      .catch(() => null);
+    if (first) return res.redirect(`/tasks/gantt/${first._id}`);
+    // ボードがない場合はカンバン一覧へ
+    res.redirect("/tasks/kanban");
+  } catch (err) {
+    res.redirect("/tasks/kanban");
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// GET /tasks/gantt/:boardId - ガントチャート表示
+// ─────────────────────────────────────────────────────────────
+router.get("/tasks/gantt/:boardId", requireLogin, async (req, res) => {
+  try {
+    const lang = req.lang || req.session?.lang || "ja";
+    const { Employee } = require("../models");
+    const employee = req.session.userId
+      ? await Employee.findOne({ userId: req.session.userId })
+          .lean()
+          .catch(() => null)
+      : null;
+    const isAdmin = req.session.isAdmin || false;
+    const role = req.session.orgRole || (isAdmin ? "admin" : "employee");
+
+    const board = await KanbanBoard.findById(req.params.boardId)
+      .lean()
+      .catch(() => null);
+    if (!board) return res.redirect("/tasks/kanban");
+
+    const tasks = await KanbanTask.find({ boardId: board._id, archived: false })
+      .sort({ order: 1 })
+      .lean()
+      .catch(() => []);
+
+    const allUsers = await getAllUsers();
+    const userMap = {};
+    allUsers.forEach((u) => {
+      userMap[String(u._id)] = u.displayName || u.username;
+    });
+
+    // ボード一覧（タブ切り替え用）
+    const allBoards = await KanbanBoard.find({ archived: false })
+      .sort({ createdAt: -1 })
+      .lean()
+      .catch(() => []);
+
+    // assignee表示ヘルパー
+    function assigneeNames(ids) {
+      if (!ids || ids.length === 0) return "-";
+      return (
+        ids
+          .slice(0, 2)
+          .map((id) => userMap[String(id)] || "?")
+          .join(", ") + (ids.length > 2 ? ` +${ids.length - 2}` : "")
+      );
+    }
+
+    // 日付計算
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let minDate = new Date(today);
+    let maxDate = new Date(today);
+    maxDate.setDate(maxDate.getDate() + 60); // デフォルト60日先まで
+
+    tasks.forEach((tk) => {
+      if (tk.startDate) {
+        const d = new Date(tk.startDate);
+        if (d < minDate) minDate = d;
+      }
+      if (tk.dueDate) {
+        const d = new Date(tk.dueDate);
+        if (d > maxDate) maxDate = d;
+      }
+    });
+
+    // 余白を追加
+    minDate.setDate(minDate.getDate() - 7);
+    maxDate.setDate(maxDate.getDate() + 14);
+
+    const totalDays = Math.max(30, Math.round((maxDate - minDate) / 86400000));
+    const DAY_W = 28; // px per day
+    const ROW_H = 44; // px per row
+    const LEFT_W = 320; // left panel width
+
+    function dayOffset(date) {
+      if (!date) return null;
+      return Math.round((new Date(date) - minDate) / 86400000);
+    }
+
+    // 月・週ヘッダー生成
+    const monthHeaders = [];
+    const weekHeaders = [];
+    let cur = new Date(minDate);
+    while (cur <= maxDate) {
+      const mo = cur.toLocaleDateString("ja-JP", {
+        year: "numeric",
+        month: "short",
+      });
+      const startD = dayOffset(cur);
+      // 月の残り日数
+      const nextMonth = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+      const endD = Math.min(dayOffset(nextMonth), totalDays);
+      monthHeaders.push({
+        label: mo,
+        x: startD * DAY_W,
+        w: (endD - startD) * DAY_W,
+      });
+      cur = nextMonth;
+    }
+    cur = new Date(minDate);
+    // 最初の月曜に合わせる
+    const dow = cur.getDay();
+    if (dow !== 1) cur.setDate(cur.getDate() - (dow === 0 ? 6 : dow - 1));
+    while (cur <= maxDate) {
+      const d = dayOffset(cur);
+      if (d >= 0 && d <= totalDays) {
+        weekHeaders.push({
+          x: Math.max(0, d) * DAY_W,
+          label: cur.toLocaleDateString("ja-JP", {
+            month: "numeric",
+            day: "numeric",
+          }),
+        });
+      }
+      cur.setDate(cur.getDate() + 7);
+    }
+
+    const HEADER_H = 56;
+    const svgH = HEADER_H + tasks.length * ROW_H + 20;
+    const svgW = totalDays * DAY_W;
+
+    // 今日線のX座標
+    const todayX = dayOffset(today) * DAY_W;
+
+    // タスクマップ
+    const taskMap = {};
+    tasks.forEach((tk, i) => {
+      taskMap[String(tk._id)] = { ...tk, rowIndex: i };
+    });
+
+    // SVG要素生成
+    let svgContent = "";
+
+    // グリッド（週区切り縦線）
+    weekHeaders.forEach((wh) => {
+      svgContent += `<line x1="${wh.x}" y1="${HEADER_H}" x2="${wh.x}" y2="${svgH}" stroke="#f1f5f9" stroke-width="1"/>`;
+    });
+    // 行区切り横線
+    tasks.forEach((_, i) => {
+      const y = HEADER_H + i * ROW_H + ROW_H;
+      svgContent += `<line x1="0" y1="${y}" x2="${svgW}" y2="${y}" stroke="#f1f5f9" stroke-width="1"/>`;
+    });
+
+    // 今日線
+    if (todayX >= 0 && todayX <= svgW) {
+      svgContent += `<line x1="${todayX}" y1="0" x2="${todayX}" y2="${svgH}" stroke="#f87171" stroke-width="2" stroke-dasharray="4,3" opacity="0.8"/>`;
+      svgContent += `<rect x="${todayX - 18}" y="2" width="36" height="18" rx="4" fill="#f87171"/>`;
+      svgContent += `<text x="${todayX}" y="15" text-anchor="middle" fill="#fff" font-size="10" font-family="sans-serif">${t("tasks.gantt_today", lang)}</text>`;
+    }
+
+    // 月ヘッダー
+    monthHeaders.forEach((mh) => {
+      svgContent += `<rect x="${mh.x}" y="0" width="${mh.w}" height="26" fill="#f8fafc"/>`;
+      svgContent += `<text x="${mh.x + 6}" y="18" fill="#374151" font-size="12" font-family="sans-serif" font-weight="600">${mh.label}</text>`;
+      svgContent += `<line x1="${mh.x}" y1="0" x2="${mh.x}" y2="26" stroke="#e2e8f0" stroke-width="1"/>`;
+    });
+    // 週ヘッダー
+    weekHeaders.forEach((wh) => {
+      svgContent += `<rect x="${wh.x}" y="26" width="${DAY_W * 7}" height="30" fill="none"/>`;
+      svgContent += `<text x="${wh.x + 4}" y="46" fill="#94a3b8" font-size="10" font-family="sans-serif">${wh.label}</text>`;
+    });
+    // ヘッダー下ライン
+    svgContent += `<line x1="0" y1="${HEADER_H}" x2="${svgW}" y2="${HEADER_H}" stroke="#e2e8f0" stroke-width="1.5"/>`;
+
+    // 依存関係アロー
+    tasks.forEach((tk) => {
+      if (!tk.dependencies || tk.dependencies.length === 0) return;
+      const predY = HEADER_H + tk.rowIndex * ROW_H + ROW_H / 2;
+      tk.dependencies.forEach((depId) => {
+        const dep = taskMap[String(depId)];
+        if (!dep) return;
+        const depEndX = dep.dueDate
+          ? dayOffset(dep.dueDate) * DAY_W + DAY_W / 2
+          : null;
+        const tkStartX = tk.startDate ? dayOffset(tk.startDate) * DAY_W : null;
+        if (depEndX === null || tkStartX === null) return;
+        const depY = HEADER_H + dep.rowIndex * ROW_H + ROW_H / 2;
+        const midX = (depEndX + tkStartX) / 2;
+        svgContent += `<path d="M${depEndX},${depY} C${midX},${depY} ${midX},${predY} ${tkStartX},${predY}" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrowhead)"/>`;
+      });
+    });
+
+    // タスクバー
+    const PRIORITY_COLORS_GANTT = {
+      high: "#ef4444",
+      medium: "#f59e0b",
+      low: "#22c55e",
+      "": "#60a5fa",
+    };
+    tasks.forEach((tk, i) => {
+      const y = HEADER_H + i * ROW_H;
+      const barY = y + (ROW_H - 24) / 2;
+      const startOff = tk.startDate ? dayOffset(tk.startDate) : null;
+      const endOff = tk.dueDate ? dayOffset(tk.dueDate) : null;
+
+      if (tk.isMilestone && endOff !== null) {
+        // マイルストーン：ひし形
+        const mx = endOff * DAY_W;
+        const my = y + ROW_H / 2;
+        const ms = 10;
+        svgContent += `<polygon points="${mx},${my - ms} ${mx + ms},${my} ${mx},${my + ms} ${mx - ms},${my}" fill="#7c3aed"/>`;
+        svgContent += `<title>${escapeHtml(tk.title)}</title>`;
+      } else if (startOff !== null && endOff !== null && endOff >= startOff) {
+        const barX = startOff * DAY_W;
+        const barW = Math.max(DAY_W, (endOff - startOff + 1) * DAY_W);
+        const color = PRIORITY_COLORS_GANTT[tk.priority] || "#60a5fa";
+        const progressW = Math.round((barW * (tk.progress || 0)) / 100);
+        // バー背景
+        svgContent += `<rect x="${barX}" y="${barY}" width="${barW}" height="24" rx="6" fill="${color}" opacity="0.25"/>`;
+        // 進捗
+        if (progressW > 0)
+          svgContent += `<rect x="${barX}" y="${barY}" width="${progressW}" height="24" rx="6" fill="${color}" opacity="0.85"/>`;
+        // タイトルテキスト
+        const textX = barX + 6;
+        svgContent += `<text x="${textX}" y="${barY + 16}" fill="#1e293b" font-size="11" font-family="sans-serif" clip-path="url(#clip-${i})">${escapeHtml(tk.title.substring(0, 30))}</text>`;
+        svgContent += `<clipPath id="clip-${i}"><rect x="${barX}" y="${barY}" width="${barW - 4}" height="24"/></clipPath>`;
+        // 進捗ラベル
+        if (tk.progress > 0)
+          svgContent += `<text x="${barX + barW - 4}" y="${barY + 16}" fill="#1e293b" font-size="10" font-family="sans-serif" text-anchor="end" opacity="0.7">${tk.progress}%</text>`;
+      }
+    });
+
+    // 左パネル行HTML
+    const leftRowsHtml = tasks
+      .map((tk, i) => {
+        const overdue =
+          tk.dueDate && new Date(tk.dueDate) < today && tk.columnId !== "done";
+        const dueStr = tk.dueDate
+          ? new Date(tk.dueDate).toLocaleDateString("ja-JP", {
+              month: "numeric",
+              day: "numeric",
+            })
+          : "-";
+        const startStr = tk.startDate
+          ? new Date(tk.startDate).toLocaleDateString("ja-JP", {
+              month: "numeric",
+              day: "numeric",
+            })
+          : "-";
+        const prioColor = PRIORITY_COLOR[tk.priority] || "#94a3b8";
+        const assigneeN = assigneeNames(tk.assigneeIds || []);
+        return `
+<div class="gantt-row" data-index="${i}" onclick="location.href='/tasks/kanban/${board._id}?edit=${tk._id}'" style="cursor:pointer">
+  <div class="gantt-row-name">
+    ${tk.isMilestone ? `<i class="fa-solid fa-flag" style="color:#7c3aed;margin-right:4px;font-size:11px"></i>` : ""}
+    <span style="width:8px;height:8px;border-radius:50%;background:${prioColor};display:inline-block;margin-right:6px;flex-shrink:0"></span>
+    <span class="gantt-row-title">${escapeHtml(tk.title)}</span>
+  </div>
+  <div class="gantt-row-meta">
+    <span class="gantt-assignee">${escapeHtml(assigneeN)}</span>
+    <span class="gantt-date">${startStr}</span>
+    <span class="gantt-date ${overdue ? "gantt-overdue" : ""}">${dueStr}</span>
+    <div class="gantt-prog-mini"><div style="width:${tk.progress || 0}%;height:100%;background:#1d4ed8;border-radius:2px"></div></div>
+  </div>
+</div>`;
+      })
+      .join("");
+
+    // ボードタブ
+    const boardTabsHtml = allBoards
+      .map(
+        (b) =>
+          `<a href="/tasks/gantt/${b._id}" class="gantt-tab ${String(b._id) === String(board._id) ? "gantt-tab--active" : ""}">${escapeHtml(b.name)}</a>`,
+      )
+      .join("");
+
+    const extraHead = `
+<style>
+/* ガントチャート: ページ全体をビューポートに収める */
+body { overflow: hidden; height: 100vh; }
+.main { padding: 0 !important; overflow: hidden !important; align-items: stretch !important; }
+.main-content { display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden; }
+.gantt-topbar { display:flex; align-items:center; gap:12px; padding:12px 20px; background:#fff; border-bottom:1px solid #e2e8f0; flex-shrink:0; flex-wrap:wrap; }
+.gantt-topbar-title { font-size:17px; font-weight:700; color:#0f172a; display:flex; align-items:center; gap:8px; flex:1; }
+.gantt-btn { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; border:none; text-decoration:none; transition:background .15s; white-space:nowrap; }
+.gantt-btn--ghost { background:#f1f5f9; color:#374151; }
+.gantt-btn--ghost:hover { background:#e2e8f0; }
+.gantt-btn--blue { background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; }
+.gantt-btn--blue:hover { background:#dbeafe; }
+.gantt-tabs { display:flex; gap:0; padding:0 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0; overflow-x:auto; flex-shrink:0; }
+.gantt-tab { display:inline-flex; align-items:center; padding:9px 18px; font-size:13px; font-weight:500; color:#64748b; text-decoration:none; border-bottom:2px solid transparent; white-space:nowrap; transition:color .15s,border-color .15s; }
+.gantt-tab:hover { color:#1d4ed8; }
+.gantt-tab--active { color:#1d4ed8; border-bottom-color:#1d4ed8; font-weight:600; background:#fff; }
+.gantt-container { display:flex; flex:1; overflow:hidden; }
+.gantt-left { width:${LEFT_W}px; flex-shrink:0; border-right:1px solid #e2e8f0; overflow-y:auto; background:#fff; }
+.gantt-left-header { display:grid; grid-template-columns:1fr auto; align-items:center; padding:0 12px; height:${HEADER_H}px; background:#f8fafc; border-bottom:1px solid #e2e8f0; font-size:12px; font-weight:700; color:#374151; position:sticky; top:0; z-index:1; gap:4px; }
+.gantt-row { border-bottom:1px solid #f1f5f9; transition:background .1s; }
+.gantt-row:hover { background:#f8fafc; }
+.gantt-row-name { display:flex; align-items:center; padding:6px 12px 2px; font-size:13px; overflow:hidden; }
+.gantt-row-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#1e293b; }
+.gantt-row-meta { display:grid; grid-template-columns:1fr auto auto 60px; gap:6px; padding:2px 12px 6px; font-size:11px; color:#64748b; align-items:center; }
+.gantt-assignee { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gantt-date { white-space:nowrap; }
+.gantt-overdue { color:#dc2626; font-weight:600; }
+.gantt-prog-mini { height:4px; background:#e2e8f0; border-radius:2px; overflow:hidden; }
+.gantt-right { flex:1; overflow:auto; }
+.gantt-svg-wrap { position:relative; min-width:100%; }
+.gantt-empty { display:flex; align-items:center; justify-content:center; flex:1; padding:40px 20px; color:#94a3b8; font-size:14px; text-align:center; }
+@media (max-width:640px) {
+  .gantt-topbar { padding:10px 12px; gap:0; flex-wrap:wrap; row-gap:6px; }
+  .gantt-topbar-title { font-size:14px; flex:0 0 100%; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .gantt-topbar-btns { display:flex; gap:8px; flex-wrap:wrap; flex:0 0 100%; justify-content:flex-end; }
+  .gantt-btn { padding:6px 12px; font-size:12px; }
+  .gantt-tabs { padding:0 8px; }
+  .gantt-tab { padding:7px 10px; font-size:12px; }
+  .gantt-left { width:160px; }
+  .gantt-left-header { padding:0 6px; font-size:11px; }
+  .gantt-row-name { padding:4px 6px 2px; font-size:12px; }
+  .gantt-row-meta { grid-template-columns:1fr auto 48px; padding:2px 6px 4px; font-size:10px; }
+  .gantt-row-meta > :nth-child(2) { display:none; }
+}
+</style>`;
+
+    const html =
+      buildPageShell({
+        title: `${escapeHtml(board.name)} | ${t("tasks.gantt_title", lang)}`,
+        currentPath: "/tasks",
+        employee,
+        isAdmin,
+        role,
+        extraHead,
+        lang,
+      }) +
+      `
+<div class="main-content">
+  <div class="gantt-topbar">
+    <div class="gantt-topbar-title">
+      <i class="fa-solid fa-chart-gantt" style="color:#059669"></i>
+      ${t("tasks.gantt_title", lang)} - ${escapeHtml(board.name)}
+    </div>
+    <div class="gantt-topbar-btns">
+      <a href="/tasks/kanban/${board._id}" class="gantt-btn gantt-btn--blue"><i class="fa-solid fa-table-columns"></i> ${t("tasks.go_kanban_view", lang)}</a>
+      <a href="/tasks/kanban" class="gantt-btn gantt-btn--ghost"><i class="fa-solid fa-arrow-left"></i> ${t("tasks.back_to_boards", lang)}</a>
+    </div>
+  </div>
+  ${boardTabsHtml ? `<div class="gantt-tabs">${boardTabsHtml}</div>` : ""}
+  ${
+    tasks.length === 0
+      ? `<div class="gantt-empty"><div><i class="fa-solid fa-chart-gantt" style="font-size:48px;color:#cbd5e1;display:block;margin:0 auto 16px"></i>${t("tasks.gantt_no_tasks", lang)}<br><a href="/tasks/kanban/${board._id}" style="color:#1d4ed8;margin-top:12px;display:inline-block">${t("tasks.task_add", lang)}</a></div></div>`
+      : `
+  <div class="gantt-container">
+    <div class="gantt-left">
+      <div class="gantt-left-header">
+        <span>${t("tasks.col_title", lang)}</span>
+        <span>${t("tasks.col_due_date", lang)}</span>
+      </div>
+      ${leftRowsHtml}
+    </div>
+    <div class="gantt-right" id="gantt-right">
+      <div class="gantt-svg-wrap">
+        <svg width="${svgW}" height="${svgH}" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
+            </marker>
+          </defs>
+          ${svgContent}
+        </svg>
+      </div>
+    </div>
+  </div>`
+  }
+</div>
+<script>
+// 左右パネルのスクロール同期
+(function(){
+  var left = document.querySelector('.gantt-left');
+  var right = document.getElementById('gantt-right');
+  if(!left||!right) return;
+  // 今日付近にスクロール
+  var todayX = ${todayX};
+  right.scrollLeft = Math.max(0, todayX - 200);
+  right.addEventListener('scroll', function(){
+    left.scrollTop = right.scrollTop;
+  });
+  left.addEventListener('scroll', function(){
+    right.scrollTop = left.scrollTop;
+  });
+})();
+</script>
+` +
+      pageFooter();
+    res.send(html);
+  } catch (err) {
+    console.error("[tasks] GET /tasks/gantt/:boardId error:", err);
+    res.status(500).send("サーバーエラーが発生しました。");
   }
 });
 

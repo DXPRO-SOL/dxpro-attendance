@@ -1533,6 +1533,61 @@ const UserUIPreference = mongoose.model(
   UserUIPreferenceSchema,
 );
 
+// ─── カンバンボード ──────────────────────────────────────────────────────────
+const KanbanBoardSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  description: { type: String, default: "" },
+  color: { type: String, default: "#1d4ed8" },
+  columns: [
+    {
+      id: { type: String, required: true },
+      name: { type: String, required: true },
+      order: { type: Number, default: 0 },
+      color: { type: String, default: "#e2e8f0" },
+    },
+  ],
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+  },
+  archived: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+const KanbanBoard = mongoose.model("KanbanBoard", KanbanBoardSchema);
+
+// ─── カンバンタスク（カンバン・ガントチャート共用） ────────────────────────
+const KanbanTaskSchema = new mongoose.Schema({
+  boardId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "KanbanBoard",
+    required: true,
+  },
+  columnId: { type: String, required: true },
+  title: { type: String, required: true },
+  description: { type: String, default: "" },
+  assigneeIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  startDate: { type: Date, default: null },
+  dueDate: { type: Date, default: null },
+  priority: { type: String, enum: ["high", "medium", "low", ""], default: "" },
+  progress: { type: Number, min: 0, max: 100, default: 0 },
+  labels: [{ type: String }],
+  dependencies: [{ type: mongoose.Schema.Types.ObjectId, ref: "KanbanTask" }],
+  isMilestone: { type: Boolean, default: false },
+  order: { type: Number, default: 0 },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+  },
+  archived: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+KanbanTaskSchema.index({ boardId: 1, columnId: 1, order: 1 });
+const KanbanTask = mongoose.model("KanbanTask", KanbanTaskSchema);
+
 module.exports = {
   ChatRoom,
   ChatMessage,
@@ -1577,4 +1632,6 @@ module.exports = {
   Stamp,
   UserBehaviorLog,
   UserUIPreference,
+  KanbanBoard,
+  KanbanTask,
 };
