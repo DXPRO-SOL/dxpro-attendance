@@ -1701,11 +1701,24 @@ const NokoriApplicationSchema = new mongoose.Schema({
   memberId: { type: mongoose.Schema.Types.ObjectId, ref: "NokoriMember", required: true },
   planId: { type: mongoose.Schema.Types.ObjectId, ref: "NokoriPlan" },
   optionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "NokoriOption" }],
-  status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
+  status: {
+    type: String,
+    enum: ["pending", "invoice_sent", "payment_confirmed", "approved", "rejected"],
+    default: "pending",
+  },
   comment: { type: String, default: "" },
   adminComment: { type: String, default: "" },
   processedAt: { type: Date },
   processedBy: { type: String, default: "" },
+  // 請求書関連
+  invoiceNo: { type: String, default: "" },
+  invoiceAmount: { type: Number, default: 0 },   // 初回請求金額（円）
+  invoiceSentAt: { type: Date },
+  invoiceNote: { type: String, default: "" },     // 請求書備考
+  // 入金確認
+  paymentConfirmedAt: { type: Date },
+  paymentConfirmedBy: { type: String, default: "" },
+  paymentNote: { type: String, default: "" },     // 入金メモ（振込日など）
   createdAt: { type: Date, default: Date.now },
 });
 const NokoriApplication = mongoose.model("NokoriApplication", NokoriApplicationSchema);

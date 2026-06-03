@@ -56,7 +56,7 @@ router.get("/nokori/admin", requireAdmin, async (req, res) => {
                 <td>${a.memberId?.name||"-"}</td>
                 <td>${a.memberId?.company||"-"}</td>
                 <td>${a.planId?.name||"-"}</td>
-                <td><span class="nk-badge ${{pending:"nk-badge-yellow",approved:"nk-badge-green",rejected:"nk-badge-red"}[a.status]}">${{pending:"審査中",approved:"承認",rejected:"却下"}[a.status]}</span></td>
+                <td><span class="nk-badge ${{pending:"nk-badge-yellow",invoice_sent:"nk-badge-blue",payment_confirmed:"nk-badge-purple",approved:"nk-badge-green",rejected:"nk-badge-red"}[a.status]||"nk-badge-yellow"}">${{pending:"申請受付中",invoice_sent:"請求書送付済み",payment_confirmed:"入金確認済み",approved:"有効化完了",rejected:"却下"}[a.status]||"申請受付中"}</span></td>
                 <td><a href="/nokori/admin/applications/${a._id}" style="color:#0f4c81;font-size:13px;">詳細</a></td>
               </tr>`).join("")}
           </tbody>
@@ -144,7 +144,7 @@ router.get("/nokori/admin/members/:id", requireAdmin, async (req, res) => {
       <div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;padding:28px;">
         <h2 style="font-size:17px;font-weight:800;margin-bottom:20px;">申請履歴</h2>
         ${apps.length > 0 ? `<table class="nk-table"><thead><tr><th>申請日</th><th>プラン</th><th>状態</th><th></th></tr></thead><tbody>
-          ${apps.map(a=>`<tr><td>${new Date(a.createdAt).toLocaleDateString("ja-JP")}</td><td>${a.planId?.name||"-"}</td><td><span class="nk-badge ${{pending:"nk-badge-yellow",approved:"nk-badge-green",rejected:"nk-badge-red"}[a.status]}">${{pending:"審査中",approved:"承認",rejected:"却下"}[a.status]}</span></td><td><a href="/nokori/admin/applications/${a._id}" style="color:#0f4c81;font-size:13px;">詳細</a></td></tr>`).join("")}
+          ${apps.map(a=>`<tr><td>${new Date(a.createdAt).toLocaleDateString("ja-JP")}</td><td>${a.planId?.name||"-"}</td><td><span class="nk-badge ${{pending:"nk-badge-yellow",invoice_sent:"nk-badge-blue",payment_confirmed:"nk-badge-purple",approved:"nk-badge-green",rejected:"nk-badge-red"}[a.status]||"nk-badge-yellow"}">${{pending:"申請受付中",invoice_sent:"請求書送付済み",payment_confirmed:"入金確認済み",approved:"有効化完了",rejected:"却下"}[a.status]||"申請受付中"}</span></td><td><a href="/nokori/admin/applications/${a._id}" style="color:#0f4c81;font-size:13px;">詳細</a></td></tr>`).join("")}
         </tbody></table>` : "<p style='color:#94a3b8;font-size:14px;'>申請なし</p>"}
       </div>
     </div>`;
@@ -171,13 +171,20 @@ router.get("/nokori/admin/applications", requireAdmin, async (req, res) => {
     .populate("memberId planId")
     .sort({ createdAt: -1 })
     .lean();
-  const tabs = ["", "pending", "approved", "rejected"].map(s => `<a href="/nokori/admin/applications${s?"?status="+s:""}" style="padding:8px 16px;border-radius:6px;font-size:14px;font-weight:600;background:${statusFilter===s?"#0f4c81":"#f1f5f9"};color:${statusFilter===s?"#fff":"#374151"};">${{"":" 全て","pending":"審査中","approved":"承認済み","rejected":"却下"}[s]}</a>`).join("");
+
+  const STATUS_LABEL = { pending:"申請受付中", invoice_sent:"請求書送付済み", payment_confirmed:"入金確認済み", approved:"有効化完了", rejected:"却下" };
+  const STATUS_BADGE = { pending:"nk-badge-yellow", invoice_sent:"nk-badge-blue", payment_confirmed:"nk-badge-purple", approved:"nk-badge-green", rejected:"nk-badge-red" };
+
+  const tabs = [["","全て"],["pending","申請受付中"],["invoice_sent","請求書送付済み"],["payment_confirmed","入金確認済み"],["approved","有効化完了"],["rejected","却下"]].map(([s,l]) =>
+    `<a href="/nokori/admin/applications${s?"?status="+s:""}" style="padding:7px 14px;border-radius:6px;font-size:13px;font-weight:600;background:${statusFilter===s?"#0f4c81":"#f1f5f9"};color:${statusFilter===s?"#fff":"#374151"};">${l}</a>`
+  ).join("");
+
   const body = `
     <div style="display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap;">${tabs}</div>
     <div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;padding:24px;">
       <div class="nk-table-wrap">
         <table class="nk-table">
-          <thead><tr><th>申請日</th><th>氏名</th><th>会社</th><th>プラン</th><th>状態</th><th>操作</th></tr></thead>
+          <thead><tr><th>申請日</th><th>氏名</th><th>会社</th><th>プラン</th><th>請求金額</th><th>状態</th><th>操作</th></tr></thead>
           <tbody>
             ${apps.map(a => `
               <tr>
@@ -185,7 +192,8 @@ router.get("/nokori/admin/applications", requireAdmin, async (req, res) => {
                 <td>${a.memberId?.name||"-"}</td>
                 <td>${a.memberId?.company||"-"}</td>
                 <td>${a.planId?.name||"-"}</td>
-                <td><span class="nk-badge ${{pending:"nk-badge-yellow",approved:"nk-badge-green",rejected:"nk-badge-red"}[a.status]}">${{pending:"審査中",approved:"承認",rejected:"却下"}[a.status]}</span></td>
+                <td>${a.invoiceAmount ? `¥${a.invoiceAmount.toLocaleString()}` : "-"}</td>
+                <td><span class="nk-badge ${STATUS_BADGE[a.status]||"nk-badge-yellow"}">${STATUS_LABEL[a.status]||"申請受付中"}</span></td>
                 <td><a href="/nokori/admin/applications/${a._id}" style="color:#0f4c81;font-size:13px;">詳細</a></td>
               </tr>`).join("")}
           </tbody>
@@ -198,64 +206,312 @@ router.get("/nokori/admin/applications", requireAdmin, async (req, res) => {
 router.get("/nokori/admin/applications/:id", requireAdmin, async (req, res) => {
   const app = await NokoriApplication.findById(req.params.id).populate("memberId planId optionIds").lean();
   if (!app) return res.redirect("/nokori/admin/applications");
+
+  const STATUS_LABEL = {
+    pending:           "申請受付中",
+    invoice_sent:      "請求書送付済み",
+    payment_confirmed: "入金確認済み",
+    approved:          "有効化完了",
+    rejected:          "却下",
+  };
+  const STATUS_COLOR = {
+    pending:           "#f59e0b",
+    invoice_sent:      "#3b82f6",
+    payment_confirmed: "#8b5cf6",
+    approved:          "#10b981",
+    rejected:          "#ef4444",
+  };
+
+  // 初回請求金額計算（初期費用 + 月額 × 1 + オプション合計）
+  const planInitial = app.planId?.initialFee || 0;
+  const planMonthly = app.planId?.monthlyFee || 0;
+  const optTotal    = (app.optionIds || []).reduce((s, o) => s + (o.monthlyFee || 0), 0);
+  const defaultAmount = planInitial + planMonthly + optTotal;
+
+  // ステップインジケーター
+  const steps = ["pending", "invoice_sent", "payment_confirmed", "approved"];
+  const stepLabels = ["申請受付", "請求書送付", "入金確認", "有効化"];
+  const currentIdx = steps.indexOf(app.status);
+  const stepHtml = `
+    <div style="display:flex;align-items:center;gap:0;margin-bottom:28px;">
+      ${steps.map((s, i) => {
+        const done  = currentIdx > i || app.status === s;
+        const active = app.status === s && s !== "approved";
+        const color = done ? STATUS_COLOR[s] : "#cbd5e1";
+        return `
+          <div style="display:flex;align-items:center;flex:1;">
+            <div style="display:flex;flex-direction:column;align-items:center;min-width:64px;">
+              <div style="width:32px;height:32px;border-radius:50%;background:${color};color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;">${i+1}</div>
+              <div style="font-size:11px;color:${done?"#1e293b":"#94a3b8"};margin-top:4px;text-align:center;white-space:nowrap;">${stepLabels[i]}</div>
+            </div>
+            ${i < steps.length-1 ? `<div style="flex:1;height:3px;background:${currentIdx > i ? "#0f4c81" : "#e2e8f0"};margin-bottom:16px;"></div>` : ""}
+          </div>`;
+      }).join("")}
+    </div>`;
+
+  // アクションパネル（ステータスに応じて変わる）
+  let actionHtml = "";
+  if (app.status === "pending") {
+    actionHtml = `
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:16px;">📄 請求書を送付する</h3>
+      <form method="POST" action="/nokori/admin/applications/${app._id}/send-invoice">
+        <div class="nk-field">
+          <label>請求金額（円・税込）</label>
+          <input type="number" name="invoiceAmount" value="${defaultAmount}" required
+            style="width:100%;padding:10px;border:1.5px solid #d1d5db;border-radius:8px;font-size:15px;">
+          <div style="font-size:12px;color:#64748b;margin-top:4px;">
+            内訳: 初期費用 ¥${planInitial.toLocaleString()} + 月額 ¥${planMonthly.toLocaleString()} + オプション ¥${optTotal.toLocaleString()}
+          </div>
+        </div>
+        <div class="nk-field">
+          <label>備考（請求書メールに追記）</label>
+          <textarea name="invoiceNote" rows="3" style="width:100%;padding:10px;border:1.5px solid #d1d5db;border-radius:8px;font-size:14px;" placeholder="例: お支払い期限は〇月〇日です"></textarea>
+        </div>
+        <button type="submit" style="width:100%;padding:12px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px;">
+          📨 請求書メールを送付する
+        </button>
+      </form>
+      <form method="POST" action="/nokori/admin/applications/${app._id}/reject" onsubmit="return confirm('却下しますか？')">
+        <textarea name="adminComment" rows="2" placeholder="却下理由（任意）" style="width:100%;padding:10px;border:1.5px solid #fca5a5;border-radius:8px;font-size:13px;margin-bottom:8px;"></textarea>
+        <button type="submit" style="width:100%;padding:10px;background:#fff;color:#ef4444;border:1.5px solid #ef4444;border-radius:8px;font-size:14px;cursor:pointer;">却下する</button>
+      </form>`;
+
+  } else if (app.status === "invoice_sent") {
+    const dueDate = new Date(app.invoiceSentAt);
+    dueDate.setDate(dueDate.getDate() + parseInt(process.env.PAYMENT_DUE_DAYS || 14));
+    actionHtml = `
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:16px;">✅ 入金を確認する</h3>
+      <div style="background:#eff6ff;border-radius:8px;padding:14px;margin-bottom:16px;font-size:13px;">
+        <div>請求書番号: <strong>${app.invoiceNo || "-"}</strong></div>
+        <div>請求金額: <strong>¥${(app.invoiceAmount||0).toLocaleString()}</strong></div>
+        <div>送付日: ${app.invoiceSentAt ? new Date(app.invoiceSentAt).toLocaleDateString("ja-JP") : "-"}</div>
+        <div>お支払い期限: ${dueDate.toLocaleDateString("ja-JP")}</div>
+      </div>
+      <form method="POST" action="/nokori/admin/applications/${app._id}/confirm-payment">
+        <div class="nk-field">
+          <label>入金メモ（振込日・振込人名など）</label>
+          <textarea name="paymentNote" rows="3" style="width:100%;padding:10px;border:1.5px solid #d1d5db;border-radius:8px;font-size:14px;" placeholder="例: 6月5日 カ）○○○○ ¥165,000 確認"></textarea>
+        </div>
+        <button type="submit" style="width:100%;padding:12px;background:#8b5cf6;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px;">
+          💰 入金確認済みにする
+        </button>
+      </form>
+      <form method="POST" action="/nokori/admin/applications/${app._id}/reject" onsubmit="return confirm('却下しますか？')">
+        <textarea name="adminComment" rows="2" placeholder="却下理由（任意）" style="width:100%;padding:10px;border:1.5px solid #fca5a5;border-radius:8px;font-size:13px;margin-bottom:8px;"></textarea>
+        <button type="submit" style="width:100%;padding:10px;background:#fff;color:#ef4444;border:1.5px solid #ef4444;border-radius:8px;font-size:14px;cursor:pointer;">却下する</button>
+      </form>`;
+
+  } else if (app.status === "payment_confirmed") {
+    actionHtml = `
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:16px;">🚀 アカウントを有効化する</h3>
+      <div style="background:#f5f3ff;border-radius:8px;padding:14px;margin-bottom:16px;font-size:13px;">
+        <div>入金確認日: ${app.paymentConfirmedAt ? new Date(app.paymentConfirmedAt).toLocaleDateString("ja-JP") : "-"}</div>
+        <div>確認担当: ${app.paymentConfirmedBy || "-"}</div>
+        ${app.paymentNote ? `<div>入金メモ: ${app.paymentNote}</div>` : ""}
+      </div>
+      <form method="POST" action="/nokori/admin/applications/${app._id}/activate">
+        <div class="nk-field">
+          <label>有効化コメント（任意・お客様へのメール本文に追加）</label>
+          <textarea name="adminComment" rows="3" style="width:100%;padding:10px;border:1.5px solid #d1d5db;border-radius:8px;font-size:14px;" placeholder="例: ご利用の開始方法についてはご案内メールをご確認ください"></textarea>
+        </div>
+        <button type="submit" style="width:100%;padding:12px;background:#10b981;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;">
+          ✅ アカウントを有効化する
+        </button>
+      </form>`;
+
+  } else {
+    const badgeColor = STATUS_COLOR[app.status] || "#64748b";
+    actionHtml = `
+      <div style="text-align:center;padding:32px 16px;color:#64748b;">
+        <div style="font-size:40px;margin-bottom:12px;">${app.status === "approved" ? "✅" : "❌"}</div>
+        <div style="font-size:16px;font-weight:700;color:${badgeColor};">${STATUS_LABEL[app.status]}</div>
+        <div style="font-size:13px;margin-top:8px;">処理日: ${app.processedAt ? new Date(app.processedAt).toLocaleDateString("ja-JP") : "-"}</div>
+        ${app.adminComment ? `<div style="font-size:13px;margin-top:8px;">コメント: ${app.adminComment}</div>` : ""}
+      </div>`;
+  }
+
   const body = `
     <div style="margin-bottom:20px;"><a href="/nokori/admin/applications" style="font-size:14px;color:#64748b;">← 申請一覧</a></div>
+    ${stepHtml}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
       <div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;padding:28px;">
         <h2 style="font-size:17px;font-weight:800;margin-bottom:20px;">申請内容</h2>
         <table class="nk-table"><tbody>
-          <tr><th style="width:100px;">申請者</th><td>${app.memberId?.name||"-"}</td></tr>
+          <tr><th style="width:110px;">申請者</th><td>${app.memberId?.name||"-"}</td></tr>
           <tr><th>会社名</th><td>${app.memberId?.company||"-"}</td></tr>
-          <tr><th>メール</th><td>${app.memberId?.email||"-"}</td></tr>
-          <tr><th>申請プラン</th><td>${app.planId?.name||"-"}</td></tr>
-          <tr><th>オプション</th><td>${app.optionIds?.map(o=>o.name).join(", ")||"-"}</td></tr>
+          <tr><th>メール</th><td><a href="mailto:${app.memberId?.email||""}" style="color:#0f4c81;">${app.memberId?.email||"-"}</a></td></tr>
+          <tr><th>電話</th><td>${app.memberId?.phone||"-"}</td></tr>
+          <tr><th>申請プラン</th><td>${app.planId ? `${app.planId.name}（月額 ¥${(app.planId.monthlyFee||0).toLocaleString()}）` : "-"}</td></tr>
+          <tr><th>オプション</th><td>${app.optionIds?.length ? app.optionIds.map(o=>`${o.name}（¥${(o.monthlyFee||0).toLocaleString()}）`).join("<br>") : "-"}</td></tr>
+          <tr><th>初回請求額</th><td><strong style="font-size:16px;">¥${(app.invoiceAmount||defaultAmount).toLocaleString()}</strong></td></tr>
           <tr><th>申請日</th><td>${new Date(app.createdAt).toLocaleDateString("ja-JP")}</td></tr>
-          <tr><th>状態</th><td><span class="nk-badge ${{pending:"nk-badge-yellow",approved:"nk-badge-green",rejected:"nk-badge-red"}[app.status]}">${{pending:"審査中",approved:"承認",rejected:"却下"}[app.status]}</span></td></tr>
-          ${app.processedAt ? `<tr><th>処理日</th><td>${new Date(app.processedAt).toLocaleDateString("ja-JP")}</td></tr>` : ""}
-          ${app.adminComment ? `<tr><th>コメント</th><td>${app.adminComment}</td></tr>` : ""}
+          <tr><th>状態</th><td><span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;background:${STATUS_COLOR[app.status]}20;color:${STATUS_COLOR[app.status]};">${STATUS_LABEL[app.status]}</span></td></tr>
+          ${app.invoiceNo ? `<tr><th>請求書番号</th><td>${app.invoiceNo}</td></tr>` : ""}
+          ${app.invoiceSentAt ? `<tr><th>請求書送付日</th><td>${new Date(app.invoiceSentAt).toLocaleDateString("ja-JP")}</td></tr>` : ""}
+          ${app.paymentConfirmedAt ? `<tr><th>入金確認日</th><td>${new Date(app.paymentConfirmedAt).toLocaleDateString("ja-JP")}</td></tr>` : ""}
         </tbody></table>
       </div>
       <div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;padding:28px;">
-        <h2 style="font-size:17px;font-weight:800;margin-bottom:20px;">承認・却下</h2>
-        <form method="POST" action="/nokori/admin/applications/${app._id}/process">
-          <div class="nk-field">
-            <label>処理を選択</label>
-            <select name="action" style="width:100%;padding:10px;border:1.5px solid #d1d5db;border-radius:8px;font-size:14px;">
-              <option value="approved">承認する</option>
-              <option value="rejected">却下する</option>
-            </select>
-          </div>
-          <div class="nk-field"><label>コメント（任意）</label><textarea name="adminComment" rows="4" style="width:100%;padding:10px;border:1.5px solid #d1d5db;border-radius:8px;font-size:14px;" placeholder="申請者へのメッセージを入力">${app.adminComment||""}</textarea></div>
-          <button type="submit" style="width:100%;padding:12px;background:#0f4c81;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;">処理を実行する</button>
-        </form>
+        ${actionHtml}
       </div>
     </div>`;
   res.send(adminPage("申請詳細", body, "/nokori/admin/applications"));
 });
 
-router.post("/nokori/admin/applications/:id/process", requireAdmin, async (req, res) => {
-  const { action, adminComment } = req.body;
-  const app = await NokoriApplication.findById(req.params.id).populate("memberId").lean();
-  if (!app) return res.redirect("/nokori/admin/applications");
+// 請求書送付
+router.post("/nokori/admin/applications/:id/send-invoice", requireAdmin, async (req, res) => {
+  const app = await NokoriApplication.findById(req.params.id).populate("memberId planId optionIds").lean();
+  if (!app || app.status !== "pending") return res.redirect("/nokori/admin/applications/" + req.params.id);
+
+  const invoiceAmount = parseInt(req.body.invoiceAmount) || 0;
+  const invoiceNote   = req.body.invoiceNote || "";
+  const now           = new Date();
+  const invoiceNo     = `INV-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}-${String(app._id).slice(-6).toUpperCase()}`;
+  const dueDays       = parseInt(process.env.PAYMENT_DUE_DAYS || 14);
+  const dueDate       = new Date(now); dueDate.setDate(now.getDate() + dueDays);
+
   await NokoriApplication.updateOne({ _id: req.params.id }, {
-    status: action,
-    adminComment: adminComment || "",
+    status: "invoice_sent",
+    invoiceNo,
+    invoiceAmount,
+    invoiceSentAt: now,
+    invoiceNote,
+    processedBy: req.session.username || "admin",
+  });
+
+  // 振込先情報
+  const bank = {
+    name:    process.env.BANK_NAME           || "○○銀行",
+    branch:  process.env.BANK_BRANCH         || "○○支店",
+    type:    process.env.BANK_ACCOUNT_TYPE   || "普通",
+    number:  process.env.BANK_ACCOUNT_NUMBER || "1234567",
+    holder:  process.env.BANK_ACCOUNT_NAME   || "カ）DXPRO SOLUTIONS",
+  };
+
+  try {
+    const member = app.memberId;
+    const planName = app.planId?.name || "未選択";
+    const optNames = (app.optionIds||[]).map(o=>o.name).join("、") || "なし";
+
+    await sendMail({
+      to: member.email,
+      subject: `【NOKORI】ご請求書のご送付（${invoiceNo}）`,
+      html: `
+<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px 24px;background:#fff;">
+  <h2 style="color:#0f4c81;font-size:20px;margin-bottom:24px;">ご請求書のご送付</h2>
+  <p>${member.name} 様</p>
+  <p>この度はNOKORIへのご加入申請をいただきありがとうございます。<br>
+  以下の内容にてご請求書をご送付いたします。</p>
+
+  <table style="width:100%;border-collapse:collapse;margin:24px 0;font-size:14px;">
+    <tr style="background:#f8fafc;"><th style="padding:10px 14px;text-align:left;border:1px solid #e2e8f0;width:140px;">請求書番号</th><td style="padding:10px 14px;border:1px solid #e2e8f0;">${invoiceNo}</td></tr>
+    <tr><th style="padding:10px 14px;text-align:left;border:1px solid #e2e8f0;">申請プラン</th><td style="padding:10px 14px;border:1px solid #e2e8f0;">${planName}</td></tr>
+    <tr style="background:#f8fafc;"><th style="padding:10px 14px;text-align:left;border:1px solid #e2e8f0;">オプション</th><td style="padding:10px 14px;border:1px solid #e2e8f0;">${optNames}</td></tr>
+    <tr><th style="padding:10px 14px;text-align:left;border:1px solid #e2e8f0;"><strong>ご請求金額</strong></th><td style="padding:10px 14px;border:1px solid #e2e8f0;"><strong style="font-size:18px;color:#0f4c81;">¥${invoiceAmount.toLocaleString()}（税込）</strong></td></tr>
+    <tr style="background:#f8fafc;"><th style="padding:10px 14px;text-align:left;border:1px solid #e2e8f0;">お支払い期限</th><td style="padding:10px 14px;border:1px solid #e2e8f0;"><strong>${dueDate.toLocaleDateString("ja-JP")}</strong></td></tr>
+  </table>
+
+  <div style="background:#f0f7ff;border-radius:8px;padding:20px;margin:20px 0;">
+    <h3 style="font-size:15px;color:#0f4c81;margin-bottom:12px;">お振込先</h3>
+    <table style="font-size:14px;border-collapse:collapse;">
+      <tr><td style="padding:4px 12px 4px 0;color:#64748b;">銀行名</td><td><strong>${bank.name}</strong></td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#64748b;">支店名</td><td><strong>${bank.branch}</strong></td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#64748b;">口座種別</td><td>${bank.type}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#64748b;">口座番号</td><td><strong>${bank.number}</strong></td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#64748b;">口座名義</td><td><strong>${bank.holder}</strong></td></tr>
+    </table>
+    <p style="font-size:12px;color:#64748b;margin-top:8px;">※ 振込手数料はお客様負担にてお願いいたします</p>
+  </div>
+
+  ${invoiceNote ? `<p style="font-size:14px;color:#374151;background:#fffbeb;border-radius:6px;padding:12px;">${invoiceNote}</p>` : ""}
+
+  <p style="font-size:14px;color:#374151;">ご入金確認後、担当者よりアカウント有効化のご連絡をいたします。<br>
+  ご不明な点はお気軽にお問い合わせください。</p>
+  <p style="font-size:13px;color:#64748b;margin-top:32px;">-- NOKORI チーム<br><a href="https://nokori.jp" style="color:#0f4c81;">nokori.jp</a></p>
+</div>`,
+    });
+    console.log(`[Invoice] 送付完了: ${invoiceNo} → ${member.email}`);
+  } catch (e) { console.error("send-invoice mail:", e.message); }
+
+  res.redirect("/nokori/admin/applications/" + req.params.id);
+});
+
+// 入金確認
+router.post("/nokori/admin/applications/:id/confirm-payment", requireAdmin, async (req, res) => {
+  const app = await NokoriApplication.findById(req.params.id).lean();
+  if (!app || app.status !== "invoice_sent") return res.redirect("/nokori/admin/applications/" + req.params.id);
+
+  await NokoriApplication.updateOne({ _id: req.params.id }, {
+    status: "payment_confirmed",
+    paymentConfirmedAt: new Date(),
+    paymentConfirmedBy: req.session.username || "admin",
+    paymentNote: req.body.paymentNote || "",
+  });
+
+  res.redirect("/nokori/admin/applications/" + req.params.id);
+});
+
+// アカウント有効化
+router.post("/nokori/admin/applications/:id/activate", requireAdmin, async (req, res) => {
+  const app = await NokoriApplication.findById(req.params.id).populate("memberId").lean();
+  if (!app || app.status !== "payment_confirmed") return res.redirect("/nokori/admin/applications/" + req.params.id);
+
+  await NokoriApplication.updateOne({ _id: req.params.id }, {
+    status: "approved",
+    adminComment: req.body.adminComment || "",
     processedAt: new Date(),
     processedBy: req.session.username || "admin",
   });
-  // 会員ステータス連動
-  if (action === "approved") {
-    await NokoriMember.updateOne({ _id: app.memberId._id }, { status: "active" });
-  }
-  // メール通知
+  await NokoriMember.updateOne({ _id: app.memberId._id }, { status: "active" });
+
   try {
-    const label = action === "approved" ? "承認" : "却下";
+    const member = app.memberId;
+    const comment = req.body.adminComment || "";
+    await sendMail({
+      to: member.email,
+      subject: "【NOKORI】ご入金確認・アカウント有効化のご連絡",
+      html: `
+<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px 24px;background:#fff;">
+  <h2 style="color:#10b981;font-size:20px;margin-bottom:24px;">✅ アカウントが有効化されました</h2>
+  <p>${member.name} 様</p>
+  <p>ご入金を確認いたしました。誠にありがとうございます。<br>
+  お客様のNOKORIアカウントを有効化いたしました。</p>
+  <div style="background:#f0fdf4;border-radius:8px;padding:20px;margin:20px 0;">
+    <p style="margin:0;font-size:14px;">ご登録メールアドレス: <strong>${member.email}</strong><br>
+    上記アドレスでNOKORIにログインいただけます。</p>
+  </div>
+  ${comment ? `<p style="font-size:14px;background:#f8fafc;border-radius:6px;padding:12px;">${comment}</p>` : ""}
+  <p style="font-size:14px;">サービスのご利用方法については、担当者よりご案内いたします。<br>
+  ご不明な点はお気軽にお問い合わせください。</p>
+  <p style="font-size:13px;color:#64748b;margin-top:32px;">-- NOKORI チーム</p>
+</div>`,
+    });
+    console.log(`[Activate] アカウント有効化: ${member.email}`);
+  } catch (e) { console.error("activate mail:", e.message); }
+
+  res.redirect("/nokori/admin/applications/" + req.params.id);
+});
+
+// 却下
+router.post("/nokori/admin/applications/:id/reject", requireAdmin, async (req, res) => {
+  const app = await NokoriApplication.findById(req.params.id).populate("memberId").lean();
+  if (!app) return res.redirect("/nokori/admin/applications");
+
+  await NokoriApplication.updateOne({ _id: req.params.id }, {
+    status: "rejected",
+    adminComment: req.body.adminComment || "",
+    processedAt: new Date(),
+    processedBy: req.session.username || "admin",
+  });
+
+  try {
     await sendMail({
       to: app.memberId.email,
-      subject: `【NOKORI】加入申請が${label}されました`,
-      text: `${app.memberId.name} 様\n\n加入申請が${label}されました。\n${adminComment ? `\n担当者コメント: ${adminComment}\n` : ""}\nご不明な点はお問い合わせください。\n\n--\nNOKORI チーム`,
+      subject: "【NOKORI】加入申請について",
+      text: `${app.memberId.name} 様\n\nご加入申請について、今回はご期待に添えない結果となりました。\n${req.body.adminComment ? `\n理由: ${req.body.adminComment}\n` : ""}\nご不明な点はお問い合わせください。\n\n-- NOKORI チーム`,
     });
-  } catch (e) { console.error("application process mail:", e.message); }
+  } catch (e) { console.error("reject mail:", e.message); }
+
   res.redirect("/nokori/admin/applications/" + req.params.id);
 });
 

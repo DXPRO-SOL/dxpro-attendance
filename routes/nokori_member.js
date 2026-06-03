@@ -32,7 +32,28 @@ router.get("/nokori/mypage", requireMember, async (req, res) => {
 
   const statusLabel = { pending: "審査中", active: "利用中", suspended: "停止" }[dbMember?.status] || "-";
   const statusClass = { pending: "nk-badge-yellow", active: "nk-badge-green", suspended: "nk-badge-red" }[dbMember?.status] || "nk-badge-gray";
-  const appStatusLabel = application ? { pending: "審査中", approved: "承認済み", rejected: "却下" }[application.status] : null;
+
+  // 申請ステータスの表示情報
+  const APP_STATUS = {
+    pending:           { label: "申請受付中",    color: "#f59e0b", bg: "#fffbeb", icon: "⏳" },
+    invoice_sent:      { label: "請求書送付済み", color: "#3b82f6", bg: "#eff6ff", icon: "📄" },
+    payment_confirmed: { label: "入金確認済み",  color: "#8b5cf6", bg: "#f5f3ff", icon: "💰" },
+    approved:          { label: "有効化完了",    color: "#10b981", bg: "#f0fdf4", icon: "✅" },
+    rejected:          { label: "却下",          color: "#ef4444", bg: "#fef2f2", icon: "❌" },
+  };
+  const appInfo = application ? (APP_STATUS[application.status] || APP_STATUS.pending) : null;
+
+  // 振込先情報（invoice_sent 以降で表示）
+  const showBankInfo = application && ["invoice_sent", "payment_confirmed"].includes(application.status);
+  const bank = {
+    name:   process.env.BANK_NAME           || "○○銀行",
+    branch: process.env.BANK_BRANCH         || "○○支店",
+    type:   process.env.BANK_ACCOUNT_TYPE   || "普通",
+    number: process.env.BANK_ACCOUNT_NUMBER || "1234567",
+    holder: process.env.BANK_ACCOUNT_NAME   || "カ）DXPRO SOLUTIONS",
+  };
+  const dueDays = parseInt(process.env.PAYMENT_DUE_DAYS || 14);
+  const dueDate = application?.invoiceSentAt ? (() => { const d = new Date(application.invoiceSentAt); d.setDate(d.getDate() + dueDays); return d.toLocaleDateString("ja-JP"); })() : null;
 
   const body = `
 <section style="background:#0f4c81;color:#fff;padding:40px 24px;">
@@ -59,13 +80,47 @@ router.get("/nokori/mypage", requireMember, async (req, res) => {
       </div>
       <div class="nk-stat-card">
         <div class="label">加入申請状況</div>
-        <div>${appStatusLabel ? `<span class="nk-badge ${appStatusLabel==="承認済み"?"nk-badge-green":appStatusLabel==="却下"?"nk-badge-red":"nk-badge-yellow"}">${appStatusLabel}</span>` : "<span style='color:#94a3b8'>-</span>"}</div>
+        <div>${appInfo ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;background:${appInfo.bg};color:${appInfo.color};">${appInfo.icon} ${appInfo.label}</span>` : "<span style='color:#94a3b8'>-</span>"}</div>
       </div>
       <div class="nk-stat-card">
         <div class="label">登録日</div>
         <div style="font-size:14px;font-weight:600;">${dbMember ? new Date(dbMember.createdAt).toLocaleDateString("ja-JP") : "-"}</div>
       </div>
     </div>
+
+    ${showBankInfo ? `
+    <!-- 振込先案内パネル -->
+    <div style="background:#eff6ff;border:2px solid #3b82f6;border-radius:12px;padding:28px;margin-bottom:28px;">
+      <h2 style="font-size:17px;font-weight:800;color:#1d4ed8;margin-bottom:6px;">📄 お振込みのご案内</h2>
+      <p style="font-size:14px;color:#374151;margin-bottom:20px;">
+        請求書番号 <strong>${application.invoiceNo || "-"}</strong> の
+        お振込みをお願いいたします。
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div style="background:#fff;border-radius:8px;padding:20px;">
+          <h3 style="font-size:14px;font-weight:700;color:#1e40af;margin-bottom:12px;">お振込先</h3>
+          <table style="font-size:14px;border-collapse:collapse;width:100%;">
+            <tr><td style="padding:5px 0;color:#64748b;width:90px;">銀行名</td><td><strong>${bank.name}</strong></td></tr>
+            <tr><td style="padding:5px 0;color:#64748b;">支店名</td><td><strong>${bank.branch}</strong></td></tr>
+            <tr><td style="padding:5px 0;color:#64748b;">口座種別</td><td>${bank.type}</td></tr>
+            <tr><td style="padding:5px 0;color:#64748b;">口座番号</td><td><strong style="font-size:16px;letter-spacing:2px;">${bank.number}</strong></td></tr>
+            <tr><td style="padding:5px 0;color:#64748b;">口座名義</td><td><strong>${bank.holder}</strong></td></tr>
+          </table>
+        </div>
+        <div style="background:#fff;border-radius:8px;padding:20px;">
+          <h3 style="font-size:14px;font-weight:700;color:#1e40af;margin-bottom:12px;">ご請求内容</h3>
+          <div style="font-size:28px;font-weight:900;color:#0f4c81;margin:8px 0;">¥${(application.invoiceAmount||0).toLocaleString()}</div>
+          <div style="font-size:12px;color:#64748b;">（税込）</div>
+          ${dueDate ? `<div style="margin-top:12px;font-size:13px;">お支払い期限: <strong style="color:#dc2626;">${dueDate}</strong></div>` : ""}
+          <div style="margin-top:8px;font-size:12px;color:#94a3b8;">振込手数料はお客様負担でお願いいたします</div>
+        </div>
+      </div>
+      ${application.invoiceNote ? `<div style="margin-top:16px;background:#fff;border-radius:6px;padding:12px;font-size:13px;color:#374151;">📝 ${application.invoiceNote}</div>` : ""}
+      ${application.status === "payment_confirmed" ? `
+      <div style="margin-top:16px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:14px;font-size:14px;color:#15803d;font-weight:600;">
+        💰 入金が確認されました。担当者がアカウントを有効化いたします。しばらくお待ちください。
+      </div>` : ""}
+    </div>` : ""}
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
       <!-- 会員情報 -->
@@ -96,7 +151,8 @@ router.get("/nokori/mypage", requireMember, async (req, res) => {
             <tbody>
               <tr><th style="width:100px;">プラン</th><td>${application.planId?.name || "-"}</td></tr>
               <tr><th>月額料金</th><td>${application.planId?.monthlyFee ? "¥"+Number(application.planId.monthlyFee).toLocaleString()+"/月" : "-"}</td></tr>
-              <tr><th>申請状況</th><td><span class="nk-badge ${appStatusLabel==="承認済み"?"nk-badge-green":appStatusLabel==="却下"?"nk-badge-red":"nk-badge-yellow"}">${appStatusLabel}</span></td></tr>
+              <tr><th>申請状況</th><td><span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;background:${appInfo?.bg||"#f8fafc"};color:${appInfo?.color||"#64748b"};">${appInfo?.icon||""} ${appInfo?.label||"-"}</span></td></tr>
+              ${application.invoiceNo ? `<tr><th>請求書番号</th><td style="font-family:monospace;">${application.invoiceNo}</td></tr>` : ""}
               ${application.adminComment ? `<tr><th>担当者コメント</th><td style="color:#64748b;font-size:13px;">${application.adminComment}</td></tr>` : ""}
             </tbody>
           </table>` : `
