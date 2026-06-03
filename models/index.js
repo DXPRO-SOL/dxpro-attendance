@@ -1635,3 +1635,258 @@ module.exports = {
   KanbanBoard,
   KanbanTask,
 };
+
+// ═══════════════════════════════════════════════════════════════
+// NOKORI 販売サイト用モデル
+// ═══════════════════════════════════════════════════════════════
+
+// ── 会員 ──────────────────────────────────────────────────────
+const NokoriMemberSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true, lowercase: true },
+  password: { type: String, required: true },
+  name: { type: String, required: true },
+  company: { type: String, default: "" },
+  department: { type: String, default: "" },
+  phone: { type: String, default: "" },
+  status: { type: String, enum: ["active", "suspended", "pending"], default: "pending" },
+  agreedToTermsAt: { type: Date },
+  selectedPlanId: { type: mongoose.Schema.Types.ObjectId, ref: "NokoriPlan" },
+  selectedOptions: [{ type: mongoose.Schema.Types.ObjectId, ref: "NokoriOption" }],
+  rememberToken: { type: String, default: "" },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+const NokoriMember = mongoose.model("NokoriMember", NokoriMemberSchema);
+
+// ── パスワード再設定トークン ───────────────────────────────────
+const NokoriPasswordResetSchema = new mongoose.Schema({
+  email: { type: String, required: true },
+  token: { type: String, required: true },
+  expiresAt: { type: Date, required: true },
+  usedAt: { type: Date },
+  createdAt: { type: Date, default: Date.now },
+});
+const NokoriPasswordReset = mongoose.model("NokoriPasswordReset", NokoriPasswordResetSchema);
+
+// ── プラン ────────────────────────────────────────────────────
+const NokoriPlanSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  code: { type: String, required: true, unique: true },
+  description: { type: String, default: "" },
+  initialFee: { type: Number, default: 0 },
+  monthlyFee: { type: Number, default: 0 },
+  maxUsers: { type: Number, default: 0 },
+  storageGB: { type: Number, default: 0 },
+  features: [String],
+  isPopular: { type: Boolean, default: false },
+  isActive: { type: Boolean, default: true },
+  order: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now },
+});
+const NokoriPlan = mongoose.model("NokoriPlan", NokoriPlanSchema);
+
+// ── オプション ────────────────────────────────────────────────
+const NokoriOptionSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  description: { type: String, default: "" },
+  monthlyFee: { type: Number, default: 0 },
+  isActive: { type: Boolean, default: true },
+  order: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now },
+});
+const NokoriOption = mongoose.model("NokoriOption", NokoriOptionSchema);
+
+// ── 加入申請 ──────────────────────────────────────────────────
+const NokoriApplicationSchema = new mongoose.Schema({
+  memberId: { type: mongoose.Schema.Types.ObjectId, ref: "NokoriMember", required: true },
+  planId: { type: mongoose.Schema.Types.ObjectId, ref: "NokoriPlan" },
+  optionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "NokoriOption" }],
+  status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
+  comment: { type: String, default: "" },
+  adminComment: { type: String, default: "" },
+  processedAt: { type: Date },
+  processedBy: { type: String, default: "" },
+  createdAt: { type: Date, default: Date.now },
+});
+const NokoriApplication = mongoose.model("NokoriApplication", NokoriApplicationSchema);
+
+// ── 問い合わせ ────────────────────────────────────────────────
+const NokoriInquirySchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  company: { type: String, default: "" },
+  email: { type: String, required: true },
+  phone: { type: String, default: "" },
+  content: { type: String, required: true },
+  status: { type: String, enum: ["open", "in_progress", "closed"], default: "open" },
+  reply: { type: String, default: "" },
+  repliedAt: { type: Date },
+  repliedBy: { type: String, default: "" },
+  createdAt: { type: Date, default: Date.now },
+});
+const NokoriInquiry = mongoose.model("NokoriInquiry", NokoriInquirySchema);
+
+// ── 資料請求 ──────────────────────────────────────────────────
+const NokoriDocumentRequestSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  company: { type: String, default: "" },
+  email: { type: String, required: true },
+  phone: { type: String, default: "" },
+  sentAt: { type: Date },
+  createdAt: { type: Date, default: Date.now },
+});
+const NokoriDocumentRequest = mongoose.model("NokoriDocumentRequest", NokoriDocumentRequestSchema);
+
+// ── 見積 ──────────────────────────────────────────────────────
+const NokoriEstimateSchema = new mongoose.Schema({
+  estimateNo: { type: String, required: true, unique: true },
+  email: { type: String, default: "" },
+  name: { type: String, default: "" },
+  company: { type: String, default: "" },
+  planId: { type: mongoose.Schema.Types.ObjectId, ref: "NokoriPlan" },
+  optionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "NokoriOption" }],
+  userCount: { type: Number, default: 1 },
+  initialFee: { type: Number, default: 0 },
+  monthlyFee: { type: Number, default: 0 },
+  firstBillingAmount: { type: Number, default: 0 },
+  notes: { type: String, default: "" },
+  createdAt: { type: Date, default: Date.now },
+});
+const NokoriEstimate = mongoose.model("NokoriEstimate", NokoriEstimateSchema);
+
+// ── お知らせ ──────────────────────────────────────────────────
+const NokoriNewsSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  content: { type: String, required: true },
+  category: { type: String, default: "info" },
+  isPublished: { type: Boolean, default: false },
+  publishedAt: { type: Date },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+const NokoriNews = mongoose.model("NokoriNews", NokoriNewsSchema);
+
+// ── FAQ ───────────────────────────────────────────────────────
+const NokoriFAQSchema = new mongoose.Schema({
+  question: { type: String, required: true },
+  answer: { type: String, required: true },
+  category: { type: String, default: "general" },
+  order: { type: Number, default: 0 },
+  isPublished: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now },
+});
+const NokoriFAQ = mongoose.model("NokoriFAQ", NokoriFAQSchema);
+
+// ── デモアカウント ─────────────────────────────────────────────
+const NokoriDemoAccountSchema = new mongoose.Schema({
+  email: { type: String, required: true },
+  password: { type: String, required: true },
+  name: { type: String, required: true },
+  expiresAt: { type: Date, required: true },
+  isActive: { type: Boolean, default: true },
+  usedAt: { type: Date },
+  createdBy: { type: String, default: "" },
+  createdAt: { type: Date, default: Date.now },
+});
+const NokoriDemoAccount = mongoose.model("NokoriDemoAccount", NokoriDemoAccountSchema);
+
+// ── 協力会社申請 ───────────────────────────────────────────────
+const NokoriPartnerApplicationSchema = new mongoose.Schema({
+  companyName: { type: String, required: true },
+  contactName: { type: String, required: true },
+  email: { type: String, required: true },
+  phone: { type: String, default: "" },
+  businessType: { type: String, default: "" },
+  description: { type: String, default: "" },
+  status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
+  createdAt: { type: Date, default: Date.now },
+});
+const NokoriPartnerApplication = mongoose.model("NokoriPartnerApplication", NokoriPartnerApplicationSchema);
+
+// ── コンテンツ管理 ─────────────────────────────────────────────
+const NokoriContentSchema = new mongoose.Schema({
+  key: { type: String, required: true, unique: true },
+  title: { type: String, default: "" },
+  body: { type: String, default: "" },
+  updatedAt: { type: Date, default: Date.now },
+});
+const NokoriContent = mongoose.model("NokoriContent", NokoriContentSchema);
+
+// ── デモ申請 ──────────────────────────────────────────────────
+const NokoriDemoRequestSchema = new mongoose.Schema({
+  name:       { type: String, required: true },
+  company:    { type: String, default: "" },
+  email:      { type: String, required: true },
+  phone:      { type: String, default: "" },
+  purpose:    { type: String, default: "" },          // 利用目的
+  employees:  { type: Number, default: 0 },           // 従業員数
+  status:     { type: String, enum: ["pending", "approved", "rejected"], default: "pending" },
+  demoAccountId: { type: mongoose.Schema.Types.ObjectId, ref: "NokoriDemoAccount", default: null },
+  adminNote:  { type: String, default: "" },
+  createdAt:  { type: Date, default: Date.now },
+});
+const NokoriDemoRequest = mongoose.model("NokoriDemoRequest", NokoriDemoRequestSchema);
+
+// ─── エクスポート（NOKORI販売サイト分） ─────────────────────────
+const _nokoriModels = {
+  NokoriMember,
+  NokoriPlan,
+  NokoriOption,
+  NokoriApplication,
+  NokoriInquiry,
+  NokoriDocumentRequest,
+  NokoriEstimate,
+  NokoriNews,
+  NokoriFAQ,
+  NokoriDemoAccount,
+  NokoriDemoRequest,
+  NokoriPartnerApplication,
+  NokoriPasswordReset,
+  NokoriContent,
+};
+
+// ═══════════════════════════════════════════════════════════════
+// デモDB 透過切り替え（AsyncLocalStorage + Proxy）
+//
+// 全ての Mongoose モデルを Proxy でラップする。
+// デモセッション中は、リクエストスコープで注入された
+// デモDB専用モデルに自動的に委譲される。
+// 既存のルートファイルは一切変更不要。
+// ═══════════════════════════════════════════════════════════════
+const { getContextModels } = require("../lib/asyncModels");
+
+// NOKORI販売管理モデルはデモDBに持ち込まない（常にメインDB）
+const NOKORI_MODEL_NAMES = new Set(Object.keys(_nokoriModels));
+
+function _makeModelProxy(name, realModel) {
+  return new Proxy(realModel, {
+    get(target, prop) {
+      // Promise として扱われないよう then は常に undefined
+      if (prop === "then" || prop === "catch" || prop === "finally") return undefined;
+      // NOKORI系モデルは常にメインDB
+      if (NOKORI_MODEL_NAMES.has(name)) {
+        const v = target[prop];
+        return typeof v === "function" ? v.bind(target) : v;
+      }
+      const ctx = getContextModels();
+      const model = (ctx && ctx[name]) ? ctx[name] : target;
+      const v = model[prop];
+      return typeof v === "function" ? v.bind(model) : v;
+    },
+    construct(target, args) {
+      if (NOKORI_MODEL_NAMES.has(name)) return new target(...args);
+      const ctx = getContextModels();
+      const Model = (ctx && ctx[name]) ? ctx[name] : target;
+      return new Model(...args);
+    },
+  });
+}
+
+// HR/勤怠系モデル（メインDBのエクスポート）をプロキシ化
+const _hrModels = module.exports; // line 1591 時点のエクスポート
+const _proxiedHr = {};
+for (const [name, model] of Object.entries(_hrModels)) {
+  _proxiedHr[name] = _makeModelProxy(name, model);
+}
+
+// NOKORI販売系モデルはプロキシ化しない（常にメインDB固定）
+module.exports = { ..._proxiedHr, ..._nokoriModels };

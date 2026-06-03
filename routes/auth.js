@@ -354,6 +354,12 @@ router.post("/login", async (req, res) => {
       return res.redirect("/login?error=invalid_password");
     }
 
+    // デモ用自動生成ユーザーは通常ログイン不可（NokoriDemoAccount経由のみ）
+    if (user.username && user.username.startsWith("demo_")) {
+      console.log("デモユーザーへの通常ログイン試行をブロック:", user.username);
+      return res.redirect("/login?error=invalid_password");
+    }
+
     // セッションにユーザー情報保存
     req.session.userId = user._id;
     req.session.isAdmin = user.isAdmin;
@@ -531,10 +537,12 @@ router.get("/logout", async (req, res) => {
     category: "auth",
     detail: "ログアウト",
   });
+  // デモユーザーはデモページへリダイレクト
+  const isDemo = !!req.session.isDemo;
   req.session.destroy((err) => {
     if (err) console.error("セッション削除エラー:", err);
     res.clearCookie("connect.sid");
-    res.redirect("/login");
+    res.redirect(isDemo ? "/nokori/demo" : "/login");
   });
 });
 

@@ -419,7 +419,8 @@ process.on("unhandledRejection", (reason, promise) => {
 require("./config/db");
 
 // モデル
-const { User, Employee, ChatRoom } = require("./models");
+  const { User, Employee, ChatRoom } = require("./models");
+const { NokoriPlan } = require("./models");
 
 // ミドルウェア設定
 app.use(express.urlencoded({ extended: true }));
@@ -512,6 +513,26 @@ app.get("/health", (req, res) => {
 }
 
 // ルート登録
+
+// ── デモDB 透過切り替えミドルウェア ───────────────────────────────
+// デモセッション中のリクエストは、アカウント専用 MongoDB に自動的に
+// ルーティングされる。既存のルートファイルは変更不要。
+{
+  const { runWithDemoModels } = require("./lib/asyncModels");
+  const { getDemoModels }     = require("./lib/demoDb");
+  app.use(async (req, res, next) => {
+    if (req.session && req.session.isDemo && req.session.demoAccountId) {
+      try {
+        const demoModels = await getDemoModels(req.session.demoAccountId);
+        return runWithDemoModels(demoModels, next);
+      } catch (e) {
+        console.error("[DemoDB] middleware error:", e.message);
+      }
+    }
+    next();
+  });
+}
+
 app.use("/", require("./routes/auth"));
 app.use("/", require("./routes/attendance"));
 app.use("/", require("./routes/dashboard"));
@@ -541,6 +562,12 @@ app.use("/", require("./routes/contracts"));
 app.use("/", require("./routes/ui_optimizer"));
 app.use("/", require("./routes/ai_home_settings"));
 
+// ── NOKORI 販売サイト ─────────────────────────────────────────
+app.use("/", require("./routes/nokori_site"));
+app.use("/", require("./routes/nokori_auth"));
+app.use("/", require("./routes/nokori_member"));
+app.use("/", require("./routes/nokori_admin_site"));
+
 // ── グローバルエラーハンドラー（500エラーでプロセスをクラッシュさせない） ─
 app.use((err, req, res, next) => {
   console.error("[GlobalErrorHandler]", req.method, req.path, "→", err.message);
@@ -555,7 +582,24 @@ app.use((err, req, res, next) => {
     `);
 });
 
-// デフォルト管理者アカウント作成
+// NOKORI 販売サイト：デフォルトプランの初期化
+async function seedNokoriPlans() {
+  try {
+    const count = await NokoriPlan.countDocuments();
+    if (count === 0) {
+      await NokoriPlan.insertMany([
+        { name: "スタータープラン", code: "starter", description: "小規模チーム向け（10名まで）", initialFee: 0, monthlyFee: 3980, maxUsers: 10, storageGB: 10, features: ["勤怠管理", "給与計算（基本）", "チャット", "タスク管理", "メールサポート"], isPopular: false, isActive: true, order: 1 },
+        { name: "スタンダードプラン", code: "standard", description: "中規模企業向け（50名まで）", initialFee: 50000, monthlyFee: 9800, maxUsers: 50, storageGB: 50, features: ["スタータープランの全機能", "休暇申請管理", "承認ワークフロー", "クラウドドライブ（50GB）", "スキルシート管理", "優先サポート"], isPopular: true, isActive: true, order: 2 },
+        { name: "プロフェッショナル", code: "professional", description: "大規模企業向け（無制限）", initialFee: 100000, monthlyFee: 29800, maxUsers: 0, storageGB: 200, features: ["スタンダードの全機能", "無制限ユーザー", "AI機能フル活用", "APIアクセス", "専任サポート担当", "カスタマイズ対応"], isPopular: false, isActive: true, order: 3 },
+      ]);
+      console.log("[NOKORI] デフォルトプランを初期化しました");
+    }
+  } catch (e) {
+    console.error("[NOKORI] プラン初期化エラー:", e.message);
+  }
+}
+
+
 async function createAdminUser() {
   try {
     const adminExists = await User.findOne({ username: "admin" });
@@ -739,6 +783,7 @@ httpServer.listen(PORT, "0.0.0.0", async () => {
   logSection("Phase 3 / Admin Account Bootstrap");
   await sleep(100);
   await createAdminUser();
+  await seedNokoriPlans();
   const admin = await User.findOne({ username: "admin" });
   if (admin) {
     logOk("Admin account                @admin (isAdmin=true)");
@@ -798,6 +843,8 @@ httpServer.listen(PORT, "0.0.0.0", async () => {
   logOk("Router: /locations           GPS打刻 / 位置情報管理");
   await sleep(50);
   logOk("Router: /lang                多言語対応 (ja / en / vi)");
+  await sleep(50);
+  logOk("Router: /nokori              NOKORIパッケージ紹介・販売サイト");
 
   // ── フェーズ 5: バックグラウンドサービス ─────────────────────
   logSection("Phase 5 / Background Services");

@@ -144,6 +144,11 @@ router.get("/admin", requireLogin, isAdmin, async (req, res) => {
                         <div class="admin-head"><div class="admin-icon" style="background:linear-gradient(90deg,#fee2e2,#fef2f2);color:#ef4444">🗑</div><div class="admin-title">チャット管理</div></div>
                         <div class="admin-desc">従業員・グループのチャット履歴を削除します。</div>
                     </a>
+
+                    <a class="admin-card" href="/nokori/admin" style="border:2px solid #0f4c81;background:linear-gradient(180deg,#eff6ff,#f0f9ff);">
+                        <div class="admin-head"><div class="admin-icon" style="background:linear-gradient(90deg,#dbeafe,#bfdbfe);color:#0f4c81;font-weight:900;font-size:16px;">N</div><div class="admin-title" style="color:#0f4c81;">NOKORI 販売管理パネル</div></div>
+                        <div class="admin-desc" style="color:#1e40af;">NOKORIパッケージの会員・申請・見積・プラン・コンテンツを管理します。</div>
+                    </a>
                 </div>
             </div>
         </div>

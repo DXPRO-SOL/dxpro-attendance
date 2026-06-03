@@ -85,7 +85,16 @@ async function sendMail({ to, from, subject, text, html, attachments } = {}) {
             to: [to],
             subject,
             html: html || text,
-            text
+            text,
+            // attachments: Resend APIはbase64エンコードされたattachmentsをサポート
+            ...(attachments && attachments.length > 0 ? {
+                attachments: attachments.map(a => ({
+                    filename: a.filename,
+                    content: Buffer.isBuffer(a.content)
+                        ? a.content.toString('base64')
+                        : Buffer.from(a.content).toString('base64'),
+                }))
+            } : {})
         });
         console.log('Resend: メール送信成功', to);
         return;
