@@ -51,10 +51,8 @@ router.get("/nokori", async (req, res) => {
   </div>
   <div class="nk-hero-right">
     <div class="nk-register-box">
-      <div class="nk-register-box-title">今すぐ 始める!</div>
       <div class="nk-register-box-logo">
         <img src="/nokori-logo4.png" alt="NOKORI">
-        <span>NOKORI</span>
       </div>
       <a href="/nokori/register" class="nk-register-box-btn">
         <span>会員登録</span>
@@ -62,13 +60,13 @@ router.get("/nokori", async (req, res) => {
       </a>
     </div>
     <div class="nk-login-box">
-      <h3>ID（メールアドレス）</h3>
       <form action="/nokori/login" method="POST">
         <div class="nk-login-field">
+          <label class="nk-login-label-title">ID（メールアドレス）</label>
           <input type="email" name="email" placeholder="IDを入力してください" required>
         </div>
         <div class="nk-login-field">
-          <label>パスワード</label>
+          <label class="nk-login-label-title">パスワード</label>
           <input type="password" name="password" placeholder="パスワードを入力してください" required>
         </div>
         <div class="nk-login-checkbox">
