@@ -118,38 +118,96 @@ router.get("/nokori", async (req, res) => {
       <p style="font-size:16px;color:#475569;line-height:1.9;">勤怠管理などの基本的なものから、直接業務に関わる複雑なアプリケーション、ワークフローまで独自のローコード開発基盤でしっかりサポートするワンパッケージのソリューションです。</p>
     </div>
     
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-bottom:36px;">
-      <div style="text-align:center;padding:24px;background:#fafafa;border-radius:12px;">
-        <div style="font-size:42px;margin-bottom:12px;">⚙️</div>
-        <h3 style="font-size:16px;font-weight:700;margin-bottom:12px;">基本機能</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;">
-          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">ユーザー/<br>組織管理</div>
-          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">アクセス権限<br>管理</div>
-          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">統合全文<br>検索</div>
-          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">モバイル<br>アクセス</div>
+    <!-- 主要機能カテゴリー -->
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:32px;margin-bottom:48px;">
+      <!-- 勤怠・人事管理 -->
+      <div style="background:#fff;border:2px solid #e2e8f0;border-radius:16px;padding:32px;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+          <div style="font-size:36px;">⏰</div>
+          <h3 style="font-size:20px;font-weight:800;color:#0f172a;margin:0;">勤怠・人事管理</h3>
         </div>
+        <ul style="list-style:none;padding:0;margin:0;">
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>GPS/QRコード打刻：</strong>スマホで簡単に出退勤登録</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>自動残業計算：</strong>就業規則に基づいた残業時間の自動計算</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>有給休暇管理：</strong>残日数の自動計算・申請ワークフロー</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>シフト管理：</strong>複数拠点・複雑なシフトパターンに対応</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>給与計算連動：</strong>勤怠データから給与を自動計算</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>スキルシート管理：</strong>従業員のスキル・資格・経歴を一元管理</li>
+        </ul>
       </div>
-      
-      <div style="text-align:center;padding:24px;background:#fafafa;border-radius:12px;">
-        <div style="font-size:42px;margin-bottom:12px;">💬</div>
-        <h3 style="font-size:16px;font-weight:700;margin-bottom:12px;">グループウェア</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;">
-          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">カレンダー<br>施設予約</div>
-          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">掲示板<br>社内通知</div>
-          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">チャット<br>グループ通話</div>
-          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">ファイル<br>管理</div>
+
+      <!-- コミュニケーション -->
+      <div style="background:#fff;border:2px solid #e2e8f0;border-radius:16px;padding:32px;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+          <div style="font-size:36px;">💬</div>
+          <h3 style="font-size:20px;font-weight:800;color:#0f172a;margin:0;">コミュニケーション</h3>
         </div>
+        <ul style="list-style:none;padding:0;margin:0;">
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>チャット機能：</strong>DM・グループチャット・ファイル共有</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>グループ通話：</strong>最大50名までのビデオ/音声会議</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>掲示板：</strong>全社・部門別のお知らせ配信</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>AIチャットボット：</strong>社内FAQ・問い合わせ対応を自動化</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>カレンダー連携：</strong>会議室予約・スケジュール調整</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>既読管理：</strong>重要通知の確認状況を可視化</li>
+        </ul>
       </div>
-      
-      <div style="text-align:center;padding:24px;background:#fafafa;border-radius:12px;">
-        <div style="font-size:42px;margin-bottom:12px;">🔄</div>
-        <h3 style="font-size:16px;font-weight:700;margin-bottom:12px;">ワークフロー / 開発基盤</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;">
-          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">フォーム<br>設計</div>
-          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">ビュー<br>設計</div>
-          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">ワークフロー<br>設計</div>
-          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">AI機能<br>統合</div>
+
+      <!-- タスク・プロジェクト管理 -->
+      <div style="background:#fff;border:2px solid #e2e8f0;border-radius:16px;padding:32px;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+          <div style="font-size:36px;">✅</div>
+          <h3 style="font-size:20px;font-weight:800;color:#0f172a;margin:0;">タスク・プロジェクト管理</h3>
         </div>
+        <ul style="list-style:none;padding:0;margin:0;">
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>カンバンボード：</strong>視覚的なタスク管理・進捗確認</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>ガントチャート：</strong>プロジェクトスケジュールの可視化</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>OKR管理：</strong>目標設定・進捗トラッキング・評価連動</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>工数管理：</strong>タスク別・プロジェクト別の工数集計</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>外部連携：</strong>GitHub・Jira・Slackとの連携</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>AI優先度分析：</strong>タスクの重要度を自動判定</li>
+        </ul>
+      </div>
+
+      <!-- ワークフロー・開発基盤 -->
+      <div style="background:#fff;border:2px solid #e2e8f0;border-radius:16px;padding:32px;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+          <div style="font-size:36px;">🔄</div>
+          <h3 style="font-size:20px;font-weight:800;color:#0f172a;margin:0;">ワークフロー・開発基盤</h3>
+        </div>
+        <ul style="list-style:none;padding:0;margin:0;">
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>ローコード開発：</strong>ドラッグ&ドロップで業務アプリを構築</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>承認フロー設計：</strong>複雑な承認ルートにも対応</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>フォームビルダー：</strong>申請書・報告書を自由に設計</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>API連携：</strong>基幹システムとのデータ連携</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>自動化：</strong>定型業務の自動実行・通知送信</li>
+          <li style="padding:8px 0;font-size:14px;color:#475569;display:flex;gap:8px;"><span style="color:#2864F0;font-weight:700;">◆</span> <strong>レポート作成：</strong>データ分析・グラフ自動生成</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- その他の機能 -->
+    <div style="background:linear-gradient(135deg,#f0f9ff,#e0f2fe);border-radius:16px;padding:40px;text-align:center;">
+      <h3 style="font-size:18px;font-weight:800;color:#0369a1;margin-bottom:24px;">さらに充実の機能群</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center;">
+        ${[
+          "クラウドドライブ",
+          "日報管理",
+          "組織図",
+          "アクセス権限管理",
+          "監査ログ",
+          "統合検索",
+          "モバイルアプリ",
+          "SSO連携",
+          "2段階認証",
+          "IP制限",
+          "バックアップ",
+          "多言語対応",
+        ]
+          .map(
+            (f) =>
+              `<div style="background:#fff;padding:10px 20px;border-radius:20px;font-size:13px;font-weight:600;color:#0369a1;box-shadow:0 2px 8px rgba(0,0,0,0.08);">${f}</div>`,
+          )
+          .join("")}
       </div>
     </div>
   </div>
@@ -160,61 +218,196 @@ router.get("/nokori", async (req, res) => {
   <div class="nk-section-inner">
     <div class="nk-section-title">
       <h2>NOKORIの3つの特長</h2>
+      <p>業務効率化を実現する差別化ポイント</p>
     </div>
     
-    <div style="max-width:1000px;margin:0 auto;">
-      <!-- 特長1 -->
-      <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:48px;align-items:center;margin-bottom:60px;">
-        <div style="background:#e0f2fe;border-radius:16px;padding:24px;text-align:center;overflow:hidden;">
-          <div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-            <!-- TODO: ここにスクリーンショット画像を配置 例: <img src="/screenshots/nokori-feature1.png" alt="NOKORIスケジュール管理画面" style="width:100%;border-radius:8px;"> -->
-            <div style="background:linear-gradient(135deg,#667eea,#764ba2);height:180px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:600;">スクリーンショット<br>配置予定</div>
+    <div style="max-width:1100px;margin:0 auto;">
+      <!-- 特長1：実務に即した豊富な機能 -->
+      <div style="background:#fff;border-radius:20px;padding:48px;margin-bottom:40px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+        <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:48px;align-items:start;">
+          <div>
+            <div style="background:linear-gradient(135deg,#e0f2fe,#bae6fd);border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;">
+              <h3 style="font-size:20px;font-weight:800;color:#0369a1;">特長 1</h3>
+            </div>
+            
+            <!-- スクリーンショット画像 -->
+            <div style="background:#fff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/nokori-calendar-feature.png" alt="NOKORIカレンダー・スケジュール管理画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            </div>
+            
+            <div style="background:#f0f9ff;border-radius:12px;padding:20px;">
+              <div style="font-size:13px;color:#0369a1;font-weight:700;margin-bottom:8px;">✓ 導入実績から生まれた機能</div>
+              <div style="font-size:12px;color:#64748b;line-height:1.6;">5,000社以上の導入事例から得られたノウハウを標準機能として実装</div>
+            </div>
           </div>
-          <h3 style="font-size:18px;font-weight:800;color:#0369a1;">特長 1</h3>
-        </div>
-        <div>
-          <h3 style="font-size:24px;font-weight:800;margin-bottom:16px;color:#0f172a;">様々な企業のノウハウを機能化し標準搭載</h3>
-          <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:20px;">標準的なスケジュール管理に、施設予約と連動した空き時間検索、社外打ち合わせ時の仮予定の確保など業務に則した機能を多数搭載。大規模で複雑な構造の組織であっても、情報に対するアクセス権限を適切に管理することが可能。</p>
-          <p style="font-size:15px;color:#64748b;line-height:1.8;">NOKORI内のあらゆる情報を横断的に検索でき、隠れたインサイトを可視化します。</p>
-        </div>
-      </div>
-      
-      <!-- 特長2 -->
-      <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:48px;align-items:center;margin-bottom:60px;">
-        <div>
-          <h3 style="font-size:24px;font-weight:800;margin-bottom:16px;color:#0f172a;">思いどおりのアプリケーション / ワークフローの開発</h3>
-          <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:20px;">スキル不要で始められる、直感的コンポーネント型開発。豊富なライブラリを搭載し、複雑な要件も実現可能なスクリプト開発。</p>
-          <div style="background:#f8fafc;border-radius:12px;padding:24px;border:2px solid #e2e8f0;margin-top:24px;">
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;text-align:center;font-size:13px;color:#334155;">
-              <div><strong style="display:block;color:#2864F0;font-size:16px;margin-bottom:4px;">✓</strong>幅広い要件を標準機能で実現</div>
-              <div><strong style="display:block;color:#2864F0;font-size:16px;margin-bottom:4px;">✓</strong>ローコード開発可能で開発期間とコストを削減</div>
-              <div><strong style="display:block;color:#2864F0;font-size:16px;margin-bottom:4px;">✓</strong>スムーズなデータ移行で現場の負荷を大幅に削減</div>
+          <div>
+            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">実務に即した豊富な機能を標準搭載</h3>
+            <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">単なる勤怠管理だけでなく、現場で本当に必要とされる細かな機能まで標準で提供。カスタマイズ不要で即戦力として活用できます。</p>
+            
+            <div style="display:grid;gap:16px;">
+              <div style="background:#f8fafc;border-left:4px solid #2864F0;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">📍 スケジュール管理の実例</div>
+                <ul style="margin:0;padding-left:20px;font-size:13px;color:#64748b;line-height:1.7;">
+                  <li>会議室予約と参加者スケジュールの空き時間を同時検索</li>
+                  <li>社外との打ち合わせ時は「仮予定」で時間を確保</li>
+                  <li>Googleカレンダー・Outlookと双方向同期</li>
+                </ul>
+              </div>
+              
+              <div style="background:#f8fafc;border-left:4px solid #2864F0;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🔐 高度なアクセス権限管理</div>
+                <ul style="margin:0;padding-left:20px;font-size:13px;color:#64748b;line-height:1.7;">
+                  <li>部門・役職・プロジェクト単位での細かい権限設定</li>
+                  <li>データ閲覧・編集・削除の3段階の権限制御</li>
+                  <li>監査ログで全ての操作履歴を記録・追跡可能</li>
+                </ul>
+              </div>
+              
+              <div style="background:#f8fafc;border-left:4px solid #2864F0;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🔍 統合全文検索</div>
+                <ul style="margin:0;padding-left:20px;font-size:13px;color:#64748b;line-height:1.7;">
+                  <li>チャット・ファイル・タスク・掲示板を横断検索</li>
+                  <li>検索結果から関連情報を自動提示</li>
+                  <li>AIによる検索キーワード提案機能</li>
+                </ul>
+              </div>
             </div>
           </div>
         </div>
-        <div style="background:#fef3c7;border-radius:16px;padding:24px;text-align:center;overflow:hidden;">
-          <div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-            <!-- TODO: ここにスクリーンショット画像を配置 例: <img src="/screenshots/nokori-feature2.png" alt="NOKORIワークフロー設計画面" style="width:100%;border-radius:8px;"> -->
-            <div style="background:linear-gradient(135deg,#f093fb,#f5576c);height:180px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:600;">スクリーンショット<br>配置予定</div>
+      </div>
+      
+      <!-- 特長2：ローコード開発基盤 -->
+      <div style="background:#fff;border-radius:20px;padding:48px;margin-bottom:40px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+        <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:48px;align-items:start;">
+          <div>
+            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">思いどおりのアプリ開発が可能なローコード基盤</h3>
+            <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">標準機能だけでは対応できない独自の業務フローも、ローコード開発基盤で柔軟に構築。専門知識不要で現場主導のシステム構築が可能です。</p>
+            
+            <div style="display:grid;gap:16px;">
+              <div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🎨 ドラッグ&ドロップで構築</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">フォーム項目・承認フロー・通知設定を直感的に配置。プログラミング不要で複雑な業務アプリを構築できます。</p>
+              </div>
+              
+              <div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🔗 100以上の標準コンポーネント</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">入力フォーム、承認ボタン、添付ファイル、PDF出力など、業務に必要なコンポーネントを豊富に用意。</p>
+              </div>
+              
+              <div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">⚡ スクリプト拡張も可能</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">JavaScriptでカスタムロジックを追加可能。外部APIとの連携や高度な計算処理にも対応します。</p>
+              </div>
+            </div>
+            
+            <div style="background:#f8fafc;border-radius:12px;padding:24px;margin-top:24px;border:2px solid #e2e8f0;">
+              <div style="font-size:13px;color:#334155;font-weight:700;margin-bottom:12px;">📊 開発工数を大幅削減</div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;text-align:center;">
+                <div>
+                  <div style="font-size:28px;font-weight:800;color:#2864F0;">1/10</div>
+                  <div style="font-size:12px;color:#64748b;">開発期間</div>
+                </div>
+                <div>
+                  <div style="font-size:28px;font-weight:800;color:#2864F0;">1/5</div>
+                  <div style="font-size:12px;color:#64748b;">開発コスト</div>
+                </div>
+                <div>
+                  <div style="font-size:28px;font-weight:800;color:#2864F0;">最短1日</div>
+                  <div style="font-size:12px;color:#64748b;">リリース</div>
+                </div>
+              </div>
+            </div>
           </div>
-          <h3 style="font-size:18px;font-weight:800;color:#92400e;">特長 2</h3>
+          <div>
+            <div style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;">
+              <h3 style="font-size:20px;font-weight:800;color:#92400e;">特長 2</h3>
+            </div>
+            
+            <!-- スクリーンショット画像 -->
+            <div style="background:#fff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/nokori-workflow-feature.png" alt="NOKORIワークフロー・ローコード開発画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            </div>
+            
+            <div style="background:#fffbeb;border-radius:12px;padding:20px;">
+              <div style="font-size:13px;color:#92400e;font-weight:700;margin-bottom:8px;">✓ 柔軟なカスタマイズ</div>
+              <div style="font-size:12px;color:#64748b;line-height:1.6;margin-bottom:16px;">業界・企業特有の業務フローにも対応可能</div>
+              <div style="font-size:11px;color:#78716c;background:#fff;padding:12px;border-radius:8px;">
+                <div style="font-weight:700;margin-bottom:6px;">構築事例：</div>
+                <div style="line-height:1.5;">
+                  • 製造業の品質管理システム<br>
+                  • 不動産業の物件管理<br>
+                  • 医療機関のシフト管理<br>
+                  • 小売業の在庫管理
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       
-      <!-- 特長3 -->
-      <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:48px;align-items:center;">
-        <div style="background:#ddd6fe;border-radius:16px;padding:24px;text-align:center;overflow:hidden;">
-          <div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-            <!-- TODO: ここにスクリーンショット画像を配置 例: <img src="/screenshots/nokori-feature3.png" alt="NOKORI連携設定画面" style="width:100%;border-radius:8px;"> -->
-            <div style="background:linear-gradient(135deg,#4facfe,#00f2fe);height:180px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:600;">スクリーンショット<br>配置予定</div>
+      <!-- 特長3：シームレスな連携 -->
+      <div style="background:#fff;border-radius:20px;padding:48px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+        <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:48px;align-items:start;">
+          <div>
+            <div style="background:linear-gradient(135deg,#ddd6fe,#c4b5fd);border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;">
+              <h3 style="font-size:20px;font-weight:800;color:#5b21b6;">特長 3</h3>
+            </div>
+            
+            <!-- スクリーンショット画像 -->
+            <div style="background:#fff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/nokori-integration-feature.png" alt="NOKORI外部連携・統合管理画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            </div>
+            
+            <div style="background:#faf5ff;border-radius:12px;padding:20px;">
+              <div style="font-size:13px;color:#5b21b6;font-weight:700;margin-bottom:8px;">✓ エコシステム統合</div>
+              <div style="font-size:12px;color:#64748b;line-height:1.6;">既存のツールと連携してシームレスな業務環境を構築</div>
+            </div>
           </div>
-          <h3 style="font-size:18px;font-weight:800;color:#5b21b6;">特長 3</h3>
-        </div>
-        <div>
-          <h3 style="font-size:24px;font-weight:800;margin-bottom:16px;color:#0f172a;">様々なシステムとシームレスな連携を実現</h3>
-          <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:20px;">最先端システムOpenAI APIとも連携、年間250以上の機能追加。自社の基幹システムとの連携はもちろんのこと、他社の各種チャットツール、スケジューラー、電子契約ツールなどとの連携も標準で対応。</p>
-          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
-            ${["Slack", "Microsoft Teams", "Google Workspace", "Azure OpenAI", "GitHub", "Jira"].map((s) => `<div style="background:#f1f5f9;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;color:#475569;">${s}</div>`).join("")}
+          <div>
+            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">既存システムとシームレスに連携</h3>
+            <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">OpenAI APIをはじめ、主要なビジネスツールと標準連携。自社の基幹システムともREST APIで柔軟に接続できます。</p>
+            
+            <div style="display:grid;gap:16px;margin-bottom:24px;">
+              <div style="background:#f5f3ff;border-left:4px solid #8b5cf6;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🤖 AI統合</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">Azure OpenAI APIと連携し、チャットボット、文書要約、データ分析を自動化。社内ナレッジを学習したAIアシスタントを構築できます。</p>
+              </div>
+              
+              <div style="background:#f5f3ff;border-left:4px solid #8b5cf6;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">💬 コミュニケーションツール連携</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">Slack、Microsoft Teams、Google Chatと双方向連携。重要通知を既存のチャットツールに自動配信できます。</p>
+              </div>
+              
+              <div style="background:#f5f3ff;border-left:4px solid #8b5cf6;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🔌 REST API提供</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">販売管理・会計システムなど基幹システムとAPI連携。データの二重入力を解消し、リアルタイムに情報を同期します。</p>
+              </div>
+            </div>
+            
+            <div style="background:#f8fafc;border-radius:12px;padding:20px;">
+              <div style="font-size:13px;color:#334155;font-weight:700;margin-bottom:12px;">🔗 主な連携サービス</div>
+              <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                ${[
+                  "Slack",
+                  "Microsoft Teams",
+                  "Google Workspace",
+                  "Azure OpenAI",
+                  "GitHub",
+                  "Jira",
+                  "Salesforce",
+                  "kintone",
+                  "freee",
+                  "Money Forward",
+                  "SmartHR",
+                  "Zoom",
+                ]
+                  .map(
+                    (s) =>
+                      `<div style="background:#fff;padding:8px 16px;border-radius:20px;font-size:12px;font-weight:600;color:#475569;border:1.5px solid #e2e8f0;">${s}</div>`,
+                  )
+                  .join("")}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -277,6 +470,94 @@ router.get("/nokori", async (req, res) => {
   </div>
 </section>
 
+<!-- 料金プラン -->
+<section class="nk-section">
+  <div class="nk-section-inner">
+    <div class="nk-section-title">
+      <h2>料金プラン</h2>
+      <p>企業規模に合わせた柔軟なプランをご用意</p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:28px;max-width:1100px;margin:0 auto 48px;">
+      <!-- スタータープラン -->
+      <div style="background:#fff;border:2px solid #e2e8f0;border-radius:16px;padding:32px;position:relative;transition:all 0.3s;">
+        <div style="margin-bottom:8px;">
+          <h3 style="font-size:22px;font-weight:800;color:#0f172a;margin-bottom:4px;">スタータープラン</h3>
+          <p style="font-size:13px;color:#64748b;">小規模チーム向け（10名まで）</p>
+        </div>
+        <div style="margin:24px 0;">
+          <div style="font-size:42px;font-weight:800;color:#2864F0;line-height:1;">¥3,980<span style="font-size:16px;font-weight:600;color:#64748b;">/月〜</span></div>
+        </div>
+        <div style="margin-bottom:20px;">
+          <div style="font-size:13px;color:#475569;margin-bottom:8px;"><strong>初期費用:</strong> 無料</div>
+          <div style="font-size:13px;color:#475569;"><strong>利用人数:</strong> 10名まで / <strong>ストレージ:</strong> 10GB</div>
+        </div>
+        <ul style="list-style:none;padding:0;margin:0 0 28px 0;">
+          <li style="padding:8px 0;font-size:14px;color:#334155;display:flex;align-items:center;gap:8px;"><span style="color:#10b981;">✓</span> 勤怠管理</li>
+          <li style="padding:8px 0;font-size:14px;color:#334155;display:flex;align-items:center;gap:8px;"><span style="color:#10b981;">✓</span> 給与計算（基本）</li>
+          <li style="padding:8px 0;font-size:14px;color:#334155;display:flex;align-items:center;gap:8px;"><span style="color:#10b981;">✓</span> チャット</li>
+          <li style="padding:8px 0;font-size:14px;color:#334155;display:flex;align-items:center;gap:8px;"><span style="color:#10b981;">✓</span> タスク管理</li>
+          <li style="padding:8px 0;font-size:14px;color:#334155;display:flex;align-items:center;gap:8px;"><span style="color:#10b981;">✓</span> メールサポート</li>
+        </ul>
+        <a href="/nokori/register?plan=starter" style="display:block;width:100%;padding:14px;background:#f8fafc;color:#334155;text-align:center;border-radius:8px;font-weight:700;text-decoration:none;border:2px solid #e2e8f0;transition:all 0.2s;">このプランで始める</a>
+      </div>
+
+      <!-- スタンダードプラン（人気） -->
+      <div style="background:#fff;border:3px solid #2864F0;border-radius:16px;padding:32px;position:relative;box-shadow:0 8px 24px rgba(40,100,240,0.15);transform:scale(1.05);">
+        <div style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:#2864F0;color:#fff;padding:6px 20px;border-radius:20px;font-size:12px;font-weight:700;">★ 人気No.1</div>
+        <div style="margin-bottom:8px;">
+          <h3 style="font-size:22px;font-weight:800;color:#0f172a;margin-bottom:4px;">スタンダードプラン</h3>
+          <p style="font-size:13px;color:#64748b;">中規模企業向け（50名まで）</p>
+        </div>
+        <div style="margin:24px 0;">
+          <div style="font-size:42px;font-weight:800;color:#2864F0;line-height:1;">¥9,800<span style="font-size:16px;font-weight:600;color:#64748b;">/月〜</span></div>
+        </div>
+        <div style="margin-bottom:20px;">
+          <div style="font-size:13px;color:#475569;margin-bottom:8px;"><strong>初期費用:</strong> ¥50,000</div>
+          <div style="font-size:13px;color:#475569;"><strong>利用人数:</strong> 50名まで / <strong>ストレージ:</strong> 50GB</div>
+        </div>
+        <ul style="list-style:none;padding:0;margin:0 0 28px 0;">
+          <li style="padding:8px 0;font-size:14px;color:#334155;display:flex;align-items:center;gap:8px;"><span style="color:#10b981;">✓</span> スタータープランの全機能</li>
+          <li style="padding:8px 0;font-size:14px;color:#334155;display:flex;align-items:center;gap:8px;"><span style="color:#10b981;">✓</span> 休暇申請管理</li>
+          <li style="padding:8px 0;font-size:14px;color:#334155;display:flex;align-items:center;gap:8px;"><span style="color:#10b981;">✓</span> 承認ワークフロー</li>
+          <li style="padding:8px 0;font-size:14px;color:#334155;display:flex;align-items:center;gap:8px;"><span style="color:#10b981;">✓</span> クラウドドライブ（50GB）</li>
+          <li style="padding:8px 0;font-size:14px;color:#334155;display:flex;align-items:center;gap:8px;"><span style="color:#10b981;">✓</span> スキルシート管理</li>
+          <li style="padding:8px 0;font-size:14px;color:#334155;display:flex;align-items:center;gap:8px;"><span style="color:#10b981;">✓</span> 優先サポート</li>
+        </ul>
+        <a href="/nokori/register?plan=standard" style="display:block;width:100%;padding:14px;background:#2864F0;color:#fff;text-align:center;border-radius:8px;font-weight:700;text-decoration:none;transition:all 0.2s;">このプランで始める</a>
+      </div>
+
+      <!-- プロフェッショナル -->
+      <div style="background:#fff;border:2px solid #e2e8f0;border-radius:16px;padding:32px;position:relative;transition:all 0.3s;">
+        <div style="margin-bottom:8px;">
+          <h3 style="font-size:22px;font-weight:800;color:#0f172a;margin-bottom:4px;">プロフェッショナル</h3>
+          <p style="font-size:13px;color:#64748b;">大規模企業向け（無制限）</p>
+        </div>
+        <div style="margin:24px 0;">
+          <div style="font-size:42px;font-weight:800;color:#2864F0;line-height:1;">¥29,800<span style="font-size:16px;font-weight:600;color:#64748b;">/月〜</span></div>
+        </div>
+        <div style="margin-bottom:20px;">
+          <div style="font-size:13px;color:#475569;margin-bottom:8px;"><strong>初期費用:</strong> ¥100,000</div>
+          <div style="font-size:13px;color:#475569;"><strong>利用人数:</strong> 無制限 / <strong>ストレージ:</strong> 200GB</div>
+        </div>
+        <ul style="list-style:none;padding:0;margin:0 0 28px 0;">
+          <li style="padding:8px 0;font-size:14px;color:#334155;display:flex;align-items:center;gap:8px;"><span style="color:#10b981;">✓</span> スタンダードの全機能</li>
+          <li style="padding:8px 0;font-size:14px;color:#334155;display:flex;align-items:center;gap:8px;"><span style="color:#10b981;">✓</span> 無制限ユーザー</li>
+          <li style="padding:8px 0;font-size:14px;color:#334155;display:flex;align-items:center;gap:8px;"><span style="color:#10b981;">✓</span> AI機能フル活用</li>
+          <li style="padding:8px 0;font-size:14px;color:#334155;display:flex;align-items:center;gap:8px;"><span style="color:#10b981;">✓</span> APIアクセス</li>
+          <li style="padding:8px 0;font-size:14px;color:#334155;display:flex;align-items:center;gap:8px;"><span style="color:#10b981;">✓</span> 専任サポート担当</li>
+          <li style="padding:8px 0;font-size:14px;color:#334155;display:flex;align-items:center;gap:8px;"><span style="color:#10b981;">✓</span> カスタマイズ対応</li>
+        </ul>
+        <a href="/nokori/register?plan=professional" style="display:block;width:100%;padding:14px;background:#f8fafc;color:#334155;text-align:center;border-radius:8px;font-weight:700;text-decoration:none;border:2px solid #e2e8f0;transition:all 0.2s;">このプランで始める</a>
+      </div>
+    </div>
+    
+    <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:32px;">
+      <a href="/nokori/estimate" style="padding:14px 32px;background:#fff;color:#2864F0;border:2px solid #2864F0;border-radius:8px;font-size:15px;font-weight:700;text-decoration:none;transition:all 0.2s;">見積書を発行する</a>
+      <a href="/nokori/contact" style="padding:14px 32px;background:#f8fafc;color:#334155;border:2px solid #e2e8f0;border-radius:8px;font-size:15px;font-weight:700;text-decoration:none;transition:all 0.2s;">プランについて相談する</a>
+    </div>
+  </div>
+</section>
+
 <!-- CTA -->
 <section style="background:linear-gradient(135deg,#2864F0,#4080FF);padding:90px 24px;text-align:center;color:#fff;position:relative;overflow:hidden;">
   <div style="position:relative;z-index:1;">
@@ -295,9 +576,21 @@ router.get("/nokori", async (req, res) => {
   const slides = document.querySelectorAll('.nk-hero-slide');
   const indicators = document.querySelectorAll('.nk-hero-indicator');
   const totalSlides = slides.length;
+  const heroSection = document.querySelector('.nk-hero-slides');
   
-  function showSlide(index) {
+  let isDragging = false;
+  let startX = 0;
+  let currentX = 0;
+  let translateX = 0;
+  
+  function showSlide(index, transition = true) {
     slides.forEach((s, i) => {
+      if (transition) {
+        s.style.transition = 'opacity 0.5s ease';
+      } else {
+        s.style.transition = 'none';
+      }
+      
       if (i === index) {
         s.classList.add('nk-hero-slide-active');
       } else {
@@ -317,6 +610,92 @@ router.get("/nokori", async (req, res) => {
     currentSlide = (currentSlide + 1) % totalSlides;
     showSlide(currentSlide);
   }
+  
+  function prevSlide() {
+    currentSlide = (currentSlide - 1 + totalSlides) % totalSlides;
+    showSlide(currentSlide);
+  }
+  
+  function updateSlidePosition(offset) {
+    const activeSlide = slides[currentSlide];
+    const maxOffset = heroSection.offsetWidth;
+    const clampedOffset = Math.max(-maxOffset, Math.min(maxOffset, offset));
+    const opacity = 1 - Math.abs(clampedOffset) / maxOffset * 0.7;
+    
+    activeSlide.style.transform = "translateX(" + clampedOffset + "px)";
+    activeSlide.style.opacity = opacity;
+  }
+  
+  function resetSlidePosition(transition = true) {
+    const activeSlide = slides[currentSlide];
+    if (transition) {
+      activeSlide.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
+    } else {
+      activeSlide.style.transition = 'none';
+    }
+    activeSlide.style.transform = 'translateX(0)';
+    activeSlide.style.opacity = '1';
+  }
+  
+  // ドラッグ開始
+  function handleDragStart(e) {
+    isDragging = true;
+    startX = e.type.includes('mouse') ? e.pageX : e.touches[0].pageX;
+    currentX = startX;
+    translateX = 0;
+    
+    const activeSlide = slides[currentSlide];
+    activeSlide.style.transition = 'none';
+  }
+  
+  // ドラッグ中
+  function handleDragMove(e) {
+    if (!isDragging) return;
+    
+    e.preventDefault();
+    currentX = e.type.includes('mouse') ? e.pageX : e.touches[0].pageX;
+    translateX = currentX - startX;
+    
+    updateSlidePosition(translateX);
+  }
+  
+  // ドラッグ終了
+  function handleDragEnd() {
+    if (!isDragging) return;
+    
+    isDragging = false;
+    const threshold = heroSection.offsetWidth * 0.25; // 25%以上ドラッグで切り替え
+    
+    if (Math.abs(translateX) > threshold) {
+      if (translateX > 0) {
+        // 右にドラッグ → 前のスライド
+        prevSlide();
+      } else {
+        // 左にドラッグ → 次のスライド
+        nextSlide();
+      }
+    } else {
+      // 閾値未満なら元の位置に戻す
+      resetSlidePosition(true);
+    }
+    
+    translateX = 0;
+  }
+  
+  // タッチイベント
+  heroSection.addEventListener('touchstart', handleDragStart, { passive: false });
+  heroSection.addEventListener('touchmove', handleDragMove, { passive: false });
+  heroSection.addEventListener('touchend', handleDragEnd);
+  
+  // マウスイベント（PC対応）
+  heroSection.addEventListener('mousedown', handleDragStart);
+  heroSection.addEventListener('mousemove', handleDragMove);
+  heroSection.addEventListener('mouseup', handleDragEnd);
+  heroSection.addEventListener('mouseleave', () => {
+    if (isDragging) {
+      handleDragEnd();
+    }
+  });
   
   // 自動スライド（5秒ごと）
   setInterval(nextSlide, 5000);
