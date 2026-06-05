@@ -41,24 +41,52 @@ router.get("/nokori", async (req, res) => {
 <!-- 2カラムヒーローセクション -->
 <section class="nk-two-col-hero">
   <div class="nk-hero-left">
-    <div class="nk-hero-tag">人・事業・情報をサポートする。もっと、ずっとあなたの会社に。</div>
-    <h1 class="nk-hero-title">勤怠・人事・給与から<br>HACCP・GMP・ISO認証文書まで<br>これからは一つのシステムで</h1>
-    <p class="nk-hero-desc">中小企業から大企業まで対応。導入後すぐに使えるオールインワンの人事管理クラウドシステムです。現場の声から生まれた使いやすさを今すぐ体験してください。</p>
-    <a href="/nokori/register" class="nk-hero-btn">
-      <span>会員登録</span>
-      <span style="font-size:20px;">→</span>
-    </a>
+    <div class="nk-hero-slides">
+      <div class="nk-hero-slide nk-hero-slide-active">
+        <div class="nk-hero-tag">人・事業・情報をサポートする。もっと、ずっとあなたの会社に。</div>
+        <h1 class="nk-hero-title">勤怠・人事・採用をひとつに、<br>もっとシンプルに。</h1>
+        <p class="nk-hero-desc">中小企業から大企業まで対応。導入後すぐに使えるオールインワンの人事管理クラウドシステムです。</p>
+        <a href="/nokori/register" class="nk-hero-btn">
+          <span>会員登録</span>
+          <span style="font-size:20px;">→</span>
+        </a>
+      </div>
+      <div class="nk-hero-slide">
+        <div class="nk-hero-tag">現場で本当に必要な機能</div>
+        <h1 class="nk-hero-title">タスク管理から<br>目標管理まで<br>チームの生産性を最大化</h1>
+        <p class="nk-hero-desc">カンバンボード、ガントチャート、OKR管理。プロジェクトの進捗を可視化し、チーム全体の目標達成を支援します。</p>
+        <a href="/nokori/register" class="nk-hero-btn">
+          <span>今すぐ始める</span>
+          <span style="font-size:20px;">→</span>
+        </a>
+      </div>
+      <div class="nk-hero-slide">
+        <div class="nk-hero-tag">コミュニケーションを一元化</div>
+        <h1 class="nk-hero-title">チャット・通話・掲示板<br>すべてひとつのプラットフォームで</h1>
+        <p class="nk-hero-desc">外部ツール不要。社内コミュニケーションに必要な機能をすべて統合。AIチャットボットも搭載しています。</p>
+        <a href="/nokori/register" class="nk-hero-btn">
+          <span>今すぐ始める</span>
+          <span style="font-size:20px;">→</span>
+        </a>
+      </div>
+    </div>
+    <div class="nk-hero-indicators">
+      <span class="nk-hero-indicator nk-hero-indicator-active" data-slide="0"></span>
+      <span class="nk-hero-indicator" data-slide="1"></span>
+      <span class="nk-hero-indicator" data-slide="2"></span>
+    </div>
   </div>
   <div class="nk-hero-right">
-    <div class="nk-register-box">
-      <div class="nk-register-box-logo">
+    <a href="/nokori/register" class="nk-register-box-btn-unified">
+      <div class="nk-register-unified-top">今すぐ始める！</div>
+      <div class="nk-register-unified-logo">
         <img src="/nokori-logo4.png" alt="NOKORI">
       </div>
-      <a href="/nokori/register" class="nk-register-box-btn">
+      <div class="nk-register-unified-bottom">
         <span>会員登録</span>
-        <span style="font-size:18px;">›</span>
-      </a>
-    </div>
+        <span style="font-size:20px;">›</span>
+      </div>
+    </a>
     <div class="nk-login-box">
       <form action="/nokori/login" method="POST">
         <div class="nk-login-field">
@@ -79,86 +107,175 @@ router.get("/nokori", async (req, res) => {
   </div>
 </section>
 
-<!-- 数字でわかるNOKORI -->
-<section class="nk-section nk-section--gray">
-  <div class="nk-section-inner">
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:32px;text-align:center;">
-      <div style="padding:24px;">
-        <div style="font-size:48px;font-weight:800;color:var(--brand);margin-bottom:8px;">5,000+</div>
-        <div style="color:#666;font-size:15px;font-weight:600;">導入企業数</div>
-      </div>
-      <div style="padding:24px;">
-        <div style="font-size:48px;font-weight:800;color:var(--brand);margin-bottom:8px;">98%</div>
-        <div style="color:#666;font-size:15px;font-weight:600;">顧客満足度</div>
-      </div>
-      <div style="padding:24px;">
-        <div style="font-size:48px;font-weight:800;color:var(--brand);margin-bottom:8px;">30+</div>
-        <div style="color:#666;font-size:15px;font-weight:600;">搭載機能数</div>
-      </div>
-      <div style="padding:24px;">
-        <div style="font-size:48px;font-weight:800;color:var(--brand);margin-bottom:8px;">24/7</div>
-        <div style="color:#666;font-size:15px;font-weight:600;">サポート体制</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- 導入メリット -->
+<!-- NOKORIとは？ -->
 <section class="nk-section">
   <div class="nk-section-inner">
     <div class="nk-section-title">
-      <h2>こんな課題を解決します</h2>
-      <p>NOKORIは現場の声から生まれたHRシステムです</p>
+      <h2>NOKORIとは？</h2>
+      <p>人事・採用情報の最適な管理と活用を実現する統合業務プラットフォーム</p>
     </div>
-    <div class="nk-card-grid">
-      <div class="nk-card"><div class="nk-card-icon">⏰</div><h3>勤怠管理の煩雑さ</h3><p>タイムカードの手集計、Excelでの管理から解放。GPS打刻・スマホ対応で正確な勤怠データを自動集計します。</p></div>
-      <div class="nk-card"><div class="nk-card-icon">📄</div><h3>給与計算ミスのリスク</h3><p>勤怠データと連動した自動給与計算。法改正にも自動対応し、ミスのない給与明細を発行します。</p></div>
-      <div class="nk-card"><div class="nk-card-icon">💬</div><h3>社内コミュニケーション不足</h3><p>チャット・掲示板・グループ通話を内包。外部ツール不要でチームのコミュニケーションを一元管理。</p></div>
-      <div class="nk-card"><div class="nk-card-icon">📊</div><h3>人事データの分散管理</h3><p>採用・育成・評価・契約をひとつのプラットフォームへ。データドリブンな人事判断を実現します。</p></div>
-      <div class="nk-card"><div class="nk-card-icon">🔒</div><h3>コンプライアンスリスク</h3><p>労働基準法・個人情報保護法に対応したシステム設計。アクセス権限・監査ログで内部統制を強化。</p></div>
-      <div class="nk-card"><div class="nk-card-icon">📱</div><h3>リモートワーク対応</h3><p>スマートフォンからもフルアクセス。テレワーク・在宅勤務・出張先からも打刻・申請・承認が完結。</p></div>
+    <div style="max-width:900px;margin:0 auto;text-align:center;margin-bottom:48px;">
+      <p style="font-size:16px;color:#475569;line-height:1.9;">勤怠管理などの基本的なものから、直接業務に関わる複雑なアプリケーション、ワークフローまで独自のローコード開発基盤でしっかりサポートするワンパッケージのソリューションです。</p>
+    </div>
+    
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-bottom:36px;">
+      <div style="text-align:center;padding:24px;background:#fafafa;border-radius:12px;">
+        <div style="font-size:42px;margin-bottom:12px;">⚙️</div>
+        <h3 style="font-size:16px;font-weight:700;margin-bottom:12px;">基本機能</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;">
+          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">ユーザー/<br>組織管理</div>
+          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">アクセス権限<br>管理</div>
+          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">統合全文<br>検索</div>
+          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">モバイル<br>アクセス</div>
+        </div>
+      </div>
+      
+      <div style="text-align:center;padding:24px;background:#fafafa;border-radius:12px;">
+        <div style="font-size:42px;margin-bottom:12px;">💬</div>
+        <h3 style="font-size:16px;font-weight:700;margin-bottom:12px;">グループウェア</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;">
+          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">カレンダー<br>施設予約</div>
+          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">掲示板<br>社内通知</div>
+          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">チャット<br>グループ通話</div>
+          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">ファイル<br>管理</div>
+        </div>
+      </div>
+      
+      <div style="text-align:center;padding:24px;background:#fafafa;border-radius:12px;">
+        <div style="font-size:42px;margin-bottom:12px;">🔄</div>
+        <h3 style="font-size:16px;font-weight:700;margin-bottom:12px;">ワークフロー / 開発基盤</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;">
+          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">フォーム<br>設計</div>
+          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">ビュー<br>設計</div>
+          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">ワークフロー<br>設計</div>
+          <div style="background:#fff;padding:10px;border-radius:8px;font-size:13px;font-weight:600;color:#334155;">AI機能<br>統合</div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- 機能紹介 -->
+<!-- NOKORIの3つの特長 -->
 <section class="nk-section nk-section--gray">
   <div class="nk-section-inner">
     <div class="nk-section-title">
-      <h2>主な機能</h2>
-      <p>業務に必要な機能がすべて揃っています</p>
+      <h2>NOKORIの3つの特長</h2>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;">
-      ${["勤怠管理", "給与計算", "休暇申請", "目標管理", "タスク管理", "チャット", "グループ通話", "掲示板", "スキルシート", "日報管理", "スケジュール", "組織管理", "契約管理", "承認フロー", "クラウドドライブ", "AI機能"].map((f) => `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px 18px;font-size:14px;font-weight:600;color:#1e293b;display:flex;align-items:center;gap:8px;"><span style="color:#0ea5e9;">✓</span>${f}</div>`).join("")}
-    </div>
-    <div style="text-align:center;margin-top:36px;">
-      <a href="/nokori/features" class="nk-btn-lg nk-btn-white" style="background:var(--brand);color:#fff;">全機能を見る →</a>
+    
+    <div style="max-width:1000px;margin:0 auto;">
+      <!-- 特長1 -->
+      <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:48px;align-items:center;margin-bottom:60px;">
+        <div style="background:#e0f2fe;border-radius:16px;padding:24px;text-align:center;overflow:hidden;">
+          <div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+            <!-- TODO: ここにスクリーンショット画像を配置 例: <img src="/screenshots/nokori-feature1.png" alt="NOKORIスケジュール管理画面" style="width:100%;border-radius:8px;"> -->
+            <div style="background:linear-gradient(135deg,#667eea,#764ba2);height:180px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:600;">スクリーンショット<br>配置予定</div>
+          </div>
+          <h3 style="font-size:18px;font-weight:800;color:#0369a1;">特長 1</h3>
+        </div>
+        <div>
+          <h3 style="font-size:24px;font-weight:800;margin-bottom:16px;color:#0f172a;">様々な企業のノウハウを機能化し標準搭載</h3>
+          <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:20px;">標準的なスケジュール管理に、施設予約と連動した空き時間検索、社外打ち合わせ時の仮予定の確保など業務に則した機能を多数搭載。大規模で複雑な構造の組織であっても、情報に対するアクセス権限を適切に管理することが可能。</p>
+          <p style="font-size:15px;color:#64748b;line-height:1.8;">NOKORI内のあらゆる情報を横断的に検索でき、隠れたインサイトを可視化します。</p>
+        </div>
+      </div>
+      
+      <!-- 特長2 -->
+      <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:48px;align-items:center;margin-bottom:60px;">
+        <div>
+          <h3 style="font-size:24px;font-weight:800;margin-bottom:16px;color:#0f172a;">思いどおりのアプリケーション / ワークフローの開発</h3>
+          <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:20px;">スキル不要で始められる、直感的コンポーネント型開発。豊富なライブラリを搭載し、複雑な要件も実現可能なスクリプト開発。</p>
+          <div style="background:#f8fafc;border-radius:12px;padding:24px;border:2px solid #e2e8f0;margin-top:24px;">
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;text-align:center;font-size:13px;color:#334155;">
+              <div><strong style="display:block;color:#2864F0;font-size:16px;margin-bottom:4px;">✓</strong>幅広い要件を標準機能で実現</div>
+              <div><strong style="display:block;color:#2864F0;font-size:16px;margin-bottom:4px;">✓</strong>ローコード開発可能で開発期間とコストを削減</div>
+              <div><strong style="display:block;color:#2864F0;font-size:16px;margin-bottom:4px;">✓</strong>スムーズなデータ移行で現場の負荷を大幅に削減</div>
+            </div>
+          </div>
+        </div>
+        <div style="background:#fef3c7;border-radius:16px;padding:24px;text-align:center;overflow:hidden;">
+          <div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+            <!-- TODO: ここにスクリーンショット画像を配置 例: <img src="/screenshots/nokori-feature2.png" alt="NOKORIワークフロー設計画面" style="width:100%;border-radius:8px;"> -->
+            <div style="background:linear-gradient(135deg,#f093fb,#f5576c);height:180px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:600;">スクリーンショット<br>配置予定</div>
+          </div>
+          <h3 style="font-size:18px;font-weight:800;color:#92400e;">特長 2</h3>
+        </div>
+      </div>
+      
+      <!-- 特長3 -->
+      <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:48px;align-items:center;">
+        <div style="background:#ddd6fe;border-radius:16px;padding:24px;text-align:center;overflow:hidden;">
+          <div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+            <!-- TODO: ここにスクリーンショット画像を配置 例: <img src="/screenshots/nokori-feature3.png" alt="NOKORI連携設定画面" style="width:100%;border-radius:8px;"> -->
+            <div style="background:linear-gradient(135deg,#4facfe,#00f2fe);height:180px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:600;">スクリーンショット<br>配置予定</div>
+          </div>
+          <h3 style="font-size:18px;font-weight:800;color:#5b21b6;">特長 3</h3>
+        </div>
+        <div>
+          <h3 style="font-size:24px;font-weight:800;margin-bottom:16px;color:#0f172a;">様々なシステムとシームレスな連携を実現</h3>
+          <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:20px;">最先端システムOpenAI APIとも連携、年間250以上の機能追加。自社の基幹システムとの連携はもちろんのこと、他社の各種チャットツール、スケジューラー、電子契約ツールなどとの連携も標準で対応。</p>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
+            ${["Slack", "Microsoft Teams", "Google Workspace", "Azure OpenAI", "GitHub", "Jira"].map((s) => `<div style="background:#f1f5f9;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;color:#475569;">${s}</div>`).join("")}
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- お知らせ -->
-${
-  news.length > 0
-    ? `
+<!-- お客様の声 -->
 <section class="nk-section">
   <div class="nk-section-inner">
-    <div class="nk-section-title"><h2>お知らせ</h2></div>
-    <div style="max-width:760px;margin:0 auto;">
-      ${news
-        .map(
-          (n) => `
-        <div style="display:flex;gap:16px;align-items:flex-start;padding:16px 0;border-bottom:1px solid #f1f5f9;">
-          <span style="font-size:13px;color:#94a3b8;flex-shrink:0;">${new Date(n.publishedAt || n.createdAt).toLocaleDateString("ja-JP")}</span>
-          <span style="font-size:13px;">${n.title}</span>
-        </div>`,
-        )
-        .join("")}
+    <div class="nk-section-title">
+      <h2>お客様の声</h2>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:24px;">
+      <div style="background:#fafafa;border-radius:12px;padding:28px;border-left:4px solid #2864F0;">
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;">製造業（従業員規模 300-1000人） / 人事部門</div>
+        <p style="font-size:14px;color:#475569;line-height:1.7;margin-bottom:16px;">「各部門の情報発信、スケジュールなどの様々な情報共有にとって非常に有用で、アクセス許可など細かい制御も出来る。ワークフローの申請から承認までのフロー管理がとてもしやすく、機能としてとても充実している。」</p>
+        <div style="font-size:13px;color:#2864F0;font-weight:600;">⭐⭐⭐⭐⭐</div>
+      </div>
+      
+      <div style="background:#fafafa;border-radius:12px;padding:28px;border-left:4px solid #2864F0;">
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;">IT・サービス（従業員規模 100-300人） / 情報システム部</div>
+        <p style="font-size:14px;color:#475569;line-height:1.7;margin-bottom:16px;">「カスタマイズ性が高く、ユーザー部門より難しい要望を受けても実現できる。ワークフローの停滞が起こりづらくなり、課題解決に貢献している。サポート体制も充実している。」</p>
+        <div style="font-size:13px;color:#2864F0;font-weight:600;">⭐⭐⭐⭐⭐</div>
+      </div>
+      
+      <div style="background:#fafafa;border-radius:12px;padding:28px;border-left:4px solid #2864F0;">
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;">小売業（従業員規模 500人以上） / 経営企画室</div>
+        <p style="font-size:14px;color:#475569;line-height:1.7;margin-bottom:16px;">「ペーパレス化の推進で既存文書の削減量52.6％を達成。ワークフロー機能を利用することで、誰がいつ見ていて等の履歴が確認でき、承認資料も保管されているので、どのタイミングでも見ることができる。」</p>
+        <div style="font-size:13px;color:#2864F0;font-weight:600;">⭐⭐⭐⭐⭐</div>
+      </div>
     </div>
   </div>
-</section>`
-    : ""
-}
+</section>
+
+<!-- 導入実績 -->
+<section class="nk-section nk-section--gray">
+  <div class="nk-section-inner">
+    <div class="nk-section-title">
+      <h2>導入実績</h2>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:32px;text-align:center;max-width:900px;margin:0 auto;">
+      <div style="padding:24px;">
+        <div style="font-size:52px;font-weight:800;color:#2864F0;margin-bottom:8px;">5,000+</div>
+        <div style="color:#64748b;font-size:15px;font-weight:600;">導入企業数</div>
+      </div>
+      <div style="padding:24px;">
+        <div style="font-size:52px;font-weight:800;color:#2864F0;margin-bottom:8px;">98%</div>
+        <div style="color:#64748b;font-size:15px;font-weight:600;">顧客満足度</div>
+      </div>
+      <div style="padding:24px;">
+        <div style="font-size:52px;font-weight:800;color:#2864F0;margin-bottom:8px;">30+</div>
+        <div style="color:#64748b;font-size:15px;font-weight:600;">搭載機能数</div>
+      </div>
+      <div style="padding:24px;">
+        <div style="font-size:52px;font-weight:800;color:#2864F0;margin-bottom:8px;">24/7</div>
+        <div style="color:#64748b;font-size:15px;font-weight:600;">サポート体制</div>
+      </div>
+    </div>
+  </div>
+</section>
 
 <!-- CTA -->
 <section style="background:linear-gradient(135deg,#2864F0,#4080FF);padding:90px 24px;text-align:center;color:#fff;position:relative;overflow:hidden;">
@@ -170,7 +287,50 @@ ${
       <a href="/nokori/contact" class="nk-btn-lg nk-btn-ghost">お問い合わせ</a>
     </div>
   </div>
-</section>`;
+</section>
+
+<script>
+(function(){
+  let currentSlide = 0;
+  const slides = document.querySelectorAll('.nk-hero-slide');
+  const indicators = document.querySelectorAll('.nk-hero-indicator');
+  const totalSlides = slides.length;
+  
+  function showSlide(index) {
+    slides.forEach((s, i) => {
+      if (i === index) {
+        s.classList.add('nk-hero-slide-active');
+      } else {
+        s.classList.remove('nk-hero-slide-active');
+      }
+    });
+    indicators.forEach((ind, i) => {
+      if (i === index) {
+        ind.classList.add('nk-hero-indicator-active');
+      } else {
+        ind.classList.remove('nk-hero-indicator-active');
+      }
+    });
+  }
+  
+  function nextSlide() {
+    currentSlide = (currentSlide + 1) % totalSlides;
+    showSlide(currentSlide);
+  }
+  
+  // 自動スライド（5秒ごと）
+  setInterval(nextSlide, 5000);
+  
+  // インジケーターのクリックイベント
+  indicators.forEach((ind, i) => {
+    ind.addEventListener('click', () => {
+      currentSlide = i;
+      showSlide(currentSlide);
+    });
+  });
+})();
+</script>
+`;
   res.send(page("NOKORIクラウドHRシステム", body, { member }));
 });
 
