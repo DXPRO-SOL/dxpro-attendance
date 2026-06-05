@@ -570,6 +570,185 @@ router.get("/nokori", async (req, res) => {
   </div>
 </section>
 
+<style>
+/* PC版でのボタン表示を確実にする */
+@media(min-width:769px){
+  .nk-register-box-btn-unified {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 20px 32px;
+    position: relative;
+  }
+  
+  .nk-register-unified-top {
+    position: absolute;
+    left: 32px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 14px;
+  }
+  
+  .nk-register-unified-logo {
+    align-self: flex-end;
+  }
+  
+  .nk-register-unified-logo img {
+    height: 52px;
+  }
+  
+  .nk-register-unified-bottom {
+    align-self: flex-end;
+    font-size: 16px;
+  }
+}
+
+@media(max-width:768px){
+  /* NOKORIとは？セクションの2カラムグリッドを1カラムに */
+  section .nk-section-inner > div[style*="grid-template-columns:repeat(2,1fr)"] {
+    grid-template-columns: 1fr !important;
+  }
+  
+  /* 特長セクションの2カラムグリッドを1カラムに */
+  div[style*="display:grid"][style*="grid-template-columns:1fr 1.5fr"],
+  div[style*="display:grid"][style*="grid-template-columns:1.5fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+  
+  /* 料金プランの3カラムグリッドを1カラムに */
+  div[style*="grid-template-columns:repeat(3,1fr)"] {
+    grid-template-columns: 1fr !important;
+  }
+  
+  /* 導入実績の4カラムグリッドを2カラムに */
+  div[style*="grid-template-columns:repeat(4,1fr)"] {
+    grid-template-columns: repeat(2,1fr) !important;
+    gap: 20px !important;
+  }
+  
+  /* 特長カードのパディングを調整 */
+  div[style*="padding:48px"][style*="border-radius:20px"] {
+    padding: 24px !important;
+  }
+  
+  /* お客様の声のグリッド */
+  div[style*="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))"] {
+    grid-template-columns: 1fr !important;
+  }
+  
+  /* フォントサイズの調整 */
+  h3[style*="font-size:26px"] {
+    font-size: 20px !important;
+  }
+  
+  /* 人気No.1バッジの付いた料金カード */
+  div[style*="transform:scale(1.05)"] {
+    transform: scale(1) !important;
+  }
+  
+  /* ヒーローセクションのモバイル対応強化 */
+  .nk-hero-left {
+    min-height: 350px !important;
+  }
+  
+  .nk-hero-title {
+    font-size: 24px !important;
+    line-height: 1.4 !important;
+  }
+  
+  .nk-hero-desc {
+    font-size: 14px !important;
+  }
+  
+  .nk-hero-btn {
+    font-size: 14px !important;
+    padding: 12px 24px !important;
+  }
+  
+  /* ログインボックスのモバイル対応 */
+  .nk-login-box {
+    padding: 24px !important;
+  }
+  
+  /* 会員登録ボタンのモバイル対応 */
+  .nk-register-box-btn-unified {
+    padding: 20px 24px !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 12px !important;
+  }
+  
+  .nk-register-unified-top {
+    position: static !important;
+    transform: none !important;
+    left: auto !important;
+    top: auto !important;
+    font-size: 13px !important;
+    margin: 0 !important;
+  }
+  
+  .nk-register-unified-logo {
+    align-self: center !important;
+  }
+  
+  .nk-register-unified-logo img {
+    height: 42px !important;
+  }
+  
+  .nk-register-unified-bottom {
+    align-self: center !important;
+    font-size: 15px !important;
+  }
+  
+  /* CTA ボタンのモバイル対応 */
+  .nk-hero-actions {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  
+  .nk-btn-lg {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+  
+  /* さらに充実の機能群のバッジ */
+  div[style*="display:flex"][style*="flex-wrap:wrap"][style*="justify-content:center"] {
+    gap: 8px !important;
+  }
+  
+  div[style*="padding:10px 20px"][style*="border-radius:20px"] {
+    padding: 8px 14px !important;
+    font-size: 11px !important;
+  }
+  
+  /* 統計数値のフォントサイズ調整 */
+  div[style*="font-size:52px"] {
+    font-size: 36px !important;
+  }
+  
+  div[style*="font-size:28px"][style*="font-weight:800"] {
+    font-size: 22px !important;
+  }
+}
+
+@media(max-width:480px){
+  /* 導入実績を1カラムに */
+  div[style*="grid-template-columns:repeat(4,1fr)"] {
+    grid-template-columns: 1fr !important;
+  }
+  
+  .nk-section {
+    padding: 40px 16px !important;
+  }
+  
+  .nk-two-col-hero {
+    padding: 30px 16px !important;
+  }
+}
+</style>
+
 <script>
 (function(){
   let currentSlide = 0;
@@ -585,16 +764,24 @@ router.get("/nokori", async (req, res) => {
   
   function showSlide(index, transition = true) {
     slides.forEach((s, i) => {
-      if (transition) {
-        s.style.transition = 'opacity 0.5s ease';
-      } else {
-        s.style.transition = 'none';
-      }
-      
       if (i === index) {
+        // アクティブなスライドのみリセット
+        s.style.transform = 'translateX(0)';
+        s.style.opacity = '1';
+        
+        if (transition) {
+          s.style.transition = 'opacity 0.5s ease, transform 0.3s ease';
+        } else {
+          s.style.transition = 'none';
+        }
+        
         s.classList.add('nk-hero-slide-active');
       } else {
+        // 非アクティブなスライドは即座に非表示
         s.classList.remove('nk-hero-slide-active');
+        s.style.transform = 'translateX(0)';
+        s.style.opacity = '0';
+        s.style.transition = 'none';
       }
     });
     indicators.forEach((ind, i) => {
@@ -667,13 +854,21 @@ router.get("/nokori", async (req, res) => {
     const threshold = heroSection.offsetWidth * 0.25; // 25%以上ドラッグで切り替え
     
     if (Math.abs(translateX) > threshold) {
-      if (translateX > 0) {
-        // 右にドラッグ → 前のスライド
-        prevSlide();
-      } else {
-        // 左にドラッグ → 次のスライド
-        nextSlide();
-      }
+      // 現在のスライドを非表示にしてから切り替え
+      const activeSlide = slides[currentSlide];
+      activeSlide.style.transition = 'opacity 0.2s ease';
+      activeSlide.style.opacity = '0';
+      
+      setTimeout(() => {
+        activeSlide.style.transform = 'translateX(0)';
+        if (translateX > 0) {
+          // 右にドラッグ → 前のスライド
+          prevSlide();
+        } else {
+          // 左にドラッグ → 次のスライド
+          nextSlide();
+        }
+      }, 200);
     } else {
       // 閾値未満なら元の位置に戻す
       resetSlidePosition(true);
