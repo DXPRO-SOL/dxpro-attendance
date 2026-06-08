@@ -89,9 +89,6 @@ router.get("/nokori", async (req, res) => {
           <h3 style="font-size:18px;font-weight:700;color:#0f172a;margin-bottom:8px;">ログイン中</h3>
           <p style="font-size:14px;color:#64748b;margin-bottom:24px;">${member.name || member.email}</p>
         </div>
-        <a href="/dashboard" style="display:block;width:100%;padding:14px;background:#2864F0;color:#fff;text-align:center;border-radius:8px;font-weight:700;text-decoration:none;margin-bottom:12px;transition:all .2s;">
-          ダッシュボードへ
-        </a>
         <a href="/nokori/logout" style="display:block;width:100%;padding:14px;background:#f8fafc;color:#64748b;text-align:center;border-radius:8px;font-weight:700;text-decoration:none;border:2px solid #e2e8f0;transition:all .2s;">
           ログアウト
         </a>
