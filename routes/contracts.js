@@ -967,6 +967,7 @@ router.get("/contracts", requireLogin, async (req, res) => {
 // =====================================================================
 router.get("/contracts/new", requireLogin, isAdmin, async (req, res) => {
   try {
+    const lang = req.session && req.session.lang ? req.session.lang : "ja";
     const [users, employees, typeConfigs, approverCandidates] =
       await Promise.all([
         User.find().sort({ username: 1 }).lean(),
@@ -1420,6 +1421,7 @@ router.post("/contracts/:id/return", requireLogin, async (req, res) =>
 // =====================================================================
 router.get("/contracts/:id", requireLogin, async (req, res) => {
   try {
+    const lang = req.session && req.session.lang ? req.session.lang : "ja";
     const isAdminUser = req.session.isAdmin;
     const orgRole = req.session.orgRole || (isAdminUser ? "admin" : "employee");
     const canView =
@@ -1811,6 +1813,7 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
 // =====================================================================
 router.get("/contracts/:id/edit", requireLogin, isAdmin, async (req, res) => {
   try {
+    const lang = req.session && req.session.lang ? req.session.lang : "ja";
     const contract = await Contract.findById(req.params.id).lean();
     if (!contract) return res.status(404).send("契約が見つかりません。");
     const [users, employees, typeConfigs] = await Promise.all([
@@ -2433,6 +2436,7 @@ const ADMIN_CT_STYLE = `
 // GET /admin/contract-types - 種別一覧
 router.get("/admin/contract-types", requireLogin, isAdmin, async (req, res) => {
   try {
+    const lang = req.session && req.session.lang ? req.session.lang : "ja";
     const typeConfigs = await getTypeConfigs();
     renderPage(
       req,
