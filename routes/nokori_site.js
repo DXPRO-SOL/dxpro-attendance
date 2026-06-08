@@ -77,35 +77,68 @@ router.get("/nokori", async (req, res) => {
     </div>
   </div>
   <div class="nk-hero-right">
-    <a href="/nokori/register" class="nk-register-box-btn-unified">
-      <div class="nk-register-unified-top">今すぐ始める！</div>
-      <div class="nk-register-unified-logo">
-        <img src="/nokori-logo4.png" alt="NOKORI">
+    ${
+      member
+        ? `
+      <!-- ログイン済みの場合 -->
+      <div style="background:#fff;border:2px solid #e2e8f0;border-radius:16px;padding:32px;text-align:center;">
+        <div style="margin-bottom:20px;">
+          <div style="width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,#2864F0,#4080FF);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:28px;color:#fff;">
+            ✓
+          </div>
+          <h3 style="font-size:18px;font-weight:700;color:#0f172a;margin-bottom:8px;">ログイン中</h3>
+          <p style="font-size:14px;color:#64748b;margin-bottom:24px;">${member.name || member.email}</p>
+        </div>
+        <a href="/dashboard" style="display:block;width:100%;padding:14px;background:#2864F0;color:#fff;text-align:center;border-radius:8px;font-weight:700;text-decoration:none;margin-bottom:12px;transition:all .2s;">
+          ダッシュボードへ
+        </a>
+        <a href="/nokori/logout" style="display:block;width:100%;padding:14px;background:#f8fafc;color:#64748b;text-align:center;border-radius:8px;font-weight:700;text-decoration:none;border:2px solid #e2e8f0;transition:all .2s;">
+          ログアウト
+        </a>
       </div>
-      <div class="nk-register-unified-bottom">
-        <span>会員登録</span>
-        <span style="font-size:20px;">›</span>
+    `
+        : `
+      <!-- 未ログインの場合 -->
+      <a href="/nokori/register" class="nk-register-box-btn-unified">
+        <div class="nk-register-unified-top">今すぐ始める！</div>
+        <div class="nk-register-unified-logo">
+          <img src="/nokori-logo4.png" alt="NOKORI">
+        </div>
+        <div class="nk-register-unified-bottom">
+          <span>会員登録</span>
+          <span style="font-size:20px;">›</span>
+        </div>
+      </a>
+      <div class="nk-login-box">
+        <form action="/nokori/login" method="POST">
+          <div class="nk-login-field">
+            <label class="nk-login-label-title">ID（メールアドレス）</label>
+            <input type="email" name="email" placeholder="IDを入力してください" required>
+          </div>
+          <div class="nk-login-field">
+            <label class="nk-login-label-title">パスワード</label>
+            <input type="password" name="password" placeholder="パスワードを入力してください" required>
+          </div>
+          <div class="nk-login-checkbox">
+            <input type="checkbox" name="adminLogin" id="adminLogin">
+            <label for="adminLogin">契約者権限でログイン</label>
+          </div>
+          <button type="submit" class="nk-login-btn">ログイン</button>
+        </form>
       </div>
-    </a>
-    <div class="nk-login-box">
-      <form action="/nokori/login" method="POST">
-        <div class="nk-login-field">
-          <label class="nk-login-label-title">ID（メールアドレス）</label>
-          <input type="email" name="email" placeholder="IDを入力してください" required>
-        </div>
-        <div class="nk-login-field">
-          <label class="nk-login-label-title">パスワード</label>
-          <input type="password" name="password" placeholder="パスワードを入力してください" required>
-        </div>
-        <div class="nk-login-checkbox">
-          <input type="checkbox" name="adminLogin" id="adminLogin">
-          <label for="adminLogin">契約者権限でログイン</label>
-        </div>
-        <button type="submit" class="nk-login-btn">ログイン</button>
-      </form>
-    </div>
+    `
+    }
   </div>
 </section>
+
+<!-- セクション区切り -->
+<div style="background:linear-gradient(to bottom, #f8fafc 0%, #ffffff 100%);padding:80px 0;position:relative;">
+  <div style="max-width:1200px;margin:0 auto;text-align:center;">
+    <div style="width:60px;height:4px;background:linear-gradient(90deg, #2864F0, #4080FF);margin:0 auto 24px;border-radius:2px;"></div>
+    <div style="font-size:14px;font-weight:700;color:#94a3b8;letter-spacing:0.1em;">SCROLL DOWN</div>
+  </div>
+  <div style="position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg, transparent, #e2e8f0 20%, #e2e8f0 80%, transparent);"></div>
+</div>
 
 <!-- NOKORIとは？ -->
 <section class="nk-section">
@@ -213,17 +246,17 @@ router.get("/nokori", async (req, res) => {
   </div>
 </section>
 
-<!-- NOKORIの3つの特長 -->
+<!-- NOKORIの特長 -->
 <section class="nk-section nk-section--gray">
   <div class="nk-section-inner">
     <div class="nk-section-title">
-      <h2>NOKORIの3つの特長</h2>
-      <p>業務効率化を実現する差別化ポイント</p>
+      <h2>NOKORIの特長</h2>
+      <p>業務効率化を実現する8つの主要機能</p>
     </div>
     
-    <div style="max-width:1100px;margin:0 auto;">
-      <!-- 特長1：実務に即した豊富な機能 -->
-      <div style="background:#fff;border-radius:20px;padding:48px;margin-bottom:40px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+    <div style="max-width:1400px;margin:0 auto;display:grid;grid-template-columns:repeat(2,1fr);gap:40px;">
+      <!-- 特長1：勤怠管理１（休暇申請や残業申請） -->
+      <div style="background:#fff;border-radius:20px;padding:48px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
         <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:48px;align-items:start;">
           <div>
             <div style="background:linear-gradient(135deg,#e0f2fe,#bae6fd);border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;">
@@ -231,44 +264,49 @@ router.get("/nokori", async (req, res) => {
             </div>
             
             <!-- スクリーンショット画像 -->
-            <div style="background:#fff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-              <img src="/screenshots/nokori-calendar-feature.png" alt="NOKORIカレンダー・スケジュール管理画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            <div style="background:#f0f9ff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/feature1-leave-overtime.png" alt="休暇申請・残業申請画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            </div>
+            
+            <!-- スクリーンショット画像2 -->
+            <div style="background:#f0f9ff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/feature1-leave-overtime-2.png" alt="休暇申請・残業申請画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
             </div>
             
             <div style="background:#f0f9ff;border-radius:12px;padding:20px;">
-              <div style="font-size:13px;color:#0369a1;font-weight:700;margin-bottom:8px;">✓ 導入実績から生まれた機能</div>
-              <div style="font-size:12px;color:#64748b;line-height:1.6;">5,000社以上の導入事例から得られたノウハウを標準機能として実装</div>
+              <div style="font-size:13px;color:#0369a1;font-weight:700;margin-bottom:8px;">✓ ワンクリック申請</div>
+              <div style="font-size:12px;color:#64748b;line-height:1.6;">スマホからでも簡単に各種申請が可能</div>
             </div>
           </div>
           <div>
-            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">実務に即した豊富な機能を標準搭載</h3>
-            <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">単なる勤怠管理だけでなく、現場で本当に必要とされる細かな機能まで標準で提供。カスタマイズ不要で即戦力として活用できます。</p>
+            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">休暇申請・残業申請をスムーズに</h3>
+            <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">有給休暇、代休、振替休日、残業申請などの各種申請をシステムで一元管理。承認フローも自動化され、紙の申請書や押印は不要です。</p>
             
             <div style="display:grid;gap:16px;">
               <div style="background:#f8fafc;border-left:4px solid #2864F0;padding:16px;border-radius:8px;">
-                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">📍 スケジュール管理の実例</div>
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🗓️ 有給休暇管理</div>
                 <ul style="margin:0;padding-left:20px;font-size:13px;color:#64748b;line-height:1.7;">
-                  <li>会議室予約と参加者スケジュールの空き時間を同時検索</li>
-                  <li>社外との打ち合わせ時は「仮予定」で時間を確保</li>
-                  <li>Googleカレンダー・Outlookと双方向同期</li>
+                  <li>残日数の自動計算・リアルタイム表示</li>
+                  <li>半日休暇・時間単位休暇にも対応</li>
+                  <li>取得期限のアラート通知機能</li>
                 </ul>
               </div>
               
               <div style="background:#f8fafc;border-left:4px solid #2864F0;padding:16px;border-radius:8px;">
-                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🔐 高度なアクセス権限管理</div>
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">⏰ 残業申請・承認</div>
                 <ul style="margin:0;padding-left:20px;font-size:13px;color:#64748b;line-height:1.7;">
-                  <li>部門・役職・プロジェクト単位での細かい権限設定</li>
-                  <li>データ閲覧・編集・削除の3段階の権限制御</li>
-                  <li>監査ログで全ての操作履歴を記録・追跡可能</li>
+                  <li>事前申請から事後承認まで対応</li>
+                  <li>36協定の上限時間を自動チェック</li>
+                  <li>残業理由のテンプレート登録</li>
                 </ul>
               </div>
               
               <div style="background:#f8fafc;border-left:4px solid #2864F0;padding:16px;border-radius:8px;">
-                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🔍 統合全文検索</div>
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🔄 柔軟な承認フロー</div>
                 <ul style="margin:0;padding-left:20px;font-size:13px;color:#64748b;line-height:1.7;">
-                  <li>チャット・ファイル・タスク・掲示板を横断検索</li>
-                  <li>検索結果から関連情報を自動提示</li>
-                  <li>AIによる検索キーワード提案機能</li>
+                  <li>部門・役職に応じた承認ルート設定</li>
+                  <li>代理承認・差し戻し機能</li>
+                  <li>承認状況をリアルタイムで確認</li>
                 </ul>
               </div>
             </div>
@@ -276,45 +314,27 @@ router.get("/nokori", async (req, res) => {
         </div>
       </div>
       
-      <!-- 特長2：ローコード開発基盤 -->
-      <div style="background:#fff;border-radius:20px;padding:48px;margin-bottom:40px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+      <!-- 特長2：勤怠管理２（GPS打刻入力や勤務状況の把握） -->
+      <div style="background:#fff;border-radius:20px;padding:48px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
         <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:48px;align-items:start;">
           <div>
-            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">思いどおりのアプリ開発が可能なローコード基盤</h3>
-            <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">標準機能だけでは対応できない独自の業務フローも、ローコード開発基盤で柔軟に構築。専門知識不要で現場主導のシステム構築が可能です。</p>
+            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">GPS打刻で勤務状況を正確に把握</h3>
+            <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">スマートフォンのGPS機能を活用した位置情報付き打刻で、リモートワークや直行直帰にも対応。リアルタイムで従業員の勤務状況を把握できます。</p>
             
             <div style="display:grid;gap:16px;">
               <div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:16px;border-radius:8px;">
-                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🎨 ドラッグ&ドロップで構築</div>
-                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">フォーム項目・承認フロー・通知設定を直感的に配置。プログラミング不要で複雑な業務アプリを構築できます。</p>
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">📍 GPS打刻</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">スマホから出退勤を打刻。位置情報を自動記録し、不正打刻を防止。QRコード打刻やICカード打刻にも対応しています。</p>
               </div>
               
               <div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:16px;border-radius:8px;">
-                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🔗 100以上の標準コンポーネント</div>
-                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">入力フォーム、承認ボタン、添付ファイル、PDF出力など、業務に必要なコンポーネントを豊富に用意。</p>
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">📊 リアルタイム勤務状況</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">誰が出勤中か、どこにいるかを一目で確認。チーム全体の勤務状況をダッシュボードで可視化し、マネジメントを効率化します。</p>
               </div>
               
               <div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:16px;border-radius:8px;">
-                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">⚡ スクリプト拡張も可能</div>
-                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">JavaScriptでカスタムロジックを追加可能。外部APIとの連携や高度な計算処理にも対応します。</p>
-              </div>
-            </div>
-            
-            <div style="background:#f8fafc;border-radius:12px;padding:24px;margin-top:24px;border:2px solid #e2e8f0;">
-              <div style="font-size:13px;color:#334155;font-weight:700;margin-bottom:12px;">📊 開発工数を大幅削減</div>
-              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;text-align:center;">
-                <div>
-                  <div style="font-size:28px;font-weight:800;color:#2864F0;">1/10</div>
-                  <div style="font-size:12px;color:#64748b;">開発期間</div>
-                </div>
-                <div>
-                  <div style="font-size:28px;font-weight:800;color:#2864F0;">1/5</div>
-                  <div style="font-size:12px;color:#64748b;">開発コスト</div>
-                </div>
-                <div>
-                  <div style="font-size:28px;font-weight:800;color:#2864F0;">最短1日</div>
-                  <div style="font-size:12px;color:#64748b;">リリース</div>
-                </div>
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">⚠️ 勤務アラート</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">打刻忘れ、長時間労働、深夜残業などを自動検知して通知。労務リスクを未然に防ぎます。</p>
               </div>
             </div>
           </div>
@@ -324,28 +344,43 @@ router.get("/nokori", async (req, res) => {
             </div>
             
             <!-- スクリーンショット画像 -->
-            <div style="background:#fff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-              <img src="/screenshots/nokori-workflow-feature.png" alt="NOKORIワークフロー・ローコード開発画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            <div style="background:#fffbeb;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/feature2-gps-attendance.png" alt="GPS打刻・勤務状況画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            </div>
+            
+            <!-- スクリーンショット画像2 -->
+            <div style="background:#fffbeb;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/feature2-gps-attendance-2.png" alt="GPS打刻・勤務状況画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            </div>
+            
+            <!-- 多様な打刻方法 -->
+            <div style="background:#f8fafc;border-radius:12px;padding:24px;margin-bottom:20px;border:2px solid #e2e8f0;">
+              <div style="font-size:13px;color:#334155;font-weight:700;margin-bottom:12px;">📱 多様な打刻方法</div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;text-align:center;">
+                <div>
+                  <div style="font-size:28px;font-weight:800;color:#2864F0;white-space:nowrap;">GPS</div>
+                  <div style="font-size:12px;color:#64748b;">位置情報打刻</div>
+                </div>
+                <div>
+                  <div style="font-size:28px;font-weight:800;color:#2864F0;white-space:nowrap;">QR</div>
+                  <div style="font-size:12px;color:#64748b;">QRコード</div>
+                </div>
+                <div>
+                  <div style="font-size:28px;font-weight:800;color:#2864F0;white-space:nowrap;">IC</div>
+                  <div style="font-size:12px;color:#64748b;">ICカード</div>
+                </div>
+              </div>
             </div>
             
             <div style="background:#fffbeb;border-radius:12px;padding:20px;">
-              <div style="font-size:13px;color:#92400e;font-weight:700;margin-bottom:8px;">✓ 柔軟なカスタマイズ</div>
-              <div style="font-size:12px;color:#64748b;line-height:1.6;margin-bottom:16px;">業界・企業特有の業務フローにも対応可能</div>
-              <div style="font-size:11px;color:#78716c;background:#fff;padding:12px;border-radius:8px;">
-                <div style="font-weight:700;margin-bottom:6px;">構築事例：</div>
-                <div style="line-height:1.5;">
-                  • 製造業の品質管理システム<br>
-                  • 不動産業の物件管理<br>
-                  • 医療機関のシフト管理<br>
-                  • 小売業の在庫管理
-                </div>
-              </div>
+              <div style="font-size:13px;color:#92400e;font-weight:700;margin-bottom:8px;">✓ 不正打刻を防止</div>
+              <div style="font-size:12px;color:#64748b;line-height:1.6;">GPS・QR・ICカードによる確実な本人確認</div>
             </div>
           </div>
         </div>
       </div>
       
-      <!-- 特長3：シームレスな連携 -->
+      <!-- 特長3：人事管理１（ワークフロー） -->
       <div style="background:#fff;border-radius:20px;padding:48px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
         <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:48px;align-items:start;">
           <div>
@@ -354,59 +389,367 @@ router.get("/nokori", async (req, res) => {
             </div>
             
             <!-- スクリーンショット画像 -->
-            <div style="background:#fff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-              <img src="/screenshots/nokori-integration-feature.png" alt="NOKORI外部連携・統合管理画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            <div style="background:#faf5ff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/feature3-workflow.png" alt="ワークフロー画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            </div>
+            
+            <!-- スクリーンショット画像2 -->
+            <div style="background:#faf5ff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/feature3-workflow-2.png" alt="ワークフロー画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
             </div>
             
             <div style="background:#faf5ff;border-radius:12px;padding:20px;">
-              <div style="font-size:13px;color:#5b21b6;font-weight:700;margin-bottom:8px;">✓ エコシステム統合</div>
-              <div style="font-size:12px;color:#64748b;line-height:1.6;">既存のツールと連携してシームレスな業務環境を構築</div>
+              <div style="font-size:13px;color:#5b21b6;font-weight:700;margin-bottom:8px;">✓ ペーパーレス化</div>
+              <div style="font-size:12px;color:#64748b;line-height:1.6;">紙の申請書・押印を完全デジタル化</div>
             </div>
           </div>
           <div>
-            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">既存システムとシームレスに連携</h3>
-            <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">OpenAI APIをはじめ、主要なビジネスツールと標準連携。自社の基幹システムともREST APIで柔軟に接続できます。</p>
+            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">柔軟なワークフロー設計</h3>
+            <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">稟議、経費申請、採用承認など、あらゆる社内申請をワークフローで電子化。複雑な承認ルートもドラッグ&ドロップで簡単に設計できます。</p>
             
-            <div style="display:grid;gap:16px;margin-bottom:24px;">
+            <div style="display:grid;gap:16px;">
               <div style="background:#f5f3ff;border-left:4px solid #8b5cf6;padding:16px;border-radius:8px;">
-                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🤖 AI統合</div>
-                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">Azure OpenAI APIと連携し、チャットボット、文書要約、データ分析を自動化。社内ナレッジを学習したAIアシスタントを構築できます。</p>
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🎨 ローコード設計</div>
+                <ul style="margin:0;padding-left:20px;font-size:13px;color:#64748b;line-height:1.7;">
+                  <li>ドラッグ&ドロップで承認フローを作成</li>
+                  <li>条件分岐・並列承認・差し戻しルート設定</li>
+                  <li>テンプレートから選んで即座に導入可能</li>
+                </ul>
               </div>
               
               <div style="background:#f5f3ff;border-left:4px solid #8b5cf6;padding:16px;border-radius:8px;">
-                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">💬 コミュニケーションツール連携</div>
-                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">Slack、Microsoft Teams、Google Chatと双方向連携。重要通知を既存のチャットツールに自動配信できます。</p>
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">📋 豊富な申請フォーム</div>
+                <ul style="margin:0;padding-left:20px;font-size:13px;color:#64748b;line-height:1.7;">
+                  <li>稟議書、経費精算、出張申請、採用稟議など</li>
+                  <li>カスタムフィールドで自由に項目追加</li>
+                  <li>添付ファイル・電子署名対応</li>
+                </ul>
               </div>
               
               <div style="background:#f5f3ff;border-left:4px solid #8b5cf6;padding:16px;border-radius:8px;">
-                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🔌 REST API提供</div>
-                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">販売管理・会計システムなど基幹システムとAPI連携。データの二重入力を解消し、リアルタイムに情報を同期します。</p>
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">📊 進捗可視化</div>
+                <ul style="margin:0;padding-left:20px;font-size:13px;color:#64748b;line-height:1.7;">
+                  <li>申請の現在の承認段階を一目で確認</li>
+                  <li>滞留案件をアラート通知</li>
+                  <li>承認履歴・監査ログを自動記録</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 特長4：人事管理２（目標管理） -->
+      <div style="background:#fff;border-radius:20px;padding:48px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+        <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:48px;align-items:start;">
+          <div>
+            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">OKR・MBOで目標を明確化</h3>
+            <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">個人目標と組織目標を連動させ、全社で目標達成にコミット。OKR・MBO両方式に対応し、進捗をリアルタイムで可視化します。</p>
+            
+            <div style="display:grid;gap:16px;">
+              <div style="background:#dcfce7;border-left:4px solid #16a34a;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🎯 OKR管理</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">Objective（目標）とKey Results（主要な成果）を設定。四半期ごとに目標を更新し、達成率を自動計算します。</p>
+              </div>
+              
+              <div style="background:#dcfce7;border-left:4px solid #16a34a;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">📈 進捗トラッキング</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">週次・月次で進捗を更新。チーム全体の目標達成状況をダッシュボードで一覧表示します。</p>
+              </div>
+              
+              <div style="background:#dcfce7;border-left:4px solid #16a34a;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">💬 1on1連携</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">定期的な1on1ミーティングで目標進捗を確認。フィードバック履歴も記録し、人事評価と連動させます。</p>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div style="background:linear-gradient(135deg,#dcfce7,#bbf7d0);border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;">
+              <h3 style="font-size:20px;font-weight:800;color:#166534;">特長 4</h3>
+            </div>
+            
+            <!-- スクリーンショット画像 -->
+            <div style="background:#f0fdf4;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/feature4-goal-management.png" alt="目標管理・OKR画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            </div>
+            
+            <!-- スクリーンショット画像2 -->
+            <div style="background:#f0fdf4;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/feature4-goal-management-2.png" alt="目標管理・OKR画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            </div>
+            
+            <!-- 目標管理の効果 -->
+            <div style="background:#f8fafc;border-radius:12px;padding:24px;margin-bottom:20px;border:2px solid #e2e8f0;">
+              <div style="font-size:13px;color:#334155;font-weight:700;margin-bottom:12px;">🏆 目標管理の効果</div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;text-align:center;">
+                <div>
+                  <div style="font-size:28px;font-weight:800;color:#16a34a;white-space:nowrap;">35%</div>
+                  <div style="font-size:12px;color:#64748b;">生産性向上</div>
+                </div>
+                <div>
+                  <div style="font-size:28px;font-weight:800;color:#16a34a;white-space:nowrap;">92%</div>
+                  <div style="font-size:12px;color:#64748b;">目標達成率</div>
+                </div>
+                <div>
+                  <div style="font-size:28px;font-weight:800;color:#16a34a;white-space:nowrap;">80%</div>
+                  <div style="font-size:12px;color:#64748b;">エンゲージメント向上</div>
+                </div>
               </div>
             </div>
             
-            <div style="background:#f8fafc;border-radius:12px;padding:20px;">
-              <div style="font-size:13px;color:#334155;font-weight:700;margin-bottom:12px;">🔗 主な連携サービス</div>
-              <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                ${[
-                  "Slack",
-                  "Microsoft Teams",
-                  "Google Workspace",
-                  "Azure OpenAI",
-                  "GitHub",
-                  "Jira",
-                  "Salesforce",
-                  "kintone",
-                  "freee",
-                  "Money Forward",
-                  "SmartHR",
-                  "Zoom",
-                ]
-                  .map(
-                    (s) =>
-                      `<div style="background:#fff;padding:8px 16px;border-radius:20px;font-size:12px;font-weight:600;color:#475569;border:1.5px solid #e2e8f0;">${s}</div>`,
-                  )
-                  .join("")}
+            <div style="background:#f0fdf4;border-radius:12px;padding:20px;">
+              <div style="font-size:13px;color:#166534;font-weight:700;margin-bottom:8px;">✓ 透明性の向上</div>
+              <div style="font-size:12px;color:#64748b;line-height:1.6;">全社の目標を可視化し、チーム間の連携を強化</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 特長5：人事管理３（給料明細） -->
+      <div style="background:#fff;border-radius:20px;padding:48px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+        <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:48px;align-items:start;">
+          <div>
+            <div style="background:linear-gradient(135deg,#fed7aa,#fdba74);border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;">
+              <h3 style="font-size:20px;font-weight:800;color:#9a3412;">特長 5</h3>
+            </div>
+            
+            <!-- スクリーンショット画像 -->
+            <div style="background:#fff7ed;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/feature5-payslip.png" alt="給与明細画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            </div>
+            
+            <!-- スクリーンショット画像2 -->
+            <div style="background:#fff7ed;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/feature5-payslip-2.png" alt="給与明細画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            </div>
+            
+            <div style="background:#fff7ed;border-radius:12px;padding:20px;">
+              <div style="font-size:13px;color:#9a3412;font-weight:700;margin-bottom:8px;">✓ ペーパーレス配布</div>
+              <div style="font-size:12px;color:#64748b;line-height:1.6;">紙の給与明細は不要、セキュアに電子配信</div>
+            </div>
+          </div>
+          <div>
+            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">給与明細をWebで配信</h3>
+            <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">勤怠データから給与を自動計算し、従業員へWeb給与明細として配信。年末調整書類もオンラインで完結します。</p>
+            
+            <div style="display:grid;gap:16px;">
+              <div style="background:#fef5e7;border-left:4px solid #f97316;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">💵 自動給与計算</div>
+                <ul style="margin:0;padding-left:20px;font-size:13px;color:#64748b;line-height:1.7;">
+                  <li>勤怠データと連動して給与を自動計算</li>
+                  <li>残業代、深夜手当、休日出勤手当を自動反映</li>
+                  <li>社会保険料・所得税の自動計算</li>
+                </ul>
               </div>
+              
+              <div style="background:#fef5e7;border-left:4px solid #f97316;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">📱 Web給与明細</div>
+                <ul style="margin:0;padding-left:20px;font-size:13px;color:#64748b;line-height:1.7;">
+                  <li>スマホ・PCからいつでも給与明細を閲覧</li>
+                  <li>過去の明細も遡って確認可能</li>
+                  <li>PDF出力・ダウンロード機能</li>
+                </ul>
+              </div>
+              
+              <div style="background:#fef5e7;border-left:4px solid #f97316;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">📄 年末調整オンライン化</div>
+                <ul style="margin:0;padding-left:20px;font-size:13px;color:#64748b;line-height:1.7;">
+                  <li>年末調整書類をWeb上で提出</li>
+                  <li>扶養控除・保険料控除の自動計算</li>
+                  <li>源泉徴収票の電子発行</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 特長6：人事管理４（契約管理） -->
+      <div style="background:#fff;border-radius:20px;padding:48px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+        <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:48px;align-items:start;">
+          <div>
+            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">雇用契約をデジタルで管理</h3>
+            <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">入社から退職までの雇用契約書、誓約書、身元保証書などをすべてシステムで管理。電子署名対応で契約締結もオンライン完結します。</p>
+            
+            <div style="display:grid;gap:16px;">
+              <div style="background:#e0f2fe;border-left:4px solid #0284c7;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">📝 電子契約</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">雇用契約書をオンラインで作成・締結。電子署名により法的効力を担保し、郵送コストと時間を削減します。</p>
+              </div>
+              
+              <div style="background:#e0f2fe;border-left:4px solid #0284c7;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">📚 契約書一元管理</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">雇用契約書、誓約書、秘密保持契約など各種書類を従業員ごとに整理。更新日・終了日のアラート機能付き。</p>
+              </div>
+              
+              <div style="background:#e0f2fe;border-left:4px solid #0284c7;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🔐 セキュアな保管</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">暗号化ストレージで契約書を安全に保管。閲覧権限を細かく設定でき、監査ログで全アクセス履歴を記録します。</p>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div style="background:linear-gradient(135deg,#bae6fd,#7dd3fc);border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;">
+              <h3 style="font-size:20px;font-weight:800;color:#075985;">特長 6</h3>
+            </div>
+            
+            <!-- スクリーンショット画像 -->
+            <div style="background:#f0f9ff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/feature6-contract.png" alt="契約管理画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            </div>
+            
+            <!-- スクリーンショット画像2 -->
+            <div style="background:#f0f9ff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/feature6-contract-2.png" alt="契約管理画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            </div>
+            
+            <!-- 契約業務の効率化 -->
+            <div style="background:#f8fafc;border-radius:12px;padding:24px;margin-bottom:20px;border:2px solid #e2e8f0;">
+              <div style="font-size:13px;color:#334155;font-weight:700;margin-bottom:12px;">⚡ 契約業務の効率化</div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;text-align:center;">
+                <div>
+                  <div style="font-size:28px;font-weight:800;color:#0284c7;white-space:nowrap;">80%</div>
+                  <div style="font-size:12px;color:#64748b;">時間削減</div>
+                </div>
+                <div>
+                  <div style="font-size:28px;font-weight:800;color:#0284c7;white-space:nowrap;">0円</div>
+                  <div style="font-size:12px;color:#64748b;">印紙代</div>
+                </div>
+                <div>
+                  <div style="font-size:24px;font-weight:800;color:#0284c7;white-space:nowrap;">最短1日</div>
+                  <div style="font-size:12px;color:#64748b;">契約締結</div>
+                </div>
+              </div>
+            </div>
+            
+            <div style="background:#f0f9ff;border-radius:12px;padding:20px;">
+              <div style="font-size:13px;color:#075985;font-weight:700;margin-bottom:8px;">✓ コンプライアンス対応</div>
+              <div style="font-size:12px;color:#64748b;line-height:1.6;">電子帳簿保存法に完全対応</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 特長7：タスク管理（各種ツールとの連携） -->
+      <div style="background:#fff;border-radius:20px;padding:48px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+        <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:48px;align-items:start;">
+          <div>
+            <div style="background:linear-gradient(135deg,#e9d5ff,#d8b4fe);border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;">
+              <h3 style="font-size:20px;font-weight:800;color:#6b21a8;">特長 7</h3>
+            </div>
+            
+            <!-- スクリーンショット画像 -->
+            <div style="background:#faf5ff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/feature7-tool-integration.png" alt="ツール連携画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            </div>
+            
+            <!-- スクリーンショット画像2 -->
+            <div style="background:#faf5ff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/feature7-tool-integration-2.png" alt="ツール連携画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            </div>
+            
+            <div style="background:#faf5ff;border-radius:12px;padding:20px;">
+              <div style="font-size:13px;color:#6b21a8;font-weight:700;margin-bottom:8px;">✓ 開発者に優しい</div>
+              <div style="font-size:12px;color:#64748b;line-height:1.6;">使い慣れたツールとシームレスに連携</div>
+            </div>
+          </div>
+          <div>
+            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">開発ツールと完全連携</h3>
+            <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">GitHub、Jira、Slack、Microsoft Teamsなど、現場で使われている主要ツールとシームレスに連携。NOKORIを中心にプロジェクト全体を可視化できます。</p>
+            
+            <div style="display:grid;gap:16px;">
+              <div style="background:#f3e8ff;border-left:4px solid #a855f7;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🐙 GitHub連携</div>
+                <ul style="margin:0;padding-left:20px;font-size:13px;color:#64748b;line-height:1.7;">
+                  <li>コミット・プルリクエストを自動でタスクに連携</li>
+                  <li>コードレビューの進捗をNOKORIで一元管理</li>
+                  <li>Issue・Milestoneの双方向同期</li>
+                </ul>
+              </div>
+              
+              <div style="background:#f3e8ff;border-left:4px solid #a855f7;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">📊 Jira連携</div>
+                <ul style="margin:0;padding-left:20px;font-size:13px;color:#64748b;line-height:1.7;">
+                  <li>Jiraのチケット情報をリアルタイム同期</li>
+                  <li>スプリント進捗をNOKORIダッシュボードで可視化</li>
+                  <li>バックログ管理とタスク管理を統合</li>
+                </ul>
+              </div>
+              
+              <div style="background:#f3e8ff;border-left:4px solid #a855f7;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">💬 Slack/Teams通知</div>
+                <ul style="margin:0;padding-left:20px;font-size:13px;color:#64748b;line-height:1.7;">
+                  <li>タスクの更新・期限をSlack/Teamsに自動通知</li>
+                  <li>チャットからタスクを作成・更新</li>
+                  <li>スタンドアップ報告の自動投稿</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 特長8：AI機能（チャットボットやAIによる操作） -->
+      <div style="background:#fff;border-radius:20px;padding:48px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+        <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:48px;align-items:start;">
+          <div>
+            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">AIが業務をサポート</h3>
+            <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">Azure OpenAI APIを搭載したAIチャットボットで社内問い合わせを自動化。AIによる勤怠異常検知、レポート自動生成など、業務効率を飛躍的に向上させます。</p>
+            
+            <div style="display:grid;gap:16px;">
+              <div style="background:#fce7f3;border-left:4px solid #ec4899;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🤖 AIチャットボット</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">社内FAQ・就業規則・各種マニュアルを学習したAIが24時間自動応答。人事部門の問い合わせ対応工数を大幅削減します。</p>
+              </div>
+              
+              <div style="background:#fce7f3;border-left:4px solid #ec4899;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">🔍 AI勤怠異常検知</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">長時間労働、打刻忘れ、不規則な勤務パターンをAIが自動検知して通知。労務リスクを未然に防ぎます。</p>
+              </div>
+              
+              <div style="background:#fce7f3;border-left:4px solid #ec4899;padding:16px;border-radius:8px;">
+                <div style="font-weight:700;color:#0f172a;margin-bottom:6px;font-size:14px;">📊 AI自動レポート</div>
+                <p style="margin:0;font-size:13px;color:#64748b;line-height:1.7;">勤怠データ・目標達成率・プロジェクト進捗などを分析し、経営判断に役立つレポートを自動生成します。</p>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div style="background:linear-gradient(135deg,#fce7f3,#fbcfe8);border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;">
+              <h3 style="font-size:20px;font-weight:800;color:#9f1239;">特長 8</h3>
+            </div>
+            
+            <!-- スクリーンショット画像 -->
+            <div style="background:#fdf2f8;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/feature8-ai-chatbot.png" alt="AIチャットボット画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            </div>
+            
+            <!-- スクリーンショット画像2 -->
+            <div style="background:#fdf2f8;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
+              <img src="/screenshots/feature8-ai-chatbot-2.png" alt="AIチャットボット画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
+            </div>
+            
+            <!-- AI活用の効果 -->
+            <div style="background:#f8fafc;border-radius:12px;padding:24px;margin-bottom:20px;border:2px solid #e2e8f0;">
+              <div style="font-size:13px;color:#334155;font-weight:700;margin-bottom:12px;">🚀 AI活用の効果</div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;text-align:center;">
+                <div>
+                  <div style="font-size:28px;font-weight:800;color:#ec4899;white-space:nowrap;">70%</div>
+                  <div style="font-size:12px;color:#64748b;">問い合わせ削減</div>
+                </div>
+                <div>
+                  <div style="font-size:28px;font-weight:800;color:#ec4899;white-space:nowrap;">24/7</div>
+                  <div style="font-size:12px;color:#64748b;">自動応答</div>
+                </div>
+                <div>
+                  <div style="font-size:28px;font-weight:800;color:#ec4899;white-space:nowrap;">95%</div>
+                  <div style="font-size:12px;color:#64748b;">回答精度</div>
+                </div>
+              </div>
+            </div>
+            
+            <div style="background:#fdf2f8;border-radius:12px;padding:20px;">
+              <div style="font-size:13px;color:#9f1239;font-weight:700;margin-bottom:8px;">✓ Azure OpenAI搭載</div>
+              <div style="font-size:12px;color:#64748b;line-height:1.6;">最先端のAI技術で業務を自動化</div>
             </div>
           </div>
         </div>
