@@ -257,12 +257,11 @@ router.get("/nokori", async (req, res) => {
     <div style="max-width:1400px;margin:0 auto;display:grid;grid-template-columns:repeat(2,1fr);gap:40px;">
       <!-- 特長1：勤怠管理１（休暇申請や残業申請） -->
       <div style="background:#fff;border-radius:20px;padding:48px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+        <!-- タイトル -->
+        <h3 style="font-size:26px;font-weight:800;margin-bottom:32px;color:#0f172a;text-align:center;">休暇申請・残業申請をスムーズに</h3>
+        
         <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:48px;align-items:start;">
           <div>
-            <div style="background:linear-gradient(135deg,#e0f2fe,#bae6fd);border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;">
-              <h3 style="font-size:20px;font-weight:800;color:#0369a1;">特長 1</h3>
-            </div>
-            
             <!-- スクリーンショット画像 -->
             <div style="background:#f0f9ff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
               <img src="/screenshots/feature1-leave-overtime.png" alt="休暇申請・残業申請画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
@@ -279,7 +278,6 @@ router.get("/nokori", async (req, res) => {
             </div>
           </div>
           <div>
-            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">休暇申請・残業申請をスムーズに</h3>
             <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">有給休暇、代休、振替休日、残業申請などの各種申請をシステムで一元管理。承認フローも自動化され、紙の申請書や押印は不要です。</p>
             
             <div style="display:grid;gap:16px;">
@@ -314,11 +312,13 @@ router.get("/nokori", async (req, res) => {
         </div>
       </div>
       
-      <!-- 特長2：勤怠管理２（GPS打刻入力や勤務状況の把握） -->
+      <!--特長2：勤怠管理２（GPS打刻入力や勤務状況の把握） -->
       <div style="background:#fff;border-radius:20px;padding:48px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+        <!-- タイトル -->
+        <h3 style="font-size:26px;font-weight:800;margin-bottom:32px;color:#0f172a;text-align:center;">GPS打刻で勤務状況を正確に把握</h3>
+        
         <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:48px;align-items:start;">
           <div>
-            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">GPS打刻で勤務状況を正確に把握</h3>
             <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">スマートフォンのGPS機能を活用した位置情報付き打刻で、リモートワークや直行直帰にも対応。リアルタイムで従業員の勤務状況を把握できます。</p>
             
             <div style="display:grid;gap:16px;">
@@ -339,10 +339,6 @@ router.get("/nokori", async (req, res) => {
             </div>
           </div>
           <div>
-            <div style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;">
-              <h3 style="font-size:20px;font-weight:800;color:#92400e;">特長 2</h3>
-            </div>
-            
             <!-- スクリーンショット画像 -->
             <div style="background:#fffbeb;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
               <img src="/screenshots/feature2-gps-attendance.png" alt="GPS打刻・勤務状況画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
@@ -382,12 +378,11 @@ router.get("/nokori", async (req, res) => {
       
       <!-- 特長3：人事管理１（ワークフロー） -->
       <div style="background:#fff;border-radius:20px;padding:48px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+        <!-- タイトル -->
+        <h3 style="font-size:26px;font-weight:800;margin-bottom:32px;color:#0f172a;text-align:center;">柔軟なワークフロー設計</h3>
+        
         <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:48px;align-items:start;">
           <div>
-            <div style="background:linear-gradient(135deg,#ddd6fe,#c4b5fd);border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;">
-              <h3 style="font-size:20px;font-weight:800;color:#5b21b6;">特長 3</h3>
-            </div>
-            
             <!-- スクリーンショット画像 -->
             <div style="background:#faf5ff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
               <img src="/screenshots/feature3-workflow.png" alt="ワークフロー画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
@@ -404,7 +399,6 @@ router.get("/nokori", async (req, res) => {
             </div>
           </div>
           <div>
-            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">柔軟なワークフロー設計</h3>
             <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">稟議、経費申請、採用承認など、あらゆる社内申請をワークフローで電子化。複雑な承認ルートもドラッグ&ドロップで簡単に設計できます。</p>
             
             <div style="display:grid;gap:16px;">
@@ -441,9 +435,11 @@ router.get("/nokori", async (req, res) => {
       
       <!-- 特長4：人事管理２（目標管理） -->
       <div style="background:#fff;border-radius:20px;padding:48px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+        <!-- タイトル -->
+        <h3 style="font-size:26px;font-weight:800;margin-bottom:32px;color:#0f172a;text-align:center;">OKR・MBOで目標を明確化</h3>
+        
         <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:48px;align-items:start;">
           <div>
-            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">OKR・MBOで目標を明確化</h3>
             <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">個人目標と組織目標を連動させ、全社で目標達成にコミット。OKR・MBO両方式に対応し、進捗をリアルタイムで可視化します。</p>
             
             <div style="display:grid;gap:16px;">
@@ -464,10 +460,6 @@ router.get("/nokori", async (req, res) => {
             </div>
           </div>
           <div>
-            <div style="background:linear-gradient(135deg,#dcfce7,#bbf7d0);border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;">
-              <h3 style="font-size:20px;font-weight:800;color:#166534;">特長 4</h3>
-            </div>
-            
             <!-- スクリーンショット画像 -->
             <div style="background:#f0fdf4;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
               <img src="/screenshots/feature4-goal-management.png" alt="目標管理・OKR画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
@@ -507,12 +499,11 @@ router.get("/nokori", async (req, res) => {
       
       <!-- 特長5：人事管理３（給料明細） -->
       <div style="background:#fff;border-radius:20px;padding:48px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+        <!-- タイトル -->
+        <h3 style="font-size:26px;font-weight:800;margin-bottom:32px;color:#0f172a;text-align:center;">給与明細をWebで配信</h3>
+        
         <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:48px;align-items:start;">
           <div>
-            <div style="background:linear-gradient(135deg,#fed7aa,#fdba74);border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;">
-              <h3 style="font-size:20px;font-weight:800;color:#9a3412;">特長 5</h3>
-            </div>
-            
             <!-- スクリーンショット画像 -->
             <div style="background:#fff7ed;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
               <img src="/screenshots/feature5-payslip.png" alt="給与明細画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
@@ -529,7 +520,6 @@ router.get("/nokori", async (req, res) => {
             </div>
           </div>
           <div>
-            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">給与明細をWebで配信</h3>
             <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">勤怠データから給与を自動計算し、従業員へWeb給与明細として配信。年末調整書類もオンラインで完結します。</p>
             
             <div style="display:grid;gap:16px;">
@@ -566,9 +556,11 @@ router.get("/nokori", async (req, res) => {
       
       <!-- 特長6：人事管理４（契約管理） -->
       <div style="background:#fff;border-radius:20px;padding:48px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+        <!-- タイトル -->
+        <h3 style="font-size:26px;font-weight:800;margin-bottom:32px;color:#0f172a;text-align:center;">雇用契約をデジタルで管理</h3>
+        
         <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:48px;align-items:start;">
           <div>
-            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">雇用契約をデジタルで管理</h3>
             <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">入社から退職までの雇用契約書、誓約書、身元保証書などをすべてシステムで管理。電子署名対応で契約締結もオンライン完結します。</p>
             
             <div style="display:grid;gap:16px;">
@@ -589,10 +581,6 @@ router.get("/nokori", async (req, res) => {
             </div>
           </div>
           <div>
-            <div style="background:linear-gradient(135deg,#bae6fd,#7dd3fc);border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;">
-              <h3 style="font-size:20px;font-weight:800;color:#075985;">特長 6</h3>
-            </div>
-            
             <!-- スクリーンショット画像 -->
             <div style="background:#f0f9ff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
               <img src="/screenshots/feature6-contract.png" alt="契約管理画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
@@ -632,12 +620,11 @@ router.get("/nokori", async (req, res) => {
       
       <!-- 特長7：タスク管理（各種ツールとの連携） -->
       <div style="background:#fff;border-radius:20px;padding:48px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+        <!-- タイトル -->
+        <h3 style="font-size:26px;font-weight:800;margin-bottom:32px;color:#0f172a;text-align:center;">開発ツールと完全連携</h3>
+        
         <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:48px;align-items:start;">
           <div>
-            <div style="background:linear-gradient(135deg,#e9d5ff,#d8b4fe);border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;">
-              <h3 style="font-size:20px;font-weight:800;color:#6b21a8;">特長 7</h3>
-            </div>
-            
             <!-- スクリーンショット画像 -->
             <div style="background:#faf5ff;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
               <img src="/screenshots/feature7-tool-integration.png" alt="ツール連携画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
@@ -654,7 +641,6 @@ router.get("/nokori", async (req, res) => {
             </div>
           </div>
           <div>
-            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">開発ツールと完全連携</h3>
             <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">GitHub、Jira、Slack、Microsoft Teamsなど、現場で使われている主要ツールとシームレスに連携。NOKORIを中心にプロジェクト全体を可視化できます。</p>
             
             <div style="display:grid;gap:16px;">
@@ -691,9 +677,11 @@ router.get("/nokori", async (req, res) => {
       
       <!-- 特長8：AI機能（チャットボットやAIによる操作） -->
       <div style="background:#fff;border-radius:20px;padding:48px;box-shadow:0 4px 20px rgba(0,0,0,0.08);">
+        <!-- タイトル -->
+        <h3 style="font-size:26px;font-weight:800;margin-bottom:32px;color:#0f172a;text-align:center;">AIが業務をサポート</h3>
+        
         <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:48px;align-items:start;">
           <div>
-            <h3 style="font-size:26px;font-weight:800;margin-bottom:20px;color:#0f172a;">AIが業務をサポート</h3>
             <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">Azure OpenAI APIを搭載したAIチャットボットで社内問い合わせを自動化。AIによる勤怠異常検知、レポート自動生成など、業務効率を飛躍的に向上させます。</p>
             
             <div style="display:grid;gap:16px;">
@@ -714,10 +702,6 @@ router.get("/nokori", async (req, res) => {
             </div>
           </div>
           <div>
-            <div style="background:linear-gradient(135deg,#fce7f3,#fbcfe8);border-radius:16px;padding:24px;text-align:center;margin-bottom:20px;">
-              <h3 style="font-size:20px;font-weight:800;color:#9f1239;">特長 8</h3>
-            </div>
-            
             <!-- スクリーンショット画像 -->
             <div style="background:#fdf2f8;border-radius:12px;padding:12px;margin-bottom:20px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
               <img src="/screenshots/feature8-ai-chatbot.png" alt="AIチャットボット画面" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;">
