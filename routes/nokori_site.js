@@ -317,7 +317,7 @@ router.get("/nokori", async (req, res) => {
         <!-- タイトル -->
         <h3 style="font-size:26px;font-weight:800;margin-bottom:32px;color:#0f172a;text-align:center;">GPS打刻で勤務状況を正確に把握</h3>
         
-        <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:48px;align-items:start;">
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:48px;align-items:start;">
           <div>
             <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">スマートフォンのGPS機能を活用した位置情報付き打刻で、リモートワークや直行直帰にも対応。リアルタイムで従業員の勤務状況を把握できます。</p>
             
@@ -350,7 +350,7 @@ router.get("/nokori", async (req, res) => {
             </div>
             
             <!-- 多様な打刻方法 -->
-            <div style="background:#f8fafc;border-radius:12px;padding:24px;margin-bottom:20px;border:2px solid #e2e8f0;">
+            <div style="background:#f8fafc;border-radius:12px;padding:24px;margin-bottom:20px;border:2px solid #e2e8f0;min-width:240px;">
               <div style="font-size:13px;color:#334155;font-weight:700;margin-bottom:12px;">📱 多様な打刻方法</div>
               <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;text-align:center;">
                 <div>
@@ -438,7 +438,7 @@ router.get("/nokori", async (req, res) => {
         <!-- タイトル -->
         <h3 style="font-size:26px;font-weight:800;margin-bottom:32px;color:#0f172a;text-align:center;">OKR・MBOで目標を明確化</h3>
         
-        <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:48px;align-items:start;">
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:48px;align-items:start;">
           <div>
             <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">個人目標と組織目標を連動させ、全社で目標達成にコミット。OKR・MBO両方式に対応し、進捗をリアルタイムで可視化します。</p>
             
@@ -471,7 +471,7 @@ router.get("/nokori", async (req, res) => {
             </div>
             
             <!-- 目標管理の効果 -->
-            <div style="background:#f8fafc;border-radius:12px;padding:24px;margin-bottom:20px;border:2px solid #e2e8f0;">
+            <div style="background:#f8fafc;border-radius:12px;padding:24px;margin-bottom:20px;border:2px solid #e2e8f0;min-width:260px;">
               <div style="font-size:13px;color:#334155;font-weight:700;margin-bottom:12px;">🏆 目標管理の効果</div>
               <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;text-align:center;">
                 <div>
@@ -559,7 +559,7 @@ router.get("/nokori", async (req, res) => {
         <!-- タイトル -->
         <h3 style="font-size:26px;font-weight:800;margin-bottom:32px;color:#0f172a;text-align:center;">雇用契約をデジタルで管理</h3>
         
-        <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:48px;align-items:start;">
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:48px;align-items:start;">
           <div>
             <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">入社から退職までの雇用契約書、誓約書、身元保証書などをすべてシステムで管理。電子署名対応で契約締結もオンライン完結します。</p>
             
@@ -592,7 +592,7 @@ router.get("/nokori", async (req, res) => {
             </div>
             
             <!-- 契約業務の効率化 -->
-            <div style="background:#f8fafc;border-radius:12px;padding:24px;margin-bottom:20px;border:2px solid #e2e8f0;">
+            <div style="background:#f8fafc;border-radius:12px;padding:24px;margin-bottom:20px;border:2px solid #e2e8f0;min-width:240px;">
               <div style="font-size:13px;color:#334155;font-weight:700;margin-bottom:12px;">⚡ 契約業務の効率化</div>
               <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;text-align:center;">
                 <div>
@@ -680,7 +680,7 @@ router.get("/nokori", async (req, res) => {
         <!-- タイトル -->
         <h3 style="font-size:26px;font-weight:800;margin-bottom:32px;color:#0f172a;text-align:center;">AIが業務をサポート</h3>
         
-        <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:48px;align-items:start;">
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:48px;align-items:start;">
           <div>
             <p style="font-size:15px;color:#64748b;line-height:1.8;margin-bottom:24px;">Azure OpenAI APIを搭載したAIチャットボットで社内問い合わせを自動化。AIによる勤怠異常検知、レポート自動生成など、業務効率を飛躍的に向上させます。</p>
             
@@ -713,7 +713,7 @@ router.get("/nokori", async (req, res) => {
             </div>
             
             <!-- AI活用の効果 -->
-            <div style="background:#f8fafc;border-radius:12px;padding:24px;margin-bottom:20px;border:2px solid #e2e8f0;">
+            <div style="background:#f8fafc;border-radius:12px;padding:24px;margin-bottom:20px;border:2px solid #e2e8f0;min-width:250px;">
               <div style="font-size:13px;color:#334155;font-weight:700;margin-bottom:12px;">🚀 AI活用の効果</div>
               <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;text-align:center;">
                 <div>
