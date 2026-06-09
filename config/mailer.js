@@ -10,7 +10,12 @@ const useSendGrid = rawApiKey.startsWith('SG.');
 const useBrevoApiKey = rawApiKey.startsWith('xkeysib-');
 
 if (useResend) {
-    console.log('メール送信: Resend を使用します');
+    const hasVerifiedDomain = (process.env.RESEND_VERIFIED_DOMAINS || '').trim().length > 0;
+    if (hasVerifiedDomain) {
+        console.log('メール送信: Resend を使用します（ドメイン認証済み）');
+    } else {
+        console.log('メール送信: Resend は未認証のため SMTP にフォールバックします');
+    }
 } else if (useSendGrid) {
     console.log('メール送信: SendGrid を使用します');
 } else if (useBrevoApiKey) {
@@ -63,41 +68,43 @@ function httpsPost(hostname, path, headers, body) {
 async function sendMail({ to, from, subject, text, html, attachments } = {}) {
     const senderEmail = from || process.env.MAIL_FROM || process.env.EMAIL_USER || 'info@dxpro-sol.com';
 
-    // 1) Resend（推奨：IP制限なし、Renderで安定動作）
+    // 1) Resend（ドメイン認証済みの場合のみ使用）
     if (useResend) {
-        // ドメイン未認証の場合はResendのデフォルト送信者を使用
-        // RESEND_FROM が未認証ドメイン (@dxpro-sol.com 等) の場合は onboarding@resend.dev にフォールバック
         const resendFromEnv = process.env.RESEND_FROM || '';
         const verifiedDomains = (process.env.RESEND_VERIFIED_DOMAINS || '').split(',').map(d => d.trim()).filter(Boolean);
-        let resendFrom = 'onboarding@resend.dev';
-        if (resendFromEnv) {
+        let resendFrom = null;
+        if (resendFromEnv && verifiedDomains.length > 0) {
             const fromDomain = resendFromEnv.split('@')[1] || '';
-            if (verifiedDomains.length > 0 && verifiedDomains.includes(fromDomain)) {
-                resendFrom = resendFromEnv;
-            } else if (verifiedDomains.length === 0 && fromDomain && fromDomain !== 'dxpro-sol.com') {
+            if (verifiedDomains.includes(fromDomain)) {
                 resendFrom = resendFromEnv;
             }
         }
-        await httpsPost('api.resend.com', '/emails', {
-            'Authorization': `Bearer ${resendApiKey}`
-        }, {
-            from: resendFrom,
-            to: [to],
-            subject,
-            html: html || text,
-            text,
-            // attachments: Resend APIはbase64エンコードされたattachmentsをサポート
-            ...(attachments && attachments.length > 0 ? {
-                attachments: attachments.map(a => ({
-                    filename: a.filename,
-                    content: Buffer.isBuffer(a.content)
-                        ? a.content.toString('base64')
-                        : Buffer.from(a.content).toString('base64'),
-                }))
-            } : {})
-        });
-        console.log('Resend: メール送信成功', to);
-        return;
+
+        if (resendFrom) {
+            // ドメイン認証済み → Resend で任意のアドレスに送信可能
+            await httpsPost('api.resend.com', '/emails', {
+                'Authorization': `Bearer ${resendApiKey}`
+            }, {
+                from: resendFrom,
+                to: [to],
+                subject,
+                html: html || text,
+                text,
+                ...(attachments && attachments.length > 0 ? {
+                    attachments: attachments.map(a => ({
+                        filename: a.filename,
+                        content: Buffer.isBuffer(a.content)
+                            ? a.content.toString('base64')
+                            : Buffer.from(a.content).toString('base64'),
+                    }))
+                } : {})
+            });
+            console.log('Resend: メール送信成功', to);
+            return;
+        }
+
+        // ドメイン未認証 → Resend は登録アカウントのメールにしか送れないため SMTP にフォールバック
+        console.log('Resend: ドメイン未認証のため SMTP にフォールバックします');
     }
 
     // 2) SendGrid
