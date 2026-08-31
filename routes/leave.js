@@ -10,7 +10,7 @@ const {
   LeaveBalance,
   Attendance,
 } = require("../models");
-const { requireLogin, isAdmin } = require("../middleware/auth");
+const { requireLogin, isAdmin, isLeaderOrAbove } = require("../middleware/auth");
 const { sendMail } = require("../config/mailer");
 const { renderPage } = require("../lib/renderPage");
 const { escapeHtml } = require("../lib/helpers");
@@ -31,7 +31,6 @@ const leaveTypeToField = {
 };
 // 半日扱い（0.5日消費）
 const HALF_DAY_TYPES = new Set(["午前休", "午後休", "早退"]);
-
 // ── 次回有給付与スケジュール計算 ──────────────────────
 // 労働基準法に基づく付与スケジュール
 const PAID_LEAVE_SCHEDULE = [
@@ -121,6 +120,16 @@ async function getOrCreateBalance(employeeId) {
   return bal;
 }
 
+// ── 時間文字列("HH:MM")から時間差（時間単位・0.25刻み）を計算 ──
+function calcHoursDiff(startTime, endTime) {
+  if (!startTime || !endTime) return 0;
+  const [sh, sm] = startTime.split(":").map(Number);
+  const [eh, em] = endTime.split(":").map(Number);
+  const diffMin = eh * 60 + em - (sh * 60 + sm);
+  if (diffMin <= 0) return 0;
+  return Math.round((diffMin / 60) * 2) / 2; // 30分単位で丸め
+}
+
 // ────────────────────────────────────────────────────────────
 // 休暇申請フォーム（残日数付き）
 // ────────────────────────────────────────────────────────────
@@ -132,6 +141,11 @@ router.get("/leave/apply", requireLogin, async (req, res) => {
     if (!employee) return res.status(400).send("社員情報がありません");
 
     const bal = await getOrCreateBalance(employee._id);
+    const isContract = employee.employmentType === "契約社員";
+    const contractRemain = Math.max(
+      0,
+      (bal.contractHourlyTotal || 0) - (bal.contractHourlyUsed || 0),
+    );
 
     renderPage(
       req,
@@ -155,22 +169,49 @@ router.get("/leave/apply", requireLogin, async (req, res) => {
                 .lv-type-btn.selected{border-color:#0b5fff;background:#0b5fff;color:#fff}
                 .lv-type-btn.half{border-color:#7c3aed}
                 .lv-type-btn.half.selected{background:#7c3aed;border-color:#7c3aed;color:#fff}
+                .lv-type-btn.hourly{border-color:#0891b2}
+                .lv-type-btn.hourly.selected{background:#0891b2;border-color:#0891b2;color:#fff}
                 .lv-hint{background:#f5f3ff;border-left:3px solid #7c3aed;padding:8px 12px;border-radius:0 6px 6px 0;font-size:13px;color:#5b21b6;margin-bottom:12px;display:none}
                 .lv-hint.show{display:block}
+                .lv-hint.hourly-hint{background:#ecfeff;border-left-color:#0891b2;color:#0e7490}
                 .early-banner{display:flex;align-items:center;justify-content:space-between;background:#fff7ed;border:1.5px solid #fdba74;border-radius:12px;padding:14px 18px;margin-bottom:20px}
-                @media(max-width:700px){.bal-grid{grid-template-columns:repeat(2,1fr)}.form-row{grid-template-columns:1fr}.lv-type-grid{grid-template-columns:repeat(2,1fr)}.early-banner{flex-direction:column;gap:10px;align-items:flex-start}}
+                .contract-bal-banner{display:flex;align-items:center;justify-content:space-between;background:#ecfeff;border:1.5px solid #a5f3fc;border-radius:12px;padding:14px 18px;margin-bottom:20px;flex-wrap:wrap;gap:10px}
+                .time-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+                @media(max-width:700px){.bal-grid{grid-template-columns:repeat(2,1fr)}.form-row{grid-template-columns:1fr}.lv-type-grid{grid-template-columns:repeat(2,1fr)}.early-banner{flex-direction:column;gap:10px;align-items:flex-start}.time-row{grid-template-columns:1fr}}
             </style>
 
             <div style="max-width:900px;margin:0 auto">
                 <h3 style="margin-bottom:16px">${t("leave.balance_heading", lang)}</h3>
                 <div class="bal-grid">
-                    <div class="bal-card"><div class="bal-num">${bal.paid}</div><div class="bal-label">${t("leave.paid_days", lang)}</div></div>
+                    ${
+                      isContract
+                        ? `<div class="bal-card"><div class="bal-num" style="color:#0891b2">${bal.contractHourlyUsed || 0}<span style="font-size:14px">h</span></div><div class="bal-label">🕒 時間休暇 利用実績</div></div>`
+                        : `<div class="bal-card"><div class="bal-num">${bal.paid}</div><div class="bal-label">${t("leave.paid_days", lang)}</div></div>`
+                    }
                     <div class="bal-card"><div class="bal-num">${bal.sick}</div><div class="bal-label">${t("leave.sick_days", lang)}</div></div>
                     <div class="bal-card"><div class="bal-num">${bal.special}</div><div class="bal-label">${t("leave.special_days", lang)}</div></div>
                     <div class="bal-card"><div class="bal-num">${bal.other}</div><div class="bal-label">${t("leave.other_days", lang)}</div></div>
                 </div>
 
-                ${buildNextGrantBanner(employee.joinDate, lang)}
+                ${
+                  isContract
+                    ? `
+                <!-- 契約社員：時間休暇（自己申告・承認制） -->
+                <div class="contract-bal-banner">
+                    <div>
+                        <div style="font-weight:700;font-size:15px;color:#0e7490">🕒 時間休暇について</div>
+                        <div style="font-size:13px;color:#0e7490;margin-top:2px">ご自身の契約内容に基づき、必要な時間分を自己判断で申請してください。これまでの利用実績：${bal.contractHourlyUsed || 0} 時間</div>
+                    </div>
+                    <div style="background:#0891b2;color:#fff;border-radius:10px;padding:10px 20px;text-align:center;min-width:120px">
+                        <div style="font-size:13px;font-weight:700;line-height:1.3">承認制</div>
+                        <div style="font-size:11px;margin-top:2px;opacity:.9">申請後、管理者の承認が必要です</div>
+                    </div>
+                </div>
+                `
+                    : ""
+                }
+
+                ${isContract ? "" : buildNextGrantBanner(employee.joinDate, lang)}
 
                 <!-- 早退申請バナー -->
                 <div class="early-banner">
@@ -190,20 +231,38 @@ router.get("/leave/apply", requireLogin, async (req, res) => {
                         <div style="margin-bottom:16px">
                             <label style="font-weight:600;display:block;margin-bottom:8px">${t("leave.select_type", lang)}</label>
                             <div class="lv-type-grid">
-                                <button type="button" class="lv-type-btn" data-type="有給" onclick="selectType(this)">${t("leave.type_paid_label", lang)}<br><small style="font-weight:400">${t("leave.remain_label", lang)} ${bal.paid} ${t("leave.days_unit", lang)}</small></button>
+                                ${
+                                  isContract
+                                    ? ""
+                                    : `<button type="button" class="lv-type-btn" data-type="有給" onclick="selectType(this)">${t("leave.type_paid_label", lang)}<br><small style="font-weight:400">${t("leave.remain_label", lang)} ${bal.paid} ${t("leave.days_unit", lang)}</small></button>`
+                                }
                                 <button type="button" class="lv-type-btn" data-type="病欠" onclick="selectType(this)">${t("leave.type_sick_label", lang)}<br><small style="font-weight:400">${t("leave.remain_label", lang)} ${bal.sick} ${t("leave.days_unit", lang)}</small></button>
                                 <button type="button" class="lv-type-btn" data-type="慶弔" onclick="selectType(this)">${t("leave.type_special_label", lang)}<br><small style="font-weight:400">${t("leave.remain_label", lang)} ${bal.special} ${t("leave.days_unit", lang)}</small></button>
+                                ${
+                                  isContract
+                                    ? ""
+                                    : `
                                 <button type="button" class="lv-type-btn half" data-type="午前休" onclick="selectType(this)">${t("leave.type_am_label", lang)}<br><small style="font-weight:400">${t("leave.half_day_consume", lang)}</small></button>
                                 <button type="button" class="lv-type-btn half" data-type="午後休" onclick="selectType(this)">${t("leave.type_pm_label", lang)}<br><small style="font-weight:400">${t("leave.half_day_consume", lang)}</small></button>
+                                `
+                                }
                                 <button type="button" class="lv-type-btn" data-type="その他" onclick="selectType(this)">${t("leave.type_other_label", lang)}<br><small style="font-weight:400">${t("leave.remain_label", lang)} ${bal.other} ${t("leave.days_unit", lang)}</small></button>
+                                ${
+                                  isContract
+                                    ? `<button type="button" class="lv-type-btn hourly" data-type="時間休暇" onclick="selectType(this)">🕒 時間休暇<br><small style="font-weight:400">契約内容に基づき申請</small></button>`
+                                    : ""
+                                }
                             </div>
                         </div>
 
                         <div class="lv-hint" id="hint-half">
                             ${t("leave.half_day_hint", lang)}
                         </div>
+                        <div class="lv-hint hourly-hint" id="hint-hourly">
+                            契約時間内で利用できる時間単位の休暇です。開始・終了時刻を指定してください（30分単位）。
+                        </div>
 
-                        <div class="form-row" style="margin-bottom:14px">
+                        <div class="form-row" id="dateRow" style="margin-bottom:14px">
                             <div>
                                 <label style="font-weight:600;display:block;margin-bottom:6px">${t("leave.start_date", lang)}</label>
                                 <input type="text" id="startDate" name="startDate" required style="width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;box-sizing:border-box">
@@ -217,6 +276,22 @@ router.get("/leave/apply", requireLogin, async (req, res) => {
                                 <input type="number" id="days" name="days" step="0.5" readonly style="width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;background:#f9fafb;box-sizing:border-box">
                             </div>
                         </div>
+
+                        <div class="time-row" id="timeRow" style="margin-bottom:14px;display:none">
+                            <div>
+                                <label style="font-weight:600;display:block;margin-bottom:6px">開始時刻</label>
+                                <input type="time" id="startTime" name="startTime" step="1800" style="width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;box-sizing:border-box">
+                            </div>
+                            <div>
+                                <label style="font-weight:600;display:block;margin-bottom:6px">終了時刻</label>
+                                <input type="time" id="endTime" name="endTime" step="1800" style="width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;box-sizing:border-box">
+                            </div>
+                            <div>
+                                <label style="font-weight:600;display:block;margin-bottom:6px">消費時間</label>
+                                <input type="text" id="hoursDisplay" readonly style="width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;background:#f9fafb;box-sizing:border-box">
+                            </div>
+                        </div>
+
                         <div style="margin-bottom:18px">
                             <label style="font-weight:600;display:block;margin-bottom:6px">${t("leave.reason", lang)}</label>
                             <textarea name="reason" rows="3" required style="width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;box-sizing:border-box"></textarea>
@@ -240,13 +315,24 @@ router.get("/leave/apply", requireLogin, async (req, res) => {
                 currentType = btn.getAttribute('data-type');
                 document.getElementById('leaveTypeHidden').value = currentType;
                 document.getElementById('hint-half').classList.toggle('show', currentType==='午前休'||currentType==='午後休');
+                document.getElementById('hint-hourly').classList.toggle('show', currentType==='時間休暇');
                 var daysEl = document.getElementById('days');
-                if(HALF_TYPES.indexOf(currentType) !== -1){
+                var isHourly = currentType === '時間休暇';
+                document.getElementById('timeRow').style.display = isHourly ? 'grid' : 'none';
+                document.getElementById('dateRow').style.display = isHourly ? 'none' : 'grid';
+                if(isHourly){
+                    document.getElementById('startDate').required = false;
+                    document.getElementById('endDate').required = false;
+                    daysEl.value = '0';
+                    daysEl.removeAttribute('required');
+                } else if(HALF_TYPES.indexOf(currentType) !== -1){
+                    document.getElementById('startDate').required = true;
                     document.getElementById('endDateCol').style.opacity = '0.4';
                     document.getElementById('endDate').disabled = true;
                     daysEl.value = '0.5';
                     if(document.getElementById('startDate').value){ fpEnd.setDate(document.getElementById('startDate').value, true); }
                 } else {
+                    document.getElementById('startDate').required = true;
                     document.getElementById('endDateCol').style.opacity = '1';
                     document.getElementById('endDate').disabled = false;
                     daysEl.value = '';
@@ -264,6 +350,18 @@ router.get("/leave/apply", requireLogin, async (req, res) => {
                 if(s && e){ daysEl.value = Math.ceil(Math.abs(new Date(e)-new Date(s))/(1000*60*60*24))+1; }
                 else { daysEl.value = ''; }
             }
+            function recalcHours(){
+                var s = document.getElementById('startTime').value;
+                var e = document.getElementById('endTime').value;
+                var disp = document.getElementById('hoursDisplay');
+                if(!s || !e){ disp.value=''; return; }
+                var sm = s.split(':').map(Number), em = e.split(':').map(Number);
+                var diff = (em[0]*60+em[1]) - (sm[0]*60+sm[1]);
+                if(diff <= 0){ disp.value = '0 時間'; return; }
+                disp.value = (Math.round(diff/60*2)/2) + ' 時間';
+            }
+            document.getElementById('startTime').addEventListener('change', recalcHours);
+            document.getElementById('endTime').addEventListener('change', recalcHours);
             document.getElementById('startDate').addEventListener('change', function(){
                 if(HALF_TYPES.indexOf(currentType) !== -1){ fpEnd.setDate(this.value, true); document.getElementById('days').value='0.5'; }
                 else { recalcDays(); }
@@ -271,6 +369,18 @@ router.get("/leave/apply", requireLogin, async (req, res) => {
             document.getElementById('endDate').addEventListener('change', recalcDays);
             document.getElementById('leaveForm').addEventListener('submit', function(e){
                 if(!currentType){ e.preventDefault(); alert('${t("leave.alert_select_type", lang)}'); return; }
+                if(currentType === '時間休暇'){
+                    if(!document.getElementById('startTime').value || !document.getElementById('endTime').value){
+                        e.preventDefault(); alert('開始・終了時刻を入力してください'); return;
+                    }
+                    // 日付は今日を自動設定
+                    if(!document.getElementById('startDate').value){
+                        var today = new Date().toISOString().slice(0,10);
+                        fpStart.setDate(today, true);
+                        fpEnd.setDate(today, true);
+                    }
+                    return;
+                }
                 if(!document.getElementById('startDate').value){ e.preventDefault(); alert('${t("leave.alert_select_start", lang)}'); return; }
                 if(HALF_TYPES.indexOf(currentType) !== -1){
                     document.getElementById('endDate').disabled = false;
@@ -427,11 +537,57 @@ router.post("/leave/apply", requireLogin, async (req, res) => {
     const employee = await Employee.findOne({ userId: user._id });
     if (!employee) return res.status(400).send("社員情報がありません");
 
-    const { leaveType, startDate, endDate, days, reason, earlyLeaveTime } =
-      req.body;
+    const {
+      leaveType,
+      startDate,
+      endDate,
+      days,
+      reason,
+      earlyLeaveTime,
+      startTime,
+      endTime,
+    } = req.body;
+
+    // ── 契約社員の時間休暇（自己判断で申請可・承認制）──
+    if (leaveType === "時間休暇") {
+      if (employee.employmentType !== "契約社員") {
+        return res.status(403).send("時間休暇は契約社員のみ申請できます");
+      }
+      const hours = calcHoursDiff(startTime, endTime);
+      if (hours <= 0) {
+        return res.redirect("/leave/apply?err=balance");
+      }
+      const today = new Date();
+      const leaveRequest = new LeaveRequest({
+        userId: user._id,
+        employeeId: employee.employeeId,
+        name: employee.name,
+        department: employee.department,
+        leaveType,
+        startTime,
+        endTime,
+        hours,
+        startDate: startDate ? new Date(startDate) : today,
+        endDate: endDate ? new Date(endDate) : today,
+        days: 0,
+        reason,
+        status: "pending",
+      });
+      await leaveRequest.save();
+      return res.redirect("/leave/my-requests");
+    }
+
     const daysNum =
       parseFloat(days) || (HALF_DAY_TYPES.has(leaveType) ? 0.5 : 1);
     const field = leaveTypeToField[leaveType];
+
+    // 契約社員は有給・半休（有給扱い）を申請不可
+    if (
+      employee.employmentType === "契約社員" &&
+      ["有給", "午前休", "午後休"].includes(leaveType)
+    ) {
+      return res.status(403).send("契約社員は有給休暇を利用できません。「時間休暇」をご利用ください。");
+    }
 
     // 残日数チェック（半日は0.5消費）
     const bal = await getOrCreateBalance(employee._id);
@@ -477,6 +633,7 @@ router.get("/leave/my-requests", requireLogin, async (req, res) => {
       createdAt: -1,
     });
     const bal = employee ? await getOrCreateBalance(employee._id) : null;
+    const isContract = employee && employee.employmentType === "契約社員";
 
     const statusLabel = (s) =>
       ({
@@ -520,12 +677,16 @@ router.get("/leave/my-requests", requireLogin, async (req, res) => {
                     ? `
                 <h3 style="margin-bottom:12px">${t("leave.balance_heading", lang)}</h3>
                 <div class="bal-grid">
-                    <div class="bal-card"><div class="bal-num">${bal.paid}</div><div class="bal-label">${t("leave.col_paid", lang)}</div></div>
+                    ${
+                      isContract
+                        ? `<div class="bal-card"><div class="bal-num" style="color:#0891b2">${bal.contractHourlyUsed || 0}<span style="font-size:14px">h</span></div><div class="bal-label">🕒 時間休暇 利用実績</div></div>`
+                        : `<div class="bal-card"><div class="bal-num">${bal.paid}</div><div class="bal-label">${t("leave.col_paid", lang)}</div></div>`
+                    }
                     <div class="bal-card"><div class="bal-num">${bal.sick}</div><div class="bal-label">${t("leave.col_sick", lang)}</div></div>
                     <div class="bal-card"><div class="bal-num">${bal.special}</div><div class="bal-label">${t("leave.col_special", lang)}</div></div>
                     <div class="bal-card"><div class="bal-num">${bal.other}</div><div class="bal-label">${t("leave.col_other", lang)}</div></div>
                 </div>
-                ${employee ? buildNextGrantBanner(employee.joinDate, lang) : ""}
+                ${employee && !isContract ? buildNextGrantBanner(employee.joinDate, lang) : ""}
                 `
                     : ""
                 }
@@ -544,9 +705,9 @@ router.get("/leave/my-requests", requireLogin, async (req, res) => {
                         ${requests
                           .map(
                             (r) => `<tr>
-                            <td>${escapeHtml(r.leaveType)}${r.earlyLeaveTime ? `<br><small style="color:#f59e0b">🕐 ${r.earlyLeaveTime}</small>` : ""}</td>
+                            <td>${escapeHtml(r.leaveType)}${r.earlyLeaveTime ? `<br><small style="color:#f59e0b">🕐 ${r.earlyLeaveTime}</small>` : ""}${r.leaveType === "時間休暇" && r.startTime ? `<br><small style="color:#0891b2">🕒 ${r.startTime}〜${r.endTime}</small>` : ""}</td>
                             <td>${moment(r.startDate).format("YYYY/MM/DD")}〜${moment(r.endDate).format("YYYY/MM/DD")}</td>
-                            <td>${r.days}${t("leave.days_unit", lang)}</td>
+                            <td>${r.leaveType === "時間休暇" ? `${r.hours} 時間` : `${r.days}${t("leave.days_unit", lang)}`}</td>
                             <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(r.reason)}</td>
                             <td><span style="background:${statusColor(r.status)}22;color:${statusColor(r.status)};padding:3px 10px;border-radius:999px;font-weight:700;font-size:12px">${statusLabel(r.status)}</span></td>
                             <td>${moment(r.createdAt).format("YYYY/MM/DD")}</td>
@@ -570,7 +731,7 @@ router.get("/leave/my-requests", requireLogin, async (req, res) => {
 // ────────────────────────────────────────────────────────────
 // 管理者: 休暇承認一覧
 // ────────────────────────────────────────────────────────────
-router.get("/admin/leave-requests", requireLogin, isAdmin, async (req, res) => {
+router.get("/admin/leave-requests", requireLogin, isLeaderOrAbove, async (req, res) => {
   try {
     const lang = (req.session && req.session.lang) ? req.session.lang : "ja";
     const requests = await LeaveRequest.find({ status: "pending" }).sort({
@@ -609,7 +770,11 @@ router.get("/admin/leave-requests", requireLogin, isAdmin, async (req, res) => {
                     </div>
                     <div style="font-size:14px;color:#374151">
                         <span style="margin-right:16px">🏷 ${escapeHtml(r.leaveType)}${r.earlyLeaveTime ? ` <span style="color:#f59e0b">（早退 ${r.earlyLeaveTime}）</span>` : ""}</span>
-                        <span style="margin-right:16px">📅 ${moment(r.startDate).format("YYYY/MM/DD")}〜${moment(r.endDate).format("YYYY/MM/DD")}（${r.days}${t("leave.days_unit", lang)}）</span>
+                        ${
+                          r.leaveType === "時間休暇"
+                            ? `<span style="margin-right:16px">📅 ${moment(r.startDate).format("YYYY/MM/DD")}　🕒 ${r.startTime}〜${r.endTime}（${r.hours} 時間）</span>`
+                            : `<span style="margin-right:16px">📅 ${moment(r.startDate).format("YYYY/MM/DD")}〜${moment(r.endDate).format("YYYY/MM/DD")}（${r.days}${t("leave.days_unit", lang)}）</span>`
+                        }
                     </div>
                     <div style="margin-top:6px;font-size:14px;color:#6b7280">${t("leave.reason_label", lang)} ${escapeHtml(r.reason)}</div>
                     <div class="req-actions">
@@ -637,7 +802,7 @@ router.get("/admin/leave-requests", requireLogin, isAdmin, async (req, res) => {
 router.post(
   "/admin/approve-leave/:id",
   requireLogin,
-  isAdmin,
+  isLeaderOrAbove,
   async (req, res) => {
     try {
       const request = await LeaveRequest.findById(req.params.id);
@@ -647,19 +812,33 @@ router.post(
         employeeId: request.employeeId,
       });
       if (employee) {
-        const field = leaveTypeToField[request.leaveType];
-        if (field) {
+        if (request.leaveType === "時間休暇") {
           const bal = await getOrCreateBalance(employee._id);
-          bal[field] = Math.max(0, (bal[field] || 0) - request.days);
+          bal.contractHourlyUsed = (bal.contractHourlyUsed || 0) + (request.hours || 0);
           bal.history.push({
             grantedBy: req.session.userId,
             leaveType: request.leaveType,
-            delta: -request.days,
-            note: "承認により消費",
+            delta: -(request.hours || 0),
+            note: "承認により消費（時間休暇）",
             at: new Date(),
           });
           bal.updatedAt = new Date();
           await bal.save();
+        } else {
+          const field = leaveTypeToField[request.leaveType];
+          if (field) {
+            const bal = await getOrCreateBalance(employee._id);
+            bal[field] = Math.max(0, (bal[field] || 0) - request.days);
+            bal.history.push({
+              grantedBy: req.session.userId,
+              leaveType: request.leaveType,
+              delta: -request.days,
+              note: "承認により消費",
+              at: new Date(),
+            });
+            bal.updatedAt = new Date();
+            await bal.save();
+          }
         }
       }
 
@@ -771,7 +950,7 @@ router.post(
 router.post(
   "/admin/reject-leave/:id",
   requireLogin,
-  isAdmin,
+  isLeaderOrAbove,
   async (req, res) => {
     try {
       const request = await LeaveRequest.findById(req.params.id);
@@ -845,6 +1024,7 @@ router.get("/admin/leave-balance", requireLogin, isAdmin, async (req, res) => {
                         <th style="text-align:center">${t("leave.col_sick", lang)}</th>
                         <th style="text-align:center">${t("leave.col_special", lang)}</th>
                         <th style="text-align:center">${t("leave.col_other", lang)}</th>
+                        <th style="text-align:center">時間休暇<br><small style="font-weight:400">(利用実績)</small></th>
                         <th>${t("leave.col_grant_ops", lang)}</th>
                     </tr></thead>
                     <tbody>
@@ -855,17 +1035,25 @@ router.get("/admin/leave-balance", requireLogin, isAdmin, async (req, res) => {
                               sick: 0,
                               special: 0,
                               other: 0,
+                              contractHourlyTotal: 0,
+                              contractHourlyUsed: 0,
                             };
+                            const isContract = emp.employmentType === "契約社員";
                             return `<tr>
                                 <td>${escapeHtml(emp.employeeId)}</td>
-                                <td>${escapeHtml(emp.name)}</td>
+                                <td>${escapeHtml(emp.name)}${isContract ? ` <span style="font-size:10px;font-weight:700;color:#0891b2;background:#ecfeff;border:1px solid #a5f3fc;border-radius:4px;padding:1px 6px;margin-left:4px">契約社員</span>` : ""}</td>
                                 <td>${escapeHtml(emp.department)}</td>
-                                <td style="text-align:center;font-weight:700;color:#0b5fff">${b.paid}</td>
+                                <td style="text-align:center;font-weight:700;color:#0b5fff">${isContract ? "—" : b.paid}</td>
                                 <td style="text-align:center;font-weight:700;color:#16a34a">${b.sick}</td>
                                 <td style="text-align:center;font-weight:700;color:#f59e0b">${b.special}</td>
                                 <td style="text-align:center;font-weight:700;color:#6b7280">${b.other}</td>
+                                <td style="text-align:center;font-weight:700;color:#0891b2">${isContract ? `${b.contractHourlyUsed || 0} h` : "—"}</td>
                                 <td>
-                                    <form action="/admin/leave-balance/grant" method="POST" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                                    ${
+                                      isContract
+                                        ? `<span style="font-size:12px;color:#9ca3af">契約内容に基づき本人が自己申告で申請します</span>`
+                                        : `
+                                    <form action="/admin/leave-balance/grant" method="POST" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
                                         <input type="hidden" name="employeeId" value="${emp._id}">
                                         <select name="leaveType" style="padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px">
                                             <option value="有給">${t("leave.opt_paid", lang)}</option>
@@ -877,13 +1065,15 @@ router.get("/admin/leave-balance", requireLogin, isAdmin, async (req, res) => {
                                         <input type="text" name="note" placeholder="${t("leave.memo_placeholder", lang)}" style="padding:5px 8px;border:1px solid #ddd;border-radius:6px;width:100px;font-size:13px">
                                         <button style="padding:5px 12px;background:#0b5fff;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px">${t("leave.grant_btn", lang)}</button>
                                     </form>
+                                    `
+                                    }
                                 </td>
                             </tr>`;
                           })
                           .join("")}
                     </tbody>
                 </table>
-                <p style="margin-top:10px;color:#6b7280;font-size:13px">${t("leave.grant_note", lang)}</p>
+                <p style="margin-top:10px;color:#6b7280;font-size:13px">${t("leave.grant_note", lang)}　／　契約時間は「契約社員」の従業員のみ「時間休暇」として利用可能です（140〜180時間目安）。</p>
             </div>
             </div>
         `,
@@ -913,6 +1103,34 @@ router.post(
         leaveType,
         delta: deltaNum,
         note: note || "",
+        at: new Date(),
+      });
+      bal.updatedAt = new Date();
+      await bal.save();
+      res.redirect("/admin/leave-balance");
+    } catch (error) {
+      console.error(error);
+      res.redirect("/admin/leave-balance");
+    }
+  },
+);
+
+// 管理者: 契約時間休暇の総枠設定処理（契約社員用）
+router.post(
+  "/admin/leave-balance/grant-hours",
+  requireLogin,
+  isAdmin,
+  async (req, res) => {
+    try {
+      const { employeeId, total } = req.body;
+      const totalNum = Math.max(0, parseInt(total) || 0);
+      const bal = await getOrCreateBalance(employeeId);
+      bal.contractHourlyTotal = totalNum;
+      bal.history.push({
+        grantedBy: req.session.userId,
+        leaveType: "契約時間",
+        delta: totalNum,
+        note: "契約時間の総枠を設定",
         at: new Date(),
       });
       bal.updatedAt = new Date();

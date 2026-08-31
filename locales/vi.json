@@ -14,6 +14,7 @@
   },
   "nav": {
     "home": "Trang chủ",
+    "profile": "Hồ sơ của tôi",
     "attendance": "Chấm công",
     "daily_report": "Báo cáo ngày",
     "goals": "Quản lý mục tiêu",
@@ -39,6 +40,7 @@
     "admin_overtime": "Quản lý làm thêm giờ",
     "admin_leave_balance": "Phân bổ ngày nghỉ",
     "admin_add_employee": "Thêm nhân viên",
+    "employees": "Quản lý nhân viên",
     "admin_users": "Phân quyền người dùng",
     "change_password": "Đổi mật khẩu",
     "logout": "Đăng xuất",

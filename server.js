@@ -536,6 +536,7 @@ app.get("/health", (req, res) => {
 app.use("/", require("./routes/auth"));
 app.use("/", require("./routes/attendance"));
 app.use("/", require("./routes/dashboard"));
+app.use("/", require("./routes/profile"));
 app.use("/", require("./routes/admin"));
 app.use("/", require("./routes/hr"));
 app.use("/", require("./routes/leave"));

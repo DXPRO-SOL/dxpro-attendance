@@ -5,6 +5,22 @@ function wantsJson(req) {
     return req.path && req.path.startsWith('/api/') || req.xhr || xrw.toLowerCase() === 'xmlhttprequest' || accept.includes('application/json');
 }
 
+// アクセス拒否・権限エラーを専用のアラート画面として表示する
+function sendAccessDenied(req, res, message, options = {}) {
+    if (wantsJson(req)) {
+        return res.status(403).json({ error: message });
+    }
+    const { renderErrorPage } = require('../lib/renderPage');
+    return renderErrorPage(req, res, {
+        statusCode: 403,
+        icon: 'fa-lock',
+        title: 'アクセス権限がありません',
+        message,
+        backHref: options.backHref || '/dashboard',
+        backLabel: options.backLabel || 'ダッシュボードに戻る',
+    });
+}
+
 function requireLogin(req, res, next) {
     if (!req.session.userId) {
         if (wantsJson(req)) return res.status(401).json({ error: '認証が必要です' });
@@ -22,8 +38,7 @@ function isAdmin(req, res, next) {
     if (req.session.isAdmin) {
         return next();
     }
-    if (wantsJson(req)) return res.status(403).json({ error: '管理者権限が必要です' });
-    res.status(403).send('管理者権限が必要です');
+    return sendAccessDenied(req, res, '管理者権限が必要です');
 }
 
 // Issue #19: 中間ロール対応ミドルウェア
@@ -41,9 +56,8 @@ function requireRole(...roles) {
         // ロールレベルで判定
         const userLevel = ROLE_LEVEL[userRole] || 1;
         const minRequired = Math.min(...roles.map(r => ROLE_LEVEL[r] || 1));
-    if (userLevel >= minRequired) return next();
-    if (wantsJson(req)) return res.status(403).json({ error: 'この操作には権限が必要です', required: roles });
-    res.status(403).send('この操作には権限が必要です（必要ロール: ' + roles.join(', ') + '）');
+        if (userLevel >= minRequired) return next();
+        return sendAccessDenied(req, res, 'この操作には権限が必要です（必要ロール: ' + roles.join(', ') + '）');
     };
 }
 
@@ -55,8 +69,7 @@ function isManagerOrAdmin(req, res, next) {
     }
     const role = req.session.orgRole || (req.session.isAdmin ? 'admin' : 'employee');
     if (req.session.isAdmin || role === 'admin' || role === 'manager') return next();
-    if (wantsJson(req)) return res.status(403).json({ error: '部門長以上の権限が必要です' });
-    res.status(403).send('部門長以上の権限が必要です');
+    return sendAccessDenied(req, res, '部門長以上の権限が必要です');
 }
 
 // チームリーダー以上
@@ -67,8 +80,7 @@ function isLeaderOrAbove(req, res, next) {
     }
     const role = req.session.orgRole || (req.session.isAdmin ? 'admin' : 'employee');
     if (req.session.isAdmin || ROLE_LEVEL[role] >= ROLE_LEVEL['team_leader']) return next();
-    if (wantsJson(req)) return res.status(403).json({ error: 'チームリーダー以上の権限が必要です' });
-    res.status(403).send('チームリーダー以上の権限が必要です');
+    return sendAccessDenied(req, res, 'チームリーダー以上の権限が必要です');
 }
 
 // テストユーザーを書き込み操作からブロック
@@ -80,3 +92,4 @@ function blockTestUser(req, res, next) {
 }
 
 module.exports = { requireLogin, isAdmin, requireRole, isManagerOrAdmin, isLeaderOrAbove, blockTestUser, ROLE_LEVEL };
+

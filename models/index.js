@@ -422,10 +422,14 @@ const LeaveRequestSchema = new mongoose.Schema({
   leaveType: {
     type: String,
     required: true,
-    enum: ["有給", "病欠", "慶弔", "その他", "午前休", "午後休", "早退"],
+    enum: ["有給", "病欠", "慶弔", "その他", "午前休", "午後休", "早退", "時間休暇"],
   },
   halfDay: { type: String, enum: ["AM", "PM", null], default: null }, // 午前休・午後休フラグ
   earlyLeaveTime: { type: String, default: null }, // 早退時刻 "HH:MM"
+  // 契約社員向け「時間休暇」用（契約時間バジェットから時間単位で消費）
+  startTime: { type: String, default: null }, // "HH:MM"
+  endTime: { type: String, default: null }, // "HH:MM"
+  hours: { type: Number, default: null }, // 消費時間数
   startDate: { type: Date, required: true },
   endDate: { type: Date, required: true },
   days: { type: Number, required: true },
@@ -501,6 +505,9 @@ const LeaveBalanceSchema = new mongoose.Schema({
   sick: { type: Number, default: 0 }, // 病欠
   special: { type: Number, default: 0 }, // 慶弔
   other: { type: Number, default: 0 }, // その他
+  // 契約社員向け：契約時間休暇（例：140〜180時間の契約時間内で消費する時間休暇）
+  contractHourlyTotal: { type: Number, default: 0 }, // 契約時間の総枠（時間）
+  contractHourlyUsed: { type: Number, default: 0 }, // 使用済み時間
   updatedAt: { type: Date, default: Date.now },
   history: [
     {
@@ -710,6 +717,13 @@ const EmployeeSchema = new mongoose.Schema({
   },
   reportsTo: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" }, // 上司
   concurrentDepts: [{ type: String }], // 兼務部署名リスト
+  // 契約社員向け：時間休暇制度
+  // 正社員は有給休暇（LeaveBalance.paid）を使用、契約社員は契約時間内の「時間休暇」を使用
+  employmentType: {
+    type: String,
+    enum: ["正社員", "契約社員"],
+    default: "正社員",
+  },
 });
 
 // モデル export

@@ -4,11 +4,15 @@
 const router = require('express').Router();
 const { ApprovedLocation, User, Employee } = require('../models');
 const { requireLogin } = require('../middleware/auth');
-const { buildPageShell, pageFooter } = require('../lib/renderPage');
+const { buildPageShell, pageFooter, renderErrorPage } = require('../lib/renderPage');
 
 // 管理者チェック
 function requireAdmin(req, res, next) {
-    if (!req.session.isAdmin) return res.status(403).send('管理者のみアクセス可能です');
+    if (!req.session.isAdmin)
+        return renderErrorPage(req, res, {
+            message: '位置情報管理には管理者権限が必要です。',
+            backHref: '/dashboard',
+        });
     next();
 }
 

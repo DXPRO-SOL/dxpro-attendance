@@ -19,7 +19,7 @@ const {
 } = require("../models");
 const { requireLogin, isAdmin } = require("../middleware/auth");
 const { escapeHtml, buildAttachmentsAfterEdit } = require("../lib/helpers");
-const { renderPage } = require("../lib/renderPage");
+const { renderPage, renderErrorPage } = require("../lib/renderPage");
 const { createNotification } = require("./notifications");
 const { t } = require("../lib/i18n");
 
@@ -125,7 +125,7 @@ router.get("/hr", requireLogin, async (req, res) => {
     const allBals = isAdminUser ? await LeaveBalance.find() : [];
     const balMap = {};
     allBals.forEach((b) => {
-      balMap[b.employeeId.toString()] = b.paid || 0;
+      balMap[b.employeeId.toString()] = b;
     });
 
     // 直近の休暇申請（管理者：全体5件、一般：本人5件）
@@ -507,8 +507,8 @@ router.get("/hr", requireLogin, async (req, res) => {
                             <div class="hrp-hero-stat-lbl">今月出勤</div>
                         </div>
                         <div class="hrp-hero-stat">
-                            <div class="hrp-hero-stat-val">${myPaidLeave}</div>
-                            <div class="hrp-hero-stat-lbl">有給残（日）</div>
+                            <div class="hrp-hero-stat-val">${employee.employmentType === "契約社員" ? (myBalance?.contractHourlyUsed || 0) : myPaidLeave}</div>
+                            <div class="hrp-hero-stat-lbl">${employee.employmentType === "契約社員" ? "時間休暇利用（h）" : "有給残（日）"}</div>
                         </div>
                         <div class="hrp-hero-stat">
                             <div class="hrp-hero-stat-val">${myOvertimeHours}</div>
@@ -524,7 +524,7 @@ router.get("/hr", requireLogin, async (req, res) => {
                         ${
                           isAdminUser
                             ? `
-                        <a href="/hr" class="hrp-nav-card">
+                        <a href="/hr/employees" class="hrp-nav-card">
                             <div class="hrp-nav-icon" style="background:#eff6ff;color:#0b5fff"><i class="fa-solid fa-users"></i></div>
                             <div>
                                 <div class="hrp-nav-label">社員管理</div>
@@ -618,10 +618,10 @@ router.get("/hr", requireLogin, async (req, res) => {
                         </div>
                     </div>
                     <div class="hrp-kpi">
-                        <div class="hrp-kpi-icon" style="background:#fffbeb;color:#d97706">✈️</div>
+                        <div class="hrp-kpi-icon" style="background:${employee.employmentType === "契約社員" ? "#ecfeff;color:#0891b2" : "#fffbeb;color:#d97706"}">${employee.employmentType === "契約社員" ? "🕒" : "✈️"}</div>
                         <div class="hrp-kpi-body">
-                            <div class="hrp-kpi-val">${myPaidLeave}<span style="font-size:14px;font-weight:600;color:#8896a8">日</span></div>
-                            <div class="hrp-kpi-lbl">有給休暇 残日数</div>
+                            <div class="hrp-kpi-val">${employee.employmentType === "契約社員" ? (myBalance?.contractHourlyUsed || 0) : myPaidLeave}<span style="font-size:14px;font-weight:600;color:#8896a8">${employee.employmentType === "契約社員" ? "h" : "日"}</span></div>
+                            <div class="hrp-kpi-lbl">${employee.employmentType === "契約社員" ? "時間休暇 利用時間" : "有給休暇 残日数"}</div>
                         </div>
                     </div>
                     <div class="hrp-kpi">
@@ -698,7 +698,7 @@ router.get("/hr", requireLogin, async (req, res) => {
                                             <th style="min-width:90px">役職</th>
                                             <th style="min-width:100px">社員ID</th>
                                             <th style="min-width:100px">入社日</th>
-                                            <th style="min-width:70px">有給残</th>
+                                            <th style="min-width:90px">休暇残</th>
                                             <th style="min-width:110px">操作</th>
                                         </tr>
                                     </thead>
@@ -715,7 +715,11 @@ router.get("/hr", requireLogin, async (req, res) => {
                                             <td><span class="hrp-pos-tag">${escapeHtml(e.position || "—")}</span></td>
                                             <td style="font-size:11.5px;color:#a0aec0;font-family:monospace">${escapeHtml(e.employeeId || "—")}</td>
                                             <td style="font-size:12px;color:#6b7280">${e.joinDate ? moment.tz(e.joinDate, "Asia/Tokyo").format("YYYY/MM/DD") : "—"}</td>
-                                            <td><span class="hrp-leave-pill">🌴 ${balMap[e._id.toString()] ?? 0}日</span></td>
+                                            <td>${
+                                              e.employmentType === "契約社員"
+                                                ? `<span class="hrp-leave-pill" style="color:#0891b2;background:#ecfeff">🕒 利用 ${balMap[e._id.toString()]?.contractHourlyUsed || 0}h</span>`
+                                                : `<span class="hrp-leave-pill">🌴 ${balMap[e._id.toString()]?.paid ?? 0}日</span>`
+                                            }</td>
                                             <td>
                                                 <div class="hrp-action-row">
                                                     <a href="/hr/edit/${e._id}" class="hrp-tbl-btn hrp-tbl-btn-edit">✏️ 編集</a>
@@ -759,8 +763,20 @@ router.get("/hr", requireLogin, async (req, res) => {
                                     <span class="hrp-info-val">${employee.joinDate ? moment.tz(employee.joinDate, "Asia/Tokyo").format("YYYY年MM月DD日") : "—"}</span>
                                 </div>
                                 <div class="hrp-info-row">
-                                    <span class="hrp-info-label">有給残日数</span>
-                                    <span class="hrp-info-val"><span class="hrp-leave-pill">🌴 ${myPaidLeave}日</span></span>
+                                    <span class="hrp-info-label">連絡先</span>
+                                    <span class="hrp-info-val">${escapeHtml(employee.contact || "—")}</span>
+                                </div>
+                                <div class="hrp-info-row">
+                                    <span class="hrp-info-label">メールアドレス</span>
+                                    <span class="hrp-info-val">${escapeHtml(employee.email || "—")}</span>
+                                </div>
+                                <div class="hrp-info-row">
+                                    <span class="hrp-info-label">${employee.employmentType === "契約社員" ? "時間休暇 利用実績" : "有給残日数"}</span>
+                                    <span class="hrp-info-val">${
+                                      employee.employmentType === "契約社員"
+                                        ? `<span class="hrp-leave-pill" style="color:#0891b2;background:#ecfeff">🕒 ${myBalance?.contractHourlyUsed || 0} 時間</span>`
+                                        : `<span class="hrp-leave-pill">🌴 ${myPaidLeave}日</span>`
+                                    }</span>
                                 </div>
                                 <div class="hrp-info-row">
                                     <span class="hrp-info-label">申請中の休暇</span>
@@ -771,6 +787,9 @@ router.get("/hr", requireLogin, async (req, res) => {
                                             : `<span style="color:#8896a8;font-weight:500">なし</span>`
                                         }
                                     </span>
+                                </div>
+                                <div style="margin-top:16px">
+                                    <a href="/hr/profile/edit" class="hrp-btn hrp-btn-primary" style="width:100%;justify-content:center">✏️ プロフィールを編集</a>
                                 </div>
                             </div>
                         </div>
@@ -937,6 +956,276 @@ router.get("/hr", requireLogin, async (req, res) => {
 });
 
 // 社員追加（統合フォーム）
+// 社員管理（一覧・検索・追加・編集・削除への導線）— 独立画面
+router.get("/hr/employees", requireLogin, isAdmin, async (req, res) => {
+  try {
+    const { LeaveBalance } = require("../models");
+
+    const allEmployees = await Employee.find().sort({ name: 1 });
+    const allBals = await LeaveBalance.find();
+    const balMap = {};
+    allBals.forEach((b) => {
+      balMap[b.employeeId.toString()] = b;
+    });
+
+    const teamSize = allEmployees.length;
+    const regularCount = allEmployees.filter((e) => e.employmentType !== "契約社員").length;
+    const contractCount = allEmployees.filter((e) => e.employmentType === "契約社員").length;
+
+    renderPage(
+      req,
+      res,
+      "社員管理",
+      "社員管理",
+      `
+            <style>
+                /* ===== HR Portal — Enterprise Design ===== */
+                *{box-sizing:border-box}
+                .hrp{max-width:1200px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans',sans-serif}
+
+                /* ── ヒーローバナー ── */
+                .hrp-hero{
+                    background:linear-gradient(135deg,#0f2244 0%,#1a3a6e 45%,#0b5fff 100%);
+                    border-radius:20px;padding:32px 36px;color:#fff;
+                    display:flex;justify-content:space-between;align-items:center;
+                    margin-bottom:28px;flex-wrap:wrap;gap:20px;
+                    position:relative;overflow:hidden
+                }
+                .hrp-hero::before{
+                    content:'';position:absolute;right:-60px;top:-60px;
+                    width:280px;height:280px;border-radius:50%;
+                    background:rgba(255,255,255,.05);pointer-events:none
+                }
+                .hrp-hero::after{
+                    content:'';position:absolute;right:80px;bottom:-80px;
+                    width:200px;height:200px;border-radius:50%;
+                    background:rgba(255,255,255,.04);pointer-events:none
+                }
+                .hrp-hero-left{flex:1;min-width:0;position:relative;z-index:1}
+                .hrp-hero-eyebrow{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;opacity:.6;margin-bottom:6px}
+                .hrp-hero-name{font-size:26px;font-weight:900;margin:0 0 5px;letter-spacing:-.3px}
+                .hrp-hero-meta{font-size:13px;opacity:.7;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+                .hrp-hero-meta-sep{opacity:.4}
+                .hrp-hero-stats{display:flex;gap:0;position:relative;z-index:1}
+                .hrp-hero-stat{padding:0 22px;border-left:1px solid rgba(255,255,255,.15);text-align:center}
+                .hrp-hero-stat:first-child{border-left:none}
+                .hrp-hero-stat-val{font-size:24px;font-weight:900;line-height:1.1;letter-spacing:-.5px}
+                .hrp-hero-stat-lbl{font-size:10px;font-weight:600;opacity:.6;text-transform:uppercase;letter-spacing:.08em;margin-top:3px}
+
+                /* ── カード共通 ── */
+                .hrp-card{
+                    background:#fff;border-radius:16px;
+                    box-shadow:0 1px 3px rgba(0,0,0,.05),0 4px 20px rgba(11,36,80,.05);
+                    border:1px solid #f0f4ff;overflow:visible;margin-bottom:20px
+                }
+                .hrp-card-head{
+                    display:flex;justify-content:space-between;align-items:center;
+                    padding:18px 22px;border-bottom:1px solid #f0f4ff;flex-wrap:wrap;gap:10px
+                }
+                .hrp-card-title{font-size:14px;font-weight:800;color:#0f2244;margin:0;display:flex;align-items:center;gap:8px}
+                .hrp-card-title-icon{
+                    width:30px;height:30px;border-radius:8px;
+                    display:flex;align-items:center;justify-content:center;font-size:14px
+                }
+                .hrp-badge-count{
+                    background:#eff6ff;color:#0b5fff;font-size:11px;font-weight:800;
+                    padding:2px 8px;border-radius:20px;margin-left:6px
+                }
+
+                /* ── テーブル ── */
+                .hrp-table-wrap{overflow-x:auto;overflow-y:auto;min-width:0;-webkit-overflow-scrolling:touch}
+                .hrp-table{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:auto;min-width:680px}
+                .hrp-table thead tr{background:#f8fafc}
+                .hrp-table th{
+                    padding:10px 12px;color:#8896a8;font-size:10px;font-weight:700;
+                    text-transform:uppercase;letter-spacing:.06em;text-align:left;
+                    border-bottom:2px solid #eef2f8;white-space:nowrap
+                }
+                .hrp-table td{
+                    padding:10px 12px;border-bottom:1px solid #f5f7fb;
+                    color:#374151;vertical-align:middle;white-space:nowrap
+                }
+                .hrp-table tbody tr:last-child td{border-bottom:none}
+                .hrp-table tbody tr:hover td{background:#f8fbff}
+                .hrp-avatar{
+                    width:34px;height:34px;border-radius:50%;
+                    background:linear-gradient(135deg,#0b5fff,#6d28d9);
+                    color:#fff;font-size:13px;font-weight:800;
+                    display:inline-flex;align-items:center;justify-content:center;flex-shrink:0
+                }
+                .hrp-emp-name{font-weight:700;color:#0f2244;font-size:13px;white-space:nowrap}
+                .hrp-dept-tag{
+                    display:inline-block;padding:2px 8px;border-radius:20px;
+                    font-size:11px;font-weight:600;
+                    background:#f0f4ff;color:#4f6ef7;white-space:nowrap
+                }
+                .hrp-pos-tag{
+                    display:inline-block;padding:2px 8px;border-radius:20px;
+                    font-size:11px;font-weight:600;
+                    background:#f0fdf4;color:#16a34a;white-space:nowrap
+                }
+                .hrp-type-tag{
+                    display:inline-block;padding:2px 8px;border-radius:20px;
+                    font-size:11px;font-weight:700;white-space:nowrap
+                }
+                .hrp-leave-pill{
+                    display:inline-flex;align-items:center;gap:4px;
+                    font-size:12px;font-weight:700;color:#0b5fff;
+                    background:#eff6ff;padding:3px 10px;border-radius:20px
+                }
+                .hrp-action-row{display:flex;gap:5px;align-items:center;flex-wrap:nowrap}
+                .hrp-tbl-btn{
+                    display:inline-flex;align-items:center;gap:3px;
+                    padding:4px 10px;border-radius:6px;font-size:11.5px;font-weight:700;
+                    text-decoration:none;border:none;cursor:pointer;transition:opacity .15s;
+                    white-space:nowrap;flex-shrink:0
+                }
+                .hrp-tbl-btn:hover{opacity:.8}
+                .hrp-tbl-btn-edit{background:#eff6ff;color:#0b5fff}
+                .hrp-tbl-btn-del{background:#fff1f2;color:#ef4444}
+
+                /* ── 検索バー ── */
+                .hrp-search{
+                    padding:14px 22px;border-bottom:1px solid #f0f4ff;
+                    display:flex;align-items:center;gap:10px;background:#fafbff
+                }
+                .hrp-search input{
+                    flex:1;border:1.5px solid #e8edf7;border-radius:9px;
+                    padding:8px 14px;font-size:13px;outline:none;background:#fff;
+                    transition:border-color .2s
+                }
+                .hrp-search input:focus{border-color:#0b5fff;box-shadow:0 0 0 3px rgba(11,95,255,.09)}
+                .hrp-search-icon{color:#a0aec0;font-size:16px;flex-shrink:0}
+
+                /* ── ボタン共通 ── */
+                .hrp-btn{
+                    display:inline-flex;align-items:center;gap:6px;
+                    padding:9px 18px;border-radius:9px;font-weight:700;font-size:13px;
+                    text-decoration:none;border:none;cursor:pointer;transition:all .15s;
+                    white-space:nowrap
+                }
+                .hrp-btn-primary{background:#0b5fff;color:#fff;box-shadow:0 2px 8px rgba(11,95,255,.3)}
+                .hrp-btn-primary:hover{background:#0047d4;box-shadow:0 4px 12px rgba(11,95,255,.4)}
+                .hrp-btn-ghost{background:#f3f5fb;color:#374151;border:1px solid #e8edf7}
+                .hrp-btn-ghost:hover{background:#e8edf7}
+
+                @media(max-width:640px){
+                    .hrp-hero{padding:22px 20px}
+                    .hrp-hero-name{font-size:20px}
+                }
+            </style>
+
+            <div class="hrp">
+
+                <!-- ═══ ヒーローバナー ═══ -->
+                <div class="hrp-hero">
+                    <div class="hrp-hero-left">
+                        <div class="hrp-hero-eyebrow">Human Resources Portal</div>
+                        <div class="hrp-hero-name">社員管理</div>
+                        <div class="hrp-hero-meta">
+                            <span><i class="fa-solid fa-users" style="margin-right:4px;opacity:.7"></i>社員一覧・追加・編集</span>
+                            <span class="hrp-hero-meta-sep">|</span>
+                            <a href="/hr" style="color:#fff;opacity:.8;text-decoration:underline">← ダッシュボードへ戻る</a>
+                        </div>
+                    </div>
+                    <div class="hrp-hero-stats">
+                        <div class="hrp-hero-stat">
+                            <div class="hrp-hero-stat-val">${teamSize}</div>
+                            <div class="hrp-hero-stat-lbl">在籍社員数</div>
+                        </div>
+                        <div class="hrp-hero-stat">
+                            <div class="hrp-hero-stat-val">${regularCount}</div>
+                            <div class="hrp-hero-stat-lbl">正社員</div>
+                        </div>
+                        <div class="hrp-hero-stat">
+                            <div class="hrp-hero-stat-val">${contractCount}</div>
+                            <div class="hrp-hero-stat-lbl">契約社員</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 社員一覧テーブル -->
+                <div class="hrp-card">
+                    <div class="hrp-card-head">
+                        <div class="hrp-card-title">
+                            <div class="hrp-card-title-icon" style="background:#eff6ff;color:#0b5fff">👥</div>
+                            社員一覧
+                            <span class="hrp-badge-count">${allEmployees.length}名</span>
+                        </div>
+                        <a href="/hr/add" class="hrp-btn hrp-btn-primary">＋ 社員追加</a>
+                    </div>
+                    <div class="hrp-search">
+                        <span class="hrp-search-icon">🔍</span>
+                        <input type="text" id="hrSearch" placeholder="名前・部署・役職・社員IDで絞り込み..." oninput="filterHrTable(this.value)">
+                    </div>
+                    <div class="hrp-table-wrap" style="max-height:640px;overflow-y:auto">
+                        <table class="hrp-table" id="hrTable">
+                            <thead>
+                                <tr>
+                                    <th style="width:46px"></th>
+                                    <th style="min-width:100px">氏名</th>
+                                    <th style="min-width:90px">部署</th>
+                                    <th style="min-width:90px">役職</th>
+                                    <th style="min-width:80px">雇用形態</th>
+                                    <th style="min-width:100px">社員ID</th>
+                                    <th style="min-width:100px">入社日</th>
+                                    <th style="min-width:90px">休暇残</th>
+                                    <th style="min-width:110px">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${allEmployees
+                                  .map((e) => {
+                                    const isContract = e.employmentType === "契約社員";
+                                    const bal = balMap[e._id.toString()];
+                                    const leavePill = isContract
+                                      ? `<span class="hrp-leave-pill" style="color:#0891b2;background:#ecfeff">🕒 利用 ${bal?.contractHourlyUsed || 0}h</span>`
+                                      : `<span class="hrp-leave-pill">🌴 ${bal?.paid ?? 0}日</span>`;
+                                    return `
+                                <tr data-search="${escapeHtml(e.name)} ${escapeHtml(e.department || "")} ${escapeHtml(e.position || "")} ${escapeHtml(e.employeeId || "")}">
+                                    <td style="padding:8px 10px;width:46px">
+                                        <div class="hrp-avatar">${escapeHtml((e.name || "?").charAt(0))}</div>
+                                    </td>
+                                    <td><div class="hrp-emp-name">${escapeHtml(e.name)}</div></td>
+                                    <td><span class="hrp-dept-tag">${escapeHtml(e.department || "—")}</span></td>
+                                    <td><span class="hrp-pos-tag">${escapeHtml(e.position || "—")}</span></td>
+                                    <td><span class="hrp-type-tag" style="${isContract ? "background:#fef3c7;color:#b45309" : "background:#eff6ff;color:#0b5fff"}">${isContract ? "契約社員" : "正社員"}</span></td>
+                                    <td style="font-size:11.5px;color:#a0aec0;font-family:monospace">${escapeHtml(e.employeeId || "—")}</td>
+                                    <td style="font-size:12px;color:#6b7280">${e.joinDate ? moment.tz(e.joinDate, "Asia/Tokyo").format("YYYY/MM/DD") : "—"}</td>
+                                    <td>${leavePill}</td>
+                                    <td>
+                                        <div class="hrp-action-row">
+                                            <a href="/hr/edit/${e._id}" class="hrp-tbl-btn hrp-tbl-btn-edit">✏️ 編集</a>
+                                            <a href="/hr/delete/${e._id}" class="hrp-tbl-btn hrp-tbl-btn-del" onclick="return confirm('${escapeHtml(e.name)} を削除しますか？')">🗑</a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                `;
+                                  })
+                                  .join("")}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+            function filterHrTable(q) {
+                const kw = q.toLowerCase().trim();
+                document.querySelectorAll('#hrTable tbody tr').forEach(row => {
+                    const match = !kw || (row.dataset.search||'').toLowerCase().includes(kw);
+                    row.style.display = match ? '' : 'none';
+                });
+            }
+            </script>
+        `,
+    );
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("サーバーエラー");
+  }
+});
+
 router.get("/hr/add", requireLogin, isAdmin, (req, res) => {
   const lang = req.session && req.session.lang ? req.session.lang : "ja";
   const html = `
@@ -1055,6 +1344,14 @@ router.get("/hr/add", requireLogin, isAdmin, (req, res) => {
                         </select>
                         <div class="hradd-hint">テストユーザーは読み取り専用です</div>
                     </div>
+                    <div class="hradd-field">
+                        <div class="hradd-label">雇用形態</div>
+                        <select class="hradd-input" name="employmentType">
+                            <option value="正社員">正社員（有給休暇制度）</option>
+                            <option value="契約社員">契約社員（時間休暇制度）</option>
+                        </select>
+                        <div class="hradd-hint">契約社員は有給休暇の代わりに、契約内容に基づき自己判断で「時間休暇」を申請できます（承認制）</div>
+                    </div>
                 </div>
             </div>
 
@@ -1092,6 +1389,7 @@ router.post("/hr/add", requireLogin, isAdmin, async (req, res) => {
       joinDate,
       email,
       role,
+      employmentType,
     } = req.body;
     const hashedPassword = await bcrypt.hash(password, 10);
     const isAdminRole = role === "admin";
@@ -1110,6 +1408,7 @@ router.post("/hr/add", requireLogin, isAdmin, async (req, res) => {
       joinDate,
       email,
       orgRole: role || "employee",
+      employmentType: employmentType === "契約社員" ? "契約社員" : "正社員",
       paidLeave: 10,
     });
     res.redirect("/hr/add?success=1");
@@ -1124,6 +1423,76 @@ router.post("/hr/add", requireLogin, isAdmin, async (req, res) => {
 });
 
 // 社員編集
+// 自分のプロフィール編集（一般社員が自分の連絡先・メールのみ更新可能）
+router.get("/hr/profile/edit", requireLogin, async (req, res) => {
+  const lang = req.session && req.session.lang ? req.session.lang : "ja";
+  const employee = await Employee.findOne({ userId: req.session.userId });
+  if (!employee) return res.redirect("/hr");
+
+  const html = `
+        <style>
+            .hr-form-card{background:#fff;border-radius:14px;padding:32px 36px;box-shadow:0 4px 18px rgba(11,36,48,.07);max-width:560px;margin:0 auto}
+            .hr-form-title{font-size:20px;font-weight:800;color:#0b2540;margin:0 0 4px}
+            .hr-form-sub{font-size:13px;color:#6b7280;margin:0 0 28px}
+            .hr-form-field{margin-bottom:18px}
+            .hr-form-field label{display:block;font-weight:600;font-size:13px;color:#374151;margin-bottom:6px}
+            .hr-form-field input{width:100%;padding:10px 13px;border-radius:9px;border:1.5px solid #e5e7eb;font-size:14px;outline:none;transition:border-color .2s;box-sizing:border-box;background:#fff}
+            .hr-form-field input:focus{border-color:#0b5fff;box-shadow:0 0 0 3px rgba(11,95,255,.08)}
+            .hr-form-field input[disabled]{background:#f3f4f6;color:#9ca3af;cursor:not-allowed}
+            .hr-form-hint{font-size:11px;color:#9ca3af;margin-top:4px}
+            .hr-form-actions{display:flex;gap:10px;margin-top:28px;padding-top:20px;border-top:1px solid #f1f5f9}
+            .hr-form-btn-primary{padding:10px 28px;background:#0b5fff;color:#fff;border:none;border-radius:9px;font-weight:700;font-size:14px;cursor:pointer;transition:opacity .15s}
+            .hr-form-btn-primary:hover{opacity:.88}
+            .hr-form-btn-ghost{padding:10px 20px;background:#f3f4f6;color:#374151;border-radius:9px;text-decoration:none;font-weight:600;font-size:14px;border:none;cursor:pointer}
+        </style>
+        <div class="hr-form-card">
+            <div class="hr-form-title">👤 マイプロフィール編集</div>
+            <div class="hr-form-sub">連絡先・メールアドレスを更新できます（氏名・部署・役職の変更は管理者にご依頼ください）</div>
+            <form action="/hr/profile/edit" method="POST">
+                <div class="hr-form-field">
+                    <label>氏名</label>
+                    <input value="${escapeHtml(employee.name)}" disabled>
+                </div>
+                <div class="hr-form-field">
+                    <label>部署 / 役職</label>
+                    <input value="${escapeHtml(employee.department || "—")} / ${escapeHtml(employee.position || "—")}" disabled>
+                </div>
+                <div class="hr-form-field">
+                    <label>連絡先（電話番号など）</label>
+                    <input name="contact" value="${escapeHtml(employee.contact || "")}" placeholder="090-1234-5678">
+                </div>
+                <div class="hr-form-field">
+                    <label>メールアドレス</label>
+                    <input type="email" name="email" value="${escapeHtml(employee.email || "")}" placeholder="example@company.com">
+                </div>
+                <div class="hr-form-actions">
+                    <button type="submit" class="hr-form-btn-primary">更新する</button>
+                    <a href="/hr" class="hr-form-btn-ghost">キャンセル</a>
+                </div>
+            </form>
+        </div>
+    `;
+  renderPage(req, res, "マイプロフィール編集", "プロフィール編集", html);
+});
+
+router.post("/hr/profile/edit", requireLogin, async (req, res) => {
+  try {
+    const employee = await Employee.findOne({ userId: req.session.userId });
+    if (!employee) return res.redirect("/hr");
+    const { contact, email } = req.body;
+    await Employee.findByIdAndUpdate(employee._id, {
+      $set: {
+        contact: contact || "",
+        email: email || "",
+      },
+    });
+    res.redirect("/hr");
+  } catch (error) {
+    console.error("プロフィール更新エラー:", error);
+    res.status(500).send("更新に失敗しました");
+  }
+});
+
 router.get("/hr/edit/:id", requireLogin, async (req, res) => {
   const lang = req.session && req.session.lang ? req.session.lang : "ja";
   const id = req.params.id;
@@ -1189,6 +1558,14 @@ router.get("/hr/edit/:id", requireLogin, async (req, res) => {
                     </div>
                 </div>
                 <div class="hr-form-field">
+                    <label>雇用形態</label>
+                    <select name="employmentType" id="employmentTypeSelect" onchange="toggleLeaveField(this.value)">
+                        <option value="正社員" ${employee.employmentType !== "契約社員" ? "selected" : ""}>正社員（有給休暇制度）</option>
+                        <option value="契約社員" ${employee.employmentType === "契約社員" ? "selected" : ""}>契約社員（契約時間休暇制度）</option>
+                    </select>
+                    <div class="hr-form-hint">契約社員は有給休暇の代わりに、契約内容に基づき自己判断で「時間休暇」を申請できます（承認制・付与枠の設定は不要です）</div>
+                </div>
+                <div class="hr-form-field" id="paidLeaveField" style="${employee.employmentType === "契約社員" ? "display:none" : ""}">
                     <label>有給残日数</label>
                     <div class="hr-form-leave">
                         <input type="number" name="paidLeave" value="${bal.paid}" min="0" step="0.5">
@@ -1202,6 +1579,11 @@ router.get("/hr/edit/:id", requireLogin, async (req, res) => {
                 </div>
             </form>
         </div>
+        <script>
+        function toggleLeaveField(val) {
+            document.getElementById('paidLeaveField').style.display = (val === '契約社員') ? 'none' : '';
+        }
+        </script>
     `;
   renderPage(
     req,
@@ -1215,7 +1597,7 @@ router.get("/hr/edit/:id", requireLogin, async (req, res) => {
 router.post("/hr/edit/:id", requireLogin, async (req, res) => {
   try {
     const id = req.params.id;
-    const { name, department, position, joinDate, email, paidLeave } = req.body;
+    const { name, department, position, joinDate, email, paidLeave, employmentType } = req.body;
 
     // Employee を更新（paidLeave はスキーマにないので除外）
     await Employee.findByIdAndUpdate(id, {
@@ -1225,6 +1607,7 @@ router.post("/hr/edit/:id", requireLogin, async (req, res) => {
         position,
         joinDate: joinDate ? new Date(joinDate) : undefined,
         email: email || "",
+        employmentType: employmentType === "契約社員" ? "契約社員" : "正社員",
       },
     });
 
@@ -1515,7 +1898,10 @@ router.get("/hr/payroll/admin", requireLogin, async (req, res) => {
 
 router.post("/hr/payroll/admin/add", requireLogin, async (req, res) => {
   if (!req.session.isAdmin)
-    return res.status(403).send("アクセス権限がありません");
+    return renderErrorPage(req, res, {
+      message: "アクセス権限がありません。",
+      backHref: "/hr",
+    });
 
   const { employeeId, payMonth } = req.body;
 
@@ -1773,7 +2159,10 @@ router.get("/hr/payroll/admin/new", requireLogin, async (req, res) => {
 // 管理者用 給与明細編集画面
 router.get("/hr/payroll/admin/edit/:slipId", requireLogin, async (req, res) => {
   if (!req.session.isAdmin)
-    return res.status(403).send("アクセス権限がありません");
+    return renderErrorPage(req, res, {
+      message: "アクセス権限がありません。",
+      backHref: "/hr",
+    });
   const lang = req.session && req.session.lang ? req.session.lang : "ja";
 
   const slip = await PayrollSlip.findById(req.params.slipId).populate(
@@ -1915,7 +2304,10 @@ router.post(
   requireLogin,
   async (req, res) => {
     if (!req.session.isAdmin)
-      return res.status(403).send("アクセス権限がありません");
+      return renderErrorPage(req, res, {
+        message: "アクセス権限がありません。",
+        backHref: "/hr",
+      });
 
     const slip = await PayrollSlip.findById(req.params.slipId).populate(
       "employeeId",
@@ -2269,7 +2661,10 @@ router.get("/hr/payroll/:id", requireLogin, async (req, res) => {
     employee.userId.toString() !== req.session.userId.toString() &&
     !req.session.isAdmin
   ) {
-    return res.status(403).send("アクセス権限がありません");
+    return renderErrorPage(req, res, {
+      message: "この給与明細を閲覧する権限がありません。",
+      backHref: "/hr/payroll",
+    });
   }
 
   const { payMonth } = req.query;
@@ -2702,7 +3097,10 @@ router.post(
   requireLogin,
   async (req, res) => {
     if (!req.session.isAdmin) {
-      return res.status(403).send("アクセス権限がありません");
+      return renderErrorPage(req, res, {
+        message: "アクセス権限がありません。",
+        backHref: "/hr",
+      });
     }
 
     const slipId = req.params.slipId;
@@ -2735,7 +3133,10 @@ router.get("/hr/payroll/:id/export", requireLogin, async (req, res) => {
     employee.userId.toString() !== req.session.userId.toString() &&
     !req.session.isAdmin
   ) {
-    return res.status(403).send("アクセス権限がありません");
+    return renderErrorPage(req, res, {
+      message: "この給与明細を閲覧する権限がありません。",
+      backHref: "/hr/payroll",
+    });
   }
 
   const { payMonth } = req.query;

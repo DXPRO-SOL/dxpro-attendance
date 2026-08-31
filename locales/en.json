@@ -14,6 +14,7 @@
   },
   "nav": {
     "home": "Home",
+    "profile": "My Profile",
     "attendance": "Attendance",
     "daily_report": "Daily Reports",
     "goals": "Goal Management",
@@ -39,6 +40,7 @@
     "admin_overtime": "Overtime Management",
     "admin_leave_balance": "Leave Allocation",
     "admin_add_employee": "Add Employee",
+    "employees": "Employee Management",
     "admin_users": "User Permissions",
     "change_password": "Change Password",
     "logout": "Logout",

@@ -14,6 +14,7 @@
   },
   "nav": {
     "home": "ホーム",
+    "profile": "マイプロフィール",
     "attendance": "勤怠管理",
     "daily_report": "日報管理",
     "goals": "目標管理",
@@ -39,6 +40,7 @@
     "admin_overtime": "残業申請管理",
     "admin_leave_balance": "有給付与",
     "admin_add_employee": "社員追加",
+    "employees": "社員管理",
     "admin_users": "ユーザー権限",
     "change_password": "パスワード変更",
     "logout": "ログアウト",

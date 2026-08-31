@@ -5,7 +5,7 @@ const router = require("express").Router();
 const ExcelJS = require("exceljs");
 const { requireLogin } = require("../middleware/auth");
 const { Employee, SkillSheet } = require("../models");
-const { renderPage } = require("../lib/renderPage");
+const { renderPage, renderErrorPage } = require("../lib/renderPage");
 const { t } = require("../lib/i18n");
 
 // ─── 共通ヘルパー ────────────────────────────────
@@ -90,7 +90,11 @@ router.get("/skillsheet", requireLogin, async (req, res) => {
 // ─── GET /skillsheet/admin/:employeeId ───────────
 router.get("/skillsheet/admin/:employeeId", requireLogin, async (req, res) => {
   try {
-    if (!req.session.isAdmin) return res.status(403).send("権限がありません");
+    if (!req.session.isAdmin)
+      return renderErrorPage(req, res, {
+        message: "スキルシート管理には管理者権限が必要です。",
+        backHref: "/skillsheet",
+      });
     const emp = await Employee.findById(req.params.employeeId);
     if (!emp) return res.redirect("/skillsheet");
     const sheet = await getOrCreate(emp._id, emp.userId);
@@ -115,7 +119,11 @@ router.post(
   requireLogin,
   async (req, res) => {
     try {
-      if (!req.session.isAdmin) return res.status(403).send("権限がありません");
+      if (!req.session.isAdmin)
+        return renderErrorPage(req, res, {
+          message: "スキルシート管理には管理者権限が必要です。",
+          backHref: "/skillsheet",
+        });
       const emp = await Employee.findById(req.params.employeeId);
       if (!emp) return res.redirect("/skillsheet");
       await saveSheetFromBody(req.body, emp);
@@ -133,7 +141,11 @@ router.get(
   requireLogin,
   async (req, res) => {
     try {
-      if (!req.session.isAdmin) return res.status(403).send("権限がありません");
+      if (!req.session.isAdmin)
+        return renderErrorPage(req, res, {
+          message: "スキルシート管理には管理者権限が必要です。",
+          backHref: "/skillsheet",
+        });
       const emp = await Employee.findById(req.params.employeeId);
       if (!emp) return res.redirect("/skillsheet");
       const sheet = await SkillSheet.findOne({ employeeId: emp._id });

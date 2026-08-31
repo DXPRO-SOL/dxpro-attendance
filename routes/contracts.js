@@ -8,7 +8,7 @@ const multer = require("multer");
 const moment = require("moment-timezone");
 const { Contract, User, Employee, ContractTypeConfig } = require("../models");
 const { requireLogin, isAdmin } = require("../middleware/auth");
-const { renderPage } = require("../lib/renderPage");
+const { renderPage, renderErrorPage } = require("../lib/renderPage");
 const { escapeHtml } = require("../lib/helpers");
 const { createNotification } = require("./notifications");
 const { t } = require("../lib/i18n");
@@ -719,11 +719,15 @@ router.get("/contracts", requireLogin, async (req, res) => {
     const canView =
       isAdminUser || ["admin", "manager", "team_leader"].includes(orgRole);
     if (!canView)
-      return res
-        .status(403)
-        .send(
+      return renderErrorPage(req, res, {
+        statusCode: 403,
+        icon: "fa-file-contract",
+        title: "契約管理へのアクセス権限がありません",
+        message:
           "契約管理の閲覧には管理者またはチームリーダー以上の権限が必要です。",
-        );
+        backHref: "/dashboard",
+        backLabel: "ダッシュボードに戻る",
+      });
 
     const typeConfigs = await getTypeConfigs();
     const { labelMap: CONTRACT_TYPE_LABEL, colorMap: CONTRACT_TYPE_COLOR_DYN } =
@@ -1426,7 +1430,15 @@ router.get("/contracts/:id", requireLogin, async (req, res) => {
     const orgRole = req.session.orgRole || (isAdminUser ? "admin" : "employee");
     const canView =
       isAdminUser || ["admin", "manager", "team_leader"].includes(orgRole);
-    if (!canView) return res.status(403).send("Access denied.");
+    if (!canView)
+      return renderErrorPage(req, res, {
+        icon: "fa-file-contract",
+        title: "契約管理へのアクセス権限がありません",
+        message:
+          "契約詳細の閲覧には管理者またはチームリーダー以上の権限が必要です。",
+        backHref: "/contracts",
+        backLabel: "契約一覧に戻る",
+      });
 
     const contract = await Contract.findById(req.params.id)
       .populate("createdBy", "username")
