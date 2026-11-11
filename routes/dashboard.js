@@ -688,8 +688,9 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             canvas { max-width: 100% !important; }
 
             /* ヘッダー */
-            .db-header { flex-direction: column; gap: 8px; }
+            .db-header { flex-direction: column; align-items: flex-start; gap: 8px; }
             .db-header-left .greeting { font-size: 17px; }
+            .db-header-right { width: 100%; justify-content: flex-start; }
 
             /* カードヘッダー・ボディ: 左右16pxでKPIカードと統一 */
             .card-head { flex-wrap: wrap; gap: 6px; padding: 12px 16px 10px; }
