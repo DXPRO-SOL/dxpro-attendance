@@ -440,6 +440,16 @@ app.use(
 app.use(express.static("public"));
 app.use("/uploads", express.static("uploads"));
 
+// ログアウト後にブラウザの「戻る」操作やURL直打ちで、キャッシュされた
+// 旧ページ（bfcache/ディスクキャッシュ）がそのまま表示されてしまう問題を防止。
+// 静的ファイル(public/uploads)はこの後段なので影響しない。
+app.use((req, res, next) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  next();
+});
+
 // 言語ミドルウェア（セッション言語を req.lang にセット）
 const { langMiddleware } = require("./lib/i18n");
 app.use(langMiddleware);
@@ -513,6 +523,47 @@ app.get("/health", (req, res) => {
 }
 
 // ルート登録
+
+// ── メールアドレス未登録・未認証ユーザーの強制誘導 ───────────────────
+// 2段階認証はメールアドレスがないと実施できないため、未登録/未認証の
+// ユーザーがそのままダッシュボード等にアクセスできてしまうのはセキュリ
+// ティ上の抜け穴になる。ログイン中は常にメール登録ページへ誘導する。
+{
+  const EXEMPT_PREFIXES = [
+    "/email",
+    "/logout",
+    "/login",
+    "/health",
+    "/debug-session",
+    "/api/lang",
+    "/nokori",
+    "/register",
+    "/change-password",
+  ];
+  app.use(async (req, res, next) => {
+    if (req.method !== "GET") return next();
+    if (!req.session || !req.session.userId) return next();
+    if (req.session.isDemo) return next(); // デモアカウントは対象外
+    if (
+      EXEMPT_PREFIXES.some(
+        (p) => req.path === p || req.path.startsWith(p + "/"),
+      )
+    ) {
+      return next();
+    }
+    try {
+      const user = await User.findById(req.session.userId).select(
+        "email emailVerified",
+      );
+      if (user && (!user.email || !user.emailVerified)) {
+        return res.redirect("/email/register?required=1");
+      }
+    } catch (e) {
+      console.error("[EmailVerifyGate] error:", e.message);
+    }
+    next();
+  });
+}
 
 // ── デモDB 透過切り替えミドルウェア ───────────────────────────────
 // デモセッション中のリクエストは、アカウント専用 MongoDB に自動的に

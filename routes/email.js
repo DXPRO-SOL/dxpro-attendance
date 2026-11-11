@@ -64,6 +64,7 @@ router.get("/email/register", requireLogin, async (req, res) => {
     ? getErrorMessage(req.query.error, lang)
     : "";
   const successMsg = req.query.success ? t("email.success_updated", lang) : "";
+  const isRequired = req.query.required === "1";
 
   res.send(
     shell +
@@ -140,6 +141,7 @@ router.get("/email/register", requireLogin, async (req, res) => {
 
     ${errorMsg ? '<div class="email-alert email-alert-error"><i class="fa-solid fa-circle-exclamation"></i> ' + errorMsg + "</div>" : ""}
     ${successMsg ? '<div class="email-alert email-alert-success"><i class="fa-solid fa-circle-check"></i> ' + successMsg + "</div>" : ""}
+    ${isRequired ? '<div class="email-alert email-alert-error"><i class="fa-solid fa-shield-halved"></i> セキュリティのため、メールアドレスの登録・認証が完了するまでは他の画面を利用できません。</div>' : ""}
 
     <!-- メールアドレス入力フォーム -->
     <form action="/email/register" method="POST">
@@ -171,8 +173,8 @@ router.get("/email/register", requireLogin, async (req, res) => {
         : ""
     }
 
-    <a href="/dashboard" class="email-back">
-      <i class="fa-solid fa-arrow-left"></i> ${t("email.btn_back_dashboard", lang)}
+    <a href="${isRequired ? "/logout" : "/dashboard"}" class="email-back">
+      <i class="fa-solid fa-arrow-left"></i> ${isRequired ? "ログアウト" : t("email.btn_back_dashboard", lang)}
     </a>
   </div>
 </div>

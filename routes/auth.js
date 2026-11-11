@@ -78,6 +78,18 @@ router.get("/login", (req, res) => {
     ? t(errorKey, lang) || getErrorMessageJP(req.query.error)
     : null;
 
+  // 言語選択ドロップダウン（デスクトップ用・モバイル用で別々に配置するため使い回せる関数化）
+  function renderLangDropdown(suffix, extraClass) {
+    const CODE_MAP = { ja: "JP", en: "EN", vi: "VN", ko: "KR", zh: "CN" };
+    const code = CODE_MAP[lang] || lang.toUpperCase();
+    return `<div class="lang-dropdown ${extraClass}" id="langDropdown${suffix}">
+        <button class="lang-trigger" onclick="toggleLangMenu('langMenu${suffix}')" type="button">🌐 ${code}</button>
+        <div class="lang-menu" id="langMenu${suffix}">
+            ${LANGS.map((l) => `<button class="lang-menu-item${lang === l.code ? " active" : ""}" onclick="setLang('${l.code}')" type="button">${l.flag} ${l.label}</button>`).join("")}
+        </div>
+    </div>`;
+  }
+
   res.send(`
         <!DOCTYPE html>
         <html lang="${lang}">
@@ -101,12 +113,16 @@ router.get("/login", (req, res) => {
                 }
                 * { margin: 0; padding: 0; box-sizing: border-box; }
                 html, body { height: 100%; overflow-x: hidden; }
+                html { background: #e7ebf2; }
                 body {
                     font-family: 'Inter', 'Noto Sans JP', sans-serif;
                     color: var(--text);
                     min-height: 100vh;
                     display: flex;
                     flex-wrap: wrap;
+                    max-width: 1680px;
+                    margin: 0 auto;
+                    box-shadow: 0 0 80px rgba(16,33,63,.12);
                 }
 
                 /* ══════════ 左パネル：プロダクトショーケース（スライド） ══════════ */
@@ -540,7 +556,8 @@ router.get("/login", (req, res) => {
                 .login-notice .ln-text b { color: #8fb4ff; font-weight: 700; }
                 @keyframes marqueeMove { from { transform: translateX(0); } to { transform: translateX(-50%); } }
                 .card-top-row {
-                    display: flex; align-items: center; justify-content: space-between;
+                    display: none;
+                    align-items: center; justify-content: space-between;
                     margin-bottom: 18px;
                 }
                 .card-top-left { display: flex; align-items: center; gap: 10px; }
@@ -575,6 +592,8 @@ router.get("/login", (req, res) => {
                 }
                 .lang-menu-item:hover { background: #f5f6f8; }
                 .lang-menu-item.active { background: #eef3fc; color: var(--blue-dark); font-weight: 600; }
+                .lang-dropdown-top { display: none; }
+                .lang-dropdown-mobile { display: inline-block; }
 
                 .form-head { margin-bottom: 26px; }
                 .form-head .welcome { font-size: 11.5px; font-weight: 700; color: var(--blue); letter-spacing: 1.5px; text-transform: uppercase; }
@@ -627,7 +646,7 @@ router.get("/login", (req, res) => {
                 .divider::before { margin-right: 14px; }
                 .divider::after { margin-left: 14px; }
 
-                .links { text-align: center; font-size: 13px; }
+                .links { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 13px; }
                 .links a {
                     display: inline-flex; align-items: center; gap: 6px;
                     color: var(--text-muted); text-decoration: none; font-weight: 600;
@@ -651,16 +670,15 @@ router.get("/login", (req, res) => {
                     .form-panel {
                         min-height: 100vh;
                         min-height: 100dvh;
-                        justify-content: flex-start;
+                        justify-content: center;
                         padding-top: 24px;
                         padding-bottom: 24px;
                         overflow-y: auto;
                     }
                     .card-mobile-logo { display: block; height: 65px; width: auto; }
-                    .card-top-row { position: relative; justify-content: center; }
+                    .card-top-row { display: flex; position: relative; justify-content: center; }
                     .card-top-left { margin: 0 auto; }
-                    .lang-dropdown { position: absolute; right: 0; top: 50%; transform: translateY(-50%); z-index: 30; }
-                    .lang-menu { right: 0; left: auto; max-width: calc(100vw - 48px); }
+                    .lang-dropdown-mobile .lang-menu { right: auto; left: 50%; transform: translateX(-50%); max-width: calc(100vw - 48px); }
                     .form-head { text-align: center; }
                 }
                 @media (max-width: 600px) {
@@ -691,7 +709,8 @@ router.get("/login", (req, res) => {
                     .card-top-row { flex-wrap: wrap; gap: 8px; }
                     .lang-dropdown { order: 2; }
                 }
-                @media (max-width: 920px) and (max-height: 760px) {
+                @media (max-width: 920px) and (max-height: 560px) {
+                    .form-panel { justify-content: flex-start; }
                     .card-mobile-logo { height: 22px; }
                     .login-notice { padding: 6px 0; margin-bottom: 10px; }
                     .login-card { padding: 18px 20px 16px; }
@@ -1003,22 +1022,7 @@ router.get("/login", (req, res) => {
                     <div class="card-top-left">
                         <img class="card-mobile-logo" src="/nokori-logo.png" alt="NOKORI">
                     </div>
-                    ${(() => {
-                      const CODE_MAP = {
-                        ja: "JP",
-                        en: "EN",
-                        vi: "VN",
-                        ko: "KR",
-                        zh: "CN",
-                      };
-                      const code = CODE_MAP[lang] || lang.toUpperCase();
-                      return `<div class="lang-dropdown" id="langDropdown">
-                        <button class="lang-trigger" onclick="toggleLangMenu()" type="button">🌐 ${code}</button>
-                        <div class="lang-menu" id="langMenu">
-                            ${LANGS.map((l) => `<button class="lang-menu-item${lang === l.code ? " active" : ""}" onclick="setLang('${l.code}')" type="button">${l.flag} ${l.label}</button>`).join("")}
-                        </div>
-                    </div>`;
-                    })()}
+                    ${renderLangDropdown("Top", "lang-dropdown-top")}
                 </div>
 
                 <div class="form-head">
@@ -1065,6 +1069,7 @@ router.get("/login", (req, res) => {
 
                 <div class="links">
                     <a href="https://dxpro-sol.com" target="_blank"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${t("login.portal", lang)}</a>
+                    ${renderLangDropdown("Mobile", "lang-dropdown-mobile")}
                 </div>
 
                 <div class="current-time" id="current-time"></div>
@@ -1099,15 +1104,21 @@ router.get("/login", (req, res) => {
                 setInterval(updateClock, 1000);
                 window.onload = updateClock;
 
-                // 言語切り替え
-                function toggleLangMenu() {
-                    document.getElementById('langMenu').classList.toggle('open');
+                // 言語切り替え（デスクトップ/モバイルの2箇所に配置されたドロップダウンに対応）
+                function toggleLangMenu(menuId) {
+                    document.querySelectorAll('.lang-menu.open').forEach(function(m) {
+                        if (m.id !== menuId) m.classList.remove('open');
+                    });
+                    var menu = document.getElementById(menuId);
+                    if (menu) menu.classList.toggle('open');
                 }
                 document.addEventListener('click', function(e) {
-                    var dd = document.getElementById('langDropdown');
-                    if (dd && !dd.contains(e.target)) {
-                        document.getElementById('langMenu').classList.remove('open');
-                    }
+                    document.querySelectorAll('.lang-dropdown').forEach(function(dd) {
+                        if (!dd.contains(e.target)) {
+                            var menu = dd.querySelector('.lang-menu');
+                            if (menu) menu.classList.remove('open');
+                        }
+                    });
                 });
                 function setLang(code) {
                     fetch('/api/lang', {
@@ -1208,17 +1219,19 @@ router.post("/login", async (req, res) => {
     }
 
     if (!user.email) {
-      // メールアドレス未登録の場合は2FAを実施できないため、通常どおりログイン
+      // メールアドレス未登録の場合は2FAを実施できないため、ログイン自体は許可するが
+      // ダッシュボード等へは進ませず、メール登録ページへ誘導する
+      // （サーバー側グローバルミドルウェアでも強制されるが、ここで直接遷移させてUXを改善）
       await establishSession(req, user);
       await writeAuditLog(req, {
         action: "login",
         category: "auth",
-        detail: `ログイン成功（メール未登録のため2FAスキップ / 管理者: ${user.isAdmin ? "はい" : "いいえ"}）`,
+        detail: `ログイン成功（メール未登録のため2FAスキップ・登録ページへ誘導 / 管理者: ${user.isAdmin ? "はい" : "いいえ"}）`,
         userId: user._id,
         username: user.username,
       });
-      console.log("ログイン成功（2FAスキップ・メール未登録）:", user.username);
-      return res.redirect("/dashboard");
+      console.log("ログイン成功（2FAスキップ・メール未登録 → 登録ページへ誘導）:", user.username);
+      return res.redirect("/email/register?required=1");
     }
 
     // 未認証端末 → ワンタイムコードを発行してメール送信
@@ -1317,8 +1330,8 @@ router.get("/login/verify", (req, res) => {
                 margin-bottom:16px; color:#1f2328;
             }
             .code-input:focus { outline:none; border-color:#2d5bb9; box-shadow:0 0 0 3px rgba(45,91,185,.15); }
-            .remember-row { display:flex; align-items:center; gap:8px; margin-bottom:18px; font-size:13px; color:#374151; }
-            .remember-row input { width:16px; height:16px; accent-color:#2d5bb9; }
+            .remember-row { display:flex; align-items:flex-start; gap:8px; margin-bottom:18px; font-size:13px; color:#374151; line-height:1.5; cursor:pointer; }
+            .remember-row input { width:16px; height:16px; min-width:16px; flex-shrink:0; accent-color:#2d5bb9; margin-top:2px; }
             .btn-verify {
                 width:100%; padding:13px; border:none; border-radius:9px; cursor:pointer;
                 background: linear-gradient(135deg,#2d5bb9,#1f4694); color:#fff; font-size:15px; font-weight:700;
@@ -1339,6 +1352,9 @@ router.get("/login/verify", (req, res) => {
                 color:#2d5bb9; text-decoration:none; background:none; border:none; cursor:pointer; font-size:12.5px; padding:0;
             }
             .vf-links a:hover, .vf-links button:hover { text-decoration:underline; }
+            @media (max-width: 420px) {
+                .vf-card { padding: 28px 20px 24px; }
+            }
         </style>
     </head>
     <body>
