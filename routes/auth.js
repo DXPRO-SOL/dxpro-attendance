@@ -46,229 +46,349 @@ router.get("/login", (req, res) => {
             <meta charset="UTF-8">
             <title>${t("login.title", lang)}</title>
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
             <style>
                 :root {
-                    --dxpro-blue: #0056b3;
-                    --dxpro-dark-blue: #003d82;
-                    --dxpro-light-blue: #e6f0ff;
-                    --dxpro-accent: #ff6b00;
-                    --white: #ffffff;
-                    --light-gray: #f5f7fa;
-                    --medium-gray: #e1e5eb;
-                    --dark-gray: #6c757d;
-                    --text-color: #333333;
-                    --error-color: #dc3545;
-                    --success-color: #28a745;
+                    --navy-950: #05070f;
+                    --navy-900: #0a0e1a;
+                    --navy-800: #111727;
+                    --navy-700: #1a2235;
+                    --indigo: #4f6bff;
+                    --indigo-light: #7c93ff;
+                    --cyan: #22d3ee;
+                    --gold: #d4af6a;
+                    --text-light: #e7ebf7;
+                    --text-muted: #8b93ab;
+                    --error-color: #f87171;
                 }
                 * { margin: 0; padding: 0; box-sizing: border-box; }
-                html, body { height: 100%; overflow: hidden; }
+                html, body { height: 100%; }
                 body {
-                    font-family: 'Noto Sans JP', 'Roboto', sans-serif;
-                    background-color: var(--light-gray);
-                    color: var(--text-color);
-                    line-height: 1.4;
+                    font-family: 'Inter', 'Noto Sans JP', sans-serif;
+                    color: var(--text-light);
+                    min-height: 100vh;
+                    background: var(--navy-950);
                     display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    height: 100vh;
-                    background-image: linear-gradient(135deg, var(--dxpro-light-blue) 0%, var(--white) 100%);
                 }
-                .login-container {
-                    width: 100%;
-                    max-width: 520px;
-                    padding: 2.2rem 2.6rem;
-                    background: var(--white);
-                    border-radius: 16px;
-                    box-shadow: 0 10px 40px rgba(0, 86, 179, 0.13);
+
+                /* ══════════ 左パネル：ブランディング ══════════ */
+                .brand-panel {
                     position: relative;
+                    flex: 1.1;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                    padding: 56px 64px;
                     overflow: hidden;
+                    background:
+                        radial-gradient(circle at 15% 20%, rgba(79,107,255,.35), transparent 55%),
+                        radial-gradient(circle at 85% 80%, rgba(34,211,238,.18), transparent 50%),
+                        linear-gradient(160deg, var(--navy-900) 0%, var(--navy-950) 70%);
                 }
-                .login-container::before {
+                .brand-panel::before {
                     content: '';
-                    position: absolute;
-                    top: 0; left: 0;
-                    width: 100%; height: 6px;
-                    background: linear-gradient(90deg, var(--dxpro-blue) 0%, var(--dxpro-accent) 100%);
+                    position: absolute; inset: 0;
+                    background-image:
+                        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+                    background-size: 46px 46px;
+                    mask-image: radial-gradient(ellipse at 30% 30%, black 0%, transparent 70%);
+                    pointer-events: none;
                 }
-                /* ── 言語スイッチャー ── */
-                .lang-dropdown {
+                .brand-orb {
                     position: absolute;
-                    top: 16px; right: 16px;
-                    z-index: 100;
+                    border-radius: 50%;
+                    filter: blur(70px);
+                    opacity: .5;
+                    pointer-events: none;
                 }
-                .lang-trigger {
-                    display: inline-flex;
+                .brand-orb.o1 { width: 420px; height: 420px; background: #4f6bff; top: -120px; left: -100px; }
+                .brand-orb.o2 { width: 340px; height: 340px; background: #22d3ee; bottom: -140px; right: -80px; opacity: .25; }
+
+                .brand-top { position: relative; z-index: 1; }
+                .brand-logo { display: flex; align-items: center; gap: 12px; }
+                .brand-logo img { height: 34px; width: auto; filter: brightness(0) invert(1); }
+                .brand-logo-text { font-size: 15px; font-weight: 700; letter-spacing: .4px; color: var(--text-light); }
+                .brand-tagline {
+                    margin-top: 56px;
+                    font-size: 34px;
+                    font-weight: 800;
+                    line-height: 1.35;
+                    letter-spacing: -0.5px;
+                    max-width: 480px;
+                }
+                .brand-tagline .accent {
+                    background: linear-gradient(90deg, var(--indigo-light), var(--cyan));
+                    -webkit-background-clip: text;
+                    background-clip: text;
+                    color: transparent;
+                }
+                .brand-sub {
+                    margin-top: 18px;
+                    font-size: 14.5px;
+                    color: var(--text-muted);
+                    max-width: 420px;
+                    line-height: 1.7;
+                }
+
+                .brand-features {
+                    position: relative; z-index: 1;
+                    display: flex; flex-direction: column; gap: 16px;
+                    margin-top: 44px;
+                }
+                .brand-feature {
+                    display: flex; align-items: center; gap: 14px;
+                    font-size: 13.5px; color: var(--text-light);
+                }
+                .brand-feature .ico {
+                    width: 34px; height: 34px; border-radius: 10px;
+                    display: flex; align-items: center; justify-content: center;
+                    background: rgba(79,107,255,.16);
+                    border: 1px solid rgba(124,147,255,.3);
+                    color: var(--indigo-light);
+                    font-size: 14px; flex-shrink: 0;
+                }
+
+                .brand-foot {
+                    position: relative; z-index: 1;
+                    display: flex; align-items: center; justify-content: space-between;
+                    font-size: 11.5px; color: var(--text-muted);
+                    border-top: 1px solid rgba(255,255,255,.08);
+                    padding-top: 20px;
+                }
+                .brand-foot .dot { color: #22c55e; margin-right: 5px; }
+
+                /* ══════════ 右パネル：ログインフォーム ══════════ */
+                .form-panel {
+                    flex: 1;
+                    display: flex;
                     align-items: center;
-                    gap: 5px;
-                    padding: 5px 12px;
-                    border-radius: 6px;
-                    border: 1.5px solid #e2e8f0;
-                    background: #f8fafc;
-                    font-size: 12px;
-                    font-weight: 600;
-                    cursor: pointer;
-                    color: #475569;
-                    font-family: inherit;
-                    transition: all 0.15s;
-                    white-space: nowrap;
+                    justify-content: center;
+                    background: #f7f8fb;
+                    position: relative;
+                    padding: 40px;
                 }
-                .lang-trigger:hover { background: #eff6ff; border-color: #bfdbfe; color: #2563eb; }
+                .login-card {
+                    width: 100%;
+                    max-width: 400px;
+                    position: relative;
+                }
+                .card-top-row {
+                    display: flex; align-items: center; justify-content: flex-end;
+                    margin-bottom: 28px;
+                }
+                .lang-dropdown { position: relative; }
+                .lang-trigger {
+                    display: inline-flex; align-items: center; gap: 5px;
+                    padding: 6px 13px; border-radius: 999px;
+                    border: 1px solid #e2e8f0; background: #fff;
+                    font-size: 12px; font-weight: 600; cursor: pointer;
+                    color: #475569; font-family: inherit; transition: all .15s;
+                }
+                .lang-trigger:hover { border-color: #c7d2fe; color: #4f6bff; }
                 .lang-menu {
-                    display: none;
-                    position: absolute;
-                    top: calc(100% + 6px);
-                    right: 0;
-                    background: #fff;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 8px;
-                    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-                    min-width: 150px;
-                    overflow: hidden;
+                    display: none; position: absolute; top: calc(100% + 8px); right: 0;
+                    background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+                    box-shadow: 0 10px 30px rgba(15,23,42,.12);
+                    min-width: 155px; overflow: hidden; z-index: 20;
                 }
                 .lang-menu.open { display: block; }
                 .lang-menu-item {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    padding: 9px 14px;
-                    cursor: pointer;
-                    font-size: 13px;
-                    color: #334155;
-                    border: none;
-                    background: none;
-                    width: 100%;
-                    text-align: left;
-                    font-family: inherit;
-                    transition: background 0.1s;
+                    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+                    cursor: pointer; font-size: 13px; color: #334155; border: none;
+                    background: none; width: 100%; text-align: left; font-family: inherit;
                 }
                 .lang-menu-item:hover { background: #f1f5f9; }
-                .lang-menu-item.active { background: #eff6ff; color: #2563eb; font-weight: 600; }
-                /* ── 既存スタイル ── */
-                .logo { text-align: center; margin-top: 0.6rem; }
-                .logo img { width: 200px; height: auto; margin-bottom: 0.4rem; }
-                .logo h1 { color: var(--dxpro-blue); font-size: 1rem; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 1rem; }
-                .logo .subtitle { color: var(--dark-gray); font-size: 1rem; font-weight: 400; margin-bottom: 0.8rem; }
-                .login-form { margin-top: 0.2rem; }
-                .form-group { margin-bottom: 0.8rem; }
-                .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--dxpro-dark-blue); font-size: 0.95rem; }
+                .lang-menu-item.active { background: #eef1ff; color: #4f6bff; font-weight: 600; }
+
+                .form-head { margin-bottom: 30px; }
+                .form-head .welcome { font-size: 12.5px; font-weight: 700; color: #4f6bff; letter-spacing: .6px; text-transform: uppercase; }
+                .form-head h1 { font-size: 24px; font-weight: 800; color: #0f172a; margin-top: 8px; letter-spacing: -0.3px; }
+                .form-head p { font-size: 13px; color: #64748b; margin-top: 6px; }
+
+                .form-group { margin-bottom: 18px; }
+                .form-group label { display: block; margin-bottom: 7px; font-weight: 600; color: #334155; font-size: 12.5px; }
+                .input-wrap { position: relative; }
+                .input-wrap .fld-icon {
+                    position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+                    color: #94a3b8; font-size: 14px; pointer-events: none;
+                }
                 .form-control {
-                    width: 100%; padding: 0.6rem 1rem;
-                    border: 1px solid var(--medium-gray); border-radius: 6px;
-                    font-size: 0.95rem; transition: all 0.3s ease;
-                    background-color: var(--light-gray);
+                    width: 100%; padding: 12px 14px 12px 40px;
+                    border: 1.5px solid #e2e8f0; border-radius: 10px;
+                    font-size: 14px; font-family: inherit;
+                    transition: all .15s; background: #fff; color: #0f172a;
                 }
-                .form-control:focus { outline: none; border-color: var(--dxpro-blue); box-shadow: 0 0 0 3px rgba(0,86,179,0.1); background-color: var(--white); }
-                .password-wrapper { position: relative; }
-                .password-wrapper .form-control { padding-right: 3rem; }
+                .form-control::placeholder { color: #a7b0c2; }
+                .form-control:focus {
+                    outline: none; border-color: #4f6bff;
+                    box-shadow: 0 0 0 4px rgba(79,107,255,.12);
+                }
+                .password-wrapper .form-control { padding-right: 42px; }
                 .toggle-password {
-                    position: absolute; right: 0.85rem; top: 50%; transform: translateY(-50%);
+                    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
                     background: none; border: none; cursor: pointer; padding: 0;
-                    color: var(--dark-gray); display: flex; align-items: center; transition: color 0.2s;
+                    color: #94a3b8; display: flex; align-items: center; transition: color .15s;
                 }
-                .toggle-password:hover { color: var(--dxpro-blue); }
-                .btn {
-                    width: 100%; padding: 0.7rem; border: none; border-radius: 6px;
-                    font-size: 0.95rem; font-weight: 600; cursor: pointer;
-                    transition: all 0.3s ease; display: flex; justify-content: center; align-items: center;
+                .toggle-password:hover { color: #4f6bff; }
+
+                .btn-login {
+                    width: 100%; padding: 13px; border: none; border-radius: 10px;
+                    font-size: 14.5px; font-weight: 700; cursor: pointer;
+                    display: flex; justify-content: center; align-items: center; gap: 8px;
+                    background: linear-gradient(135deg, #4f6bff, #3b55e0);
+                    color: #fff; margin-top: 6px;
+                    box-shadow: 0 8px 20px rgba(79,107,255,.3);
+                    transition: all .2s ease;
                 }
-                .btn-login { background-color: var(--dxpro-blue); color: var(--white); margin-top: 0.2rem; }
-                .btn-login:hover { background-color: var(--dxpro-dark-blue); transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,86,179,0.2); }
+                .btn-login:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(79,107,255,.4); }
                 .btn-login:active { transform: translateY(0); }
-                .links { margin-top: 0.8rem; text-align: center; font-size: 0.9rem; }
-                .links a { color: var(--dxpro-blue); text-decoration: none; font-weight: 500; transition: color 0.2s; }
-                .links a:hover { color: var(--dxpro-dark-blue); text-decoration: underline; }
-                .divider { display: flex; align-items: center; margin: 0.8rem 0; color: var(--dark-gray); font-size: 0.8rem; }
-                .divider::before, .divider::after { content: ""; flex: 1; border-bottom: 1px solid var(--medium-gray); }
-                .divider::before { margin-right: 1rem; }
-                .divider::after { margin-left: 1rem; }
-                .error-message {
-                    color: var(--error-color); background-color: rgba(220,53,69,0.1);
-                    padding: 0.8rem; border-radius: 6px; margin-bottom: 1.5rem;
-                    font-size: 0.9rem; text-align: center; border-left: 4px solid var(--error-color);
+
+                .divider { display: flex; align-items: center; margin: 22px 0; color: #94a3b8; font-size: 11.5px; }
+                .divider::before, .divider::after { content: ""; flex: 1; border-bottom: 1px solid #e2e8f0; }
+                .divider::before { margin-right: 14px; }
+                .divider::after { margin-left: 14px; }
+
+                .links { text-align: center; font-size: 13px; }
+                .links a {
+                    display: inline-flex; align-items: center; gap: 6px;
+                    color: #475569; text-decoration: none; font-weight: 600;
+                    padding: 9px 18px; border: 1.5px solid #e2e8f0; border-radius: 999px;
+                    transition: all .15s;
                 }
-                .current-time { text-align: center; margin-bottom: 20px; font-size: 0.85rem; color: var(--dark-gray); font-weight: 500; }
-                .footer { margin-top: 0.8rem; text-align: center; font-size: 0.8rem; color: var(--dark-gray); }
+                .links a:hover { border-color: #c7d2fe; color: #4f6bff; background: #f8f9ff; }
+
+                .error-message {
+                    display: flex; align-items: center; gap: 8px;
+                    color: var(--error-color); background-color: #fef2f2;
+                    padding: 11px 14px; border-radius: 10px; margin-bottom: 20px;
+                    font-size: 13px; border: 1px solid #fecaca;
+                }
+
+                .current-time { text-align: center; margin-top: 24px; font-size: 11.5px; color: #94a3b8; font-weight: 500; font-variant-numeric: tabular-nums; }
+                .footer { margin-top: 6px; text-align: center; font-size: 11px; color: #b4bcce; }
+
+                @media (max-width: 920px) {
+                    .brand-panel { display: none; }
+                    .form-panel { background: var(--navy-950); }
+                    .login-card { background: #fff; padding: 32px 26px; border-radius: 18px; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+                }
                 @media (max-width: 480px) {
-                    .login-container { padding: 1.5rem; margin: 1rem; }
-                    .logo h1 { font-size: 1.5rem; }
+                    .form-panel { padding: 20px; }
+                    .login-card { padding: 24px 18px; }
+                    .form-head h1 { font-size: 20px; }
                 }
             </style>
         </head>
         <body>
-            <div class="login-container">
 
-                <!-- 言語スイッチャー -->
-                ${(() => {
-                  const CODE_MAP = {
-                    ja: "JP",
-                    en: "EN",
-                    vi: "VN",
-                    ko: "KR",
-                    zh: "CN",
-                  };
-                  const code = CODE_MAP[lang] || lang.toUpperCase();
-                  return `<div class="lang-dropdown" id="langDropdown">
-                    <button class="lang-trigger" onclick="toggleLangMenu()" type="button">🌐 language(${code})</button>
-                    <div class="lang-menu" id="langMenu">
-                        ${LANGS.map((l) => `<button class="lang-menu-item${lang === l.code ? " active" : ""}" onclick="setLang('${l.code}')" type="button">${l.flag} ${l.label}</button>`).join("")}
+            <!-- ══════════ 左：ブランディングパネル ══════════ -->
+            <div class="brand-panel">
+                <div class="brand-orb o1"></div>
+                <div class="brand-orb o2"></div>
+
+                <div class="brand-top">
+                    <div class="brand-logo">
+                        <img src="/nokori-logo.png" alt="NOKORI">
+                        <span class="brand-logo-text">NOKORI</span>
                     </div>
-                </div>`;
-                })()}
+                    <div class="brand-tagline">
+                        組織の力を、<br><span class="accent">ひとつのプラットフォームに。</span>
+                    </div>
+                    <div class="brand-sub">
+                        勤怠・目標・給与・チャット・ワークフローを統合したエンタープライズ業務基盤。<br>
+                        AIが業務データを分析し、日々の意思決定をサポートします。
+                    </div>
 
-                <div class="logo">
-                    <img src="/nokori-logo.png" alt="Nokori" style="width: 250px;">
-                    <div class="subtitle">${t("login.title", lang)}</div>
+                    <div class="brand-features">
+                        <div class="brand-feature"><span class="ico"><i class="fa-solid fa-shield-halved"></i></span>エンタープライズグレードのセキュリティ</div>
+                        <div class="brand-feature"><span class="ico"><i class="fa-solid fa-brain"></i></span>AIによるリアルタイム業務分析</div>
+                        <div class="brand-feature"><span class="ico"><i class="fa-solid fa-building"></i></span>部門横断の統合管理基盤</div>
+                    </div>
                 </div>
 
-                <div class="current-time" id="current-time"></div>
-
-                ${errorMsg ? `<div class="error-message">${errorMsg}</div>` : ""}
-
-                <form class="login-form" action="/login" method="POST">
-                    <div class="form-group">
-                        <label for="username">${t("login.username", lang)}</label>
-                        <input type="text" id="username" name="username" class="form-control" placeholder="${t("login.username_placeholder", lang)}" required>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="password">${t("login.password", lang)}</label>
-                        <div class="password-wrapper">
-                            <input type="password" id="password" name="password" class="form-control" placeholder="${t("login.password_placeholder", lang)}" required>
-                            <button type="button" class="toggle-password" id="togglePassword" aria-label="toggle password">
-                                <svg id="eye-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                    <circle cx="12" cy="12" r="3"></circle>
-                                </svg>
-                                <svg id="eye-off-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
-                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                                    <line x1="1" y1="1" x2="23" y2="23"></line>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-
-                    <button type="submit" class="btn btn-login">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;">
-                            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
-                            <polyline points="10 17 15 12 10 7"></polyline>
-                            <line x1="15" y1="12" x2="3" y2="12"></line>
-                        </svg>
-                        ${t("login.submit", lang)}
-                    </button>
-                </form>
-
-                <div class="divider">${t("login.or", lang)}</div>
-
-                <div class="links">
-                    <a href="https://dxpro-sol.com" target="_blank">${t("login.portal", lang)}</a>
-                </div>
-
-                <div class="footer">
-                    &copy; ${new Date().getFullYear()} DXPRO SOLUTIONS. All rights reserved.
+                <div class="brand-foot">
+                    <span><span class="dot">●</span>All systems operational</span>
+                    <span>&copy; ${new Date().getFullYear()} DXPRO SOLUTIONS</span>
                 </div>
             </div>
 
+            <!-- ══════════ 右：ログインフォーム ══════════ -->
+            <div class="form-panel">
+                <div class="login-card">
+
+                    <div class="card-top-row">
+                        ${(() => {
+                          const CODE_MAP = {
+                            ja: "JP",
+                            en: "EN",
+                            vi: "VN",
+                            ko: "KR",
+                            zh: "CN",
+                          };
+                          const code = CODE_MAP[lang] || lang.toUpperCase();
+                          return `<div class="lang-dropdown" id="langDropdown">
+                            <button class="lang-trigger" onclick="toggleLangMenu()" type="button">🌐 ${code}</button>
+                            <div class="lang-menu" id="langMenu">
+                                ${LANGS.map((l) => `<button class="lang-menu-item${lang === l.code ? " active" : ""}" onclick="setLang('${l.code}')" type="button">${l.flag} ${l.label}</button>`).join("")}
+                            </div>
+                        </div>`;
+                        })()}
+                    </div>
+
+                    <div class="form-head">
+                        <div class="welcome">Welcome back</div>
+                        <h1>${t("login.title", lang)}</h1>
+                        <p>認証情報を入力してサインインしてください</p>
+                    </div>
+
+                    ${errorMsg ? `<div class="error-message"><i class="fa-solid fa-circle-exclamation"></i>${errorMsg}</div>` : ""}
+
+                    <form class="login-form" action="/login" method="POST">
+                        <div class="form-group">
+                            <label for="username">${t("login.username", lang)}</label>
+                            <div class="input-wrap">
+                                <i class="fa-solid fa-user fld-icon"></i>
+                                <input type="text" id="username" name="username" class="form-control" placeholder="${t("login.username_placeholder", lang)}" required>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="password">${t("login.password", lang)}</label>
+                            <div class="input-wrap password-wrapper">
+                                <i class="fa-solid fa-lock fld-icon"></i>
+                                <input type="password" id="password" name="password" class="form-control" placeholder="${t("login.password_placeholder", lang)}" required>
+                                <button type="button" class="toggle-password" id="togglePassword" aria-label="toggle password">
+                                    <svg id="eye-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                    <svg id="eye-off-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn-login">
+                            ${t("login.submit", lang)}
+                            <i class="fa-solid fa-arrow-right"></i>
+                        </button>
+                    </form>
+
+                    <div class="divider">${t("login.or", lang)}</div>
+
+                    <div class="links">
+                        <a href="https://dxpro-sol.com" target="_blank"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${t("login.portal", lang)}</a>
+                    </div>
+
+                    <div class="current-time" id="current-time"></div>
+                    <div class="footer">&copy; ${new Date().getFullYear()} DXPRO SOLUTIONS. All rights reserved.</div>
+                </div>
+            </div>
+
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
             <script>
                 // 時計（選択言語のロケールで表示）
                 var _locale = '${localeMap[lang] || "ja-JP"}';
