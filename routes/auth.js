@@ -281,12 +281,6 @@ router.get("/login", (req, res) => {
                     <div class="brand-sub">
                         勤怠・目標・給与・チャット・ワークフローを統合した<br>エンタープライズ業務基盤です。
                     </div>
-
-                    <div class="brand-features">
-                        <div class="brand-feature"><span class="ico"><i class="fa-solid fa-shield-halved"></i></span>エンタープライズグレードのセキュリティ</div>
-                        <div class="brand-feature"><span class="ico"><i class="fa-solid fa-chart-line"></i></span>部門横断の統合データ分析</div>
-                        <div class="brand-feature"><span class="ico"><i class="fa-solid fa-building"></i></span>統合人事・業務管理基盤</div>
-                    </div>
                 </div>
 
                 <div class="brand-foot">
