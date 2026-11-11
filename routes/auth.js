@@ -112,8 +112,8 @@ router.get("/login", (req, res) => {
                 /* ══════════ イラストレーション ══════════ */
                 .illus-stage {
                     position: relative;
-                    width: 100%; max-width: 420px;
-                    height: 320px;
+                    width: 100%; max-width: 460px;
+                    height: 350px;
                     margin-top: 20px;
                 }
                 .illus-stage::before {
@@ -169,9 +169,9 @@ router.get("/login", (req, res) => {
                 .float-card .fc-tag.blue { background: rgba(143,180,255,.18); color: #8fb4ff; }
                 .float-card .fc-tag.green { background: rgba(95,211,138,.18); color: #5fd38a; }
                 .float-card .fc-tag.gold { background: rgba(255,189,46,.18); color: #ffbd2e; }
-                .float-card .fc-title { font-size: 11px; font-weight: 600; color: rgba(255,255,255,.9); white-space: nowrap; }
-                .float-card .fc-sub { font-size: 9.5px; color: rgba(255,255,255,.4); margin-top: 3px; }
-                .float-card .fc-spark { display: flex; align-items: flex-end; gap: 2px; height: 16px; margin-top: 8px; }
+                .float-card .fc-title { font-size: 12.5px; font-weight: 600; color: rgba(255,255,255,.92); white-space: nowrap; }
+                .float-card .fc-sub { font-size: 10.5px; color: rgba(255,255,255,.45); margin-top: 3px; }
+                .float-card .fc-spark { display: flex; align-items: flex-end; gap: 2px; height: 18px; margin-top: 9px; }
                 .float-card .fc-spark span { flex: 1; border-radius: 1px; background: linear-gradient(180deg,#8fb4ff,rgba(143,180,255,.2)); }
                 .dash-line {
                     position: absolute; border-top: 1.5px dashed rgba(143,180,255,.4);
@@ -183,14 +183,14 @@ router.get("/login", (req, res) => {
                 }
                 .avatar-stack { position: absolute; display: flex; }
                 .avatar-stack .av {
-                    width: 24px; height: 24px; border-radius: 50%; border: 2px solid #0e1526;
+                    width: 26px; height: 26px; border-radius: 50%; border: 2px solid #0e1526;
                     display: flex; align-items: center; justify-content: center;
-                    font-size: 9px; font-weight: 700; color: #fff; margin-left: -8px;
+                    font-size: 10px; font-weight: 700; color: #fff; margin-left: -8px;
                 }
                 .avatar-stack .av:first-child { margin-left: 0; }
                 .notif-badge {
-                    position: absolute; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px;
-                    background: #ff6159; color: #fff; font-size: 9px; font-weight: 800;
+                    position: absolute; min-width: 19px; height: 19px; padding: 0 4px; border-radius: 9.5px;
+                    background: #ff6159; color: #fff; font-size: 10px; font-weight: 800;
                     display: flex; align-items: center; justify-content: center;
                     box-shadow: 0 6px 14px rgba(255,97,89,.5);
                     animation: pulseGlow 2s ease-in-out infinite;
@@ -216,33 +216,33 @@ router.get("/login", (req, res) => {
 
                 /* ── スライド1：課題管理（GitHub / Jira / Backlog）── */
                 .board-main {
-                    position: absolute; top: 46px; left: 20px;
-                    width: 240px; background: #141d33;
-                    border: 1px solid rgba(255,255,255,.1); border-radius: 12px;
-                    padding: 12px; box-shadow: 0 20px 40px rgba(0,0,0,.4);
+                    position: absolute; top: 50px; left: 14px;
+                    width: 270px; background: #141d33;
+                    border: 1px solid rgba(255,255,255,.1); border-radius: 13px;
+                    padding: 14px; box-shadow: 0 20px 40px rgba(0,0,0,.4);
                     transform: rotate(-2.5deg);
                 }
-                .board-main .board-head { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
-                .board-main .board-head .bdot { width: 7px; height: 7px; border-radius: 50%; }
+                .board-main .board-head { display: flex; align-items: center; gap: 6px; margin-bottom: 11px; }
+                .board-main .board-head .bdot { width: 8px; height: 8px; border-radius: 50%; }
                 .board-main .board-head .bdot.r { background: #ff6159; }
                 .board-main .board-head .bdot.y { background: #ffbd2e; }
                 .board-main .board-head .bdot.g { background: #28c940; }
-                .board-cols { display: flex; gap: 7px; }
-                .board-col { flex: 1; background: rgba(255,255,255,.04); border-radius: 7px; padding: 6px; }
-                .board-col .bc-title { font-size: 7.5px; font-weight: 700; color: rgba(255,255,255,.4); margin-bottom: 6px; text-transform: uppercase; }
+                .board-cols { display: flex; gap: 8px; }
+                .board-col { flex: 1; background: rgba(255,255,255,.04); border-radius: 8px; padding: 7px; }
+                .board-col .bc-title { font-size: 8px; font-weight: 700; color: rgba(255,255,255,.45); margin-bottom: 7px; text-transform: uppercase; }
                 .board-chip {
-                    background: rgba(255,255,255,.06); border-radius: 5px; padding: 5px 6px; margin-bottom: 5px;
+                    background: rgba(255,255,255,.07); border-radius: 6px; padding: 6px 7px; margin-bottom: 6px;
                 }
-                .board-chip .chip-dot { width: 14px; height: 3px; border-radius: 2px; margin-bottom: 4px; }
+                .board-chip .chip-dot { width: 16px; height: 3px; border-radius: 2px; margin-bottom: 5px; }
                 .board-chip .chip-dot.p1 { background: #c4b5fd; }
                 .board-chip .chip-dot.p2 { background: #8fb4ff; }
                 .board-chip .chip-dot.p3 { background: #5fd38a; }
-                .board-chip .chip-line { height: 4px; border-radius: 2px; background: rgba(255,255,255,.15); margin-bottom: 3px; }
+                .board-chip .chip-line { height: 4px; border-radius: 2px; background: rgba(255,255,255,.17); margin-bottom: 3px; }
 
                 /* ── スライド2：勤怠/人事（給与・休暇）── */
                 .clock-illus {
-                    position: absolute; top: 20px; left: 30px;
-                    width: 118px; height: 118px; border-radius: 50%;
+                    position: absolute; top: 20px; left: 34px;
+                    width: 136px; height: 136px; border-radius: 50%;
                     background: #141d33; border: 1px solid rgba(255,255,255,.1);
                     box-shadow: 0 20px 40px rgba(0,0,0,.4);
                 }
@@ -250,80 +250,80 @@ router.get("/login", (req, res) => {
                     content: ''; position: absolute; background: #8fb4ff; border-radius: 3px;
                     top: 50%; left: 50%; transform-origin: bottom center;
                 }
-                .clock-illus::before { width: 3px; height: 34px; margin-left: -1.5px; margin-top: -34px; transform: rotate(35deg); }
-                .clock-illus::after { width: 3px; height: 24px; margin-left: -1.5px; margin-top: -24px; background: rgba(255,255,255,.5); transform: rotate(140deg); }
-                .clock-illus .c-center { position: absolute; top: 50%; left: 50%; width: 7px; height: 7px; margin: -3.5px; border-radius: 50%; background: #fff; }
+                .clock-illus::before { width: 3.5px; height: 40px; margin-left: -1.75px; margin-top: -40px; transform: rotate(35deg); }
+                .clock-illus::after { width: 3.5px; height: 28px; margin-left: -1.75px; margin-top: -28px; background: rgba(255,255,255,.5); transform: rotate(140deg); }
+                .clock-illus .c-center { position: absolute; top: 50%; left: 50%; width: 8px; height: 8px; margin: -4px; border-radius: 50%; background: #fff; }
                 .clock-tick { position: absolute; width: 2px; height: 6px; background: rgba(255,255,255,.2); left: 50%; top: 4px; margin-left: -1px; transform-origin: 1px 55px; }
 
                 .payslip-card {
-                    position: absolute; top: 108px; left: 150px;
-                    width: 160px; background: #141d33; border: 1px solid rgba(255,255,255,.1);
-                    border-radius: 11px; padding: 12px 14px;
+                    position: absolute; top: 118px; left: 172px;
+                    width: 182px; background: #141d33; border: 1px solid rgba(255,255,255,.1);
+                    border-radius: 12px; padding: 14px 16px;
                     box-shadow: 0 20px 40px rgba(0,0,0,.4);
                 }
-                .payslip-card .ps-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-                .payslip-card .ps-head span:first-child { font-size: 10px; font-weight: 700; color: rgba(255,255,255,.8); }
-                .payslip-line { height: 5px; border-radius: 3px; background: rgba(255,255,255,.1); margin-bottom: 6px; }
+                .payslip-card .ps-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
+                .payslip-card .ps-head span:first-child { font-size: 11px; font-weight: 700; color: rgba(255,255,255,.85); }
+                .payslip-line { height: 5px; border-radius: 3px; background: rgba(255,255,255,.1); margin-bottom: 7px; }
                 .payslip-line.short { width: 60%; }
 
                 /* ── スライド3：目標管理・ワークフロー ── */
                 .target-illus {
-                    position: absolute; top: 24px; left: 36px;
-                    width: 150px; height: 150px; border-radius: 50%;
+                    position: absolute; top: 26px; left: 40px;
+                    width: 170px; height: 170px; border-radius: 50%;
                     background: radial-gradient(circle, #8fb4ff 0%, #8fb4ff 14%, #141d33 15%, #141d33 38%, #8fb4ff 39%, #8fb4ff 54%, #141d33 55%, #141d33 78%, #8fb4ff 79%, #8fb4ff 100%);
                     box-shadow: 0 20px 44px rgba(0,0,0,.4);
                     opacity: .9;
                 }
                 .arrow-illus {
-                    position: absolute; top: 46px; left: 190px;
-                    width: 90px; height: 3px; background: #ffbd2e;
+                    position: absolute; top: 50px; left: 214px;
+                    width: 100px; height: 3.5px; background: #ffbd2e;
                     transform: rotate(-28deg); border-radius: 2px;
                 }
                 .arrow-illus::after {
-                    content: ''; position: absolute; right: -2px; top: -5px;
-                    border-left: 13px solid #ffbd2e; border-top: 6.5px solid transparent; border-bottom: 6.5px solid transparent;
+                    content: ''; position: absolute; right: -2px; top: -5.5px;
+                    border-left: 14px solid #ffbd2e; border-top: 7px solid transparent; border-bottom: 7px solid transparent;
                 }
                 .flow-node {
-                    position: absolute; width: 26px; height: 26px; border-radius: 8px;
+                    position: absolute; width: 30px; height: 30px; border-radius: 9px;
                     display: flex; align-items: center; justify-content: center;
-                    font-size: 11px; color: #fff; box-shadow: 0 8px 18px rgba(0,0,0,.3);
+                    font-size: 12px; color: #fff; box-shadow: 0 8px 18px rgba(0,0,0,.3);
                 }
                 .code-card {
                     position: absolute; background: #0b0f1d; border: 1px solid rgba(143,180,255,.18);
-                    border-radius: 10px; padding: 10px 12px; font-family: 'Courier New', monospace;
-                    font-size: 9px; line-height: 1.7; color: #8fb4ff; box-shadow: 0 18px 36px rgba(0,0,0,.45);
+                    border-radius: 11px; padding: 12px 14px; font-family: 'Courier New', monospace;
+                    font-size: 10px; line-height: 1.8; color: #8fb4ff; box-shadow: 0 18px 36px rgba(0,0,0,.45);
                 }
                 .code-card .cl1 { color: #c4b5fd; }
                 .code-card .cl2 { color: #5fd38a; }
                 .code-card .cl3 { color: rgba(255,255,255,.4); }
-                .commit-row { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+                .commit-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
                 .commit-row:last-child { margin-bottom: 0; }
-                .commit-row .cm-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-                .commit-row .cm-txt { font-size: 9px; color: rgba(255,255,255,.65); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                .commit-row .cm-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+                .commit-row .cm-txt { font-size: 10px; color: rgba(255,255,255,.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
                 .cal-grid { display: flex; gap: 4px; }
                 .cal-cell {
-                    width: 20px; height: 24px; border-radius: 5px; background: rgba(255,255,255,.06);
+                    width: 23px; height: 27px; border-radius: 6px; background: rgba(255,255,255,.06);
                     display: flex; align-items: center; justify-content: center;
-                    font-size: 8px; font-weight: 700; color: rgba(255,255,255,.45);
+                    font-size: 9px; font-weight: 700; color: rgba(255,255,255,.5);
                 }
                 .cal-cell.on { background: #2d5bb9; color: #fff; }
                 .cal-cell.off { background: rgba(255,97,89,.22); color: #ff9890; }
                 .stat-pill {
                     display: flex; flex-direction: column; gap: 2px;
-                    background: rgba(255,255,255,.05); border-radius: 8px; padding: 7px 10px;
+                    background: rgba(255,255,255,.06); border-radius: 9px; padding: 8px 12px;
                 }
-                .stat-pill b { font-size: 13px; color: #fff; }
-                .stat-pill span { font-size: 7.5px; color: rgba(255,255,255,.4); text-transform: uppercase; letter-spacing: .4px; }
+                .stat-pill b { font-size: 15px; color: #fff; }
+                .stat-pill span { font-size: 8px; color: rgba(255,255,255,.45); text-transform: uppercase; letter-spacing: .4px; }
                 .rank-card {
                     position: absolute; background: #141d33; border: 1px solid rgba(255,255,255,.1);
-                    border-radius: 11px; padding: 11px 13px; box-shadow: 0 18px 36px rgba(0,0,0,.4);
+                    border-radius: 12px; padding: 12px 14px; box-shadow: 0 18px 36px rgba(0,0,0,.4);
                 }
-                .rank-row { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+                .rank-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
                 .rank-row:last-child { margin-bottom: 0; }
-                .rank-row .rk-num { font-size: 9px; font-weight: 800; color: rgba(255,255,255,.35); width: 11px; }
-                .rank-row .rk-bar { flex: 1; height: 5px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
+                .rank-row .rk-num { font-size: 10px; font-weight: 800; color: rgba(255,255,255,.4); width: 12px; }
+                .rank-row .rk-bar { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
                 .rank-row .rk-bar i { display: block; height: 100%; border-radius: 3px; }
-                .rank-row .rk-pct { font-size: 8.5px; font-weight: 700; color: rgba(255,255,255,.6); width: 24px; text-align: right; }
+                .rank-row .rk-pct { font-size: 9px; font-weight: 700; color: rgba(255,255,255,.65); width: 26px; text-align: right; }
                 .net-line {
                     position: absolute; height: 1.5px; background: rgba(255,189,46,.3); border-radius: 1px;
                     transform-origin: left center;
@@ -515,46 +515,46 @@ router.get("/login", (req, res) => {
                                 </div>
                             </div>
 
-                            <div class="ico-badge glow" style="width:42px;height:42px;top:4px;right:40px;background:#1c2435;border:1px solid rgba(255,255,255,.15);"><i class="fa-brands fa-github"></i></div>
-                            <div class="notif-badge" style="top:-4px;right:30px;">3</div>
-                            <div class="ico-badge" style="width:34px;height:34px;bottom:70px;right:6px;background:#2d5bb9;"><i class="fa-solid fa-code-branch"></i></div>
-                            <div class="ico-badge" style="width:30px;height:30px;top:66px;right:4px;background:#0052cc;"><i class="fa-brands fa-jira"></i></div>
-                            <div class="ico-badge" style="width:26px;height:26px;bottom:16px;right:70px;background:#24292e;"><i class="fa-solid fa-code-pull-request" style="font-size:11px;"></i></div>
+                            <div class="ico-badge glow" style="width:46px;height:46px;top:6px;right:46px;background:#1c2435;border:1px solid rgba(255,255,255,.15);"><i class="fa-brands fa-github" style="font-size:18px;"></i></div>
+                            <div class="notif-badge" style="top:-4px;right:36px;">3</div>
+                            <div class="ico-badge" style="width:38px;height:38px;bottom:86px;right:8px;background:#2d5bb9;"><i class="fa-solid fa-code-branch" style="font-size:15px;"></i></div>
+                            <div class="ico-badge" style="width:34px;height:34px;top:74px;right:4px;background:#0052cc;"><i class="fa-brands fa-jira" style="font-size:14px;"></i></div>
+                            <div class="ico-badge" style="width:28px;height:28px;bottom:26px;right:78px;background:#24292e;"><i class="fa-solid fa-code-pull-request" style="font-size:12px;"></i></div>
 
-                            <div class="dash-line" style="width:40px;top:20px;right:72px;transform:rotate(35deg);"></div>
-                            <div class="dash-line" style="width:50px;bottom:60px;right:10px;transform:rotate(-70deg);"></div>
-                            <div class="particle" style="top:30px;left:40px;"></div>
-                            <div class="particle" style="top:250px;left:330px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
-                            <div class="particle" style="top:190px;left:360px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
+                            <div class="dash-line" style="width:44px;top:24px;right:82px;transform:rotate(35deg);"></div>
+                            <div class="dash-line" style="width:54px;bottom:76px;right:12px;transform:rotate(-70deg);"></div>
+                            <div class="particle" style="top:34px;left:44px;"></div>
+                            <div class="particle" style="top:280px;left:366px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
+                            <div class="particle" style="top:210px;left:400px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
 
-                            <div class="float-card" style="bottom:46px;left:210px;width:160px;">
+                            <div class="float-card" style="bottom:52px;left:234px;width:176px;">
                                 <span class="fc-tag green">完了</span>
                                 <div class="fc-title"><i class="fa-solid fa-circle-check" style="color:#5fd38a;margin-right:5px;"></i>API設計 #182</div>
                                 <div class="fc-sub">佐藤 → レビュー済み</div>
                                 <div class="fc-spark"><span style="height:40%"></span><span style="height:70%"></span><span style="height:30%"></span><span style="height:90%"></span><span style="height:55%"></span><span style="height:80%"></span></div>
-                                <div class="avatar-stack" style="position:static;margin-top:7px;">
+                                <div class="avatar-stack" style="position:static;margin-top:8px;">
                                     <div class="av" style="background:#8fb4ff;">田</div>
                                     <div class="av" style="background:#c4b5fd;">佐</div>
                                     <div class="av" style="background:#5fd38a;">鈴</div>
                                 </div>
                             </div>
 
-                            <div class="sticky-note" style="bottom:4px;left:60px;">🔥 今週の優先タスク</div>
+                            <div class="sticky-note" style="bottom:4px;left:66px;">🔥 今週の優先タスク</div>
                             <div class="mini-ring" style="--p:68;--c:#5fd38a;bottom:2px;left:4px;"><span>68%</span></div>
 
-                            <div class="code-card" style="top:150px;left:188px;width:168px;">
+                            <div class="code-card" style="top:172px;left:212px;width:188px;">
                                 <div class="cl3">// recent commits</div>
                                 <div class="commit-row"><span class="cm-dot" style="background:#5fd38a;"></span><span class="cm-txt"><span class="cl2">fix:</span> 勤怠API修正</span></div>
                                 <div class="commit-row"><span class="cm-dot" style="background:#8fb4ff;"></span><span class="cm-txt"><span class="cl1">feat:</span> 承認フロー追加</span></div>
                                 <div class="commit-row"><span class="cm-dot" style="background:#ffbd2e;"></span><span class="cm-txt">chore: 依存更新</span></div>
                             </div>
-                            <div class="rank-card" style="top:-10px;left:0px;width:150px;">
+                            <div class="rank-card" style="top:-8px;left:2px;width:168px;">
                                 <div class="rank-row"><span class="rk-num">1</span><div class="rk-bar"><i style="width:92%;background:#5fd38a;"></i></div><span class="rk-pct">92%</span></div>
                                 <div class="rank-row"><span class="rk-num">2</span><div class="rk-bar"><i style="width:74%;background:#8fb4ff;"></i></div><span class="rk-pct">74%</span></div>
                                 <div class="rank-row"><span class="rk-num">3</span><div class="rk-bar"><i style="width:55%;background:#ffbd2e;"></i></div><span class="rk-pct">55%</span></div>
                             </div>
-                            <div class="net-line" style="width:70px;top:270px;left:118px;transform:rotate(-6deg);"></div>
-                            <div class="net-line" style="width:50px;top:160px;left:356px;transform:rotate(60deg);"></div>
+                            <div class="net-line" style="width:76px;top:296px;left:128px;transform:rotate(-6deg);"></div>
+                            <div class="net-line" style="width:54px;top:176px;left:394px;transform:rotate(60deg);"></div>
                         </div>
                     </div>
 
@@ -563,63 +563,63 @@ router.get("/login", (req, res) => {
                         <div class="slide-title">勤怠・人事管理を、<br><span class="accent">給与計算まで一気通貫で。</span></div>
                         <div class="slide-desc">打刻・残業・休暇申請から給与明細の発行まで、<br>人事業務をまるごと自動化します。</div>
                         <div class="illus-stage">
-                            <div class="blob" style="width:150px;height:150px;background:#5fd38a;top:10px;left:10px;"></div>
-                            <div class="blob" style="width:130px;height:130px;background:#8fb4ff;bottom:0;right:60px;"></div>
-                            <div class="blob" style="width:80px;height:80px;background:#ffbd2e;top:0;right:10px;opacity:.2;"></div>
+                            <div class="blob" style="width:180px;height:180px;background:#5fd38a;top:10px;left:10px;"></div>
+                            <div class="blob" style="width:150px;height:150px;background:#8fb4ff;bottom:0;right:60px;"></div>
+                            <div class="blob" style="width:100px;height:100px;background:#ffbd2e;top:0;right:10px;opacity:.2;"></div>
 
-                            <div class="ring spin" style="width:140px;height:140px;top:14px;left:24px;"></div>
-                            <div class="ring" style="width:160px;height:160px;top:4px;left:14px;opacity:.4;"></div>
+                            <div class="ring spin" style="width:160px;height:160px;top:16px;left:26px;"></div>
+                            <div class="ring" style="width:184px;height:184px;top:4px;left:14px;opacity:.4;"></div>
                             <div class="clock-illus">
                                 <div class="c-center"></div>
                             </div>
-                            <div class="ico-badge glow" style="width:36px;height:36px;top:-6px;left:110px;background:#1f8a4c;"><i class="fa-solid fa-umbrella-beach"></i></div>
-                            <div class="ico-badge" style="width:30px;height:30px;top:40px;left:4px;background:#2d5bb9;"><i class="fa-solid fa-fingerprint"></i></div>
-                            <div class="ico-badge" style="width:26px;height:26px;top:150px;left:150px;background:#ffbd2e;color:#2a2208;"><i class="fa-solid fa-bell" style="font-size:11px;"></i></div>
-                            <div class="mini-ring" style="--p:82;--c:#8fb4ff;top:134px;left:42px;"><span>82%</span></div>
+                            <div class="ico-badge glow" style="width:40px;height:40px;top:-8px;left:124px;background:#1f8a4c;"><i class="fa-solid fa-umbrella-beach" style="font-size:16px;"></i></div>
+                            <div class="ico-badge" style="width:34px;height:34px;top:46px;left:4px;background:#2d5bb9;"><i class="fa-solid fa-fingerprint" style="font-size:14px;"></i></div>
+                            <div class="ico-badge" style="width:30px;height:30px;top:172px;left:172px;background:#ffbd2e;color:#2a2208;"><i class="fa-solid fa-bell" style="font-size:13px;"></i></div>
+                            <div class="mini-ring" style="--p:82;--c:#8fb4ff;top:152px;left:48px;"><span>82%</span></div>
                             <div class="particle" style="top:4px;left:4px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
-                            <div class="particle" style="top:270px;left:40px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
-                            <div class="particle" style="top:220px;left:380px;"></div>
+                            <div class="particle" style="top:296px;left:44px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
+                            <div class="particle" style="top:240px;left:414px;"></div>
 
                             <div class="payslip-card">
-                                <div class="ps-head"><span>11月分 給与明細</span><i class="fa-solid fa-sack-dollar" style="color:#ffbd2e;font-size:12px;"></i></div>
+                                <div class="ps-head"><span>11月分 給与明細</span><i class="fa-solid fa-sack-dollar" style="color:#ffbd2e;font-size:14px;"></i></div>
                                 <div class="payslip-line"></div>
                                 <div class="payslip-line short"></div>
                                 <div class="payslip-line" style="width:40%;background:#5fd38a;"></div>
-                                <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:9px;color:rgba(255,255,255,.35);">
+                                <div style="display:flex;justify-content:space-between;margin-top:9px;font-size:10px;color:rgba(255,255,255,.4);">
                                     <span>支給総額</span><span style="color:#5fd38a;font-weight:700;">¥328,000</span>
                                 </div>
                                 <div class="fc-spark"><span style="height:50%"></span><span style="height:80%"></span><span style="height:35%"></span><span style="height:65%"></span><span style="height:90%"></span></div>
                             </div>
 
-                            <div class="notif-badge" style="top:96px;left:150px;">2</div>
+                            <div class="notif-badge" style="top:108px;left:170px;">2</div>
 
-                            <div class="float-card" style="top:198px;left:4px;width:150px;">
+                            <div class="float-card" style="top:222px;left:4px;width:168px;">
                                 <span class="fc-tag blue">休暇申請</span>
                                 <div class="fc-title"><i class="fa-regular fa-calendar" style="margin-right:5px;"></i>有給休暇 (2日)</div>
                                 <div class="fc-sub">田中 — 承認待ち</div>
                             </div>
 
-                            <div class="dash-line" style="width:70px;top:60px;left:150px;transform:rotate(-12deg);"></div>
+                            <div class="dash-line" style="width:78px;top:68px;left:170px;transform:rotate(-12deg);"></div>
 
-                            <div class="avatar-stack" style="top:4px;right:48px;">
+                            <div class="avatar-stack" style="top:4px;right:52px;">
                                 <div class="av" style="background:#8fb4ff;">山</div>
                                 <div class="av" style="background:#ffbd2e;">中</div>
                                 <div class="av" style="background:#5fd38a;">+5</div>
                             </div>
 
-                            <div style="position:absolute;top:168px;left:168px;display:flex;gap:6px;">
+                            <div style="position:absolute;top:188px;left:188px;display:flex;gap:7px;">
                                 <div class="cal-cell on">月</div>
                                 <div class="cal-cell on">火</div>
                                 <div class="cal-cell on">水</div>
                                 <div class="cal-cell">木</div>
                                 <div class="cal-cell off">金</div>
                             </div>
-                            <div style="position:absolute;top:256px;left:188px;display:flex;gap:8px;">
+                            <div style="position:absolute;top:282px;left:206px;display:flex;gap:9px;">
                                 <div class="stat-pill"><b>168h</b><span>稼働時間</span></div>
                                 <div class="stat-pill"><b>¥420</b><span>残業代/h</span></div>
                             </div>
-                            <div class="net-line" style="width:60px;top:92px;left:260px;transform:rotate(20deg);background:rgba(95,211,138,.3);"></div>
-                            <div class="net-line" style="width:40px;top:230px;left:120px;transform:rotate(-30deg);"></div>
+                            <div class="net-line" style="width:66px;top:100px;left:286px;transform:rotate(20deg);background:rgba(95,211,138,.3);"></div>
+                            <div class="net-line" style="width:44px;top:252px;left:132px;transform:rotate(-30deg);"></div>
                         </div>
                     </div>
 
@@ -628,34 +628,34 @@ router.get("/login", (req, res) => {
                         <div class="slide-title">目標管理とワークフローを、<br><span class="accent">成果につながる流れに。</span></div>
                         <div class="slide-desc">個人目標の設定から承認申請までの流れを可視化し、<br>組織全体の生産性を底上げします。</div>
                         <div class="illus-stage">
-                            <div class="blob" style="width:160px;height:160px;background:#ffbd2e;top:0;left:30px;"></div>
-                            <div class="blob" style="width:110px;height:110px;background:#8fb4ff;bottom:20px;right:20px;"></div>
-                            <div class="blob" style="width:70px;height:70px;background:#c4b5fd;top:60px;right:140px;opacity:.22;"></div>
+                            <div class="blob" style="width:190px;height:190px;background:#ffbd2e;top:0;left:30px;"></div>
+                            <div class="blob" style="width:130px;height:130px;background:#8fb4ff;bottom:20px;right:20px;"></div>
+                            <div class="blob" style="width:90px;height:90px;background:#c4b5fd;top:70px;right:150px;opacity:.22;"></div>
 
-                            <div class="ring spin" style="width:150px;height:150px;top:24px;left:36px;"></div>
-                            <div class="ring" style="width:184px;height:184px;top:7px;left:19px;opacity:.5;"></div>
+                            <div class="ring spin" style="width:170px;height:170px;top:26px;left:40px;"></div>
+                            <div class="ring" style="width:206px;height:206px;top:8px;left:22px;opacity:.5;"></div>
                             <div class="target-illus"></div>
                             <div class="arrow-illus"></div>
 
-                            <div class="flow-node" style="background:#2d5bb9;top:10px;right:30px;"><i class="fa-solid fa-flag-checkered"></i></div>
-                            <div class="dash-line" style="width:60px;top:26px;right:56px;transform:rotate(18deg);"></div>
-                            <div class="flow-node" style="background:#c4b5fd;top:-4px;right:100px;width:22px;height:22px;"><i class="fa-solid fa-circle-check" style="font-size:9px;"></i></div>
-                            <div class="dash-line" style="width:36px;top:6px;right:120px;transform:rotate(-10deg);"></div>
-                            <div class="flow-node" style="background:#5fd38a;top:14px;right:156px;width:20px;height:20px;"><i class="fa-solid fa-play" style="font-size:8px;"></i></div>
+                            <div class="flow-node" style="background:#2d5bb9;top:12px;right:34px;"><i class="fa-solid fa-flag-checkered"></i></div>
+                            <div class="dash-line" style="width:66px;top:30px;right:62px;transform:rotate(18deg);"></div>
+                            <div class="flow-node" style="background:#c4b5fd;top:-6px;right:114px;width:25px;height:25px;"><i class="fa-solid fa-circle-check" style="font-size:10px;"></i></div>
+                            <div class="dash-line" style="width:40px;top:8px;right:136px;transform:rotate(-10deg);"></div>
+                            <div class="flow-node" style="background:#5fd38a;top:16px;right:176px;width:23px;height:23px;"><i class="fa-solid fa-play" style="font-size:9px;"></i></div>
 
-                            <div class="mini-ring" style="--p:92;--c:#ffbd2e;top:140px;left:60px;"><span>92%</span></div>
-                            <div class="notif-badge" style="top:112px;left:160px;">5</div>
-                            <div class="ico-badge glow" style="width:30px;height:30px;bottom:66px;right:14px;background:#2d5bb9;"><i class="fa-solid fa-chart-line"></i></div>
-                            <div class="particle" style="top:200px;left:300px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
-                            <div class="particle" style="top:40px;left:290px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
-                            <div class="particle" style="top:270px;left:10px;"></div>
+                            <div class="mini-ring" style="--p:92;--c:#ffbd2e;top:158px;left:66px;"><span>92%</span></div>
+                            <div class="notif-badge" style="top:126px;left:180px;">5</div>
+                            <div class="ico-badge glow" style="width:34px;height:34px;bottom:78px;right:16px;background:#2d5bb9;"><i class="fa-solid fa-chart-line" style="font-size:14px;"></i></div>
+                            <div class="particle" style="top:224px;left:332px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
+                            <div class="particle" style="top:44px;left:322px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
+                            <div class="particle" style="top:296px;left:12px;"></div>
 
-                            <div class="float-card" style="bottom:4px;left:150px;width:180px;">
+                            <div class="float-card" style="bottom:4px;left:166px;width:196px;">
                                 <span class="fc-tag gold">稟議</span>
                                 <div class="fc-title"><i class="fa-solid fa-bullseye" style="color:#ffbd2e;margin-right:5px;"></i>Q4目標達成率 92%</div>
                                 <div class="fc-sub">承認済 — 全社共有</div>
                                 <div class="fc-spark"><span style="height:60%;background:linear-gradient(180deg,#ffbd2e,rgba(255,189,46,.2));"></span><span style="height:40%;background:linear-gradient(180deg,#ffbd2e,rgba(255,189,46,.2));"></span><span style="height:85%;background:linear-gradient(180deg,#ffbd2e,rgba(255,189,46,.2));"></span><span style="height:95%;background:linear-gradient(180deg,#ffbd2e,rgba(255,189,46,.2));"></span><span style="height:70%;background:linear-gradient(180deg,#ffbd2e,rgba(255,189,46,.2));"></span></div>
-                                <div class="avatar-stack" style="position:static;margin-top:7px;">
+                                <div class="avatar-stack" style="position:static;margin-top:8px;">
                                     <div class="av" style="background:#ffbd2e;">伊</div>
                                     <div class="av" style="background:#2d5bb9;">鈴</div>
                                     <div class="av" style="background:#c4b5fd;">高</div>
@@ -664,7 +664,7 @@ router.get("/login", (req, res) => {
 
                             <div class="sticky-note" style="top:4px;left:8px;">✓ 承認済 12件</div>
 
-                            <div class="rank-card" style="bottom:-6px;right:4px;width:150px;">
+                            <div class="rank-card" style="bottom:-4px;right:4px;width:168px;">
                                 <div class="rank-row"><span class="rk-num">A</span><div class="rk-bar"><i style="width:88%;background:#ffbd2e;"></i></div><span class="rk-pct">88%</span></div>
                                 <div class="rank-row"><span class="rk-num">B</span><div class="rk-bar"><i style="width:63%;background:#8fb4ff;"></i></div><span class="rk-pct">63%</span></div>
                             </div>
