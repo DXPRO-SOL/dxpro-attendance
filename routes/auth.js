@@ -583,8 +583,8 @@ router.get("/login", (req, res) => {
                                 </div>
                             </div>
 
-                            <div class="sticky-note" style="top:352px;left:6px;">🔥 今週の優先タスク</div>
-                            <div class="mini-ring" style="--p:68;--c:#5fd38a;top:350px;left:150px;"><span>68%</span></div>
+                            <div class="sticky-note" style="top:385px;left:10px;">🔥 今週の優先タスク</div>
+                            <div class="mini-ring" style="--p:68;--c:#5fd38a;top:376px;left:145px;"><span>68%</span></div>
 
                             <div class="code-card" style="top:268px;left:6px;width:188px;">
                                 <div class="cl3">// recent commits</div>
@@ -614,7 +614,7 @@ router.get("/login", (req, res) => {
                             </div>
                             <div class="ico-badge glow" style="width:40px;height:40px;top:-8px;left:124px;background:#1f8a4c;"><i class="fa-solid fa-umbrella-beach" style="font-size:16px;"></i></div>
                             <div class="ico-badge" style="width:34px;height:34px;top:46px;left:4px;background:#2d5bb9;"><i class="fa-solid fa-fingerprint" style="font-size:14px;"></i></div>
-                            <div class="ico-badge" style="width:30px;height:30px;top:302px;left:416px;background:#ffbd2e;color:#2a2208;"><i class="fa-solid fa-bell" style="font-size:13px;"></i></div>
+                            <div class="ico-badge" style="width:30px;height:30px;top:302px;left:426px;background:#ffbd2e;color:#2a2208;"><i class="fa-solid fa-bell" style="font-size:13px;"></i></div>
                             <div class="mini-ring" style="--p:82;--c:#8fb4ff;top:152px;left:48px;"><span>82%</span></div>
                             <div class="particle" style="top:4px;left:4px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
                             <div class="particle" style="top:296px;left:44px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
@@ -675,7 +675,7 @@ router.get("/login", (req, res) => {
                                 <div class="cal-cell">木</div>
                                 <div class="cal-cell off">金</div>
                             </div>
-                            <div style="position:absolute;top:336px;left:300px;display:flex;gap:9px;">
+                            <div style="position:absolute;top:336px;left:280px;display:flex;gap:9px;">
                                 <div class="stat-pill"><b>168h</b><span>稼働時間</span></div>
                                 <div class="stat-pill"><b>¥420</b><span>残業代/h</span></div>
                             </div>
