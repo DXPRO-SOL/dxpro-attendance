@@ -384,35 +384,59 @@ router.get("/login", (req, res) => {
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    background: var(--bg);
+                    background: linear-gradient(180deg, #eef1f6 0%, #e7ebf2 100%);
                     padding: 40px;
+                    position: relative;
+                }
+                .form-panel::before {
+                    content: '';
+                    position: absolute; inset: 0;
+                    background-image: radial-gradient(rgba(45,91,185,.07) 1px, transparent 1px);
+                    background-size: 22px 22px;
+                    -webkit-mask-image: radial-gradient(ellipse 60% 50% at 50% 30%, #000 0%, transparent 72%);
+                    mask-image: radial-gradient(ellipse 60% 50% at 50% 30%, #000 0%, transparent 72%);
+                    pointer-events: none;
                 }
 
                 .login-card {
+                    position: relative;
                     width: 100%;
-                    max-width: 380px;
+                    max-width: 400px;
                     background: #fff;
-                    border: 1px solid var(--border);
-                    border-radius: 8px;
-                    box-shadow: 0 1px 3px rgba(20,24,30,.06);
-                    padding: 36px 34px 30px;
+                    border: 1px solid rgba(20,24,30,.06);
+                    border-radius: 16px;
+                    box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 24px 48px -12px rgba(16,33,63,.18);
+                    padding: 38px 38px 32px;
+                }
+                .login-card::before {
+                    content: '';
+                    position: absolute; top: 0; left: 16px; right: 16px; height: 3px;
+                    border-radius: 0 0 3px 3px;
+                    background: linear-gradient(90deg, var(--navy), var(--blue), #8fb4ff);
                 }
                 .card-top-row {
-                    display: flex; align-items: center; justify-content: flex-end;
-                    margin-bottom: 14px;
+                    display: flex; align-items: center; justify-content: space-between;
+                    margin-bottom: 18px;
+                }
+                .card-mark {
+                    width: 38px; height: 38px; border-radius: 10px;
+                    background: linear-gradient(145deg, var(--navy), var(--blue));
+                    display: flex; align-items: center; justify-content: center;
+                    color: #fff; font-size: 16px;
+                    box-shadow: 0 8px 16px rgba(45,91,185,.3);
                 }
                 .lang-dropdown { position: relative; }
                 .lang-trigger {
                     display: inline-flex; align-items: center; gap: 5px;
-                    padding: 5px 11px; border-radius: 4px;
-                    border: 1px solid var(--border); background: #fff;
-                    font-size: 12px; font-weight: 500; cursor: pointer;
+                    padding: 6px 12px; border-radius: 20px;
+                    border: 1px solid var(--border); background: #f8f9fb;
+                    font-size: 12px; font-weight: 600; cursor: pointer;
                     color: var(--text-muted); font-family: inherit; transition: all .15s;
                 }
-                .lang-trigger:hover { border-color: var(--blue); color: var(--blue); }
+                .lang-trigger:hover { border-color: var(--blue); color: var(--blue); background: #eef3fc; }
                 .lang-menu {
                     display: none; position: absolute; top: calc(100% + 8px); right: 0;
-                    background: #fff; border: 1px solid var(--border); border-radius: 6px;
+                    background: #fff; border: 1px solid var(--border); border-radius: 8px;
                     box-shadow: 0 8px 24px rgba(15,23,42,.1);
                     min-width: 155px; overflow: hidden; z-index: 20;
                 }
@@ -425,50 +449,53 @@ router.get("/login", (req, res) => {
                 .lang-menu-item:hover { background: #f5f6f8; }
                 .lang-menu-item.active { background: #eef3fc; color: var(--blue-dark); font-weight: 600; }
 
-                .form-head { margin-bottom: 24px; }
+                .form-head { margin-bottom: 26px; }
                 .form-head .welcome { font-size: 11.5px; font-weight: 700; color: var(--blue); letter-spacing: 1.5px; text-transform: uppercase; }
-                .form-head h1 { font-size: 21px; font-weight: 800; color: var(--text); margin-top: 8px; letter-spacing: .1px; }
+                .form-head h1 { font-size: 23px; font-weight: 800; color: var(--text); margin-top: 8px; letter-spacing: .1px; }
                 .form-head p { font-size: 13px; color: var(--text-muted); margin-top: 6px; }
 
-                .form-group { margin-bottom: 16px; }
+                .form-group { margin-bottom: 17px; }
                 .form-group label { display: block; margin-bottom: 6px; font-weight: 600; color: #3c4451; font-size: 12px; letter-spacing: .2px; }
                 .input-wrap { position: relative; }
                 .input-wrap .fld-icon {
-                    position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
-                    color: #a4abb8; font-size: 13px; pointer-events: none;
+                    position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+                    color: #9aa3b2; font-size: 13px; pointer-events: none;
+                    transition: color .15s;
                 }
+                .input-wrap:focus-within .fld-icon { color: var(--blue); }
                 .form-control {
-                    width: 100%; padding: 11px 14px 11px 38px;
-                    border: 1px solid var(--border); border-radius: 5px;
+                    width: 100%; padding: 12px 14px 12px 40px;
+                    border: 1.5px solid var(--border); border-radius: 9px;
                     font-size: 14px; font-family: inherit;
-                    transition: all .15s; background: #fff; color: #15181e;
+                    transition: all .15s; background: #f8f9fb; color: #15181e;
                 }
                 .form-control::placeholder { color: #a9afba; }
                 .form-control:focus {
-                    outline: none; border-color: var(--blue);
-                    box-shadow: 0 0 0 3px rgba(45,91,185,.12);
+                    outline: none; border-color: var(--blue); background: #fff;
+                    box-shadow: 0 0 0 4px rgba(45,91,185,.1);
                 }
                 .password-wrapper .form-control { padding-right: 42px; }
                 .toggle-password {
                     position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
                     background: none; border: none; cursor: pointer; padding: 0;
-                    color: #a4abb8; display: flex; align-items: center; transition: color .15s;
+                    color: #9aa3b2; display: flex; align-items: center; transition: color .15s;
                 }
                 .toggle-password:hover { color: var(--blue); }
 
                 .btn-login {
-                    width: 100%; padding: 12px; border: none; border-radius: 5px;
-                    font-size: 14px; font-weight: 600; cursor: pointer;
+                    width: 100%; padding: 13px; border: none; border-radius: 9px;
+                    font-size: 14.5px; font-weight: 700; cursor: pointer;
                     display: flex; justify-content: center; align-items: center; gap: 8px;
-                    background: var(--blue);
-                    color: #fff; margin-top: 6px;
+                    background: linear-gradient(135deg, var(--blue), var(--navy));
+                    color: #fff; margin-top: 10px;
                     letter-spacing: .2px;
-                    transition: background .15s ease;
+                    box-shadow: 0 10px 24px -6px rgba(45,91,185,.55);
+                    transition: all .18s ease;
                 }
-                .btn-login:hover { background: var(--blue-dark); }
-                .btn-login:active { background: #163a7a; }
+                .btn-login:hover { filter: brightness(1.08); box-shadow: 0 14px 28px -6px rgba(45,91,185,.65); transform: translateY(-1px); }
+                .btn-login:active { transform: translateY(0); filter: brightness(.96); }
 
-                .divider { display: flex; align-items: center; margin: 22px 0; color: #a9afba; font-size: 11px; }
+                .divider { display: flex; align-items: center; margin: 24px 0; color: #a9afba; font-size: 11px; }
                 .divider::before, .divider::after { content: ""; flex: 1; border-bottom: 1px solid #ebedf0; }
                 .divider::before { margin-right: 14px; }
                 .divider::after { margin-left: 14px; }
@@ -476,20 +503,20 @@ router.get("/login", (req, res) => {
                 .links { text-align: center; font-size: 13px; }
                 .links a {
                     display: inline-flex; align-items: center; gap: 6px;
-                    color: var(--text-muted); text-decoration: none; font-weight: 500;
-                    padding: 9px 18px; border: 1px solid var(--border); border-radius: 5px;
+                    color: var(--text-muted); text-decoration: none; font-weight: 600;
+                    padding: 10px 18px; border: 1.5px solid var(--border); border-radius: 9px;
                     transition: all .15s;
                 }
-                .links a:hover { border-color: var(--blue); color: var(--blue); }
+                .links a:hover { border-color: var(--blue); color: var(--blue); background: #f8faff; }
 
                 .error-message {
                     display: flex; align-items: center; gap: 8px;
                     color: var(--error-color); background-color: #fcf0ee;
-                    padding: 11px 14px; border-radius: 5px; margin-bottom: 18px;
+                    padding: 11px 14px; border-radius: 8px; margin-bottom: 18px;
                     font-size: 13px; border: 1px solid #f0d2cc;
                 }
 
-                .current-time { text-align: center; margin-top: 22px; font-size: 11px; color: #9aa0ab; font-weight: 500; font-variant-numeric: tabular-nums; }
+                .current-time { text-align: center; margin-top: 24px; font-size: 11px; color: #9aa0ab; font-weight: 500; font-variant-numeric: tabular-nums; }
                 .footer { margin-top: 6px; text-align: center; font-size: 11px; color: #9aa0ab; }
 
                 @media (max-width: 920px) {
@@ -497,8 +524,8 @@ router.get("/login", (req, res) => {
                 }
                 @media (max-width: 480px) {
                     .form-panel { padding: 20px; }
-                    .login-card { padding: 28px 22px 24px; }
-                    .form-head h1 { font-size: 18px; }
+                    .login-card { padding: 30px 24px 26px; }
+                    .form-head h1 { font-size: 19px; }
                 }
             </style>
         </head>
@@ -766,6 +793,7 @@ router.get("/login", (req, res) => {
                 <div class="login-card">
 
                 <div class="card-top-row">
+                    <div class="card-mark"><i class="fa-solid fa-shield-halved"></i></div>
                     ${(() => {
                       const CODE_MAP = {
                         ja: "JP",
