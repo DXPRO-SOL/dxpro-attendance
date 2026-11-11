@@ -46,9 +46,11 @@ router.get("/login", (req, res) => {
             <meta charset="UTF-8">
             <title>${t("login.title", lang)}</title>
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@400;500;600;700;800&display=swap" rel="stylesheet">
             <style>
                 :root {
+                    --navy: #10213f;
+                    --navy-light: #16305c;
                     --blue: #2d5bb9;
                     --blue-dark: #1f4694;
                     --border: #d4d7dc;
@@ -56,6 +58,7 @@ router.get("/login", (req, res) => {
                     --text-muted: #5f6672;
                     --bg: #f4f5f7;
                     --error-color: #c0392b;
+                    --line: rgba(255,255,255,.12);
                 }
                 * { margin: 0; padding: 0; box-sizing: border-box; }
                 html, body { height: 100%; }
@@ -63,20 +66,90 @@ router.get("/login", (req, res) => {
                     font-family: 'Inter', 'Noto Sans JP', sans-serif;
                     color: var(--text);
                     min-height: 100vh;
-                    background: var(--bg);
                     display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
-                    padding: 24px;
                 }
 
-                .top-brand {
-                    display: flex; align-items: center; gap: 10px;
-                    margin-bottom: 28px;
+                /* ══════════ 左パネル：ブランディング ══════════ */
+                .brand-panel {
+                    position: relative;
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                    padding: 54px 60px;
+                    overflow: hidden;
+                    background: linear-gradient(165deg, var(--navy) 0%, var(--navy-light) 100%);
+                    color: #fff;
                 }
-                .top-brand img { height: 30px; width: auto; }
-                .top-brand span { font-size: 15px; font-weight: 700; letter-spacing: .5px; color: var(--text); }
+                .brand-panel::before {
+                    content: '';
+                    position: absolute; inset: 0;
+                    background-image:
+                        linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
+                    background-size: 42px 42px;
+                    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 30% 20%, #000 0%, transparent 70%);
+                    mask-image: radial-gradient(ellipse 80% 70% at 30% 20%, #000 0%, transparent 70%);
+                    pointer-events: none;
+                }
+
+                .brand-top { position: relative; z-index: 1; }
+                .brand-logo { display: flex; align-items: center; gap: 12px; }
+                .brand-logo img { height: 36px; width: auto; filter: brightness(0) invert(1); }
+                .brand-logo-text { font-size: 17px; font-weight: 800; letter-spacing: 1.5px; }
+                .brand-tagline {
+                    margin-top: 56px;
+                    font-size: 28px;
+                    font-weight: 700;
+                    line-height: 1.5;
+                    letter-spacing: .2px;
+                    max-width: 440px;
+                }
+                .brand-tagline .accent { color: #8fb4ff; }
+                .brand-sub {
+                    margin-top: 18px;
+                    font-size: 14px;
+                    color: rgba(255,255,255,.6);
+                    max-width: 400px;
+                    line-height: 1.8;
+                }
+
+                .brand-features {
+                    position: relative; z-index: 1;
+                    display: flex; flex-direction: column;
+                    margin-top: 40px;
+                    border-top: 1px solid var(--line);
+                }
+                .brand-feature {
+                    display: flex; align-items: center; gap: 14px;
+                    font-size: 13px; color: rgba(255,255,255,.85);
+                    padding: 15px 0;
+                    border-bottom: 1px solid var(--line);
+                }
+                .brand-feature .ico {
+                    width: 30px; height: 30px; flex-shrink: 0;
+                    display: flex; align-items: center; justify-content: center;
+                    background: rgba(255,255,255,.08); border-radius: 7px;
+                    color: #8fb4ff; font-size: 13px;
+                }
+
+                .brand-foot {
+                    position: relative; z-index: 1;
+                    display: flex; align-items: center; justify-content: space-between;
+                    font-size: 11px; color: rgba(255,255,255,.45);
+                    letter-spacing: .3px;
+                }
+                .brand-foot .dot { color: #5fd38a; margin-right: 6px; }
+
+                /* ══════════ 右パネル：ログインフォーム ══════════ */
+                .form-panel {
+                    flex: 1;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    background: var(--bg);
+                    padding: 40px;
+                }
 
                 .login-card {
                     width: 100%;
@@ -115,8 +188,9 @@ router.get("/login", (req, res) => {
                 .lang-menu-item:hover { background: #f5f6f8; }
                 .lang-menu-item.active { background: #eef3fc; color: var(--blue-dark); font-weight: 600; }
 
-                .form-head { margin-bottom: 24px; text-align: center; }
-                .form-head h1 { font-size: 19px; font-weight: 700; color: var(--text); letter-spacing: .1px; }
+                .form-head { margin-bottom: 24px; }
+                .form-head .welcome { font-size: 11.5px; font-weight: 700; color: var(--blue); letter-spacing: 1.5px; text-transform: uppercase; }
+                .form-head h1 { font-size: 21px; font-weight: 800; color: var(--text); margin-top: 8px; letter-spacing: .1px; }
                 .form-head p { font-size: 13px; color: var(--text-muted); margin-top: 6px; }
 
                 .form-group { margin-bottom: 16px; }
@@ -179,9 +253,13 @@ router.get("/login", (req, res) => {
                 }
 
                 .current-time { text-align: center; margin-top: 22px; font-size: 11px; color: #9aa0ab; font-weight: 500; font-variant-numeric: tabular-nums; }
-                .footer { margin-top: 16px; text-align: center; font-size: 11px; color: #9aa0ab; }
+                .footer { margin-top: 6px; text-align: center; font-size: 11px; color: #9aa0ab; }
 
+                @media (max-width: 920px) {
+                    .brand-panel { display: none; }
+                }
                 @media (max-width: 480px) {
+                    .form-panel { padding: 20px; }
                     .login-card { padding: 28px 22px 24px; }
                     .form-head h1 { font-size: 18px; }
                 }
@@ -189,12 +267,36 @@ router.get("/login", (req, res) => {
         </head>
         <body>
 
-            <div class="top-brand">
-                <img src="/nokori-logo.png" alt="NOKORI">
-                <span>NOKORI</span>
+            <!-- ══════════ 左：ブランディングパネル ══════════ -->
+            <div class="brand-panel">
+                <div class="brand-top">
+                    <div class="brand-logo">
+                        <img src="/nokori-logo.png" alt="NOKORI">
+                        <span class="brand-logo-text">NOKORI</span>
+                    </div>
+                    <div class="brand-tagline">
+                        組織の力を、<br><span class="accent">ひとつのプラットフォームに。</span>
+                    </div>
+                    <div class="brand-sub">
+                        勤怠・目標・給与・チャット・ワークフローを統合した<br>エンタープライズ業務基盤です。
+                    </div>
+
+                    <div class="brand-features">
+                        <div class="brand-feature"><span class="ico"><i class="fa-solid fa-shield-halved"></i></span>セキュアなシングルサインオン</div>
+                        <div class="brand-feature"><span class="ico"><i class="fa-solid fa-chart-line"></i></span>リアルタイムな勤怠・人事データ分析</div>
+                        <div class="brand-feature"><span class="ico"><i class="fa-solid fa-building"></i></span>全社統合マネジメントプラットフォーム</div>
+                    </div>
+                </div>
+
+                <div class="brand-foot">
+                    <span><span class="dot">●</span>稼働中</span>
+                    <span>&copy; ${new Date().getFullYear()} DXPRO SOLUTIONS</span>
+                </div>
             </div>
 
-            <div class="login-card">
+            <!-- ══════════ 右：ログインフォーム ══════════ -->
+            <div class="form-panel">
+                <div class="login-card">
 
                 <div class="card-top-row">
                     ${(() => {
@@ -216,6 +318,7 @@ router.get("/login", (req, res) => {
                 </div>
 
                 <div class="form-head">
+                    <div class="welcome">Sign In</div>
                     <h1>${t("login.title", lang)}</h1>
                     <p>認証情報を入力してサインインしてください</p>
                 </div>
@@ -261,10 +364,10 @@ router.get("/login", (req, res) => {
                     <a href="https://dxpro-sol.com" target="_blank"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${t("login.portal", lang)}</a>
                 </div>
 
+                <div class="current-time" id="current-time"></div>
+                <div class="footer">&copy; ${new Date().getFullYear()} DXPRO SOLUTIONS. All rights reserved.</div>
+                </div>
             </div>
-
-            <div class="current-time" id="current-time"></div>
-            <div class="footer">&copy; ${new Date().getFullYear()} DXPRO SOLUTIONS. All rights reserved.</div>
 
             <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
             <script>
