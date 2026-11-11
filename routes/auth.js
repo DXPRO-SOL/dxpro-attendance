@@ -582,21 +582,21 @@ router.get("/login", (req, res) => {
                     <!-- スライド1：課題管理（GitHub / Jira / Backlog） -->
                     <div class="slide active">
                         <div class="slide-title">課題・タスク管理を、<br><span class="accent">チーム全員の目に見える形に。</span></div>
-                        <div class="slide-desc">GitHub・Jira・Backlogのような開発タスク管理を統合。<br><b style="color:#c4b5fd;">AI</b>が優先度と遅延リスクを自動分析します。</div>
+                        <div class="slide-desc">GitHub・Jira・Backlogのような開発タスク管理を統合。<br><b style="color:#c4b5fd;">スマート分析</b>が優先度と遅延リスクを自動分析します。</div>
                         <div class="illus-stage">
                             <div class="blob" style="width:300px;height:300px;background:#8fb4ff;top:0;left:60px;"></div>
                             <div class="blob" style="width:300px;height:300px;background:#c4b5fd;bottom:10px;right:30px;"></div>
                             <div class="blob" style="width:200px;height:200px;background:#5fd38a;top:40px;right:120px;opacity:.22;"></div>
 
                             <div class="ai-chip" style="top:6px;left:60px;">
-                                <i class="fa-solid fa-wand-magic-sparkles"></i> AIが次の優先タスクを提案
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> スマート分析が次の優先タスクを提案
                             </div>
 
                             <div class="app-window" style="top:40px;left:6px;width:288px;height:220px;">
                                 <div class="app-titlebar">
                                     <span class="app-tdot r"></span><span class="app-tdot y"></span><span class="app-tdot g"></span>
                                     <span class="app-url">app.nokori.io/issues/sprint-24</span>
-                                    <span class="ai-tag" style="margin-left:auto;"><i class="fa-solid fa-sparkles"></i> AI</span>
+                                    <span class="ai-tag" style="margin-left:auto;"><i class="fa-solid fa-sparkles"></i> SMART</span>
                                 </div>
                                 <div class="app-body">
                                     <div class="app-sidebar">
@@ -643,7 +643,7 @@ router.get("/login", (req, res) => {
                             <div class="particle" style="top:322px;left:230px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
                             <div class="particle" style="top:60px;left:330px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
 
-                            <div class="float-card" style="top:268px;left:292px;width:168px;">
+                            <div class="float-card" style="top:285px;left:292px;width:168px;">
                                 <span class="fc-tag green">完了</span>
                                 <div class="fc-title"><i class="fa-solid fa-circle-check" style="color:#5fd38a;margin-right:5px;"></i>API設計 #182</div>
                                 <div class="fc-sub">佐藤 → レビュー済み</div>
@@ -663,7 +663,7 @@ router.get("/login", (req, res) => {
                                 <div class="commit-row"><span class="cm-dot" style="background:#8fb4ff;"></span><span class="cm-txt"><span class="cl1">feat:</span> 承認フロー追加</span></div>
                             </div>
                             <div class="rank-card" style="top:0px;left:300px;width:150px;">
-                                <div class="ai-head" style="display:flex;align-items:center;gap:5px;margin-bottom:7px;font-size:8.5px;font-weight:800;color:#c4b5fd;text-transform:uppercase;letter-spacing:.3px;"><i class="fa-solid fa-sparkles"></i> AI予測スコア</div>
+                                <div class="ai-head" style="display:flex;align-items:center;gap:5px;margin-bottom:7px;font-size:8.5px;font-weight:800;color:#c4b5fd;text-transform:uppercase;letter-spacing:.3px;"><i class="fa-solid fa-sparkles"></i> スマート予測スコア</div>
                                 <div class="rank-row"><span class="rk-num">1</span><div class="rk-bar"><i style="width:92%;background:#5fd38a;"></i></div><span class="rk-pct">92%</span></div>
                                 <div class="rank-row"><span class="rk-num">2</span><div class="rk-bar"><i style="width:74%;background:#8fb4ff;"></i></div><span class="rk-pct">74%</span></div>
                             </div>
@@ -673,7 +673,7 @@ router.get("/login", (req, res) => {
                     <!-- スライド2：勤怠・人事管理（給与・休暇） -->
                     <div class="slide">
                         <div class="slide-title">勤怠・人事管理を、<br><span class="accent">給与計算まで一気通貫で。</span></div>
-                        <div class="slide-desc">打刻・残業・休暇申請から給与明細の発行まで。<br><b style="color:#c4b5fd;">AI</b>が残業時間を予測し最適な人員配置を提案。</div>
+                        <div class="slide-desc">打刻・残業・休暇申請から給与明細の発行まで。<br><b style="color:#c4b5fd;">スマート分析</b>が残業時間を予測し最適な人員配置を提案。</div>
                         <div class="illus-stage">
                             <div class="blob" style="width:180px;height:180px;background:#5fd38a;top:10px;left:10px;"></div>
                             <div class="blob" style="width:150px;height:150px;background:#8fb4ff;bottom:0;right:60px;"></div>
@@ -696,7 +696,7 @@ router.get("/login", (req, res) => {
                                 <div class="app-titlebar">
                                     <span class="app-tdot r"></span><span class="app-tdot y"></span><span class="app-tdot g"></span>
                                     <span class="app-url">app.nokori.io/payroll</span>
-                                    <span class="ai-tag" style="margin-left:auto;"><i class="fa-solid fa-sparkles"></i> AI</span>
+                                    <span class="ai-tag" style="margin-left:auto;"><i class="fa-solid fa-sparkles"></i> SMART</span>
                                 </div>
                                 <div class="app-body">
                                     <div class="app-sidebar">
@@ -725,10 +725,10 @@ router.get("/login", (req, res) => {
                                 </div>
                             </div>
 
-                            <div class="notif-badge" style="top:27px;left:202px;">2</div>
+                            <div class="notif-badge" style="top:25px;left:183px;">2</div>
 
                             <div class="ai-chip" style="top:200px;left:4px;">
-                                <i class="fa-solid fa-chart-line"></i> AI残業予測：来月 -12%
+                                <i class="fa-solid fa-chart-line"></i> スマート残業予測：来月 -12%
                             </div>
 
                             <div class="float-card" style="top:238px;left:4px;width:168px;">
@@ -763,7 +763,7 @@ router.get("/login", (req, res) => {
                     <!-- スライド3：目標管理・ワークフロー -->
                     <div class="slide">
                         <div class="slide-title">目標管理とワークフローを、<br><span class="accent">成果につながる流れに。</span></div>
-                        <div class="slide-desc">個人目標の設定から承認申請までの流れを可視化。<br><b style="color:#c4b5fd;">AI</b>が目標達成リスクを予測し早期にアラート。</div>
+                        <div class="slide-desc">個人目標の設定から承認申請までの流れを可視化。<br><b style="color:#c4b5fd;">スマート分析</b>が目標達成リスクを予測し早期にアラート。</div>
                         <div class="illus-stage">
                             <div class="blob" style="width:190px;height:190px;background:#ffbd2e;top:0;left:30px;"></div>
                             <div class="blob" style="width:130px;height:130px;background:#8fb4ff;bottom:20px;right:20px;"></div>
@@ -788,7 +788,7 @@ router.get("/login", (req, res) => {
                             <div class="particle" style="top:296px;left:12px;"></div>
 
                             <div class="ai-card" style="top:50px;left:265px;width:155px;">
-                                <div class="ai-head"><i class="fa-solid fa-sparkles"></i> AIインサイト</div>
+                                <div class="ai-head"><i class="fa-solid fa-sparkles"></i> スマートインサイト</div>
                                 <div class="ai-text">このままのペースだと<b style="color:#fff;">Q4目標の達成率は87%</b>と予測されます。</div>
                                 <div class="ai-sub">⚠ 2件のタスクで遅延リスクを検知</div>
                             </div>
@@ -807,11 +807,11 @@ router.get("/login", (req, res) => {
 
                             <div class="sticky-note" style="top:4px;left:8px;">✓ 承認済 12件</div>
 
-                            <div class="app-window" style="top:148px;right:2px;width:196px;height:150px;">
+                            <div class="app-window" style="top:220px;right:2px;width:196px;height:150px;">
                                 <div class="app-titlebar">
                                     <span class="app-tdot r"></span><span class="app-tdot y"></span><span class="app-tdot g"></span>
                                     <span class="app-url">app.nokori.io/okr</span>
-                                    <span class="ai-tag" style="margin-left:auto;"><i class="fa-solid fa-sparkles"></i> AI</span>
+                                    <span class="ai-tag" style="margin-left:auto;"><i class="fa-solid fa-sparkles"></i> SMART</span>
                                 </div>
                                 <div class="app-body">
                                     <div class="app-sidebar">
