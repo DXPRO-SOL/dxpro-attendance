@@ -112,8 +112,17 @@ router.get("/login", (req, res) => {
                 .illus-stage {
                     position: relative;
                     width: 100%; max-width: 420px;
-                    height: 260px;
-                    margin-top: 28px;
+                    height: 290px;
+                    margin-top: 24px;
+                }
+                .illus-stage::before {
+                    content: '';
+                    position: absolute; inset: 10px 0 0 0;
+                    background-image: radial-gradient(rgba(255,255,255,.12) 1px, transparent 1px);
+                    background-size: 16px 16px;
+                    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 0%, transparent 75%);
+                    mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 0%, transparent 75%);
+                    pointer-events: none;
                 }
                 .blob {
                     position: absolute; border-radius: 50%;
@@ -151,6 +160,37 @@ router.get("/login", (req, res) => {
                     position: absolute; border-radius: 50%; display: flex; align-items: center; justify-content: center;
                     font-size: 10px; font-weight: 700; color: #fff;
                     box-shadow: 0 8px 16px rgba(0,0,0,.3);
+                }
+                .avatar-stack { position: absolute; display: flex; }
+                .avatar-stack .av {
+                    width: 24px; height: 24px; border-radius: 50%; border: 2px solid #0e1526;
+                    display: flex; align-items: center; justify-content: center;
+                    font-size: 9px; font-weight: 700; color: #fff; margin-left: -8px;
+                }
+                .avatar-stack .av:first-child { margin-left: 0; }
+                .notif-badge {
+                    position: absolute; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px;
+                    background: #ff6159; color: #fff; font-size: 9px; font-weight: 800;
+                    display: flex; align-items: center; justify-content: center;
+                    box-shadow: 0 6px 14px rgba(255,97,89,.4);
+                }
+                .mini-ring {
+                    position: absolute; width: 38px; height: 38px; border-radius: 50%;
+                    display: flex; align-items: center; justify-content: center;
+                    font-size: 9.5px; font-weight: 800; color: #fff;
+                }
+                .mini-ring::before {
+                    content: ''; position: absolute; inset: 0; border-radius: 50%;
+                    background: conic-gradient(var(--c,#8fb4ff) calc(var(--p,70) * 1%), rgba(255,255,255,.1) 0);
+                    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+                    mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+                }
+                .mini-ring span { position: relative; z-index: 1; }
+                .sticky-note {
+                    position: absolute; background: #ffbd2e; color: #2a2208;
+                    border-radius: 4px; padding: 7px 9px; font-size: 9.5px; font-weight: 700;
+                    box-shadow: 0 10px 22px rgba(0,0,0,.35);
+                    transform: rotate(-6deg);
                 }
 
                 /* ── スライド1：課題管理（GitHub / Jira / Backlog）── */
@@ -391,35 +431,49 @@ router.get("/login", (req, res) => {
                         <div class="illus-stage">
                             <div class="blob" style="width:160px;height:160px;background:#8fb4ff;top:0;left:60px;"></div>
                             <div class="blob" style="width:120px;height:120px;background:#c4b5fd;bottom:10px;right:30px;"></div>
+                            <div class="blob" style="width:90px;height:90px;background:#5fd38a;top:40px;right:120px;opacity:.22;"></div>
 
                             <div class="board-main">
-                                <div class="board-head"><span class="bdot r"></span><span class="bdot y"></span><span class="bdot g"></span></div>
+                                <div class="board-head"><span class="bdot r"></span><span class="bdot y"></span><span class="bdot g"></span><span style="margin-left:auto;font-size:7px;color:rgba(255,255,255,.3);">sprint-24</span></div>
                                 <div class="board-cols">
                                     <div class="board-col">
-                                        <div class="bc-title">To Do</div>
+                                        <div class="bc-title">To Do <span style="float:right;">5</span></div>
                                         <div class="board-chip"><div class="chip-dot p1"></div><div class="chip-line" style="width:85%"></div><div class="chip-line" style="width:55%"></div></div>
                                         <div class="board-chip"><div class="chip-dot p2"></div><div class="chip-line" style="width:70%"></div></div>
+                                        <div class="board-chip"><div class="chip-dot p3"></div><div class="chip-line" style="width:50%"></div></div>
                                     </div>
                                     <div class="board-col">
-                                        <div class="bc-title">In Progress</div>
+                                        <div class="bc-title">In Progress <span style="float:right;">3</span></div>
                                         <div class="board-chip"><div class="chip-dot p2"></div><div class="chip-line" style="width:90%"></div><div class="chip-line" style="width:40%"></div></div>
+                                        <div class="board-chip"><div class="chip-dot p1"></div><div class="chip-line" style="width:60%"></div></div>
                                     </div>
                                     <div class="board-col">
-                                        <div class="bc-title">Done</div>
+                                        <div class="bc-title">Done <span style="float:right;">8</span></div>
                                         <div class="board-chip"><div class="chip-dot p3"></div><div class="chip-line" style="width:65%"></div></div>
                                         <div class="board-chip"><div class="chip-dot p3"></div><div class="chip-line" style="width:80%"></div></div>
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="ico-badge" style="width:42px;height:42px;top:8px;right:40px;background:#1c2435;border:1px solid rgba(255,255,255,.15);"><i class="fa-brands fa-github"></i></div>
-                            <div class="ico-badge" style="width:34px;height:34px;bottom:30px;right:10px;background:#2d5bb9;"><i class="fa-solid fa-code-branch"></i></div>
+                            <div class="ico-badge" style="width:42px;height:42px;top:4px;right:40px;background:#1c2435;border:1px solid rgba(255,255,255,.15);"><i class="fa-brands fa-github"></i></div>
+                            <div class="notif-badge" style="top:-4px;right:30px;">3</div>
+                            <div class="ico-badge" style="width:34px;height:34px;bottom:70px;right:6px;background:#2d5bb9;"><i class="fa-solid fa-code-branch"></i></div>
+                            <div class="ico-badge" style="width:30px;height:30px;top:66px;right:4px;background:#0052cc;"><i class="fa-brands fa-jira"></i></div>
 
-                            <div class="float-card" style="bottom:0;left:230px;width:150px;">
+                            <div class="dash-line" style="width:40px;top:20px;right:72px;transform:rotate(35deg);"></div>
+
+                            <div class="float-card" style="bottom:36px;left:210px;width:160px;">
                                 <span class="fc-tag green">完了</span>
                                 <div class="fc-title"><i class="fa-solid fa-circle-check" style="color:#5fd38a;margin-right:5px;"></i>API設計 #182</div>
                                 <div class="fc-sub">佐藤 → レビュー済み</div>
+                                <div class="avatar-stack" style="position:static;margin-top:7px;">
+                                    <div class="av" style="background:#8fb4ff;">田</div>
+                                    <div class="av" style="background:#c4b5fd;">佐</div>
+                                    <div class="av" style="background:#5fd38a;">鈴</div>
+                                </div>
                             </div>
+
+                            <div class="sticky-note" style="bottom:0;left:60px;">🔥 今週の優先タスク</div>
                         </div>
                     </div>
 
@@ -430,23 +484,38 @@ router.get("/login", (req, res) => {
                         <div class="illus-stage">
                             <div class="blob" style="width:150px;height:150px;background:#5fd38a;top:10px;left:10px;"></div>
                             <div class="blob" style="width:130px;height:130px;background:#8fb4ff;bottom:0;right:60px;"></div>
+                            <div class="blob" style="width:80px;height:80px;background:#ffbd2e;top:0;right:10px;opacity:.2;"></div>
 
+                            <div class="ring" style="width:140px;height:140px;top:14px;left:24px;"></div>
                             <div class="clock-illus">
                                 <div class="c-center"></div>
                             </div>
-                            <div class="ico-badge" style="width:36px;height:36px;top:0;left:120px;background:#1f8a4c;"><i class="fa-solid fa-umbrella-beach"></i></div>
+                            <div class="ico-badge" style="width:36px;height:36px;top:-6px;left:110px;background:#1f8a4c;"><i class="fa-solid fa-umbrella-beach"></i></div>
+                            <div class="ico-badge" style="width:30px;height:30px;top:40px;left:4px;background:#2d5bb9;"><i class="fa-solid fa-fingerprint"></i></div>
+                            <div class="mini-ring" style="--p:82;--c:#8fb4ff;top:134px;left:42px;"><span>82%</span></div>
 
                             <div class="payslip-card">
                                 <div class="ps-head"><span>11月分 給与明細</span><i class="fa-solid fa-sack-dollar" style="color:#ffbd2e;font-size:12px;"></i></div>
                                 <div class="payslip-line"></div>
                                 <div class="payslip-line short"></div>
                                 <div class="payslip-line" style="width:40%;background:#5fd38a;"></div>
+                                <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:9px;color:rgba(255,255,255,.35);">
+                                    <span>支給総額</span><span style="color:#5fd38a;font-weight:700;">¥328,000</span>
+                                </div>
                             </div>
 
-                            <div class="float-card" style="top:150px;left:10px;width:140px;">
+                            <div class="notif-badge" style="top:96px;left:150px;">2</div>
+
+                            <div class="float-card" style="top:172px;left:4px;width:150px;">
                                 <span class="fc-tag blue">休暇申請</span>
                                 <div class="fc-title"><i class="fa-regular fa-calendar" style="margin-right:5px;"></i>有給休暇 (2日)</div>
                                 <div class="fc-sub">田中 — 承認待ち</div>
+                            </div>
+
+                            <div class="avatar-stack" style="top:4px;right:48px;">
+                                <div class="av" style="background:#8fb4ff;">山</div>
+                                <div class="av" style="background:#ffbd2e;">中</div>
+                                <div class="av" style="background:#5fd38a;">+5</div>
                             </div>
                         </div>
                     </div>
@@ -458,20 +527,34 @@ router.get("/login", (req, res) => {
                         <div class="illus-stage">
                             <div class="blob" style="width:160px;height:160px;background:#ffbd2e;top:0;left:30px;"></div>
                             <div class="blob" style="width:110px;height:110px;background:#8fb4ff;bottom:20px;right:20px;"></div>
+                            <div class="blob" style="width:70px;height:70px;background:#c4b5fd;top:60px;right:140px;opacity:.22;"></div>
 
                             <div class="ring" style="width:150px;height:150px;top:24px;left:36px;"></div>
+                            <div class="ring" style="width:184px;height:184px;top:7px;left:19px;opacity:.5;"></div>
                             <div class="target-illus"></div>
                             <div class="arrow-illus"></div>
 
-                            <div class="flow-node" style="background:#2d5bb9;top:18px;right:30px;"><i class="fa-solid fa-flag-checkered"></i></div>
-                            <div class="dash-line" style="width:60px;top:34px;right:56px;transform:rotate(18deg);"></div>
-                            <div class="flow-node" style="background:#c4b5fd;top:4px;right:100px;width:22px;height:22px;"><i class="fa-solid fa-circle-check" style="font-size:9px;"></i></div>
+                            <div class="flow-node" style="background:#2d5bb9;top:10px;right:30px;"><i class="fa-solid fa-flag-checkered"></i></div>
+                            <div class="dash-line" style="width:60px;top:26px;right:56px;transform:rotate(18deg);"></div>
+                            <div class="flow-node" style="background:#c4b5fd;top:-4px;right:100px;width:22px;height:22px;"><i class="fa-solid fa-circle-check" style="font-size:9px;"></i></div>
+                            <div class="dash-line" style="width:36px;top:6px;right:120px;transform:rotate(-10deg);"></div>
+                            <div class="flow-node" style="background:#5fd38a;top:14px;right:156px;width:20px;height:20px;"><i class="fa-solid fa-play" style="font-size:8px;"></i></div>
 
-                            <div class="float-card" style="bottom:4px;left:150px;width:170px;">
+                            <div class="mini-ring" style="--p:92;--c:#ffbd2e;top:140px;left:60px;"><span>92%</span></div>
+                            <div class="notif-badge" style="top:112px;left:160px;">5</div>
+
+                            <div class="float-card" style="bottom:0;left:150px;width:180px;">
                                 <span class="fc-tag gold">稟議</span>
                                 <div class="fc-title"><i class="fa-solid fa-bullseye" style="color:#ffbd2e;margin-right:5px;"></i>Q4目標達成率 92%</div>
                                 <div class="fc-sub">承認済 — 全社共有</div>
+                                <div class="avatar-stack" style="position:static;margin-top:7px;">
+                                    <div class="av" style="background:#ffbd2e;">伊</div>
+                                    <div class="av" style="background:#2d5bb9;">鈴</div>
+                                    <div class="av" style="background:#c4b5fd;">高</div>
+                                </div>
                             </div>
+
+                            <div class="sticky-note" style="top:4px;left:8px;transform:rotate(5deg);">✓ 承認済 12件</div>
                         </div>
                     </div>
                 </div>
