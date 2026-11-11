@@ -46,20 +46,18 @@ router.get("/login", (req, res) => {
             <meta charset="UTF-8">
             <title>${t("login.title", lang)}</title>
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+JP:wght@500;600&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
             <style>
                 :root {
-                    --navy-950: #05070f;
-                    --navy-900: #0a0e1a;
-                    --navy-800: #111727;
-                    --navy-700: #1a2235;
-                    --indigo: #4f6bff;
-                    --indigo-light: #7c93ff;
-                    --cyan: #22d3ee;
-                    --gold: #d4af6a;
-                    --text-light: #e7ebf7;
-                    --text-muted: #8b93ab;
-                    --error-color: #f87171;
+                    --navy-950: #0c111b;
+                    --navy-900: #141b29;
+                    --navy-800: #1c2435;
+                    --line: rgba(255,255,255,.1);
+                    --gold: #b8964f;
+                    --gold-light: #d4b97a;
+                    --text-light: #eceef2;
+                    --text-muted: #8c93a3;
+                    --error-color: #c0392b;
                 }
                 * { margin: 0; padding: 0; box-sizing: border-box; }
                 html, body { height: 100%; }
@@ -80,83 +78,69 @@ router.get("/login", (req, res) => {
                     justify-content: space-between;
                     padding: 56px 64px;
                     overflow: hidden;
-                    background:
-                        radial-gradient(circle at 15% 20%, rgba(79,107,255,.35), transparent 55%),
-                        radial-gradient(circle at 85% 80%, rgba(34,211,238,.18), transparent 50%),
-                        linear-gradient(160deg, var(--navy-900) 0%, var(--navy-950) 70%);
+                    background: var(--navy-950);
+                    border-right: 1px solid var(--line);
                 }
                 .brand-panel::before {
                     content: '';
                     position: absolute; inset: 0;
-                    background-image:
-                        linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
-                        linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
-                    background-size: 46px 46px;
-                    mask-image: radial-gradient(ellipse at 30% 30%, black 0%, transparent 70%);
+                    background-image: repeating-linear-gradient(
+                        115deg,
+                        transparent 0px, transparent 118px,
+                        rgba(255,255,255,.035) 118px, rgba(255,255,255,.035) 119px
+                    );
                     pointer-events: none;
                 }
-                .brand-orb {
-                    position: absolute;
-                    border-radius: 50%;
-                    filter: blur(70px);
-                    opacity: .5;
-                    pointer-events: none;
-                }
-                .brand-orb.o1 { width: 420px; height: 420px; background: #4f6bff; top: -120px; left: -100px; }
-                .brand-orb.o2 { width: 340px; height: 340px; background: #22d3ee; bottom: -140px; right: -80px; opacity: .25; }
 
                 .brand-top { position: relative; z-index: 1; }
                 .brand-logo { display: flex; align-items: center; gap: 12px; }
-                .brand-logo img { height: 34px; width: auto; filter: brightness(0) invert(1); }
-                .brand-logo-text { font-size: 15px; font-weight: 700; letter-spacing: .4px; color: var(--text-light); }
+                .brand-logo img { height: 32px; width: auto; filter: brightness(0) invert(1); }
+                .brand-logo-text { font-size: 14px; font-weight: 600; letter-spacing: 2.5px; color: var(--text-muted); }
                 .brand-tagline {
-                    margin-top: 56px;
-                    font-size: 34px;
-                    font-weight: 800;
-                    line-height: 1.35;
-                    letter-spacing: -0.5px;
-                    max-width: 480px;
+                    margin-top: 64px;
+                    font-family: 'Noto Serif JP', serif;
+                    font-size: 30px;
+                    font-weight: 600;
+                    line-height: 1.55;
+                    letter-spacing: .5px;
+                    max-width: 460px;
+                    color: var(--text-light);
                 }
-                .brand-tagline .accent {
-                    background: linear-gradient(90deg, var(--indigo-light), var(--cyan));
-                    -webkit-background-clip: text;
-                    background-clip: text;
-                    color: transparent;
-                }
+                .brand-tagline .accent { color: var(--gold-light); }
+                .brand-rule { width: 44px; height: 2px; background: var(--gold); margin-top: 26px; }
                 .brand-sub {
-                    margin-top: 18px;
-                    font-size: 14.5px;
+                    margin-top: 22px;
+                    font-size: 14px;
                     color: var(--text-muted);
                     max-width: 420px;
-                    line-height: 1.7;
+                    line-height: 1.8;
                 }
 
                 .brand-features {
                     position: relative; z-index: 1;
-                    display: flex; flex-direction: column; gap: 16px;
-                    margin-top: 44px;
+                    display: flex; flex-direction: column;
+                    margin-top: 48px;
+                    border-top: 1px solid var(--line);
                 }
                 .brand-feature {
                     display: flex; align-items: center; gap: 14px;
-                    font-size: 13.5px; color: var(--text-light);
+                    font-size: 13px; color: var(--text-light);
+                    padding: 15px 0;
+                    border-bottom: 1px solid var(--line);
                 }
                 .brand-feature .ico {
-                    width: 34px; height: 34px; border-radius: 10px;
-                    display: flex; align-items: center; justify-content: center;
-                    background: rgba(79,107,255,.16);
-                    border: 1px solid rgba(124,147,255,.3);
-                    color: var(--indigo-light);
-                    font-size: 14px; flex-shrink: 0;
+                    width: 28px; text-align: center;
+                    color: var(--gold);
+                    font-size: 13px; flex-shrink: 0;
                 }
 
                 .brand-foot {
                     position: relative; z-index: 1;
                     display: flex; align-items: center; justify-content: space-between;
-                    font-size: 11.5px; color: var(--text-muted);
-                    border-top: 1px solid rgba(255,255,255,.08);
-                    padding-top: 20px;
+                    font-size: 11px; color: var(--text-muted);
+                    letter-spacing: .3px;
                 }
-                .brand-foot .dot { color: #22c55e; margin-right: 5px; }
+                .brand-foot .dot { color: #6b9d7a; margin-right: 6px; }
 
                 /* ══════════ 右パネル：ログインフォーム ══════════ */
                 .form-panel {
@@ -164,32 +148,32 @@ router.get("/login", (req, res) => {
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    background: #f7f8fb;
+                    background: #fff;
                     position: relative;
                     padding: 40px;
                 }
                 .login-card {
                     width: 100%;
-                    max-width: 400px;
+                    max-width: 380px;
                     position: relative;
                 }
                 .card-top-row {
                     display: flex; align-items: center; justify-content: flex-end;
-                    margin-bottom: 28px;
+                    margin-bottom: 36px;
                 }
                 .lang-dropdown { position: relative; }
                 .lang-trigger {
                     display: inline-flex; align-items: center; gap: 5px;
-                    padding: 6px 13px; border-radius: 999px;
-                    border: 1px solid #e2e8f0; background: #fff;
-                    font-size: 12px; font-weight: 600; cursor: pointer;
-                    color: #475569; font-family: inherit; transition: all .15s;
+                    padding: 6px 13px; border-radius: 3px;
+                    border: 1px solid #dfe3e8; background: #fff;
+                    font-size: 12px; font-weight: 500; cursor: pointer;
+                    color: #5b6472; font-family: inherit; transition: all .15s;
                 }
-                .lang-trigger:hover { border-color: #c7d2fe; color: #4f6bff; }
+                .lang-trigger:hover { border-color: #b8964f; color: #8a6d2f; }
                 .lang-menu {
                     display: none; position: absolute; top: calc(100% + 8px); right: 0;
-                    background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
-                    box-shadow: 0 10px 30px rgba(15,23,42,.12);
+                    background: #fff; border: 1px solid #dfe3e8; border-radius: 4px;
+                    box-shadow: 0 8px 24px rgba(15,23,42,.1);
                     min-width: 155px; overflow: hidden; z-index: 20;
                 }
                 .lang-menu.open { display: block; }
@@ -198,75 +182,75 @@ router.get("/login", (req, res) => {
                     cursor: pointer; font-size: 13px; color: #334155; border: none;
                     background: none; width: 100%; text-align: left; font-family: inherit;
                 }
-                .lang-menu-item:hover { background: #f1f5f9; }
-                .lang-menu-item.active { background: #eef1ff; color: #4f6bff; font-weight: 600; }
+                .lang-menu-item:hover { background: #f7f7f8; }
+                .lang-menu-item.active { background: #faf6ed; color: #8a6d2f; font-weight: 600; }
 
-                .form-head { margin-bottom: 30px; }
-                .form-head .welcome { font-size: 12.5px; font-weight: 700; color: #4f6bff; letter-spacing: .6px; text-transform: uppercase; }
-                .form-head h1 { font-size: 24px; font-weight: 800; color: #0f172a; margin-top: 8px; letter-spacing: -0.3px; }
-                .form-head p { font-size: 13px; color: #64748b; margin-top: 6px; }
+                .form-head { margin-bottom: 32px; }
+                .form-head .welcome { font-size: 11.5px; font-weight: 600; color: var(--gold); letter-spacing: 1.5px; text-transform: uppercase; }
+                .form-head h1 { font-family: 'Noto Serif JP', serif; font-size: 23px; font-weight: 600; color: #15181e; margin-top: 10px; letter-spacing: .3px; }
+                .form-head p { font-size: 13px; color: #76808f; margin-top: 8px; }
 
                 .form-group { margin-bottom: 18px; }
-                .form-group label { display: block; margin-bottom: 7px; font-weight: 600; color: #334155; font-size: 12.5px; }
+                .form-group label { display: block; margin-bottom: 7px; font-weight: 600; color: #3c4451; font-size: 12px; letter-spacing: .2px; }
                 .input-wrap { position: relative; }
                 .input-wrap .fld-icon {
                     position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
-                    color: #94a3b8; font-size: 14px; pointer-events: none;
+                    color: #a4abb8; font-size: 13px; pointer-events: none;
                 }
                 .form-control {
                     width: 100%; padding: 12px 14px 12px 40px;
-                    border: 1.5px solid #e2e8f0; border-radius: 10px;
+                    border: 1px solid #dfe3e8; border-radius: 3px;
                     font-size: 14px; font-family: inherit;
-                    transition: all .15s; background: #fff; color: #0f172a;
+                    transition: all .15s; background: #fff; color: #15181e;
                 }
-                .form-control::placeholder { color: #a7b0c2; }
+                .form-control::placeholder { color: #a9afba; }
                 .form-control:focus {
-                    outline: none; border-color: #4f6bff;
-                    box-shadow: 0 0 0 4px rgba(79,107,255,.12);
+                    outline: none; border-color: var(--gold);
+                    box-shadow: 0 0 0 3px rgba(184,150,79,.12);
                 }
                 .password-wrapper .form-control { padding-right: 42px; }
                 .toggle-password {
                     position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
                     background: none; border: none; cursor: pointer; padding: 0;
-                    color: #94a3b8; display: flex; align-items: center; transition: color .15s;
+                    color: #a4abb8; display: flex; align-items: center; transition: color .15s;
                 }
-                .toggle-password:hover { color: #4f6bff; }
+                .toggle-password:hover { color: var(--gold); }
 
                 .btn-login {
-                    width: 100%; padding: 13px; border: none; border-radius: 10px;
-                    font-size: 14.5px; font-weight: 700; cursor: pointer;
+                    width: 100%; padding: 13px; border: none; border-radius: 3px;
+                    font-size: 14px; font-weight: 600; cursor: pointer;
                     display: flex; justify-content: center; align-items: center; gap: 8px;
-                    background: linear-gradient(135deg, #4f6bff, #3b55e0);
-                    color: #fff; margin-top: 6px;
-                    box-shadow: 0 8px 20px rgba(79,107,255,.3);
-                    transition: all .2s ease;
+                    background: var(--navy-950);
+                    color: #fff; margin-top: 8px;
+                    letter-spacing: .3px;
+                    transition: background .15s ease;
                 }
-                .btn-login:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(79,107,255,.4); }
-                .btn-login:active { transform: translateY(0); }
+                .btn-login:hover { background: #1c2435; }
+                .btn-login:active { background: #05070f; }
 
-                .divider { display: flex; align-items: center; margin: 22px 0; color: #94a3b8; font-size: 11.5px; }
-                .divider::before, .divider::after { content: ""; flex: 1; border-bottom: 1px solid #e2e8f0; }
+                .divider { display: flex; align-items: center; margin: 24px 0; color: #a9afba; font-size: 11px; }
+                .divider::before, .divider::after { content: ""; flex: 1; border-bottom: 1px solid #ebedf0; }
                 .divider::before { margin-right: 14px; }
                 .divider::after { margin-left: 14px; }
 
                 .links { text-align: center; font-size: 13px; }
                 .links a {
                     display: inline-flex; align-items: center; gap: 6px;
-                    color: #475569; text-decoration: none; font-weight: 600;
-                    padding: 9px 18px; border: 1.5px solid #e2e8f0; border-radius: 999px;
+                    color: #5b6472; text-decoration: none; font-weight: 500;
+                    padding: 9px 18px; border: 1px solid #dfe3e8; border-radius: 3px;
                     transition: all .15s;
                 }
-                .links a:hover { border-color: #c7d2fe; color: #4f6bff; background: #f8f9ff; }
+                .links a:hover { border-color: #b8964f; color: #8a6d2f; }
 
                 .error-message {
                     display: flex; align-items: center; gap: 8px;
-                    color: var(--error-color); background-color: #fef2f2;
-                    padding: 11px 14px; border-radius: 10px; margin-bottom: 20px;
-                    font-size: 13px; border: 1px solid #fecaca;
+                    color: var(--error-color); background-color: #fcf0ee;
+                    padding: 11px 14px; border-radius: 3px; margin-bottom: 20px;
+                    font-size: 13px; border: 1px solid #f0d2cc;
                 }
 
-                .current-time { text-align: center; margin-top: 24px; font-size: 11.5px; color: #94a3b8; font-weight: 500; font-variant-numeric: tabular-nums; }
-                .footer { margin-top: 6px; text-align: center; font-size: 11px; color: #b4bcce; }
+                .current-time { text-align: center; margin-top: 26px; font-size: 11px; color: #a9afba; font-weight: 500; font-variant-numeric: tabular-nums; }
+                .footer { margin-top: 6px; text-align: center; font-size: 11px; color: #c1c6ce; }
 
                 @media (max-width: 920px) {
                     .brand-panel { display: none; }
@@ -284,8 +268,6 @@ router.get("/login", (req, res) => {
 
             <!-- ══════════ 左：ブランディングパネル ══════════ -->
             <div class="brand-panel">
-                <div class="brand-orb o1"></div>
-                <div class="brand-orb o2"></div>
 
                 <div class="brand-top">
                     <div class="brand-logo">
@@ -295,20 +277,20 @@ router.get("/login", (req, res) => {
                     <div class="brand-tagline">
                         組織の力を、<br><span class="accent">ひとつのプラットフォームに。</span>
                     </div>
+                    <div class="brand-rule"></div>
                     <div class="brand-sub">
-                        勤怠・目標・給与・チャット・ワークフローを統合したエンタープライズ業務基盤。<br>
-                        AIが業務データを分析し、日々の意思決定をサポートします。
+                        勤怠・目標・給与・チャット・ワークフローを統合した<br>エンタープライズ業務基盤です。
                     </div>
 
                     <div class="brand-features">
                         <div class="brand-feature"><span class="ico"><i class="fa-solid fa-shield-halved"></i></span>エンタープライズグレードのセキュリティ</div>
-                        <div class="brand-feature"><span class="ico"><i class="fa-solid fa-brain"></i></span>AIによるリアルタイム業務分析</div>
-                        <div class="brand-feature"><span class="ico"><i class="fa-solid fa-building"></i></span>部門横断の統合管理基盤</div>
+                        <div class="brand-feature"><span class="ico"><i class="fa-solid fa-chart-line"></i></span>部門横断の統合データ分析</div>
+                        <div class="brand-feature"><span class="ico"><i class="fa-solid fa-building"></i></span>統合人事・業務管理基盤</div>
                     </div>
                 </div>
 
                 <div class="brand-foot">
-                    <span><span class="dot">●</span>All systems operational</span>
+                    <span><span class="dot">●</span>稼働中</span>
                     <span>&copy; ${new Date().getFullYear()} DXPRO SOLUTIONS</span>
                 </div>
             </div>
@@ -337,7 +319,7 @@ router.get("/login", (req, res) => {
                     </div>
 
                     <div class="form-head">
-                        <div class="welcome">Welcome back</div>
+                        <div class="welcome">Sign In</div>
                         <h1>${t("login.title", lang)}</h1>
                         <p>認証情報を入力してサインインしてください</p>
                     </div>
