@@ -69,75 +69,92 @@ router.get("/login", (req, res) => {
                     display: flex;
                 }
 
-                /* ══════════ 左パネル：ブランディング ══════════ */
+                /* ══════════ 左パネル：プロダクトショーケース（スライド） ══════════ */
                 .brand-panel {
                     position: relative;
                     flex: 1;
                     display: flex;
                     flex-direction: column;
-                    justify-content: space-between;
-                    padding: 54px 60px;
+                    padding: 48px 56px 40px;
                     overflow: hidden;
                     background: linear-gradient(165deg, var(--navy) 0%, var(--navy-light) 100%);
                     color: #fff;
                 }
-                .brand-panel::before {
-                    content: '';
+
+                .brand-top { position: relative; z-index: 2; flex-shrink: 0; }
+                .brand-logo { display: flex; align-items: center; gap: 12px; }
+                .brand-logo img { height: 32px; width: auto; filter: brightness(0) invert(1); }
+                .brand-logo-text { font-size: 16px; font-weight: 800; letter-spacing: 1.5px; }
+
+                /* スライドショー本体 */
+                .showcase {
+                    position: relative;
+                    flex: 1;
+                    display: flex;
+                    align-items: center;
+                    margin-top: 20px;
+                    min-height: 0;
+                }
+                .slide {
                     position: absolute; inset: 0;
-                    background-image:
-                        linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
-                        linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
-                    background-size: 42px 42px;
-                    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 30% 20%, #000 0%, transparent 70%);
-                    mask-image: radial-gradient(ellipse 80% 70% at 30% 20%, #000 0%, transparent 70%);
+                    display: flex; flex-direction: column; justify-content: center;
+                    opacity: 0; transform: translateX(24px);
+                    transition: opacity .6s ease, transform .6s ease;
                     pointer-events: none;
                 }
+                .slide.active { opacity: 1; transform: translateX(0); pointer-events: auto; }
 
-                .brand-top { position: relative; z-index: 1; }
-                .brand-logo { display: flex; align-items: center; gap: 12px; }
-                .brand-logo img { height: 36px; width: auto; filter: brightness(0) invert(1); }
-                .brand-logo-text { font-size: 17px; font-weight: 800; letter-spacing: 1.5px; }
-                .brand-tagline {
-                    margin-top: 56px;
-                    font-size: 28px;
-                    font-weight: 700;
-                    line-height: 1.5;
-                    letter-spacing: .2px;
-                    max-width: 440px;
-                }
-                .brand-tagline .accent { color: #8fb4ff; }
-                .brand-sub {
-                    margin-top: 18px;
-                    font-size: 14px;
-                    color: rgba(255,255,255,.6);
-                    max-width: 400px;
-                    line-height: 1.8;
-                }
+                .slide-title { font-size: 25px; font-weight: 700; line-height: 1.5; max-width: 440px; }
+                .slide-title .accent { color: #8fb4ff; }
+                .slide-desc { margin-top: 12px; font-size: 13.5px; color: rgba(255,255,255,.6); max-width: 400px; line-height: 1.8; }
 
-                .brand-features {
-                    position: relative; z-index: 1;
-                    display: flex; flex-direction: column;
-                    margin-top: 40px;
-                    border-top: 1px solid var(--line);
+                /* モックアップ風カード */
+                .mock-card {
+                    margin-top: 28px;
+                    width: 100%; max-width: 420px;
+                    background: rgba(255,255,255,.06);
+                    border: 1px solid rgba(255,255,255,.12);
+                    border-radius: 10px;
+                    padding: 16px 18px;
+                    backdrop-filter: blur(2px);
                 }
-                .brand-feature {
-                    display: flex; align-items: center; gap: 14px;
-                    font-size: 13px; color: rgba(255,255,255,.85);
-                    padding: 15px 0;
-                    border-bottom: 1px solid var(--line);
+                .mock-card .mock-head {
+                    display: flex; align-items: center; gap: 8px;
+                    font-size: 11px; color: rgba(255,255,255,.5); margin-bottom: 12px;
                 }
-                .brand-feature .ico {
-                    width: 30px; height: 30px; flex-shrink: 0;
+                .mock-card .mock-head .dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.25); }
+                .mock-row {
+                    display: flex; align-items: center; gap: 10px;
+                    padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.08);
+                    font-size: 12.5px; color: rgba(255,255,255,.85);
+                }
+                .mock-row:last-child { border-bottom: none; }
+                .mock-row .ico {
+                    width: 26px; height: 26px; flex-shrink: 0; border-radius: 6px;
                     display: flex; align-items: center; justify-content: center;
-                    background: rgba(255,255,255,.08); border-radius: 7px;
-                    color: #8fb4ff; font-size: 13px;
+                    background: rgba(143,180,255,.16); color: #8fb4ff; font-size: 11.5px;
                 }
+                .mock-row .bar { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; }
+                .mock-row .bar span { display: block; height: 100%; background: #8fb4ff; border-radius: 3px; }
+                .mock-row .val { font-size: 11px; color: rgba(255,255,255,.45); font-variant-numeric: tabular-nums; }
+
+                .slide-dots {
+                    position: relative; z-index: 2; flex-shrink: 0;
+                    display: flex; gap: 7px; margin-top: 18px;
+                }
+                .slide-dots .sdot {
+                    width: 22px; height: 3px; border-radius: 2px;
+                    background: rgba(255,255,255,.2);
+                    transition: background .3s;
+                }
+                .slide-dots .sdot.active { background: #8fb4ff; }
 
                 .brand-foot {
-                    position: relative; z-index: 1;
+                    position: relative; z-index: 2;
                     display: flex; align-items: center; justify-content: space-between;
                     font-size: 11px; color: rgba(255,255,255,.45);
                     letter-spacing: .3px;
+                    margin-top: 24px;
                 }
                 .brand-foot .dot { color: #5fd38a; margin-right: 6px; }
 
@@ -267,25 +284,54 @@ router.get("/login", (req, res) => {
         </head>
         <body>
 
-            <!-- ══════════ 左：ブランディングパネル ══════════ -->
+            <!-- ══════════ 左：プロダクトショーケース（スライド） ══════════ -->
             <div class="brand-panel">
                 <div class="brand-top">
                     <div class="brand-logo">
                         <img src="/nokori-logo.png" alt="NOKORI">
                         <span class="brand-logo-text">NOKORI</span>
                     </div>
-                    <div class="brand-tagline">
-                        組織の力を、<br><span class="accent">ひとつのプラットフォームに。</span>
-                    </div>
-                    <div class="brand-sub">
-                        勤怠・目標・給与・チャット・ワークフローを統合した<br>エンタープライズ業務基盤です。
+                </div>
+
+                <div class="showcase">
+                    <div class="slide active">
+                        <div class="slide-title">勤怠・労務管理を、<br><span class="accent">ひとつの画面に。</span></div>
+                        <div class="slide-desc">打刻・残業申請・休暇管理をリアルタイムに統合。<br>複雑な勤怠業務をシンプルに運用できます。</div>
+                        <div class="mock-card">
+                            <div class="mock-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp;勤怠サマリー</div>
+                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-clock"></i></span><span class="bar"><span style="width:82%"></span></span><span class="val">稼働率 82%</span></div>
+                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-calendar-check"></i></span><span class="bar"><span style="width:64%"></span></span><span class="val">有休消化 64%</span></div>
+                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-hourglass-half"></i></span><span class="bar"><span style="width:41%"></span></span><span class="val">残業時間 41%</span></div>
+                        </div>
                     </div>
 
-                    <div class="brand-features">
-                        <div class="brand-feature"><span class="ico"><i class="fa-solid fa-shield-halved"></i></span>セキュアなシングルサインオン</div>
-                        <div class="brand-feature"><span class="ico"><i class="fa-solid fa-chart-line"></i></span>リアルタイムな勤怠・人事データ分析</div>
-                        <div class="brand-feature"><span class="ico"><i class="fa-solid fa-building"></i></span>全社統合マネジメントプラットフォーム</div>
+                    <div class="slide">
+                        <div class="slide-title">目標と評価を、<br><span class="accent">データでつなぐ。</span></div>
+                        <div class="slide-desc">個人・チームの目標進捗を可視化し、<br>評価プロセスを公平かつ効率的に。</div>
+                        <div class="mock-card">
+                            <div class="mock-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp;目標進捗</div>
+                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-bullseye"></i></span><span class="bar"><span style="width:75%"></span></span><span class="val">Q4目標 75%</span></div>
+                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-users"></i></span><span class="bar"><span style="width:58%"></span></span><span class="val">チーム平均 58%</span></div>
+                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-star"></i></span><span class="bar"><span style="width:90%"></span></span><span class="val">評価完了率 90%</span></div>
+                        </div>
                     </div>
+
+                    <div class="slide">
+                        <div class="slide-title">承認ワークフローを、<br><span class="accent">止めない。</span></div>
+                        <div class="slide-desc">稟議・経費・契約申請の承認状況を一元管理。<br>どこからでも承認・差し戻しが行えます。</div>
+                        <div class="mock-card">
+                            <div class="mock-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp;申請状況</div>
+                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-file-signature"></i></span><span class="bar"><span style="width:70%"></span></span><span class="val">承認待ち 12件</span></div>
+                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-circle-check"></i></span><span class="bar"><span style="width:95%"></span></span><span class="val">承認済 95%</span></div>
+                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-comments"></i></span><span class="bar"><span style="width:48%"></span></span><span class="val">社内チャット 48件</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="slide-dots" id="slideDots">
+                    <div class="sdot active"></div>
+                    <div class="sdot"></div>
+                    <div class="sdot"></div>
                 </div>
 
                 <div class="brand-foot">
@@ -371,6 +417,21 @@ router.get("/login", (req, res) => {
 
             <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
             <script>
+                // ショーケース自動スライド
+                (function () {
+                    var slides = document.querySelectorAll('.slide');
+                    var dots = document.querySelectorAll('.sdot');
+                    var idx = 0;
+                    if (!slides.length) return;
+                    setInterval(function () {
+                        slides[idx].classList.remove('active');
+                        dots[idx] && dots[idx].classList.remove('active');
+                        idx = (idx + 1) % slides.length;
+                        slides[idx].classList.add('active');
+                        dots[idx] && dots[idx].classList.add('active');
+                    }, 4500);
+                })();
+
                 // 時計（選択言語のロケールで表示）
                 var _locale = '${localeMap[lang] || "ja-JP"}';
                 function updateClock() {
