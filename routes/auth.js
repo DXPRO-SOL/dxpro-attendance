@@ -620,7 +620,7 @@ router.get("/login", (req, res) => {
                             <div class="particle" style="top:296px;left:44px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
                             <div class="particle" style="top:240px;left:414px;"></div>
 
-                            <div class="app-window" style="top:62px;left:172px;width:236px;height:222px;">
+                            <div class="app-window" style="top:35px;left:250px;width:236px;height:222px;">
                                 <div class="app-titlebar">
                                     <span class="app-tdot r"></span><span class="app-tdot y"></span><span class="app-tdot g"></span>
                                     <span class="app-url">app.nokori.io/payroll</span>
@@ -705,7 +705,7 @@ router.get("/login", (req, res) => {
 
                             <div class="mini-ring" style="--p:92;--c:#ffbd2e;top:158px;left:66px;"><span>92%</span></div>
                             <div class="notif-badge" style="top:126px;left:180px;">5</div>
-                            <div class="ico-badge glow" style="width:34px;height:34px;top:304px;left:410px;background:#2d5bb9;"><i class="fa-solid fa-chart-line" style="font-size:14px;"></i></div>
+                            <div class="ico-badge glow" style="width:34px;height:34px;top:190px;left:213px;background:#2d5bb9;"><i class="fa-solid fa-chart-line" style="font-size:14px;"></i></div>
                             <div class="particle" style="top:224px;left:332px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
                             <div class="particle" style="top:44px;left:322px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
                             <div class="particle" style="top:296px;left:12px;"></div>
