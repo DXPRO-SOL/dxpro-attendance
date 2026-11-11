@@ -460,6 +460,7 @@ router.get("/login", (req, res) => {
                 .form-panel {
                     flex: 1;
                     display: flex;
+                    flex-direction: column;
                     align-items: center;
                     justify-content: center;
                     background: linear-gradient(180deg, #eef1f6 0%, #e7ebf2 100%);
@@ -492,6 +493,30 @@ router.get("/login", (req, res) => {
                     border-radius: 0 0 3px 3px;
                     background: linear-gradient(90deg, var(--navy), var(--blue), #8fb4ff);
                 }
+                .login-notice {
+                    width: 100%;
+                    max-width: 400px;
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 10px;
+                    background: #eef4ff;
+                    border: 1px solid #cfe0ff;
+                    border-radius: 12px;
+                    padding: 12px 14px;
+                    margin-bottom: 14px;
+                }
+                .login-notice i {
+                    color: var(--blue);
+                    font-size: 15px;
+                    margin-top: 1px;
+                    flex-shrink: 0;
+                }
+                .login-notice .ln-text {
+                    font-size: 12.5px;
+                    color: #2b3a55;
+                    line-height: 1.55;
+                }
+                .login-notice .ln-text b { color: var(--blue-dark); }
                 .card-top-row {
                     display: flex; align-items: center; justify-content: space-between;
                     margin-bottom: 18px;
@@ -725,7 +750,7 @@ router.get("/login", (req, res) => {
                             </div>
                             <div class="ico-badge glow" style="width:40px;height:40px;top:-8px;left:124px;background:#1f8a4c;"><i class="fa-solid fa-umbrella-beach" style="font-size:16px;"></i></div>
                             <div class="ico-badge" style="width:34px;height:34px;top:46px;left:4px;background:#2d5bb9;"><i class="fa-solid fa-fingerprint" style="font-size:14px;"></i></div>
-                            <div class="ico-badge" style="width:30px;height:30px;top:302px;left:426px;background:#ffbd2e;color:#2a2208;"><i class="fa-solid fa-bell" style="font-size:13px;"></i></div>
+                            <div class="ico-badge" style="width:30px;height:30px;top:302px;left:390px;background:#ffbd2e;color:#2a2208;"><i class="fa-solid fa-bell" style="font-size:13px;"></i></div>
                             <div class="mini-ring" style="--p:82;--c:#8fb4ff;top:152px;left:48px;"><span>82%</span></div>
                             <div class="particle" style="top:4px;left:4px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
                             <div class="particle" style="top:296px;left:44px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
@@ -811,7 +836,6 @@ router.get("/login", (req, res) => {
                             <div class="ring spin" style="width:170px;height:170px;top:26px;left:40px;"></div>
                             <div class="ring" style="width:206px;height:206px;top:8px;left:22px;opacity:.5;"></div>
                             <div class="target-illus"></div>
-                            <div class="arrow-illus"></div>
 
                             <div class="flow-node" style="background:#2d5bb9;top:12px;right:34px;"><i class="fa-solid fa-flag-checkered"></i></div>
                             <div class="dash-line" style="width:66px;top:30px;right:62px;transform:rotate(18deg);"></div>
@@ -886,6 +910,10 @@ router.get("/login", (req, res) => {
 
             <!-- ══════════ 右：ログインフォーム ══════════ -->
             <div class="form-panel">
+                <div class="login-notice">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <div class="ln-text"><b>セキュリティ強化のお知らせ：</b>初めてご利用の端末では、ログイン後に2段階認証（メール確認コード）が必要です。「この端末を記憶する」を選択すると、次回以降は1回の認証でログインできます。</div>
+                </div>
                 <div class="login-card">
 
                 <div class="card-top-row">
