@@ -497,26 +497,37 @@ router.get("/login", (req, res) => {
                     width: 100%;
                     max-width: 400px;
                     display: flex;
-                    align-items: flex-start;
-                    gap: 10px;
-                    background: #eef4ff;
-                    border: 1px solid #cfe0ff;
-                    border-radius: 12px;
-                    padding: 12px 14px;
+                    align-items: center;
+                    gap: 8px;
+                    background: #0f1f3d;
+                    border-radius: 7px;
+                    padding: 7px 0;
                     margin-bottom: 14px;
+                    overflow: hidden;
                 }
                 .login-notice i {
-                    color: var(--blue);
-                    font-size: 15px;
-                    margin-top: 1px;
+                    color: #8fb4ff;
+                    font-size: 11px;
                     flex-shrink: 0;
+                    margin-left: 12px;
+                }
+                .login-notice .ln-track {
+                    flex: 1;
+                    overflow: hidden;
+                    white-space: nowrap;
+                    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+                    mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
                 }
                 .login-notice .ln-text {
-                    font-size: 12.5px;
-                    color: #2b3a55;
-                    line-height: 1.55;
+                    display: inline-block;
+                    padding-left: 100%;
+                    font-size: 11px;
+                    color: rgba(255,255,255,.75);
+                    letter-spacing: .1px;
+                    animation: marqueeMove 18s linear infinite;
                 }
-                .login-notice .ln-text b { color: var(--blue-dark); }
+                .login-notice .ln-text b { color: #8fb4ff; font-weight: 700; }
+                @keyframes marqueeMove { from { transform: translateX(0); } to { transform: translateX(-100%); } }
                 .card-top-row {
                     display: flex; align-items: center; justify-content: space-between;
                     margin-bottom: 18px;
@@ -912,7 +923,9 @@ router.get("/login", (req, res) => {
             <div class="form-panel">
                 <div class="login-notice">
                     <i class="fa-solid fa-shield-halved"></i>
-                    <div class="ln-text"><b>セキュリティ強化のお知らせ：</b>初めてご利用の端末では、ログイン後に2段階認証（メール確認コード）が必要です。「この端末を記憶する」を選択すると、次回以降は1回の認証でログインできます。</div>
+                    <div class="ln-track">
+                        <span class="ln-text"><b>セキュリティ強化のお知らせ：</b>初めてご利用の端末では、ログイン後に2段階認証（メール確認コード）が必要です。「この端末を記憶する」を選択すると、次回以降は1回の認証でログインできます。</span>
+                    </div>
                 </div>
                 <div class="login-card">
 
