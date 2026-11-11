@@ -104,39 +104,99 @@ router.get("/login", (req, res) => {
                 }
                 .slide.active { opacity: 1; transform: translateX(0); pointer-events: auto; }
 
-                .slide-title { font-size: 25px; font-weight: 700; line-height: 1.5; max-width: 440px; }
+                .slide-title { font-size: 23px; font-weight: 700; line-height: 1.5; max-width: 440px; }
                 .slide-title .accent { color: #8fb4ff; }
-                .slide-desc { margin-top: 12px; font-size: 13.5px; color: rgba(255,255,255,.6); max-width: 400px; line-height: 1.8; }
+                .slide-desc { margin-top: 10px; font-size: 13px; color: rgba(255,255,255,.55); max-width: 400px; line-height: 1.75; }
 
-                /* モックアップ風カード */
-                .mock-card {
-                    margin-top: 28px;
-                    width: 100%; max-width: 420px;
-                    background: rgba(255,255,255,.06);
-                    border: 1px solid rgba(255,255,255,.12);
+                /* ══ リアルな管理画面モックアップ ══ */
+                .app-window {
+                    margin-top: 22px;
+                    width: 100%; max-width: 440px;
+                    background: #0e1526;
+                    border: 1px solid rgba(255,255,255,.1);
                     border-radius: 10px;
-                    padding: 16px 18px;
-                    backdrop-filter: blur(2px);
+                    box-shadow: 0 24px 60px rgba(0,0,0,.4);
+                    overflow: hidden;
                 }
-                .mock-card .mock-head {
+                .app-titlebar {
                     display: flex; align-items: center; gap: 8px;
-                    font-size: 11px; color: rgba(255,255,255,.5); margin-bottom: 12px;
+                    padding: 9px 12px;
+                    background: #0a0f1c;
+                    border-bottom: 1px solid rgba(255,255,255,.07);
                 }
-                .mock-card .mock-head .dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.25); }
-                .mock-row {
-                    display: flex; align-items: center; gap: 10px;
-                    padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.08);
-                    font-size: 12.5px; color: rgba(255,255,255,.85);
+                .app-titlebar .tdot { width: 8px; height: 8px; border-radius: 50%; }
+                .app-titlebar .tdot.r { background: #ff6159; }
+                .app-titlebar .tdot.y { background: #ffbd2e; }
+                .app-titlebar .tdot.g { background: #28c940; }
+                .app-titlebar .url {
+                    flex: 1; margin-left: 8px;
+                    background: rgba(255,255,255,.05);
+                    border-radius: 4px;
+                    font-size: 10px; color: rgba(255,255,255,.35);
+                    padding: 3px 10px;
+                    display: flex; align-items: center; gap: 5px;
                 }
-                .mock-row:last-child { border-bottom: none; }
-                .mock-row .ico {
-                    width: 26px; height: 26px; flex-shrink: 0; border-radius: 6px;
+                .app-body { display: flex; min-height: 240px; }
+                .app-sidebar {
+                    width: 46px; flex-shrink: 0;
+                    background: #0a0f1c;
+                    border-right: 1px solid rgba(255,255,255,.06);
+                    display: flex; flex-direction: column; align-items: center;
+                    padding: 14px 0; gap: 14px;
+                }
+                .app-sidebar .sico {
+                    width: 28px; height: 28px; border-radius: 7px;
                     display: flex; align-items: center; justify-content: center;
-                    background: rgba(143,180,255,.16); color: #8fb4ff; font-size: 11.5px;
+                    font-size: 12px; color: rgba(255,255,255,.35);
                 }
-                .mock-row .bar { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; }
-                .mock-row .bar span { display: block; height: 100%; background: #8fb4ff; border-radius: 3px; }
-                .mock-row .val { font-size: 11px; color: rgba(255,255,255,.45); font-variant-numeric: tabular-nums; }
+                .app-sidebar .sico.on { background: rgba(143,180,255,.18); color: #8fb4ff; }
+                .app-main { flex: 1; padding: 16px 18px; }
+                .app-main .m-head {
+                    display: flex; align-items: center; justify-content: space-between;
+                    margin-bottom: 14px;
+                }
+                .app-main .m-head .m-title { font-size: 12.5px; font-weight: 700; color: rgba(255,255,255,.85); }
+                .app-main .m-head .m-badge {
+                    font-size: 9.5px; color: #5fd38a; background: rgba(95,211,138,.12);
+                    padding: 2px 8px; border-radius: 10px; font-weight: 600;
+                }
+                .m-kpis { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 14px; }
+                .m-kpi {
+                    background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06);
+                    border-radius: 7px; padding: 9px 10px;
+                }
+                .m-kpi .k-label { font-size: 9px; color: rgba(255,255,255,.4); }
+                .m-kpi .k-val { font-size: 15px; font-weight: 800; color: #fff; margin-top: 3px; }
+                .m-kpi .k-val small { font-size: 10px; font-weight: 600; color: #5fd38a; margin-left: 3px; }
+
+                .m-chart {
+                    display: flex; align-items: flex-end; gap: 6px;
+                    height: 58px; margin-bottom: 14px;
+                    padding: 0 2px;
+                }
+                .m-chart .cbar {
+                    flex: 1; border-radius: 3px 3px 0 0;
+                    background: linear-gradient(180deg, #8fb4ff 0%, rgba(143,180,255,.25) 100%);
+                }
+                .m-chart .cbar.dim { background: rgba(255,255,255,.1); }
+
+                .m-list { display: flex; flex-direction: column; gap: 8px; }
+                .m-row {
+                    display: flex; align-items: center; gap: 9px;
+                    font-size: 11px; color: rgba(255,255,255,.8);
+                }
+                .m-row .r-ico {
+                    width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
+                    display: flex; align-items: center; justify-content: center;
+                    background: rgba(143,180,255,.14); color: #8fb4ff; font-size: 10px;
+                }
+                .m-row .r-text { flex: 1; }
+                .m-row .r-tag {
+                    font-size: 9.5px; padding: 2px 8px; border-radius: 9px; font-weight: 600;
+                }
+                .m-row .r-tag.ok { background: rgba(95,211,138,.14); color: #5fd38a; }
+                .m-row .r-tag.wait { background: rgba(255,189,46,.14); color: #ffbd2e; }
+                .m-row .r-tag.info { background: rgba(143,180,255,.14); color: #8fb4ff; }
 
                 .slide-dots {
                     position: relative; z-index: 2; flex-shrink: 0;
@@ -297,33 +357,111 @@ router.get("/login", (req, res) => {
                     <div class="slide active">
                         <div class="slide-title">勤怠・労務管理を、<br><span class="accent">ひとつの画面に。</span></div>
                         <div class="slide-desc">打刻・残業申請・休暇管理をリアルタイムに統合。<br>複雑な勤怠業務をシンプルに運用できます。</div>
-                        <div class="mock-card">
-                            <div class="mock-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp;勤怠サマリー</div>
-                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-clock"></i></span><span class="bar"><span style="width:82%"></span></span><span class="val">稼働率 82%</span></div>
-                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-calendar-check"></i></span><span class="bar"><span style="width:64%"></span></span><span class="val">有休消化 64%</span></div>
-                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-hourglass-half"></i></span><span class="bar"><span style="width:41%"></span></span><span class="val">残業時間 41%</span></div>
+                        <div class="app-window">
+                            <div class="app-titlebar">
+                                <span class="tdot r"></span><span class="tdot y"></span><span class="tdot g"></span>
+                                <span class="url"><i class="fa-solid fa-lock" style="font-size:8px;"></i> nokori.dxpro-sol.com/attendance</span>
+                            </div>
+                            <div class="app-body">
+                                <div class="app-sidebar">
+                                    <div class="sico on"><i class="fa-solid fa-gauge"></i></div>
+                                    <div class="sico"><i class="fa-solid fa-clock"></i></div>
+                                    <div class="sico"><i class="fa-solid fa-users"></i></div>
+                                    <div class="sico"><i class="fa-solid fa-gear"></i></div>
+                                </div>
+                                <div class="app-main">
+                                    <div class="m-head"><span class="m-title">勤怠サマリー</span><span class="m-badge">LIVE</span></div>
+                                    <div class="m-kpis">
+                                        <div class="m-kpi"><div class="k-label">稼働率</div><div class="k-val">82<small>%</small></div></div>
+                                        <div class="m-kpi"><div class="k-label">有休消化</div><div class="k-val">64<small>%</small></div></div>
+                                        <div class="m-kpi"><div class="k-label">残業</div><div class="k-val">41<small>%</small></div></div>
+                                    </div>
+                                    <div class="m-chart">
+                                        <div class="cbar" style="height:55%"></div><div class="cbar dim" style="height:30%"></div>
+                                        <div class="cbar" style="height:80%"></div><div class="cbar dim" style="height:45%"></div>
+                                        <div class="cbar" style="height:65%"></div><div class="cbar dim" style="height:38%"></div>
+                                        <div class="cbar" style="height:90%"></div>
+                                    </div>
+                                    <div class="m-list">
+                                        <div class="m-row"><span class="r-ico"><i class="fa-solid fa-user"></i></span><span class="r-text">田中 — 出勤打刻</span><span class="r-tag ok">完了</span></div>
+                                        <div class="m-row"><span class="r-ico"><i class="fa-solid fa-user"></i></span><span class="r-text">佐藤 — 残業申請</span><span class="r-tag wait">承認待ち</span></div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
                     <div class="slide">
                         <div class="slide-title">目標と評価を、<br><span class="accent">データでつなぐ。</span></div>
                         <div class="slide-desc">個人・チームの目標進捗を可視化し、<br>評価プロセスを公平かつ効率的に。</div>
-                        <div class="mock-card">
-                            <div class="mock-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp;目標進捗</div>
-                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-bullseye"></i></span><span class="bar"><span style="width:75%"></span></span><span class="val">Q4目標 75%</span></div>
-                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-users"></i></span><span class="bar"><span style="width:58%"></span></span><span class="val">チーム平均 58%</span></div>
-                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-star"></i></span><span class="bar"><span style="width:90%"></span></span><span class="val">評価完了率 90%</span></div>
+                        <div class="app-window">
+                            <div class="app-titlebar">
+                                <span class="tdot r"></span><span class="tdot y"></span><span class="tdot g"></span>
+                                <span class="url"><i class="fa-solid fa-lock" style="font-size:8px;"></i> nokori.dxpro-sol.com/goals</span>
+                            </div>
+                            <div class="app-body">
+                                <div class="app-sidebar">
+                                    <div class="sico"><i class="fa-solid fa-gauge"></i></div>
+                                    <div class="sico on"><i class="fa-solid fa-bullseye"></i></div>
+                                    <div class="sico"><i class="fa-solid fa-chart-column"></i></div>
+                                    <div class="sico"><i class="fa-solid fa-gear"></i></div>
+                                </div>
+                                <div class="app-main">
+                                    <div class="m-head"><span class="m-title">目標進捗 — Q4</span><span class="m-badge">LIVE</span></div>
+                                    <div class="m-kpis">
+                                        <div class="m-kpi"><div class="k-label">個人目標</div><div class="k-val">75<small>%</small></div></div>
+                                        <div class="m-kpi"><div class="k-label">チーム平均</div><div class="k-val">58<small>%</small></div></div>
+                                        <div class="m-kpi"><div class="k-label">評価完了</div><div class="k-val">90<small>%</small></div></div>
+                                    </div>
+                                    <div class="m-chart">
+                                        <div class="cbar" style="height:40%"></div><div class="cbar" style="height:60%"></div>
+                                        <div class="cbar dim" style="height:25%"></div><div class="cbar" style="height:95%"></div>
+                                        <div class="cbar" style="height:70%"></div><div class="cbar dim" style="height:50%"></div>
+                                        <div class="cbar" style="height:85%"></div>
+                                    </div>
+                                    <div class="m-list">
+                                        <div class="m-row"><span class="r-ico"><i class="fa-solid fa-star"></i></span><span class="r-text">営業部 — 四半期目標</span><span class="r-tag ok">達成</span></div>
+                                        <div class="m-row"><span class="r-ico"><i class="fa-solid fa-star"></i></span><span class="r-text">開発部 — スキル評価</span><span class="r-tag info">進行中</span></div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
                     <div class="slide">
                         <div class="slide-title">承認ワークフローを、<br><span class="accent">止めない。</span></div>
                         <div class="slide-desc">稟議・経費・契約申請の承認状況を一元管理。<br>どこからでも承認・差し戻しが行えます。</div>
-                        <div class="mock-card">
-                            <div class="mock-head"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp;申請状況</div>
-                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-file-signature"></i></span><span class="bar"><span style="width:70%"></span></span><span class="val">承認待ち 12件</span></div>
-                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-circle-check"></i></span><span class="bar"><span style="width:95%"></span></span><span class="val">承認済 95%</span></div>
-                            <div class="mock-row"><span class="ico"><i class="fa-solid fa-comments"></i></span><span class="bar"><span style="width:48%"></span></span><span class="val">社内チャット 48件</span></div>
+                        <div class="app-window">
+                            <div class="app-titlebar">
+                                <span class="tdot r"></span><span class="tdot y"></span><span class="tdot g"></span>
+                                <span class="url"><i class="fa-solid fa-lock" style="font-size:8px;"></i> nokori.dxpro-sol.com/workflow</span>
+                            </div>
+                            <div class="app-body">
+                                <div class="app-sidebar">
+                                    <div class="sico"><i class="fa-solid fa-gauge"></i></div>
+                                    <div class="sico"><i class="fa-solid fa-file-signature"></i></div>
+                                    <div class="sico on"><i class="fa-solid fa-comments"></i></div>
+                                    <div class="sico"><i class="fa-solid fa-gear"></i></div>
+                                </div>
+                                <div class="app-main">
+                                    <div class="m-head"><span class="m-title">申請状況</span><span class="m-badge">LIVE</span></div>
+                                    <div class="m-kpis">
+                                        <div class="m-kpi"><div class="k-label">承認待ち</div><div class="k-val">12<small>件</small></div></div>
+                                        <div class="m-kpi"><div class="k-label">承認率</div><div class="k-val">95<small>%</small></div></div>
+                                        <div class="m-kpi"><div class="k-label">チャット</div><div class="k-val">48<small>件</small></div></div>
+                                    </div>
+                                    <div class="m-chart">
+                                        <div class="cbar" style="height:70%"></div><div class="cbar dim" style="height:35%"></div>
+                                        <div class="cbar" style="height:55%"></div><div class="cbar" style="height:88%"></div>
+                                        <div class="cbar dim" style="height:28%"></div><div class="cbar" style="height:62%"></div>
+                                        <div class="cbar" style="height:95%"></div>
+                                    </div>
+                                    <div class="m-list">
+                                        <div class="m-row"><span class="r-ico"><i class="fa-solid fa-file-signature"></i></span><span class="r-text">経費精算 — 第3営業部</span><span class="r-tag wait">承認待ち</span></div>
+                                        <div class="m-row"><span class="r-ico"><i class="fa-solid fa-file-signature"></i></span><span class="r-text">契約書 — 業務委託</span><span class="r-tag ok">承認済</span></div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
