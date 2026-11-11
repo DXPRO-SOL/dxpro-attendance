@@ -1,6 +1,7 @@
 {
   "login": {
     "title": "클라우드 업무 지원 시스템",
+    "subtitle": "인증 정보를 입력하여 로그인해 주세요",
     "username": "사용자 이름",
     "username_placeholder": "사용자 이름 입력",
     "password": "비밀번호",

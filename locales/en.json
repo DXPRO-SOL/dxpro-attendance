@@ -1,6 +1,7 @@
 {
   "login": {
     "title": "Cloud Business Support System",
+    "subtitle": "Please enter your credentials to sign in",
     "username": "Username",
     "username_placeholder": "Enter username",
     "password": "Password",

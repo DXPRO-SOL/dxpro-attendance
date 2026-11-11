@@ -1,6 +1,7 @@
 {
   "login": {
     "title": "云端业务支援系统",
+    "subtitle": "请输入您的账户信息以登录",
     "username": "用户名",
     "username_placeholder": "请输入用户名",
     "password": "密码",

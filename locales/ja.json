@@ -1,6 +1,7 @@
 {
   "login": {
     "title": "クラウド業務支援システム",
+    "subtitle": "認証情報を入力してサインインしてください",
     "username": "ユーザー名",
     "username_placeholder": "ユーザー名を入力",
     "password": "パスワード",

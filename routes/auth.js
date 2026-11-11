@@ -463,9 +463,12 @@ router.get("/login", (req, res) => {
                     display: flex;
                     flex-direction: column;
                     align-items: center;
-                    justify-content: center;
+                    justify-content: flex-start;
+                    padding-top: 7vh;
                     background: linear-gradient(180deg, #eef1f6 0%, #e7ebf2 100%);
-                    padding: 40px;
+                    padding-left: 40px;
+                    padding-right: 40px;
+                    padding-bottom: 40px;
                     position: relative;
                 }
                 .form-panel::before {
@@ -477,7 +480,7 @@ router.get("/login", (req, res) => {
                     mask-image: radial-gradient(ellipse 60% 50% at 50% 30%, #000 0%, transparent 72%);
                     pointer-events: none;
                 }
-
+                .mobile-brand-bar { display: none; }
                 .login-card {
                     position: relative;
                     width: 100%;
@@ -540,6 +543,8 @@ router.get("/login", (req, res) => {
                     display: flex; align-items: center; justify-content: space-between;
                     margin-bottom: 18px;
                 }
+                .card-top-left { display: flex; align-items: center; gap: 10px; }
+                .card-mobile-logo { display: none; }
                 .card-mark {
                     width: 38px; height: 38px; border-radius: 10px;
                     background: linear-gradient(145deg, var(--navy), var(--blue));
@@ -643,7 +648,20 @@ router.get("/login", (req, res) => {
 
                 @media (max-width: 920px) {
                     .brand-panel { display: none; }
-                    .form-panel { min-height: 100vh; }
+                    .form-panel {
+                        min-height: 100vh;
+                        min-height: 100dvh;
+                        justify-content: flex-start;
+                        padding-top: 24px;
+                        padding-bottom: 24px;
+                        overflow-y: auto;
+                    }
+                    .card-mobile-logo { display: block; height: 65px; width: auto; }
+                    .card-top-row { position: relative; justify-content: center; }
+                    .card-top-left { margin: 0 auto; }
+                    .lang-dropdown { position: absolute; right: 0; top: 50%; transform: translateY(-50%); z-index: 30; }
+                    .lang-menu { right: 0; left: auto; max-width: calc(100vw - 48px); }
+                    .form-head { text-align: center; }
                 }
                 @media (max-width: 600px) {
                     .form-panel { padding: 16px; }
@@ -652,7 +670,7 @@ router.get("/login", (req, res) => {
                     .card-top-row { margin-bottom: 14px; }
                     .card-mark { width: 34px; height: 34px; font-size: 14px; border-radius: 9px; }
                     .lang-trigger { padding: 5px 10px; font-size: 11px; }
-                    .lang-menu { right: auto; left: 0; min-width: 140px; }
+                    .lang-menu { min-width: 140px; }
                     .form-head { margin-bottom: 20px; }
                     .form-head h1 { font-size: 20px; }
                     .form-head p { font-size: 12.5px; }
@@ -672,6 +690,23 @@ router.get("/login", (req, res) => {
                 @media (max-width: 360px) {
                     .card-top-row { flex-wrap: wrap; gap: 8px; }
                     .lang-dropdown { order: 2; }
+                }
+                @media (max-width: 920px) and (max-height: 760px) {
+                    .card-mobile-logo { height: 22px; }
+                    .login-notice { padding: 6px 0; margin-bottom: 10px; }
+                    .login-card { padding: 18px 20px 16px; }
+                    .card-top-row { margin-bottom: 10px; }
+                    .form-head { margin-bottom: 12px; }
+                    .form-head h1 { font-size: 18px; }
+                    .form-head p { font-size: 11.5px; }
+                    .form-group { margin-bottom: 10px; }
+                    .form-control { padding: 9px 12px 9px 38px; }
+                    .btn-login { padding: 10px; }
+                    .divider { margin: 12px 0; }
+                    .links { gap: 8px; }
+                    .links a { padding: 7px 12px; font-size: 12px; }
+                    .current-time { margin-top: 10px; }
+                    .footer { margin-top: 4px; }
                 }
             </style>
         </head>
@@ -965,7 +1000,9 @@ router.get("/login", (req, res) => {
                 <div class="login-card">
 
                 <div class="card-top-row">
-                    <div class="card-mark"><i class="fa-solid fa-shield-halved"></i></div>
+                    <div class="card-top-left">
+                        <img class="card-mobile-logo" src="/nokori-logo.png" alt="NOKORI">
+                    </div>
                     ${(() => {
                       const CODE_MAP = {
                         ja: "JP",
@@ -985,9 +1022,8 @@ router.get("/login", (req, res) => {
                 </div>
 
                 <div class="form-head">
-                    <div class="welcome">Sign In</div>
                     <h1>${t("login.title", lang)}</h1>
-                    <p>認証情報を入力してサインインしてください</p>
+                    <p>${t("login.subtitle", lang)}</p>
                 </div>
 
                 ${errorMsg ? `<div class="error-message"><i class="fa-solid fa-circle-exclamation"></i>${errorMsg}</div>` : ""}

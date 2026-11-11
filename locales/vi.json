@@ -1,6 +1,7 @@
 {
   "login": {
     "title": "Hệ thống hỗ trợ nghiệp vụ đám mây",
+    "subtitle": "Vui lòng nhập thông tin xác thực để đăng nhập",
     "username": "Tên đăng nhập",
     "username_placeholder": "Nhập tên đăng nhập",
     "password": "Mật khẩu",
