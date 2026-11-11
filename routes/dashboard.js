@@ -38,6 +38,12 @@ const ATTENDANCE_STATUS_KEY = {
   休暇: "day_off",
 };
 
+// 「。」の直後で改行して表示するためのヘルパー（HTMLエスケープ込み）
+function escapeHtmlBr(text) {
+  const { escapeHtml } = require("../lib/helpers");
+  return escapeHtml(text || "").replace(/。/g, "。<br>");
+}
+
 router.get("/dashboard", requireLogin, async (req, res) => {
   try {
     const lang = req.lang || "ja";
@@ -372,26 +378,26 @@ router.get("/dashboard", requireLogin, async (req, res) => {
         <style>
         /* ── Design tokens ── */
         :root {
-            --c-bg: #f5f6fa;
+            --c-bg: #f7f8fa;
             --c-surface: #ffffff;
-            --c-border: #e8ecf0;
-            --c-primary: #2563eb;
-            --c-primary-light: #eff6ff;
-            --c-success: #16a34a;
-            --c-success-light: #f0fdf4;
-            --c-warn: #d97706;
+            --c-border: #e5e7eb;
+            --c-primary: #4338ca;
+            --c-primary-light: #eef2ff;
+            --c-success: #0f766e;
+            --c-success-light: #f0fdfa;
+            --c-warn: #b45309;
             --c-warn-light: #fffbeb;
-            --c-danger: #dc2626;
-            --c-danger-light: #fef2f2;
-            --c-purple: #7c3aed;
-            --c-purple-light: #f5f3ff;
-            --c-text: #111827;
+            --c-danger: #be123c;
+            --c-danger-light: #fff1f2;
+            --c-purple: #7e22ce;
+            --c-purple-light: #faf5ff;
+            --c-text: #1a1d29;
             --c-muted: #6b7280;
             --c-sub: #9ca3af;
             --radius-lg: 14px;
             --radius-md: 10px;
-            --shadow-card: 0 1px 3px rgba(0,0,0,.07), 0 4px 16px rgba(0,0,0,.04);
-            --shadow-hover: 0 4px 20px rgba(37,99,235,.13);
+            --shadow-card: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
+            --shadow-hover: 0 4px 12px rgba(16,24,40,.08);
         }
         * { box-sizing: border-box; }
         body {
@@ -403,144 +409,163 @@ router.get("/dashboard", requireLogin, async (req, res) => {
 
         /* ── Layout ── */
         .db-wrap { width: 100%; padding: 0 0 48px; }
-        .db-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 28px; flex-wrap: wrap; }
-        .db-header-left .greeting { font-size: 22px; font-weight: 800; color: var(--c-text); letter-spacing: -0.4px; }
-        .db-header-left .sub { font-size: 13px; color: var(--c-muted); margin-top: 4px; display: flex; flex-wrap: wrap; gap: 2px 10px; }
-        .db-header-left .sub-item { white-space: nowrap; }
-        @media(max-width:768px){ .db-header-left .sub { flex-direction: column; gap: 2px; } }
-        .db-header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-        .live-clock { font-size: 13px; color: var(--c-muted); font-variant-numeric: tabular-nums; }
-        .badge-admin { display: inline-flex; align-items: center; gap: 5px; background: #fef2f2; color: #b91c1c; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1px solid #fecaca; }
-
-        /* ── KPI grid ── */
-        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
-        @media(max-width:1080px){ .kpi-grid { grid-template-columns: repeat(2,1fr); } }
-        @media(max-width:600px){ .kpi-grid { grid-template-columns: 1fr; } }
-
-        .kpi-card {
+        .db-header {
+            display: flex; align-items: center; justify-content: space-between; gap: 16px;
+            margin-bottom: 22px; flex-wrap: wrap;
             background: var(--c-surface);
             border: 1px solid var(--c-border);
             border-radius: var(--radius-lg);
-            padding: 18px 20px;
+            padding: 18px 22px;
             box-shadow: var(--shadow-card);
+        }
+        .db-header-left { display: flex; align-items: center; gap: 14px; }
+        .db-avatar {
+            width: 46px; height: 46px; border-radius: 12px; flex-shrink: 0;
+            background: var(--c-primary-light); border: 1px solid #e0e7ff;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 17px; font-weight: 800; color: var(--c-primary);
+        }
+        .db-header-left .greeting { font-size: 18px; font-weight: 800; color: var(--c-text); letter-spacing: -0.2px; }
+        .db-header-left .sub { font-size: 12.5px; color: var(--c-muted); margin-top: 3px; display: flex; flex-wrap: wrap; gap: 2px 12px; }
+        .db-header-left .sub-item { white-space: nowrap; }
+        .db-header-left .sub-item i { color: var(--c-sub); margin-right: 3px; }
+        @media(max-width:768px){ .db-header-left .sub { flex-direction: column; gap: 2px; } }
+        .db-header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .live-clock { font-size: 12.5px; color: var(--c-muted); font-variant-numeric: tabular-nums; background: #f3f4f6; padding: 6px 12px; border-radius: 8px; }
+        .badge-admin { display: inline-flex; align-items: center; gap: 5px; background: var(--c-danger-light); color: var(--c-danger); font-size: 11px; font-weight: 700; padding: 4px 11px; border-radius: 8px; border: 1px solid #fecdd3; }
+
+        /* ── KPI strip (エンタープライズ業務システム風: モノトーン・実務的) ── */
+        .kpi-strip {
+            display: flex;
+            background: var(--c-surface);
+            border: 1px solid var(--c-border);
+            border-radius: 4px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        @media(max-width:900px){ .kpi-strip { flex-direction: column; } }
+
+        .kpi-seg {
+            flex: 1;
             display: flex;
             flex-direction: column;
             gap: 6px;
-            transition: box-shadow .18s, transform .18s;
+            padding: 16px 22px;
+            position: relative;
+            min-width: 0;
         }
-        .kpi-card:hover { box-shadow: var(--shadow-hover); transform: translateY(-2px); }
-        .kpi-card-top { display: flex; align-items: center; justify-content: space-between; }
-        .kpi-icon {
-            width: 38px; height: 38px; border-radius: 10px;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 16px; flex-shrink: 0;
+        .kpi-seg + .kpi-seg {
+            border-left: 1px solid var(--c-border);
         }
-        .kpi-icon.blue   { background: var(--c-primary-light); color: var(--c-primary); }
-        .kpi-icon.green  { background: var(--c-success-light); color: var(--c-success); }
-        .kpi-icon.warn   { background: var(--c-warn-light);    color: var(--c-warn); }
-        .kpi-icon.danger { background: var(--c-danger-light);  color: var(--c-danger); }
-        .kpi-icon.purple { background: var(--c-purple-light);  color: var(--c-purple); }
-        .kpi-label { font-size: 11.5px; font-weight: 600; color: var(--c-muted); text-transform: uppercase; letter-spacing: .5px; }
-        .kpi-value { font-size: 28px; font-weight: 800; color: var(--c-text); letter-spacing: -1px; line-height: 1.1; }
-        .kpi-sub { font-size: 12px; color: var(--c-sub); }
-        .kpi-bar { height: 5px; background: var(--c-border); border-radius: 999px; overflow: hidden; margin-top: 4px; }
-        .kpi-bar-fill { height: 100%; border-radius: 999px; background: var(--c-primary); }
+        @media(max-width:900px){
+            .kpi-seg + .kpi-seg { border-left: none; border-top: 1px solid var(--c-border); }
+        }
+        .kpi-icon { display: none; }
+        .kpi-seg-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+        .kpi-label {
+            font-size: 11px; font-weight: 600; color: var(--c-muted);
+            letter-spacing: .2px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .kpi-label::before {
+            content: "";
+            display: inline-block; width: 6px; height: 6px; border-radius: 1px;
+            background: var(--kpi-accent, #94a3b8);
+        }
+        .kpi-value { font-size: 26px; font-weight: 700; color: #1a2332; letter-spacing: -.4px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+        .kpi-sub { font-size: 12px; color: var(--c-muted); display: flex; flex-wrap: wrap; gap: 0; align-items: center; }
+        .kpi-sub .kpi-tag {
+            display: inline-flex; align-items: center;
+            color: var(--c-muted);
+            font-size: 12px; font-weight: 400;
+            white-space: nowrap;
+            padding-right: 10px; margin-right: 10px;
+            border-right: 1px solid var(--c-border);
+        }
+        .kpi-sub .kpi-tag:last-child { border-right: none; padding-right: 0; margin-right: 0; }
+        .kpi-bar { height: 3px; background: #e9ebef; overflow: hidden; margin-top: 4px; width: 100%; }
+        .kpi-bar-fill { height: 100%; background: var(--kpi-accent, #475569); transition: width .3s ease; }
+        .kpi-link {
+            font-size: 12px; font-weight: 500; text-decoration: none;
+            display: inline-flex; align-items: center; gap: 4px;
+            margin-top: 4px;
+            color: var(--c-primary);
+            width: fit-content;
+        }
+        .kpi-link:hover { text-decoration: underline; }
+        .kpi-link i { font-size: 9px; }
+        .kpi-seg.accent-blue   { --kpi-accent: #475569; }
+        .kpi-seg.accent-warn   { --kpi-accent: #92722a; }
+        .kpi-seg.accent-green  { --kpi-accent: #2f6f5e; }
+        .kpi-seg.accent-danger { --kpi-accent: #8a3a4a; }
 
         /* ── Main body grid ── */
         .db-body { display: grid; grid-template-columns: 1fr 300px; gap: 20px; }
         @media(max-width:960px){ .db-body { grid-template-columns: minmax(0,1fr); min-width: 0; } }
 
-        /* ── Card ── */
+        /* ── Panel (旧カードUIを廃止: ボーダー付きフラットパネルへ刷新) ── */
         .card {
             background: var(--c-surface);
             border: 1px solid var(--c-border);
-            border-radius: var(--radius-lg);
-            box-shadow: var(--shadow-card);
+            border-radius: var(--radius-md);
             overflow: hidden;
         }
         .card-head {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 16px 20px 12px;
+            padding: 15px 20px;
+            background: #fafbfc;
             border-bottom: 1px solid var(--c-border);
         }
-        .card-head h3 { font-size: 14px; font-weight: 700; margin: 0; }
-        .card-head a.see-all { font-size: 12px; color: var(--c-primary); text-decoration: none; font-weight: 600; }
+        .card-head h3 { font-size: 13.5px; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 8px; letter-spacing: 0; color: var(--c-text); }
+        .card-head h3 i { font-size: 12px; width: 26px; height: 26px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; background: var(--c-primary-light); margin-right: 0 !important; }
+        .card-head a.see-all {
+            font-size: 11.5px; color: var(--c-primary); text-decoration: none; font-weight: 700;
+        }
         .card-head a.see-all:hover { text-decoration: underline; }
         .card-body { padding: 16px 20px; }
         @media(max-width:600px){ .card-body { padding: 12px 10px; } }
 
         /* ── Quick actions ── */
         .qa-grid {
-            display: grid;
-            grid-template-columns: repeat(7, minmax(0,1fr));
-            gap: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
         }
-        @media(max-width:1100px){ .qa-grid { grid-template-columns: repeat(4, minmax(0,1fr)); } }
-        @media(max-width:600px){  .qa-grid { grid-template-columns: repeat(4, minmax(0,1fr)); gap: 6px; } }
-        @media(max-width:400px){  .qa-grid { grid-template-columns: repeat(3, minmax(0,1fr)); gap: 5px; } }
         .qa-btn {
             position: relative;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            gap: 10px; padding: 18px 8px 14px;
-            border-radius: 14px;
-            border: 1px solid transparent;
+            display: flex; flex-direction: row; align-items: center;
+            gap: 9px; padding: 9px 14px 9px 10px;
+            border-radius: 9px;
+            border: 1px solid var(--c-border);
             background: #fff;
             color: var(--c-text); text-decoration: none;
-            font-weight: 600; font-size: 11.5px; text-align: center;
-            box-shadow: 0 1px 4px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.04);
-            transition: transform .2s cubic-bezier(.34,1.56,.64,1), box-shadow .2s ease, background .2s ease;
-            overflow: hidden;
-        }
-        .qa-btn::before {
-            content: '';
-            position: absolute; inset: 0;
-            opacity: 0;
-            transition: opacity .2s ease;
-            border-radius: inherit;
+            font-weight: 600; font-size: 12.5px;
+            transition: border-color .15s ease, background .15s ease;
         }
         .qa-btn:hover {
-            transform: translateY(-4px) scale(1.03);
-            box-shadow: 0 8px 24px rgba(0,0,0,.11), 0 2px 6px rgba(0,0,0,.07);
+            background: #fafbfc;
             text-decoration: none;
         }
-        .qa-btn:hover::before { opacity: 1; }
-        .qa-btn:active { transform: translateY(-1px) scale(1.01); }
         .qa-btn .qa-icon {
-            width: 44px; height: 44px; border-radius: 13px;
+            width: 26px; height: 26px; border-radius: 7px;
             display: flex; align-items: center; justify-content: center;
-            font-size: 18px; flex-shrink: 0;
-            transition: transform .2s cubic-bezier(.34,1.56,.64,1);
+            font-size: 12px; flex-shrink: 0;
         }
-        .qa-btn:hover .qa-icon { transform: scale(1.15) rotate(-4deg); }
-        .qa-btn .qa-label { font-size: 11px; font-weight: 700; letter-spacing: .2px; line-height: 1.3; }
+        .qa-btn .qa-label { font-size: 12.5px; font-weight: 600; letter-spacing: 0; line-height: 1.3; }
         @media(max-width:600px){
-            .qa-btn { gap: 5px; padding: 10px 2px 8px; border-radius: 9px; min-width: 0; }
-            .qa-btn .qa-icon { width: 32px; height: 32px; border-radius: 8px; font-size: 13px; }
-            .qa-btn .qa-label { font-size: 9.5px; letter-spacing: 0; }
+            .qa-grid { gap: 6px; }
+            .qa-btn { padding: 7px 10px 7px 8px; font-size: 11.5px; }
+            .qa-btn .qa-icon { width: 22px; height: 22px; font-size: 10px; }
         }
 
-        /* color themes */
-        .qa-btn.qa-blue   { color: #1d4ed8; }
-        .qa-btn.qa-blue::before   { background: linear-gradient(145deg,#dbeafe,#eff6ff); }
-        .qa-btn.qa-blue   .qa-icon { background: linear-gradient(135deg,#3b82f6,#2563eb); color:#fff; box-shadow:0 4px 12px rgba(37,99,235,.35); }
-        .qa-btn.qa-orange { color: #c2410c; }
-        .qa-btn.qa-orange::before { background: linear-gradient(145deg,#ffedd5,#fff7ed); }
-        .qa-btn.qa-orange .qa-icon { background: linear-gradient(135deg,#fb923c,#ea580c); color:#fff; box-shadow:0 4px 12px rgba(234,88,12,.35); }
-        .qa-btn.qa-green  { color: #15803d; }
-        .qa-btn.qa-green::before  { background: linear-gradient(145deg,#dcfce7,#f0fdf4); }
-        .qa-btn.qa-green  .qa-icon { background: linear-gradient(135deg,#4ade80,#16a34a); color:#fff; box-shadow:0 4px 12px rgba(22,163,74,.35); }
-        .qa-btn.qa-purple { color: #6d28d9; }
-        .qa-btn.qa-purple::before { background: linear-gradient(145deg,#ede9fe,#faf5ff); }
-        .qa-btn.qa-purple .qa-icon { background: linear-gradient(135deg,#a78bfa,#7c3aed); color:#fff; box-shadow:0 4px 12px rgba(124,58,237,.35); }
-        .qa-btn.qa-cyan   { color: #0e7490; }
-        .qa-btn.qa-cyan::before   { background: linear-gradient(145deg,#cffafe,#ecfeff); }
-        .qa-btn.qa-cyan   .qa-icon { background: linear-gradient(135deg,#22d3ee,#0891b2); color:#fff; box-shadow:0 4px 12px rgba(8,145,178,.35); }
-        .qa-btn.qa-rose   { color: #be185d; }
-        .qa-btn.qa-rose::before   { background: linear-gradient(145deg,#fce7f3,#fdf2f8); }
-        .qa-btn.qa-rose   .qa-icon { background: linear-gradient(135deg,#f472b6,#db2777); color:#fff; box-shadow:0 4px 12px rgba(219,39,119,.35); }
-        .qa-btn.qa-amber  { color: #92400e; }
-        .qa-btn.qa-amber::before  { background: linear-gradient(145deg,#fef3c7,#fffbeb); }
-        .qa-btn.qa-amber  .qa-icon { background: linear-gradient(135deg,#fbbf24,#d97706); color:#fff; box-shadow:0 4px 12px rgba(217,119,6,.35); }
+        /* color themes (アイコン背景のみ着色、ボタン自体はフラット) */
+        .qa-btn.qa-blue   .qa-icon { background: var(--c-primary-light); color: var(--c-primary); }
+        .qa-btn.qa-orange .qa-icon { background: var(--c-warn-light); color: var(--c-warn); }
+        .qa-btn.qa-green  .qa-icon { background: var(--c-success-light); color: var(--c-success); }
+        .qa-btn.qa-purple .qa-icon { background: var(--c-purple-light); color: var(--c-purple); }
+        .qa-btn.qa-cyan   .qa-icon { background: #ecfeff; color: #0e7490; }
+        .qa-btn.qa-rose   .qa-icon { background: var(--c-danger-light); color: var(--c-danger); }
+        .qa-btn.qa-amber  .qa-icon { background: var(--c-warn-light); color: var(--c-warn); }
 
         /* ── Activity feed ── */
         .activity-feed { display: flex; flex-direction: column; }
@@ -691,10 +716,10 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             /* 掲示板タイトル */
             .post-title { max-width: 100% !important; white-space: normal !important; }
         }
-        /* KPI: スマートフォン幅では1列 */
+        /* KPI: スマートフォン幅では縦積み */
         @media(max-width:600px){
-            .kpi-grid { grid-template-columns: 1fr !important; }
-            .kpi-card { padding: 14px 16px !important; }
+            .kpi-strip { flex-direction: column; }
+            .kpi-seg { padding: 14px 16px !important; }
         }
 
         /* ── AI最適化ホームセクション ── */
@@ -859,11 +884,14 @@ router.get("/dashboard", requireLogin, async (req, res) => {
         <!-- ── Header ── -->
         <div class="db-header">
             <div class="db-header-left">
-                <div class="greeting">${t("dashboard.greeting_prefix", lang)}${escapeHtml(employee.name)}${t("dashboard.greeting_suffix", lang)}</div>
-                <div class="sub">
-                    <span class="sub-item">${escapeHtml(employee.position || t("dashboard.default_position", lang))}</span>
-                    <span class="sub-item">${escapeHtml(employee.department || "")}</span>
-                    <span class="sub-item">${t("dashboard.employee_id", lang)} ${escapeHtml(employee.employeeId || "")}</span>
+                <div class="db-avatar">${escapeHtml((employee.name || "?").charAt(0))}</div>
+                <div>
+                    <div class="greeting">${t("dashboard.greeting_prefix", lang)}${escapeHtml(employee.name)}${t("dashboard.greeting_suffix", lang)}</div>
+                    <div class="sub">
+                        <span class="sub-item"><i class="fa-solid fa-id-badge"></i> ${escapeHtml(employee.position || t("dashboard.default_position", lang))}</span>
+                        <span class="sub-item"><i class="fa-solid fa-building"></i> ${escapeHtml(employee.department || "")}</span>
+                        <span class="sub-item"><i class="fa-solid fa-hashtag"></i> ${t("dashboard.employee_id", lang)} ${escapeHtml(employee.employeeId || "")}</span>
+                    </div>
                 </div>
             </div>
             <div class="db-header-right">
@@ -905,8 +933,8 @@ router.get("/dashboard", requireLogin, async (req, res) => {
               <span style="font-size:12px;color:var(--c-muted);font-weight:500">${t("dashboard.ai_home_subtitle", lang)}</span>
             </div>
             <div class="ai-home-actions">
-              <button class="ai-home-toggle-btn" onclick="toggleAiSection()" id="aiToggleBtn">
-                <i class="fa-solid fa-chevron-up" id="aiToggleIcon"></i> ${t("dashboard.ai_home_collapse", lang)}
+              <button type="button" class="ai-home-toggle-btn" id="aiToggleBtn">
+                <i class="fa-solid fa-chevron-up" id="aiToggleIcon"></i> <span id="aiToggleLabel">${t("dashboard.ai_home_collapse", lang)}</span>
               </button>
               <a href="/ai-home-settings" class="ai-settings-link"><i class="fa-solid fa-gear"></i> ${t("dashboard.ai_home_settings", lang)}</a>
             </div>
@@ -1020,58 +1048,62 @@ router.get("/dashboard", requireLogin, async (req, res) => {
         }
 
         <!-- ── KPI Row ── -->
-        <div class="kpi-grid">
+        <div class="kpi-strip">
 
-            <div class="kpi-card">
-                <div class="kpi-card-top">
-                    <div>
-                        <div class="kpi-label">${t("dashboard.kpi_attendance", lang)}</div>
-                        <div class="kpi-value">${attendanceSummary.workDays}<span style="font-size:15px;font-weight:500;color:var(--c-muted)"> ${t("dashboard.kpi_attendance_unit", lang)}</span></div>
-                        <div class="kpi-sub">${t("dashboard.kpi_late", lang)} ${attendanceSummary.late} ${t("dashboard.kpi_cases", lang)} &nbsp;•&nbsp; ${t("dashboard.kpi_early_leave", lang)} ${attendanceSummary.earlyLeave} ${t("dashboard.kpi_cases", lang)} &nbsp;•&nbsp; ${t("dashboard.kpi_absent", lang)} ${absentCount} ${t("dashboard.kpi_days", lang)}</div>
+            <div class="kpi-seg accent-blue">
+                <div class="kpi-icon blue"><i class="fa-solid fa-calendar-check"></i></div>
+                <div class="kpi-seg-body">
+                    <div class="kpi-label">${t("dashboard.kpi_attendance", lang)}</div>
+                    <div class="kpi-value">${attendanceSummary.workDays}<span style="font-size:14px;font-weight:500;color:var(--c-muted)"> ${t("dashboard.kpi_attendance_unit", lang)}</span></div>
+                    <div class="kpi-sub">
+                        <span class="kpi-tag">${t("dashboard.kpi_late", lang)} ${attendanceSummary.late}${t("dashboard.kpi_cases", lang)}</span>
+                        <span class="kpi-tag">${t("dashboard.kpi_early_leave", lang)} ${attendanceSummary.earlyLeave}${t("dashboard.kpi_cases", lang)}</span>
+                        <span class="kpi-tag">${t("dashboard.kpi_absent", lang)} ${absentCount}${t("dashboard.kpi_days", lang)}</span>
                     </div>
-                    <div class="kpi-icon blue"><i class="fa-solid fa-calendar-check"></i></div>
+                    <a href="/attendance-main" class="kpi-link">${t("dashboard.btn_attendance", lang)}<i class="fa-solid fa-arrow-right"></i></a>
                 </div>
-                <a href="/attendance-main" style="font-size:12px;color:var(--c-primary);font-weight:600;text-decoration:none;margin-top:6px;display:inline-block;">${t("dashboard.btn_attendance", lang)}</a>
             </div>
 
-            <div class="kpi-card">
-                <div class="kpi-card-top">
-                    <div>
-                        <div class="kpi-label">${t("dashboard.kpi_overtime", lang)}</div>
-                        <div class="kpi-value">${attendanceSummary.overtime}<span style="font-size:15px;font-weight:500;color:var(--c-muted)"> h</span></div>
-                        <div class="kpi-sub">${t("dashboard.kpi_overtime_sub", lang)}</div>
-                    </div>
-                    <div class="kpi-icon warn"><i class="fa-solid fa-clock"></i></div>
+            <div class="kpi-seg accent-warn">
+                <div class="kpi-icon warn"><i class="fa-solid fa-clock"></i></div>
+                <div class="kpi-seg-body">
+                    <div class="kpi-label">${t("dashboard.kpi_overtime", lang)}</div>
+                    <div class="kpi-value">${attendanceSummary.overtime}<span style="font-size:14px;font-weight:500;color:var(--c-muted)"> h</span></div>
+                    <div class="kpi-sub"><span class="kpi-tag">${t("dashboard.kpi_overtime_sub", lang)}</span></div>
+                    <canvas id="overtimeSparkline" height="28" style="margin-top:2px;max-width:160px"></canvas>
                 </div>
-                <canvas id="overtimeSparkline" height="36" style="margin-top:6px"></canvas>
             </div>
 
-            <div class="kpi-card">
-                <div class="kpi-card-top">
-                    <div>
-                        <div class="kpi-label">${t("dashboard.kpi_goals", lang)}</div>
-                        <div class="kpi-value">${goalSummary.personal != null ? goalSummary.personal : "—"}<span style="font-size:15px;font-weight:500;color:var(--c-muted)">${goalSummary.personal != null ? " %" : ""}</span></div>
-                        <div class="kpi-sub">${t("dashboard.kpi_goals_done", lang)} ${goalsCompleted} / ${t("dashboard.kpi_goals_ongoing", lang)} ${goalsInProgress} / ${t("dashboard.kpi_goals_overdue", lang)} ${goalsOverdue}</div>
+            <div class="kpi-seg accent-green">
+                <div class="kpi-icon green"><i class="fa-solid fa-bullseye"></i></div>
+                <div class="kpi-seg-body">
+                    <div class="kpi-label">${t("dashboard.kpi_goals", lang)}</div>
+                    <div class="kpi-value">${goalSummary.personal != null ? goalSummary.personal : "—"}<span style="font-size:14px;font-weight:500;color:var(--c-muted)">${goalSummary.personal != null ? " %" : ""}</span></div>
+                    <div class="kpi-sub">
+                        <span class="kpi-tag">${t("dashboard.kpi_goals_done", lang)} ${goalsCompleted}</span>
+                        <span class="kpi-tag">${t("dashboard.kpi_goals_ongoing", lang)} ${goalsInProgress}</span>
+                        <span class="kpi-tag">${t("dashboard.kpi_goals_overdue", lang)} ${goalsOverdue}</span>
                     </div>
-                    <div class="kpi-icon green"><i class="fa-solid fa-bullseye"></i></div>
+                    ${goalSummary.personal != null ? `<div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(100, goalSummary.personal)}%"></div></div>` : `<div style="font-size:11px;color:var(--c-sub);margin-top:2px">${t("dashboard.kpi_goals_register", lang)}</div>`}
+                    <a href="/goals" class="kpi-link">${t("dashboard.btn_goals", lang)}<i class="fa-solid fa-arrow-right"></i></a>
                 </div>
-                ${goalSummary.personal != null ? `<div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(100, goalSummary.personal)}%;background:var(--c-success)"></div></div>` : `<div style="font-size:11px;color:var(--c-sub);margin-top:6px">${t("dashboard.kpi_goals_register", lang)}</div>`}
-                <a href="/goals" style="font-size:12px;color:var(--c-success);font-weight:600;text-decoration:none;margin-top:6px;display:inline-block;">${t("dashboard.btn_goals", lang)}</a>
             </div>
 
-            <div class="kpi-card">
-                <div class="kpi-card-top">
-                    <div>
-                        <div class="kpi-label">${t("dashboard.kpi_leave", lang)}</div>
-                        <div class="kpi-value">${leaveSummary.pending}<span style="font-size:15px;font-weight:500;color:var(--c-muted)"> ${t("dashboard.kpi_leave_unit", lang)}</span></div>
-                        <div class="kpi-sub">${t("dashboard.kpi_leave_pending", lang)} &nbsp;•&nbsp; ${t("dashboard.kpi_leave_approved", lang)} ${leaveApprovedCount} &nbsp;•&nbsp; ${t("dashboard.kpi_leave_upcoming", lang)} ${leaveSummary.upcoming}</div>
+            <div class="kpi-seg ${leaveSummary.pending > 0 ? "accent-warn" : "accent-green"}">
+                <div class="kpi-icon ${leaveSummary.pending > 0 ? "warn" : "green"}"><i class="fa-solid fa-umbrella-beach"></i></div>
+                <div class="kpi-seg-body">
+                    <div class="kpi-label">${t("dashboard.kpi_leave", lang)}</div>
+                    <div class="kpi-value">${leaveSummary.pending}<span style="font-size:14px;font-weight:500;color:var(--c-muted)"> ${t("dashboard.kpi_leave_unit", lang)}</span></div>
+                    <div class="kpi-sub">
+                        <span class="kpi-tag">${t("dashboard.kpi_leave_pending", lang)}</span>
+                        <span class="kpi-tag">${t("dashboard.kpi_leave_approved", lang)} ${leaveApprovedCount}</span>
+                        <span class="kpi-tag">${t("dashboard.kpi_leave_upcoming", lang)} ${leaveSummary.upcoming}</span>
                     </div>
-                    <div class="kpi-icon ${leaveSummary.pending > 0 ? "warn" : "green"}"><i class="fa-solid fa-umbrella-beach"></i></div>
+                    <a href="/leave/my-requests" class="kpi-link">${t("dashboard.btn_leave", lang)}<i class="fa-solid fa-arrow-right"></i></a>
                 </div>
-                <a href="/leave/my-requests" style="font-size:12px;color:var(--c-primary);font-weight:600;text-decoration:none;margin-top:6px;display:inline-block;">${t("dashboard.btn_leave", lang)}</a>
             </div>
 
-        </div><!-- /kpi-grid -->
+        </div><!-- /kpi-strip -->
 
         <!-- ── Body ── -->
         <div class="db-body">
@@ -1188,7 +1220,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                                     <div class="ai-title">${escapeHtml(r.title)}</div>
                                     <span style="font-size:10px;font-weight:700;background:${tag.badgeBg};color:#fff;padding:1px 7px;border-radius:999px;flex-shrink:0">${tag.badgeText}</span>
                                 </div>
-                                <div class="ai-desc">${escapeHtml(r.description)}</div>
+                                <div class="ai-desc">${escapeHtmlBr(r.description)}</div>
                                 <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
                                     <a href="${escapeHtml(r.link)}" class="ai-btn" style="background:${tag.badgeBg}">${t("dashboard.ai_check", lang)}</a>
                                     <span class="ai-conf"><i class="fa-solid fa-brain" style="font-size:9px;margin-right:3px"></i>${t("dashboard.ai_confidence", lang)} ${r.confidence}%</span>
@@ -1401,7 +1433,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                     <!-- AI分析コメント -->
                     <div style="background:#faf8ff;border:1px solid #ede9fe;border-radius:10px;padding:12px 14px;margin-bottom:16px">
                         <div style="font-size:11px;font-weight:700;color:#7c3aed;margin-bottom:5px"><i class="fa-solid fa-brain" style="margin-right:4px"></i>${t("dashboard.ai_analysis_comment", lang)}</div>
-                        <div style="font-size:12.5px;color:var(--c-text);line-height:1.7">${escapeHtml(semi.explanation)}</div>
+                        <div style="font-size:12.5px;color:var(--c-text);line-height:1.7">${escapeHtmlBr(semi.explanation)}</div>
                     </div>`;
                     })()}
 
@@ -1701,9 +1733,9 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                                     <span style="font-size:13px;font-weight:700;color:var(--c-text);flex:1">${escapeHtml(action.title)}</span>
                                     <span style="font-size:10px;font-weight:700;background:${priStyle.badge};color:#fff;padding:2px 8px;border-radius:999px;flex-shrink:0">${priStyle.label}</span>
                                 </div>
-                                <div style="font-size:12px;color:var(--c-muted);margin-bottom:5px">${escapeHtml(action.detail)}</div>
+                                <div style="font-size:12px;color:var(--c-muted);margin-bottom:5px">${escapeHtmlBr(action.detail)}</div>
                                 <div style="font-size:12px;color:var(--c-text);background:white;border-radius:7px;padding:8px 10px;border:1px solid ${priStyle.border}">
-                                    <strong>${t("dashboard.action_howto", lang)}</strong> ${escapeHtml(action.howto)}
+                                    <strong>${t("dashboard.action_howto", lang)}</strong> ${escapeHtmlBr(action.howto)}
                                 </div>
                                 <div style="font-size:11px;color:${priStyle.badge};font-weight:600;margin-top:6px">
                                     <i class="fa-solid fa-arrow-up" style="font-size:9px"></i> ${escapeHtml(action.impact)}
@@ -2072,30 +2104,65 @@ router.get("/dashboard", requireLogin, async (req, res) => {
         </div><!-- /db-wrap -->
 
         <script>
+        // ── AI最適化ホーム: 折りたたみ（Chart.js等の後続エラーに影響されないよう最優先で実行・バインド） ──
+        const _aiCollapseLabel = ${JSON.stringify(t("dashboard.ai_home_collapse", lang))};
+        const _aiExpandLabel   = ${JSON.stringify(t("dashboard.ai_home_expand", lang))};
+        function setAiSectionCollapsed(collapsed) {
+            const body  = document.getElementById('aiHomeSectionBody');
+            const icon  = document.getElementById('aiToggleIcon');
+            const label = document.getElementById('aiToggleLabel');
+            if (!body) return;
+            body.style.display = collapsed ? 'none' : '';
+            if (icon)  icon.className = collapsed ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-up';
+            if (label) label.textContent = collapsed ? _aiExpandLabel : _aiCollapseLabel;
+            if (collapsed) localStorage.setItem('aiSectionCollapsed', '1');
+            else localStorage.removeItem('aiSectionCollapsed');
+        }
+        function toggleAiSection() {
+            const body = document.getElementById('aiHomeSectionBody');
+            if (!body) return;
+            setAiSectionCollapsed(body.style.display !== 'none');
+        }
+        (function(){
+            const btn = document.getElementById('aiToggleBtn');
+            if (btn) btn.addEventListener('click', toggleAiSection);
+            // 前回の折りたたみ状態を復元
+            if (localStorage.getItem('aiSectionCollapsed') === '1') {
+                setAiSectionCollapsed(true);
+            }
+        })();
+
         // ── Live clock ──
         (function(){
+            try {
             const el = document.getElementById('liveClk');
             if(!el) return;
             const fmt = new Intl.DateTimeFormat('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone:'Asia/Tokyo'});
             const tick = ()=>{ el.textContent = fmt.format(new Date()); };
             tick(); setInterval(tick, 1000);
+            } catch(e) { console.error('liveClock error', e); }
         })();
 
         // ── Overtime sparkline ──
         (function(){
+            try {
+            if (typeof Chart === 'undefined') return;
             const ctx = document.getElementById('overtimeSparkline');
             if(!ctx) return;
             const data = ${JSON.stringify(attendanceTrend.map((t) => t.count))};
             const labels = ${JSON.stringify(attendanceTrend.map((t) => t.label))};
             new Chart(ctx,{
                 type:'line',
-                data:{ labels, datasets:[{ data, borderColor:'#d97706', backgroundColor:'rgba(217,119,6,.08)', fill:true, tension:.4, pointRadius:0, borderWidth:2 }] },
+                data:{ labels, datasets:[{ data, borderColor:'#475569', backgroundColor:'rgba(71,85,105,.08)', fill:true, tension:.3, pointRadius:0, borderWidth:1.5 }] },
                 options:{ responsive:true, plugins:{legend:{display:false},tooltip:{enabled:false}}, scales:{x:{display:false},y:{display:false}} }
             });
+            } catch(e) { console.error('sparkline error', e); }
         })();
 
         // ── Attendance trend chart ──
         (function(){
+            try {
+            if (typeof Chart === 'undefined') return;
             const ctx = document.getElementById('trendChart');
             if(!ctx) return;
             const labels = ${JSON.stringify(attendanceTrend.map((t) => t.label))};
@@ -2113,10 +2180,13 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                     scales:{ y:{ beginAtZero:true, grid:{color:'#f0f0f0'}, ticks:{color:'#9ca3af',font:{size:11}} }, x:{ticks:{color:'#9ca3af',font:{size:11}},grid:{display:false}} }
                 }
             });
+            } catch(e) { console.error('trend chart error', e); }
         })();
 
         // ── Goals donut ──
         (function(){
+            try {
+            if (typeof Chart === 'undefined') return;
             const ctx = document.getElementById('goalsDonut');
             if(!ctx) return;
             new Chart(ctx,{
@@ -2127,10 +2197,13 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                 },
                 options:{ cutout:'70%', plugins:{ legend:{display:false} }, responsive:false }
             });
+            } catch(e) { console.error('goals donut error', e); }
         })();
 
         // ── Leave donut ──
         (function(){
+            try {
+            if (typeof Chart === 'undefined') return;
             const ctx = document.getElementById('leaveDonut');
             if(!ctx) return;
             new Chart(ctx,{
@@ -2141,10 +2214,12 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                 },
                 options:{ cutout:'70%', plugins:{ legend:{display:false} }, responsive:false }
             });
+            } catch(e) { console.error('leave donut error', e); }
         })();
 
         // ── Semi-annual self-assessment submit ──
         (function(){
+            try {
             // 星評価インタラクション
             document.querySelectorAll('.sf-stars').forEach(container => {
                 const stars = container.querySelectorAll('.sf-star');
@@ -2203,10 +2278,12 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                     alert('${t("dashboard.alert_send_error", lang)}');
                 }
             });
+            } catch(e) { console.error('semi feedback init error', e); }
         })();
 
         // ── Soft enterprise gradient orbs background ──
         (function(){
+            try {
             const canvas = document.getElementById('db-bg-canvas');
             if(!canvas) return;
             const ctx = canvas.getContext('2d');
@@ -2246,6 +2323,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             window.addEventListener('resize', resize);
             resize();
             draw();
+            } catch(e) { console.error('bg canvas error', e); }
         })();
 
         // ── AI最適化ホーム: 行動ログ送信 ────────────────────────────────────
@@ -2327,36 +2405,6 @@ router.get("/dashboard", requireLogin, async (req, res) => {
                 body: JSON.stringify({ suggestionId: id }),
             }).catch(() => {});
         }
-
-        // ── AI最適化ホーム: 折りたたみ ──────────────────────────────────────
-        const _aiCollapseLabel = ${JSON.stringify(t("dashboard.ai_home_collapse", lang))};
-        const _aiExpandLabel   = ${JSON.stringify(t("dashboard.ai_home_expand", lang))};
-        function toggleAiSection() {
-            const body = document.getElementById('aiHomeSectionBody');
-            const icon = document.getElementById('aiToggleIcon');
-            const btn  = document.getElementById('aiToggleBtn');
-            if (!body) return;
-            if (body.style.display === 'none') {
-                body.style.display = '';
-                icon.className = 'fa-solid fa-chevron-up';
-                btn.innerHTML = '<i class="fa-solid fa-chevron-up" id="aiToggleIcon"></i> ' + _aiCollapseLabel;
-                localStorage.removeItem('aiSectionCollapsed');
-            } else {
-                body.style.display = 'none';
-                icon.className = 'fa-solid fa-chevron-down';
-                btn.innerHTML = '<i class="fa-solid fa-chevron-down" id="aiToggleIcon"></i> ' + _aiExpandLabel;
-                localStorage.setItem('aiSectionCollapsed', '1');
-            }
-        }
-        // 前回の折りたたみ状態を復元
-        (function(){
-            if (localStorage.getItem('aiSectionCollapsed') === '1') {
-                const body = document.getElementById('aiHomeSectionBody');
-                const btn  = document.getElementById('aiToggleBtn');
-                if (body) body.style.display = 'none';
-                if (btn)  btn.innerHTML = '<i class="fa-solid fa-chevron-down" id="aiToggleIcon"></i> 展開する';
-            }
-        })();
         </script>
     `,
     );
