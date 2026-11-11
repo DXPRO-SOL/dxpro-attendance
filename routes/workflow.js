@@ -7,8 +7,6 @@ const router = require("express").Router();
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
-const mongoose = require("mongoose");
-const { GridFSBucket } = require("mongodb");
 const {
   Workflow,
   WorkflowForm,
@@ -28,15 +26,21 @@ const {
 } = require("../services/workflow-engine");
 const { t } = require("../lib/i18n");
 
-// ─── ファイルアップロード設定（経費添付用）──────────────────────────────────
-// Render無料プランはディスクが非永続（再デプロイ/再起動で消える）ため、
-// MongoDB Atlas（既存の無料枠）上のGridFSに保存する方式に変更。
-// ※ 以前ローカルディスクに保存されていたファイルは失われるため、
-//   旧URL（/uploads/workflow/...）は開けなくなる点に留意。
-const wfStorage = multer.memoryStorage();
+// ─── ファイルアップロード設定（経費添付用） ───────────────────────────────────
+const wfUploadDir = path.join("uploads", "workflow");
+fs.mkdirSync(wfUploadDir, { recursive: true });
+
+const wfStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, wfUploadDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || "";
+    cb(null, Date.now() + "-" + Math.floor(Math.random() * 1e9) + ext);
+  },
+});
 
 const wfUpload = multer({
   storage: wfStorage,
+  defParamCharset: "utf8",
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed =
@@ -45,16 +49,6 @@ const wfUpload = multer({
     cb(new Error("許可されていないファイル形式です"));
   },
 });
-
-let _wfBucket = null;
-function getWfBucket() {
-  if (!_wfBucket) {
-    _wfBucket = new GridFSBucket(mongoose.connection.db, {
-      bucketName: "workflow_attachments",
-    });
-  }
-  return _wfBucket;
-}
 
 // ── ヘルパー: エラーレスポンス ───────────────────────────────────────────────
 function errRes(res, message, status = 400) {
@@ -227,57 +221,16 @@ router.post(
   "/api/workflow/upload",
   requireLogin,
   wfUpload.single("file"),
-  async (req, res) => {
+  (req, res) => {
     if (!req.file) return errRes(res, "ファイルが見つかりません");
-    try {
-      const bucket = getWfBucket();
-      const ext = path.extname(req.file.originalname) || "";
-      const filename = Date.now() + "-" + Math.floor(Math.random() * 1e9) + ext;
-      const uploadStream = bucket.openUploadStream(filename, {
-        contentType: req.file.mimetype,
-      });
-      uploadStream.end(req.file.buffer);
-      await new Promise((resolve, reject) => {
-        uploadStream.on("finish", resolve);
-        uploadStream.on("error", reject);
-      });
-      res.json({
-        ok: true,
-        filename,
-        originalName: req.file.originalname,
-        url: `/api/workflow/file/${uploadStream.id}`,
-      });
-    } catch (e) {
-      console.error("[workflow upload]", e);
-      errRes(res, "アップロードに失敗しました", 500);
-    }
+    res.json({
+      ok: true,
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      url: `/uploads/workflow/${req.file.filename}`,
+    });
   },
 );
-
-// ════════════════════════════════════════════════════════════════════════════
-// ファイル取得 GET /api/workflow/file/:fileId（GridFS）
-// ════════════════════════════════════════════════════════════════════════════
-router.get("/api/workflow/file/:fileId", requireLogin, async (req, res) => {
-  try {
-    const bucket = getWfBucket();
-    const fileId = new mongoose.Types.ObjectId(req.params.fileId);
-    const files = await bucket.find({ _id: fileId }).toArray();
-    if (!files.length) return res.status(404).send("ファイルが見つかりません");
-    const file = files[0];
-    res.set("Content-Type", file.contentType || "application/octet-stream");
-    res.set(
-      "Content-Disposition",
-      `inline; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
-    );
-    bucket
-      .openDownloadStream(fileId)
-      .on("error", () => res.status(404).end())
-      .pipe(res);
-  } catch (e) {
-    console.error("[workflow file get]", e);
-    res.status(500).send("取得に失敗しました");
-  }
-});
 
 // 申請種別（稟議・休暇・残業を除外、内部契約・外部契約を追加）
 const applicationTypes = ["経費", "備品購入", "内部契約", "外部契約", "その他"];
