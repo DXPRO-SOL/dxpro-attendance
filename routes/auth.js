@@ -46,133 +46,63 @@ router.get("/login", (req, res) => {
             <meta charset="UTF-8">
             <title>${t("login.title", lang)}</title>
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+JP:wght@500;600&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
             <style>
                 :root {
-                    --navy-950: #0c111b;
-                    --navy-900: #141b29;
-                    --navy-800: #1c2435;
-                    --line: rgba(255,255,255,.1);
-                    --gold: #b8964f;
-                    --gold-light: #d4b97a;
-                    --text-light: #eceef2;
-                    --text-muted: #8c93a3;
+                    --blue: #2d5bb9;
+                    --blue-dark: #1f4694;
+                    --border: #d4d7dc;
+                    --text: #1f2328;
+                    --text-muted: #5f6672;
+                    --bg: #f4f5f7;
                     --error-color: #c0392b;
                 }
                 * { margin: 0; padding: 0; box-sizing: border-box; }
                 html, body { height: 100%; }
                 body {
                     font-family: 'Inter', 'Noto Sans JP', sans-serif;
-                    color: var(--text-light);
+                    color: var(--text);
                     min-height: 100vh;
-                    background: var(--navy-950);
-                    display: flex;
-                }
-
-                /* ══════════ 左パネル：ブランディング ══════════ */
-                .brand-panel {
-                    position: relative;
-                    flex: 1.1;
+                    background: var(--bg);
                     display: flex;
                     flex-direction: column;
-                    justify-content: space-between;
-                    padding: 56px 64px;
-                    overflow: hidden;
-                    background: var(--navy-950);
-                    border-right: 1px solid var(--line);
-                }
-                .brand-panel::before {
-                    content: '';
-                    position: absolute; inset: 0;
-                    background-image: repeating-linear-gradient(
-                        115deg,
-                        transparent 0px, transparent 118px,
-                        rgba(255,255,255,.035) 118px, rgba(255,255,255,.035) 119px
-                    );
-                    pointer-events: none;
-                }
-
-                .brand-top { position: relative; z-index: 1; }
-                .brand-logo { display: flex; align-items: center; gap: 12px; }
-                .brand-logo img { height: 32px; width: auto; filter: brightness(0) invert(1); }
-                .brand-logo-text { font-size: 14px; font-weight: 600; letter-spacing: 2.5px; color: var(--text-muted); }
-                .brand-tagline {
-                    margin-top: 64px;
-                    font-family: 'Noto Serif JP', serif;
-                    font-size: 30px;
-                    font-weight: 600;
-                    line-height: 1.55;
-                    letter-spacing: .5px;
-                    max-width: 460px;
-                    color: var(--text-light);
-                }
-                .brand-tagline .accent { color: var(--gold-light); }
-                .brand-rule { width: 44px; height: 2px; background: var(--gold); margin-top: 26px; }
-                .brand-sub {
-                    margin-top: 22px;
-                    font-size: 14px;
-                    color: var(--text-muted);
-                    max-width: 420px;
-                    line-height: 1.8;
-                }
-
-                .brand-features {
-                    position: relative; z-index: 1;
-                    display: flex; flex-direction: column;
-                    margin-top: 48px;
-                    border-top: 1px solid var(--line);
-                }
-                .brand-feature {
-                    display: flex; align-items: center; gap: 14px;
-                    font-size: 13px; color: var(--text-light);
-                    padding: 15px 0;
-                    border-bottom: 1px solid var(--line);
-                }
-                .brand-feature .ico {
-                    width: 28px; text-align: center;
-                    color: var(--gold);
-                    font-size: 13px; flex-shrink: 0;
-                }
-
-                .brand-foot {
-                    position: relative; z-index: 1;
-                    display: flex; align-items: center; justify-content: space-between;
-                    font-size: 11px; color: var(--text-muted);
-                    letter-spacing: .3px;
-                }
-                .brand-foot .dot { color: #6b9d7a; margin-right: 6px; }
-
-                /* ══════════ 右パネル：ログインフォーム ══════════ */
-                .form-panel {
-                    flex: 1;
-                    display: flex;
                     align-items: center;
                     justify-content: center;
-                    background: #fff;
-                    position: relative;
-                    padding: 40px;
+                    padding: 24px;
                 }
+
+                .top-brand {
+                    display: flex; align-items: center; gap: 10px;
+                    margin-bottom: 28px;
+                }
+                .top-brand img { height: 30px; width: auto; }
+                .top-brand span { font-size: 15px; font-weight: 700; letter-spacing: .5px; color: var(--text); }
+
                 .login-card {
                     width: 100%;
                     max-width: 380px;
-                    position: relative;
+                    background: #fff;
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    box-shadow: 0 1px 3px rgba(20,24,30,.06);
+                    padding: 36px 34px 30px;
                 }
                 .card-top-row {
                     display: flex; align-items: center; justify-content: flex-end;
-                    margin-bottom: 36px;
+                    margin-bottom: 14px;
                 }
                 .lang-dropdown { position: relative; }
                 .lang-trigger {
                     display: inline-flex; align-items: center; gap: 5px;
-                    padding: 6px 13px; border-radius: 3px;
-                    border: 1px solid #dfe3e8; background: #fff;
+                    padding: 5px 11px; border-radius: 4px;
+                    border: 1px solid var(--border); background: #fff;
                     font-size: 12px; font-weight: 500; cursor: pointer;
-                    color: #5b6472; font-family: inherit; transition: all .15s;
+                    color: var(--text-muted); font-family: inherit; transition: all .15s;
                 }
-                .lang-trigger:hover { border-color: #b8964f; color: #8a6d2f; }
+                .lang-trigger:hover { border-color: var(--blue); color: var(--blue); }
                 .lang-menu {
                     display: none; position: absolute; top: calc(100% + 8px); right: 0;
-                    background: #fff; border: 1px solid #dfe3e8; border-radius: 4px;
+                    background: #fff; border: 1px solid var(--border); border-radius: 6px;
                     box-shadow: 0 8px 24px rgba(15,23,42,.1);
                     min-width: 155px; overflow: hidden; z-index: 20;
                 }
@@ -182,31 +112,30 @@ router.get("/login", (req, res) => {
                     cursor: pointer; font-size: 13px; color: #334155; border: none;
                     background: none; width: 100%; text-align: left; font-family: inherit;
                 }
-                .lang-menu-item:hover { background: #f7f7f8; }
-                .lang-menu-item.active { background: #faf6ed; color: #8a6d2f; font-weight: 600; }
+                .lang-menu-item:hover { background: #f5f6f8; }
+                .lang-menu-item.active { background: #eef3fc; color: var(--blue-dark); font-weight: 600; }
 
-                .form-head { margin-bottom: 32px; }
-                .form-head .welcome { font-size: 11.5px; font-weight: 600; color: var(--gold); letter-spacing: 1.5px; text-transform: uppercase; }
-                .form-head h1 { font-family: 'Noto Serif JP', serif; font-size: 23px; font-weight: 600; color: #15181e; margin-top: 10px; letter-spacing: .3px; }
-                .form-head p { font-size: 13px; color: #76808f; margin-top: 8px; }
+                .form-head { margin-bottom: 24px; text-align: center; }
+                .form-head h1 { font-size: 19px; font-weight: 700; color: var(--text); letter-spacing: .1px; }
+                .form-head p { font-size: 13px; color: var(--text-muted); margin-top: 6px; }
 
-                .form-group { margin-bottom: 18px; }
-                .form-group label { display: block; margin-bottom: 7px; font-weight: 600; color: #3c4451; font-size: 12px; letter-spacing: .2px; }
+                .form-group { margin-bottom: 16px; }
+                .form-group label { display: block; margin-bottom: 6px; font-weight: 600; color: #3c4451; font-size: 12px; letter-spacing: .2px; }
                 .input-wrap { position: relative; }
                 .input-wrap .fld-icon {
-                    position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+                    position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
                     color: #a4abb8; font-size: 13px; pointer-events: none;
                 }
                 .form-control {
-                    width: 100%; padding: 12px 14px 12px 40px;
-                    border: 1px solid #dfe3e8; border-radius: 3px;
+                    width: 100%; padding: 11px 14px 11px 38px;
+                    border: 1px solid var(--border); border-radius: 5px;
                     font-size: 14px; font-family: inherit;
                     transition: all .15s; background: #fff; color: #15181e;
                 }
                 .form-control::placeholder { color: #a9afba; }
                 .form-control:focus {
-                    outline: none; border-color: var(--gold);
-                    box-shadow: 0 0 0 3px rgba(184,150,79,.12);
+                    outline: none; border-color: var(--blue);
+                    box-shadow: 0 0 0 3px rgba(45,91,185,.12);
                 }
                 .password-wrapper .form-control { padding-right: 42px; }
                 .toggle-password {
@@ -214,21 +143,21 @@ router.get("/login", (req, res) => {
                     background: none; border: none; cursor: pointer; padding: 0;
                     color: #a4abb8; display: flex; align-items: center; transition: color .15s;
                 }
-                .toggle-password:hover { color: var(--gold); }
+                .toggle-password:hover { color: var(--blue); }
 
                 .btn-login {
-                    width: 100%; padding: 13px; border: none; border-radius: 3px;
+                    width: 100%; padding: 12px; border: none; border-radius: 5px;
                     font-size: 14px; font-weight: 600; cursor: pointer;
                     display: flex; justify-content: center; align-items: center; gap: 8px;
-                    background: var(--navy-950);
-                    color: #fff; margin-top: 8px;
-                    letter-spacing: .3px;
+                    background: var(--blue);
+                    color: #fff; margin-top: 6px;
+                    letter-spacing: .2px;
                     transition: background .15s ease;
                 }
-                .btn-login:hover { background: #1c2435; }
-                .btn-login:active { background: #05070f; }
+                .btn-login:hover { background: var(--blue-dark); }
+                .btn-login:active { background: #163a7a; }
 
-                .divider { display: flex; align-items: center; margin: 24px 0; color: #a9afba; font-size: 11px; }
+                .divider { display: flex; align-items: center; margin: 22px 0; color: #a9afba; font-size: 11px; }
                 .divider::before, .divider::after { content: ""; flex: 1; border-bottom: 1px solid #ebedf0; }
                 .divider::before { margin-right: 14px; }
                 .divider::after { margin-left: 14px; }
@@ -236,133 +165,106 @@ router.get("/login", (req, res) => {
                 .links { text-align: center; font-size: 13px; }
                 .links a {
                     display: inline-flex; align-items: center; gap: 6px;
-                    color: #5b6472; text-decoration: none; font-weight: 500;
-                    padding: 9px 18px; border: 1px solid #dfe3e8; border-radius: 3px;
+                    color: var(--text-muted); text-decoration: none; font-weight: 500;
+                    padding: 9px 18px; border: 1px solid var(--border); border-radius: 5px;
                     transition: all .15s;
                 }
-                .links a:hover { border-color: #b8964f; color: #8a6d2f; }
+                .links a:hover { border-color: var(--blue); color: var(--blue); }
 
                 .error-message {
                     display: flex; align-items: center; gap: 8px;
                     color: var(--error-color); background-color: #fcf0ee;
-                    padding: 11px 14px; border-radius: 3px; margin-bottom: 20px;
+                    padding: 11px 14px; border-radius: 5px; margin-bottom: 18px;
                     font-size: 13px; border: 1px solid #f0d2cc;
                 }
 
-                .current-time { text-align: center; margin-top: 26px; font-size: 11px; color: #a9afba; font-weight: 500; font-variant-numeric: tabular-nums; }
-                .footer { margin-top: 6px; text-align: center; font-size: 11px; color: #c1c6ce; }
+                .current-time { text-align: center; margin-top: 22px; font-size: 11px; color: #9aa0ab; font-weight: 500; font-variant-numeric: tabular-nums; }
+                .footer { margin-top: 16px; text-align: center; font-size: 11px; color: #9aa0ab; }
 
-                @media (max-width: 920px) {
-                    .brand-panel { display: none; }
-                    .form-panel { background: var(--navy-950); }
-                    .login-card { background: #fff; padding: 32px 26px; border-radius: 18px; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
-                }
                 @media (max-width: 480px) {
-                    .form-panel { padding: 20px; }
-                    .login-card { padding: 24px 18px; }
-                    .form-head h1 { font-size: 20px; }
+                    .login-card { padding: 28px 22px 24px; }
+                    .form-head h1 { font-size: 18px; }
                 }
             </style>
         </head>
         <body>
 
-            <!-- ══════════ 左：ブランディングパネル ══════════ -->
-            <div class="brand-panel">
-
-                <div class="brand-top">
-                    <div class="brand-logo">
-                        <img src="/nokori-logo.png" alt="NOKORI">
-                        <span class="brand-logo-text">NOKORI</span>
-                    </div>
-                    <div class="brand-tagline">
-                        組織の力を、<br><span class="accent">ひとつのプラットフォームに。</span>
-                    </div>
-                    <div class="brand-rule"></div>
-                    <div class="brand-sub">
-                        勤怠・目標・給与・チャット・ワークフローを統合した<br>エンタープライズ業務基盤です。
-                    </div>
-                </div>
-
-                <div class="brand-foot">
-                    <span><span class="dot">●</span>稼働中</span>
-                    <span>&copy; ${new Date().getFullYear()} DXPRO SOLUTIONS</span>
-                </div>
+            <div class="top-brand">
+                <img src="/nokori-logo.png" alt="NOKORI">
+                <span>NOKORI</span>
             </div>
 
-            <!-- ══════════ 右：ログインフォーム ══════════ -->
-            <div class="form-panel">
-                <div class="login-card">
+            <div class="login-card">
 
-                    <div class="card-top-row">
-                        ${(() => {
-                          const CODE_MAP = {
-                            ja: "JP",
-                            en: "EN",
-                            vi: "VN",
-                            ko: "KR",
-                            zh: "CN",
-                          };
-                          const code = CODE_MAP[lang] || lang.toUpperCase();
-                          return `<div class="lang-dropdown" id="langDropdown">
-                            <button class="lang-trigger" onclick="toggleLangMenu()" type="button">🌐 ${code}</button>
-                            <div class="lang-menu" id="langMenu">
-                                ${LANGS.map((l) => `<button class="lang-menu-item${lang === l.code ? " active" : ""}" onclick="setLang('${l.code}')" type="button">${l.flag} ${l.label}</button>`).join("")}
-                            </div>
-                        </div>`;
-                        })()}
-                    </div>
-
-                    <div class="form-head">
-                        <div class="welcome">Sign In</div>
-                        <h1>${t("login.title", lang)}</h1>
-                        <p>認証情報を入力してサインインしてください</p>
-                    </div>
-
-                    ${errorMsg ? `<div class="error-message"><i class="fa-solid fa-circle-exclamation"></i>${errorMsg}</div>` : ""}
-
-                    <form class="login-form" action="/login" method="POST">
-                        <div class="form-group">
-                            <label for="username">${t("login.username", lang)}</label>
-                            <div class="input-wrap">
-                                <i class="fa-solid fa-user fld-icon"></i>
-                                <input type="text" id="username" name="username" class="form-control" placeholder="${t("login.username_placeholder", lang)}" required>
-                            </div>
+                <div class="card-top-row">
+                    ${(() => {
+                      const CODE_MAP = {
+                        ja: "JP",
+                        en: "EN",
+                        vi: "VN",
+                        ko: "KR",
+                        zh: "CN",
+                      };
+                      const code = CODE_MAP[lang] || lang.toUpperCase();
+                      return `<div class="lang-dropdown" id="langDropdown">
+                        <button class="lang-trigger" onclick="toggleLangMenu()" type="button">🌐 ${code}</button>
+                        <div class="lang-menu" id="langMenu">
+                            ${LANGS.map((l) => `<button class="lang-menu-item${lang === l.code ? " active" : ""}" onclick="setLang('${l.code}')" type="button">${l.flag} ${l.label}</button>`).join("")}
                         </div>
-
-                        <div class="form-group">
-                            <label for="password">${t("login.password", lang)}</label>
-                            <div class="input-wrap password-wrapper">
-                                <i class="fa-solid fa-lock fld-icon"></i>
-                                <input type="password" id="password" name="password" class="form-control" placeholder="${t("login.password_placeholder", lang)}" required>
-                                <button type="button" class="toggle-password" id="togglePassword" aria-label="toggle password">
-                                    <svg id="eye-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                        <circle cx="12" cy="12" r="3"></circle>
-                                    </svg>
-                                    <svg id="eye-off-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
-                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                                        <line x1="1" y1="1" x2="23" y2="23"></line>
-                                    </svg>
-                                </button>
-                            </div>
-                        </div>
-
-                        <button type="submit" class="btn-login">
-                            ${t("login.submit", lang)}
-                            <i class="fa-solid fa-arrow-right"></i>
-                        </button>
-                    </form>
-
-                    <div class="divider">${t("login.or", lang)}</div>
-
-                    <div class="links">
-                        <a href="https://dxpro-sol.com" target="_blank"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${t("login.portal", lang)}</a>
-                    </div>
-
-                    <div class="current-time" id="current-time"></div>
-                    <div class="footer">&copy; ${new Date().getFullYear()} DXPRO SOLUTIONS. All rights reserved.</div>
+                    </div>`;
+                    })()}
                 </div>
+
+                <div class="form-head">
+                    <h1>${t("login.title", lang)}</h1>
+                    <p>認証情報を入力してサインインしてください</p>
+                </div>
+
+                ${errorMsg ? `<div class="error-message"><i class="fa-solid fa-circle-exclamation"></i>${errorMsg}</div>` : ""}
+
+                <form class="login-form" action="/login" method="POST">
+                    <div class="form-group">
+                        <label for="username">${t("login.username", lang)}</label>
+                        <div class="input-wrap">
+                            <i class="fa-solid fa-user fld-icon"></i>
+                            <input type="text" id="username" name="username" class="form-control" placeholder="${t("login.username_placeholder", lang)}" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="password">${t("login.password", lang)}</label>
+                        <div class="input-wrap password-wrapper">
+                            <i class="fa-solid fa-lock fld-icon"></i>
+                            <input type="password" id="password" name="password" class="form-control" placeholder="${t("login.password_placeholder", lang)}" required>
+                            <button type="button" class="toggle-password" id="togglePassword" aria-label="toggle password">
+                                <svg id="eye-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                                <svg id="eye-off-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn-login">
+                        ${t("login.submit", lang)}
+                        <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                </form>
+
+                <div class="divider">${t("login.or", lang)}</div>
+
+                <div class="links">
+                    <a href="https://dxpro-sol.com" target="_blank"><i class="fa-solid fa-arrow-up-right-from-square"></i> ${t("login.portal", lang)}</a>
+                </div>
+
             </div>
+
+            <div class="current-time" id="current-time"></div>
+            <div class="footer">&copy; ${new Date().getFullYear()} DXPRO SOLUTIONS. All rights reserved.</div>
 
             <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
             <script>
