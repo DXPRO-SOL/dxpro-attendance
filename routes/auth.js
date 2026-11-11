@@ -358,6 +358,45 @@ router.get("/login", (req, res) => {
                     transform-origin: left center;
                 }
 
+                /* ── AI機能強調バッジ／カード ── */
+                @keyframes aiGlow { 0%,100% { box-shadow: 0 0 0 0 rgba(167,139,250,.55), 0 10px 24px rgba(0,0,0,.35); } 50% { box-shadow: 0 0 0 6px rgba(167,139,250,0), 0 10px 24px rgba(0,0,0,.35); } }
+                .ai-tag {
+                    display: inline-flex; align-items: center; gap: 4px;
+                    font-size: 8px; font-weight: 800; letter-spacing: .3px;
+                    padding: 2px 7px; border-radius: 20px; color: #fff;
+                    background: linear-gradient(135deg, #a78bfa, #6366f1);
+                }
+                .ai-chip {
+                    position: absolute; display: flex; align-items: center; gap: 7px;
+                    padding: 7px 13px; border-radius: 20px;
+                    background: linear-gradient(135deg, rgba(167,139,250,.22), rgba(99,102,241,.16));
+                    border: 1px solid rgba(167,139,250,.4);
+                    backdrop-filter: blur(2px);
+                    font-size: 10px; font-weight: 700; color: #e4defc;
+                    box-shadow: 0 10px 22px rgba(0,0,0,.3);
+                    animation: aiGlow 2.6s ease-in-out infinite;
+                }
+                .ai-chip i { color: #c4b5fd; font-size: 11px; }
+                .ai-card {
+                    position: absolute;
+                    background: linear-gradient(165deg, #1a1536, #141d33);
+                    border: 1px solid rgba(167,139,250,.35);
+                    border-radius: 12px; padding: 11px 13px;
+                    box-shadow: 0 18px 34px rgba(0,0,0,.45), 0 0 0 1px rgba(167,139,250,.08);
+                }
+                .ai-card .ai-head {
+                    display: flex; align-items: center; gap: 6px; margin-bottom: 7px;
+                    font-size: 9.5px; font-weight: 800; color: #c4b5fd; text-transform: uppercase; letter-spacing: .4px;
+                }
+                .ai-card .ai-head i {
+                    width: 18px; height: 18px; border-radius: 6px;
+                    background: linear-gradient(135deg, #a78bfa, #6366f1);
+                    display: flex; align-items: center; justify-content: center;
+                    color: #fff; font-size: 9px;
+                }
+                .ai-card .ai-text { font-size: 10.5px; color: rgba(255,255,255,.82); line-height: 1.5; }
+                .ai-card .ai-sub { font-size: 9px; color: rgba(167,139,250,.75); margin-top: 6px; font-weight: 600; }
+
                 .slide-dots {
                     position: relative; z-index: 2; flex-shrink: 0;
                     display: flex; gap: 7px; margin-top: 18px;
@@ -543,16 +582,21 @@ router.get("/login", (req, res) => {
                     <!-- スライド1：課題管理（GitHub / Jira / Backlog） -->
                     <div class="slide active">
                         <div class="slide-title">課題・タスク管理を、<br><span class="accent">チーム全員の目に見える形に。</span></div>
-                        <div class="slide-desc">GitHub・Jira・Backlogのような開発タスク管理を統合。<br>進捗状況をリアルタイムに共有できます。</div>
+                        <div class="slide-desc">GitHub・Jira・Backlogのような開発タスク管理を統合。<br><b style="color:#c4b5fd;">AI</b>が優先度と遅延リスクを自動分析します。</div>
                         <div class="illus-stage">
                             <div class="blob" style="width:300px;height:300px;background:#8fb4ff;top:0;left:60px;"></div>
                             <div class="blob" style="width:300px;height:300px;background:#c4b5fd;bottom:10px;right:30px;"></div>
                             <div class="blob" style="width:200px;height:200px;background:#5fd38a;top:40px;right:120px;opacity:.22;"></div>
 
+                            <div class="ai-chip" style="top:6px;left:60px;">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> AIが次の優先タスクを提案
+                            </div>
+
                             <div class="app-window" style="top:40px;left:6px;width:288px;height:220px;">
                                 <div class="app-titlebar">
                                     <span class="app-tdot r"></span><span class="app-tdot y"></span><span class="app-tdot g"></span>
                                     <span class="app-url">app.nokori.io/issues/sprint-24</span>
+                                    <span class="ai-tag" style="margin-left:auto;"><i class="fa-solid fa-sparkles"></i> AI</span>
                                 </div>
                                 <div class="app-body">
                                     <div class="app-sidebar">
@@ -587,14 +631,14 @@ router.get("/login", (req, res) => {
                                 </div>
                             </div>
 
-                            <div class="ico-badge glow" style="width:46px;height:46px;top:92px;left:366px;background:#1c2435;border:1px solid rgba(255,255,255,.15);"><i class="fa-brands fa-github" style="font-size:18px;"></i></div>
-                            <div class="notif-badge" style="top:86px;left:400px;">3</div>
-                            <div class="ico-badge" style="width:38px;height:38px;top:190px;left:404px;background:#2d5bb9;"><i class="fa-solid fa-code-branch" style="font-size:15px;"></i></div>
-                            <div class="ico-badge" style="width:34px;height:34px;top:146px;left:372px;background:#0052cc;"><i class="fa-brands fa-jira" style="font-size:14px;"></i></div>
-                            <div class="ico-badge" style="width:28px;height:28px;top:236px;left:366px;background:#24292e;"><i class="fa-solid fa-code-pull-request" style="font-size:12px;"></i></div>
+                            <div class="ico-badge glow" style="width:46px;height:46px;top:102px;left:366px;background:#1c2435;border:1px solid rgba(255,255,255,.15);"><i class="fa-brands fa-github" style="font-size:18px;"></i></div>
+                            <div class="notif-badge" style="top:96px;left:400px;">3</div>
+                            <div class="ico-badge" style="width:38px;height:38px;top:202px;left:404px;background:#2d5bb9;"><i class="fa-solid fa-code-branch" style="font-size:15px;"></i></div>
+                            <div class="ico-badge" style="width:34px;height:34px;top:156px;left:372px;background:#0052cc;"><i class="fa-brands fa-jira" style="font-size:14px;"></i></div>
+                            <div class="ico-badge" style="width:28px;height:28px;top:248px;left:366px;background:#24292e;"><i class="fa-solid fa-code-pull-request" style="font-size:12px;"></i></div>
 
-                            <div class="dash-line" style="width:44px;top:76px;left:360px;transform:rotate(35deg);"></div>
-                            <div class="dash-line" style="width:40px;top:230px;left:378px;transform:rotate(-70deg);"></div>
+                            <div class="dash-line" style="width:44px;top:86px;left:360px;transform:rotate(35deg);"></div>
+                            <div class="dash-line" style="width:40px;top:242px;left:378px;transform:rotate(-70deg);"></div>
                             <div class="particle" style="top:10px;left:250px;"></div>
                             <div class="particle" style="top:322px;left:230px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
                             <div class="particle" style="top:60px;left:330px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
@@ -619,6 +663,7 @@ router.get("/login", (req, res) => {
                                 <div class="commit-row"><span class="cm-dot" style="background:#8fb4ff;"></span><span class="cm-txt"><span class="cl1">feat:</span> 承認フロー追加</span></div>
                             </div>
                             <div class="rank-card" style="top:0px;left:300px;width:150px;">
+                                <div class="ai-head" style="display:flex;align-items:center;gap:5px;margin-bottom:7px;font-size:8.5px;font-weight:800;color:#c4b5fd;text-transform:uppercase;letter-spacing:.3px;"><i class="fa-solid fa-sparkles"></i> AI予測スコア</div>
                                 <div class="rank-row"><span class="rk-num">1</span><div class="rk-bar"><i style="width:92%;background:#5fd38a;"></i></div><span class="rk-pct">92%</span></div>
                                 <div class="rank-row"><span class="rk-num">2</span><div class="rk-bar"><i style="width:74%;background:#8fb4ff;"></i></div><span class="rk-pct">74%</span></div>
                             </div>
@@ -628,7 +673,7 @@ router.get("/login", (req, res) => {
                     <!-- スライド2：勤怠・人事管理（給与・休暇） -->
                     <div class="slide">
                         <div class="slide-title">勤怠・人事管理を、<br><span class="accent">給与計算まで一気通貫で。</span></div>
-                        <div class="slide-desc">打刻・残業・休暇申請から給与明細の発行まで、<br>人事業務をまるごと自動化します。</div>
+                        <div class="slide-desc">打刻・残業・休暇申請から給与明細の発行まで。<br><b style="color:#c4b5fd;">AI</b>が残業時間を予測し最適な人員配置を提案。</div>
                         <div class="illus-stage">
                             <div class="blob" style="width:180px;height:180px;background:#5fd38a;top:10px;left:10px;"></div>
                             <div class="blob" style="width:150px;height:150px;background:#8fb4ff;bottom:0;right:60px;"></div>
@@ -647,10 +692,11 @@ router.get("/login", (req, res) => {
                             <div class="particle" style="top:296px;left:44px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
                             <div class="particle" style="top:240px;left:414px;"></div>
 
-                            <div class="app-window" style="top:35px;left:250px;width:236px;height:222px;">
+                            <div class="app-window" style="top:35px;left:210px;width:236px;height:222px;">
                                 <div class="app-titlebar">
                                     <span class="app-tdot r"></span><span class="app-tdot y"></span><span class="app-tdot g"></span>
                                     <span class="app-url">app.nokori.io/payroll</span>
+                                    <span class="ai-tag" style="margin-left:auto;"><i class="fa-solid fa-sparkles"></i> AI</span>
                                 </div>
                                 <div class="app-body">
                                     <div class="app-sidebar">
@@ -679,7 +725,11 @@ router.get("/login", (req, res) => {
                                 </div>
                             </div>
 
-                            <div class="notif-badge" style="top:54px;left:174px;">2</div>
+                            <div class="notif-badge" style="top:27px;left:202px;">2</div>
+
+                            <div class="ai-chip" style="top:200px;left:4px;">
+                                <i class="fa-solid fa-chart-line"></i> AI残業予測：来月 -12%
+                            </div>
 
                             <div class="float-card" style="top:238px;left:4px;width:168px;">
                                 <span class="fc-tag blue">休暇申請</span>
@@ -687,7 +737,7 @@ router.get("/login", (req, res) => {
                                 <div class="fc-sub">田中 — 承認待ち</div>
                             </div>
 
-                            <div class="dash-line" style="width:78px;top:60px;left:168px;transform:rotate(-8deg);"></div>
+                            <div class="dash-line" style="width:54px;top:40px;left:206px;transform:rotate(10deg);"></div>
 
                             <div class="avatar-stack" style="top:4px;right:52px;">
                                 <div class="av" style="background:#8fb4ff;">山</div>
@@ -695,14 +745,14 @@ router.get("/login", (req, res) => {
                                 <div class="av" style="background:#5fd38a;">+5</div>
                             </div>
 
-                            <div style="position:absolute;top:296px;left:280px;display:flex;gap:7px;">
+                            <div style="position:absolute;top:296px;left:240px;display:flex;gap:7px;">
                                 <div class="cal-cell on">月</div>
                                 <div class="cal-cell on">火</div>
                                 <div class="cal-cell on">水</div>
                                 <div class="cal-cell">木</div>
                                 <div class="cal-cell off">金</div>
                             </div>
-                            <div style="position:absolute;top:336px;left:280px;display:flex;gap:9px;">
+                            <div style="position:absolute;top:336px;left:240px;display:flex;gap:9px;">
                                 <div class="stat-pill"><b>168h</b><span>稼働時間</span></div>
                                 <div class="stat-pill"><b>¥420</b><span>残業代/h</span></div>
                             </div>
@@ -713,7 +763,7 @@ router.get("/login", (req, res) => {
                     <!-- スライド3：目標管理・ワークフロー -->
                     <div class="slide">
                         <div class="slide-title">目標管理とワークフローを、<br><span class="accent">成果につながる流れに。</span></div>
-                        <div class="slide-desc">個人目標の設定から承認申請までの流れを可視化し、<br>組織全体の生産性を底上げします。</div>
+                        <div class="slide-desc">個人目標の設定から承認申請までの流れを可視化。<br><b style="color:#c4b5fd;">AI</b>が目標達成リスクを予測し早期にアラート。</div>
                         <div class="illus-stage">
                             <div class="blob" style="width:190px;height:190px;background:#ffbd2e;top:0;left:30px;"></div>
                             <div class="blob" style="width:130px;height:130px;background:#8fb4ff;bottom:20px;right:20px;"></div>
@@ -737,6 +787,12 @@ router.get("/login", (req, res) => {
                             <div class="particle" style="top:44px;left:322px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
                             <div class="particle" style="top:296px;left:12px;"></div>
 
+                            <div class="ai-card" style="top:50px;left:265px;width:155px;">
+                                <div class="ai-head"><i class="fa-solid fa-sparkles"></i> AIインサイト</div>
+                                <div class="ai-text">このままのペースだと<b style="color:#fff;">Q4目標の達成率は87%</b>と予測されます。</div>
+                                <div class="ai-sub">⚠ 2件のタスクで遅延リスクを検知</div>
+                            </div>
+
                             <div class="float-card" style="bottom:4px;left:4px;width:196px;">
                                 <span class="fc-tag gold">稟議</span>
                                 <div class="fc-title"><i class="fa-solid fa-bullseye" style="color:#ffbd2e;margin-right:5px;"></i>Q4目標達成率 92%</div>
@@ -755,6 +811,7 @@ router.get("/login", (req, res) => {
                                 <div class="app-titlebar">
                                     <span class="app-tdot r"></span><span class="app-tdot y"></span><span class="app-tdot g"></span>
                                     <span class="app-url">app.nokori.io/okr</span>
+                                    <span class="ai-tag" style="margin-left:auto;"><i class="fa-solid fa-sparkles"></i> AI</span>
                                 </div>
                                 <div class="app-body">
                                     <div class="app-sidebar">
