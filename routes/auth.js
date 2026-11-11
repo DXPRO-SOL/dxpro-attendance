@@ -208,21 +208,52 @@ router.get("/login", (req, res) => {
                 }
                 .mini-ring span { position: relative; z-index: 1; }
                 .sticky-note {
-                    position: absolute; background: #ffbd2e; color: #2a2208;
-                    border-radius: 4px; padding: 7px 9px; font-size: 9.5px; font-weight: 700;
-                    box-shadow: 0 10px 22px rgba(0,0,0,.4);
+                    position: absolute; background: rgba(255,255,255,.08); color: #e8edf7;
+                    border: 1px solid rgba(255,255,255,.14);
+                    border-radius: 6px; padding: 6px 10px; font-size: 9.5px; font-weight: 600;
+                    box-shadow: 0 10px 22px rgba(0,0,0,.35);
                     animation: floaty 6s ease-in-out infinite;
+                    letter-spacing: .2px;
                 }
+
+                /* ── エンタープライズ風アプリウィンドウ ── */
+                .app-window {
+                    position: absolute;
+                    background: #10182b; border: 1px solid rgba(255,255,255,.08);
+                    border-radius: 12px; box-shadow: 0 30px 60px rgba(0,0,0,.5);
+                    overflow: hidden; display: flex; flex-direction: column;
+                }
+                .app-titlebar {
+                    height: 26px; background: #0c1222; flex-shrink: 0;
+                    display: flex; align-items: center; gap: 6px; padding: 0 10px;
+                    border-bottom: 1px solid rgba(255,255,255,.06);
+                }
+                .app-tdot { width: 6.5px; height: 6.5px; border-radius: 50%; }
+                .app-tdot.r { background: #ff6159; } .app-tdot.y { background: #ffbd2e; } .app-tdot.g { background: #28c940; }
+                .app-url {
+                    margin-left: 8px; font-size: 8.5px; color: rgba(255,255,255,.3);
+                    background: rgba(255,255,255,.05); padding: 2px 9px; border-radius: 4px;
+                    letter-spacing: .2px;
+                }
+                .app-body { flex: 1; display: flex; overflow: hidden; }
+                .app-sidebar {
+                    width: 38px; background: #0a0f1d; border-right: 1px solid rgba(255,255,255,.06);
+                    display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 12px;
+                    flex-shrink: 0;
+                }
+                .app-navitem {
+                    width: 22px; height: 22px; border-radius: 6px;
+                    display: flex; align-items: center; justify-content: center;
+                    font-size: 10px; color: rgba(255,255,255,.3);
+                }
+                .app-navitem.active { background: rgba(143,180,255,.18); color: #8fb4ff; }
+                .app-content { flex: 1; padding: 12px; position: relative; min-width: 0; }
 
                 /* ── スライド1：課題管理（GitHub / Jira / Backlog）── */
                 .board-main {
-                    position: absolute; top: 50px; left: 14px;
-                    width: 270px; background: #141d33;
-                    border: 1px solid rgba(255,255,255,.1); border-radius: 13px;
-                    padding: 14px; box-shadow: 0 20px 40px rgba(0,0,0,.4);
-                    transform: rotate(-2.5deg);
+                    width: 100%; height: 100%;
                 }
-                .board-main .board-head { display: flex; align-items: center; gap: 6px; margin-bottom: 11px; }
+                .board-main .board-head { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
                 .board-main .board-head .bdot { width: 8px; height: 8px; border-radius: 50%; }
                 .board-main .board-head .bdot.r { background: #ff6159; }
                 .board-main .board-head .bdot.y { background: #ffbd2e; }
@@ -256,10 +287,8 @@ router.get("/login", (req, res) => {
                 .clock-tick { position: absolute; width: 2px; height: 6px; background: rgba(255,255,255,.2); left: 50%; top: 4px; margin-left: -1px; transform-origin: 1px 55px; }
 
                 .payslip-card {
-                    position: absolute; top: 118px; left: 172px;
-                    width: 182px; background: #141d33; border: 1px solid rgba(255,255,255,.1);
-                    border-radius: 12px; padding: 14px 16px;
-                    box-shadow: 0 20px 40px rgba(0,0,0,.4);
+                    width: 100%; background: transparent;
+                    padding: 0;
                 }
                 .payslip-card .ps-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
                 .payslip-card .ps-head span:first-child { font-size: 11px; font-weight: 700; color: rgba(255,255,255,.85); }
@@ -493,7 +522,20 @@ router.get("/login", (req, res) => {
                             <div class="blob" style="width:300px;height:300px;background:#c4b5fd;bottom:10px;right:30px;"></div>
                             <div class="blob" style="width:200px;height:200px;background:#5fd38a;top:40px;right:120px;opacity:.22;"></div>
 
-                            <div class="board-main">
+                            <div class="app-window" style="top:40px;left:6px;width:288px;height:220px;">
+                                <div class="app-titlebar">
+                                    <span class="app-tdot r"></span><span class="app-tdot y"></span><span class="app-tdot g"></span>
+                                    <span class="app-url">app.nokori.io/issues/sprint-24</span>
+                                </div>
+                                <div class="app-body">
+                                    <div class="app-sidebar">
+                                        <div class="app-navitem active"><i class="fa-solid fa-diagram-project"></i></div>
+                                        <div class="app-navitem"><i class="fa-solid fa-list-check"></i></div>
+                                        <div class="app-navitem"><i class="fa-solid fa-chart-simple"></i></div>
+                                        <div class="app-navitem"><i class="fa-solid fa-gear"></i></div>
+                                    </div>
+                                    <div class="app-content">
+                                        <div class="board-main">
                                 <div class="board-head"><span class="bdot r"></span><span class="bdot y"></span><span class="bdot g"></span><span style="margin-left:auto;font-size:7px;color:rgba(255,255,255,.3);">sprint-24</span></div>
                                 <div class="board-cols">
                                     <div class="board-col">
@@ -513,6 +555,9 @@ router.get("/login", (req, res) => {
                                         <div class="board-chip"><div class="chip-dot p3"></div><div class="chip-line" style="width:80%"></div></div>
                                     </div>
                                 </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="ico-badge glow" style="width:46px;height:46px;top:6px;right:46px;background:#1c2435;border:1px solid rgba(255,255,255,.15);"><i class="fa-brands fa-github" style="font-size:18px;"></i></div>
@@ -527,7 +572,7 @@ router.get("/login", (req, res) => {
                             <div class="particle" style="top:280px;left:366px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
                             <div class="particle" style="top:210px;left:400px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
 
-                            <div class="float-card" style="bottom:52px;left:234px;width:176px;">
+                            <div class="float-card" style="bottom:72px;left:234px;width:176px;">
                                 <span class="fc-tag green">完了</span>
                                 <div class="fc-title"><i class="fa-solid fa-circle-check" style="color:#5fd38a;margin-right:5px;"></i>API設計 #182</div>
                                 <div class="fc-sub">佐藤 → レビュー済み</div>
@@ -542,7 +587,7 @@ router.get("/login", (req, res) => {
                             <div class="sticky-note" style="bottom:4px;left:66px;">🔥 今週の優先タスク</div>
                             <div class="mini-ring" style="--p:68;--c:#5fd38a;bottom:2px;left:4px;"><span>68%</span></div>
 
-                            <div class="code-card" style="top:172px;left:212px;width:188px;">
+                            <div class="code-card" style="top:325px;left:212px;width:188px;">
                                 <div class="cl3">// recent commits</div>
                                 <div class="commit-row"><span class="cm-dot" style="background:#5fd38a;"></span><span class="cm-txt"><span class="cl2">fix:</span> 勤怠API修正</span></div>
                                 <div class="commit-row"><span class="cm-dot" style="background:#8fb4ff;"></span><span class="cm-txt"><span class="cl1">feat:</span> 承認フロー追加</span></div>
@@ -574,13 +619,26 @@ router.get("/login", (req, res) => {
                             </div>
                             <div class="ico-badge glow" style="width:40px;height:40px;top:-8px;left:124px;background:#1f8a4c;"><i class="fa-solid fa-umbrella-beach" style="font-size:16px;"></i></div>
                             <div class="ico-badge" style="width:34px;height:34px;top:46px;left:4px;background:#2d5bb9;"><i class="fa-solid fa-fingerprint" style="font-size:14px;"></i></div>
-                            <div class="ico-badge" style="width:30px;height:30px;top:172px;left:172px;background:#ffbd2e;color:#2a2208;"><i class="fa-solid fa-bell" style="font-size:13px;"></i></div>
+                            <div class="ico-badge" style="width:30px;height:30px;top:242px;left:356px;background:#ffbd2e;color:#2a2208;"><i class="fa-solid fa-bell" style="font-size:13px;"></i></div>
                             <div class="mini-ring" style="--p:82;--c:#8fb4ff;top:152px;left:48px;"><span>82%</span></div>
                             <div class="particle" style="top:4px;left:4px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
                             <div class="particle" style="top:296px;left:44px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
                             <div class="particle" style="top:240px;left:414px;"></div>
 
-                            <div class="payslip-card">
+                            <div class="app-window" style="top:76px;left:168px;width:210px;height:184px;">
+                                <div class="app-titlebar">
+                                    <span class="app-tdot r"></span><span class="app-tdot y"></span><span class="app-tdot g"></span>
+                                    <span class="app-url">app.nokori.io/payroll</span>
+                                </div>
+                                <div class="app-body">
+                                    <div class="app-sidebar">
+                                        <div class="app-navitem"><i class="fa-solid fa-user-clock"></i></div>
+                                        <div class="app-navitem active"><i class="fa-solid fa-sack-dollar"></i></div>
+                                        <div class="app-navitem"><i class="fa-solid fa-umbrella-beach"></i></div>
+                                        <div class="app-navitem"><i class="fa-solid fa-gear"></i></div>
+                                    </div>
+                                    <div class="app-content">
+                                        <div class="payslip-card">
                                 <div class="ps-head"><span>11月分 給与明細</span><i class="fa-solid fa-sack-dollar" style="color:#ffbd2e;font-size:14px;"></i></div>
                                 <div class="payslip-line"></div>
                                 <div class="payslip-line short"></div>
@@ -589,9 +647,12 @@ router.get("/login", (req, res) => {
                                     <span>支給総額</span><span style="color:#5fd38a;font-weight:700;">¥328,000</span>
                                 </div>
                                 <div class="fc-spark"><span style="height:50%"></span><span style="height:80%"></span><span style="height:35%"></span><span style="height:65%"></span><span style="height:90%"></span></div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
-                            <div class="notif-badge" style="top:108px;left:170px;">2</div>
+                            <div class="notif-badge" style="top:68px;left:170px;">2</div>
 
                             <div class="float-card" style="top:222px;left:4px;width:168px;">
                                 <span class="fc-tag blue">休暇申請</span>
@@ -607,18 +668,18 @@ router.get("/login", (req, res) => {
                                 <div class="av" style="background:#5fd38a;">+5</div>
                             </div>
 
-                            <div style="position:absolute;top:264px;left:172px;display:flex;gap:7px;">
+                            <div style="position:absolute;top:272px;left:176px;display:flex;gap:7px;">
                                 <div class="cal-cell on">月</div>
                                 <div class="cal-cell on">火</div>
                                 <div class="cal-cell on">水</div>
                                 <div class="cal-cell">木</div>
                                 <div class="cal-cell off">金</div>
                             </div>
-                            <div style="position:absolute;top:300px;left:172px;display:flex;gap:9px;">
+                            <div style="position:absolute;top:308px;left:176px;display:flex;gap:9px;">
                                 <div class="stat-pill"><b>168h</b><span>稼働時間</span></div>
                                 <div class="stat-pill"><b>¥420</b><span>残業代/h</span></div>
                             </div>
-                            <div class="net-line" style="width:66px;top:100px;left:286px;transform:rotate(20deg);background:rgba(95,211,138,.3);"></div>
+                            <div class="net-line" style="width:66px;top:60px;left:286px;transform:rotate(20deg);background:rgba(95,211,138,.3);"></div>
                             <div class="net-line" style="width:44px;top:252px;left:132px;transform:rotate(-30deg);"></div>
                         </div>
                     </div>
@@ -650,7 +711,7 @@ router.get("/login", (req, res) => {
                             <div class="particle" style="top:44px;left:322px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
                             <div class="particle" style="top:296px;left:12px;"></div>
 
-                            <div class="float-card" style="bottom:4px;left:166px;width:196px;">
+                            <div class="float-card" style="bottom:4px;left:4px;width:196px;">
                                 <span class="fc-tag gold">稟議</span>
                                 <div class="fc-title"><i class="fa-solid fa-bullseye" style="color:#ffbd2e;margin-right:5px;"></i>Q4目標達成率 92%</div>
                                 <div class="fc-sub">承認済 — 全社共有</div>
@@ -664,9 +725,24 @@ router.get("/login", (req, res) => {
 
                             <div class="sticky-note" style="top:4px;left:8px;">✓ 承認済 12件</div>
 
-                            <div class="rank-card" style="bottom:-4px;right:4px;width:168px;">
+                            <div class="app-window" style="top:148px;right:2px;width:196px;height:150px;">
+                                <div class="app-titlebar">
+                                    <span class="app-tdot r"></span><span class="app-tdot y"></span><span class="app-tdot g"></span>
+                                    <span class="app-url">app.nokori.io/okr</span>
+                                </div>
+                                <div class="app-body">
+                                    <div class="app-sidebar">
+                                        <div class="app-navitem"><i class="fa-solid fa-bullseye"></i></div>
+                                        <div class="app-navitem active"><i class="fa-solid fa-ranking-star"></i></div>
+                                        <div class="app-navitem"><i class="fa-solid fa-gear"></i></div>
+                                    </div>
+                                    <div class="app-content">
+                                        <div class="rank-card" style="position:static;width:100%;padding:0;background:transparent;border:none;box-shadow:none;">
                                 <div class="rank-row"><span class="rk-num">A</span><div class="rk-bar"><i style="width:88%;background:#ffbd2e;"></i></div><span class="rk-pct">88%</span></div>
                                 <div class="rank-row"><span class="rk-num">B</span><div class="rk-bar"><i style="width:63%;background:#8fb4ff;"></i></div><span class="rk-pct">63%</span></div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                             <div class="net-line" style="width:50px;top:60px;left:120px;transform:rotate(40deg);"></div>
                             <div class="net-line" style="width:70px;top:200px;left:260px;transform:rotate(-25deg);background:rgba(143,180,255,.3);"></div>
