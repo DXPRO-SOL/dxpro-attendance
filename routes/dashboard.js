@@ -417,20 +417,34 @@ router.get("/dashboard", requireLogin, async (req, res) => {
             border-radius: var(--radius-lg);
             padding: 18px 22px;
             box-shadow: var(--shadow-card);
+            position: relative;
+            overflow: hidden;
         }
-        .db-header-left { display: flex; align-items: center; gap: 14px; }
+        .db-header::before {
+            content: '';
+            position: absolute; inset: 0;
+            background-image: radial-gradient(rgba(99,102,241,.08) 1px, transparent 1px);
+            background-size: 16px 16px;
+            -webkit-mask-image: linear-gradient(90deg, transparent 0%, transparent 38%, #000 70%, #000 100%);
+            mask-image: linear-gradient(90deg, transparent 0%, transparent 38%, #000 70%, #000 100%);
+            pointer-events: none;
+        }
+        .db-header-left { display: flex; align-items: center; gap: 16px; position: relative; z-index: 1; }
         .db-avatar {
-            width: 46px; height: 46px; border-radius: 12px; flex-shrink: 0;
-            background: var(--c-primary-light); border: 1px solid #e0e7ff;
+            width: 84px; height: 84px; border-radius: 18px; flex-shrink: 0;
+            background: linear-gradient(135deg, var(--c-primary-light), #eef2ff);
             display: flex; align-items: center; justify-content: center;
-            font-size: 17px; font-weight: 800; color: var(--c-primary);
+            font-size: 26px; font-weight: 800; color: var(--c-primary);
+            overflow: hidden; position: relative;
+            box-shadow: 0 10px 24px -8px rgba(99,102,241,.45), 0 0 0 3px #fff, 0 0 0 5px rgba(99,102,241,.25);
         }
+        .db-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
         .db-header-left .greeting { font-size: 18px; font-weight: 800; color: var(--c-text); letter-spacing: -0.2px; }
-        .db-header-left .sub { font-size: 12.5px; color: var(--c-muted); margin-top: 3px; display: flex; flex-wrap: wrap; gap: 2px 12px; }
+        .db-header-left .sub { font-size: 12.5px; color: var(--c-muted); margin-top: 5px; display: flex; flex-direction: column; gap: 4px; }
         .db-header-left .sub-item { white-space: nowrap; }
-        .db-header-left .sub-item i { color: var(--c-sub); margin-right: 3px; }
-        @media(max-width:768px){ .db-header-left .sub { flex-direction: column; gap: 2px; } }
-        .db-header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .db-header-left .sub-item i { color: var(--c-sub); margin-right: 3px; width: 13px; text-align: center; }
+        .db-header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; position: relative; z-index: 1; padding-left: 20px; border-left: 1px solid var(--c-border); }
+        @media(max-width:768px){ .db-header-right { border-left: none; padding-left: 0; } }
         .live-clock { font-size: 12.5px; color: var(--c-muted); font-variant-numeric: tabular-nums; background: #f3f4f6; padding: 6px 12px; border-radius: 8px; }
         .badge-admin { display: inline-flex; align-items: center; gap: 5px; background: var(--c-danger-light); color: var(--c-danger); font-size: 11px; font-weight: 700; padding: 4px 11px; border-radius: 8px; border: 1px solid #fecdd3; }
 
@@ -885,7 +899,7 @@ router.get("/dashboard", requireLogin, async (req, res) => {
         <!-- ── Header ── -->
         <div class="db-header">
             <div class="db-header-left">
-                <div class="db-avatar">${escapeHtml((employee.name || "?").charAt(0))}</div>
+                <div class="db-avatar">${employee.photo ? `<img src="${escapeHtml(employee.photo)}" alt="">` : escapeHtml((employee.name || "?").charAt(0))}</div>
                 <div>
                     <div class="greeting">${t("dashboard.greeting_prefix", lang)}${escapeHtml(employee.name)}${t("dashboard.greeting_suffix", lang)}</div>
                     <div class="sub">
