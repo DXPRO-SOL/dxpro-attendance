@@ -83,7 +83,7 @@ router.get("/login", (req, res) => {
 
                 .brand-top { position: relative; z-index: 2; flex-shrink: 0; }
                 .brand-logo { display: flex; align-items: center; gap: 12px; }
-                .brand-logo img { height: 32px; width: auto; filter: brightness(0) invert(1); }
+                .brand-logo img { height: 50px; width: auto; filter: brightness(0) invert(1); }
                 .brand-logo-text { font-size: 16px; font-weight: 800; letter-spacing: 1.5px; }
 
                 /* スライドショー本体 */
@@ -288,6 +288,46 @@ router.get("/login", (req, res) => {
                     display: flex; align-items: center; justify-content: center;
                     font-size: 11px; color: #fff; box-shadow: 0 8px 18px rgba(0,0,0,.3);
                 }
+                .code-card {
+                    position: absolute; background: #0b0f1d; border: 1px solid rgba(143,180,255,.18);
+                    border-radius: 10px; padding: 10px 12px; font-family: 'Courier New', monospace;
+                    font-size: 9px; line-height: 1.7; color: #8fb4ff; box-shadow: 0 18px 36px rgba(0,0,0,.45);
+                }
+                .code-card .cl1 { color: #c4b5fd; }
+                .code-card .cl2 { color: #5fd38a; }
+                .code-card .cl3 { color: rgba(255,255,255,.4); }
+                .commit-row { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+                .commit-row:last-child { margin-bottom: 0; }
+                .commit-row .cm-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+                .commit-row .cm-txt { font-size: 9px; color: rgba(255,255,255,.65); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                .cal-grid { display: flex; gap: 4px; }
+                .cal-cell {
+                    width: 20px; height: 24px; border-radius: 5px; background: rgba(255,255,255,.06);
+                    display: flex; align-items: center; justify-content: center;
+                    font-size: 8px; font-weight: 700; color: rgba(255,255,255,.45);
+                }
+                .cal-cell.on { background: #2d5bb9; color: #fff; }
+                .cal-cell.off { background: rgba(255,97,89,.22); color: #ff9890; }
+                .stat-pill {
+                    display: flex; flex-direction: column; gap: 2px;
+                    background: rgba(255,255,255,.05); border-radius: 8px; padding: 7px 10px;
+                }
+                .stat-pill b { font-size: 13px; color: #fff; }
+                .stat-pill span { font-size: 7.5px; color: rgba(255,255,255,.4); text-transform: uppercase; letter-spacing: .4px; }
+                .rank-card {
+                    position: absolute; background: #141d33; border: 1px solid rgba(255,255,255,.1);
+                    border-radius: 11px; padding: 11px 13px; box-shadow: 0 18px 36px rgba(0,0,0,.4);
+                }
+                .rank-row { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+                .rank-row:last-child { margin-bottom: 0; }
+                .rank-row .rk-num { font-size: 9px; font-weight: 800; color: rgba(255,255,255,.35); width: 11px; }
+                .rank-row .rk-bar { flex: 1; height: 5px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
+                .rank-row .rk-bar i { display: block; height: 100%; border-radius: 3px; }
+                .rank-row .rk-pct { font-size: 8.5px; font-weight: 700; color: rgba(255,255,255,.6); width: 24px; text-align: right; }
+                .net-line {
+                    position: absolute; height: 1.5px; background: rgba(255,189,46,.3); border-radius: 1px;
+                    transform-origin: left center;
+                }
 
                 .slide-dots {
                     position: relative; z-index: 2; flex-shrink: 0;
@@ -440,7 +480,6 @@ router.get("/login", (req, res) => {
                 <div class="brand-top">
                     <div class="brand-logo">
                         <img src="/nokori-logo.png" alt="NOKORI">
-                        <span class="brand-logo-text">NOKORI</span>
                     </div>
                 </div>
 
@@ -450,9 +489,9 @@ router.get("/login", (req, res) => {
                         <div class="slide-title">課題・タスク管理を、<br><span class="accent">チーム全員の目に見える形に。</span></div>
                         <div class="slide-desc">GitHub・Jira・Backlogのような開発タスク管理を統合。<br>進捗状況をリアルタイムに共有できます。</div>
                         <div class="illus-stage">
-                            <div class="blob" style="width:160px;height:160px;background:#8fb4ff;top:0;left:60px;"></div>
-                            <div class="blob" style="width:120px;height:120px;background:#c4b5fd;bottom:10px;right:30px;"></div>
-                            <div class="blob" style="width:90px;height:90px;background:#5fd38a;top:40px;right:120px;opacity:.22;"></div>
+                            <div class="blob" style="width:300px;height:300px;background:#8fb4ff;top:0;left:60px;"></div>
+                            <div class="blob" style="width:300px;height:300px;background:#c4b5fd;bottom:10px;right:30px;"></div>
+                            <div class="blob" style="width:200px;height:200px;background:#5fd38a;top:40px;right:120px;opacity:.22;"></div>
 
                             <div class="board-main">
                                 <div class="board-head"><span class="bdot r"></span><span class="bdot y"></span><span class="bdot g"></span><span style="margin-left:auto;font-size:7px;color:rgba(255,255,255,.3);">sprint-24</span></div>
@@ -502,6 +541,20 @@ router.get("/login", (req, res) => {
 
                             <div class="sticky-note" style="bottom:4px;left:60px;">🔥 今週の優先タスク</div>
                             <div class="mini-ring" style="--p:68;--c:#5fd38a;bottom:2px;left:4px;"><span>68%</span></div>
+
+                            <div class="code-card" style="top:150px;left:188px;width:168px;">
+                                <div class="cl3">// recent commits</div>
+                                <div class="commit-row"><span class="cm-dot" style="background:#5fd38a;"></span><span class="cm-txt"><span class="cl2">fix:</span> 勤怠API修正</span></div>
+                                <div class="commit-row"><span class="cm-dot" style="background:#8fb4ff;"></span><span class="cm-txt"><span class="cl1">feat:</span> 承認フロー追加</span></div>
+                                <div class="commit-row"><span class="cm-dot" style="background:#ffbd2e;"></span><span class="cm-txt">chore: 依存更新</span></div>
+                            </div>
+                            <div class="rank-card" style="top:-10px;left:0px;width:150px;">
+                                <div class="rank-row"><span class="rk-num">1</span><div class="rk-bar"><i style="width:92%;background:#5fd38a;"></i></div><span class="rk-pct">92%</span></div>
+                                <div class="rank-row"><span class="rk-num">2</span><div class="rk-bar"><i style="width:74%;background:#8fb4ff;"></i></div><span class="rk-pct">74%</span></div>
+                                <div class="rank-row"><span class="rk-num">3</span><div class="rk-bar"><i style="width:55%;background:#ffbd2e;"></i></div><span class="rk-pct">55%</span></div>
+                            </div>
+                            <div class="net-line" style="width:70px;top:270px;left:118px;transform:rotate(-6deg);"></div>
+                            <div class="net-line" style="width:50px;top:160px;left:356px;transform:rotate(60deg);"></div>
                         </div>
                     </div>
 
@@ -553,6 +606,20 @@ router.get("/login", (req, res) => {
                                 <div class="av" style="background:#ffbd2e;">中</div>
                                 <div class="av" style="background:#5fd38a;">+5</div>
                             </div>
+
+                            <div style="position:absolute;top:168px;left:168px;display:flex;gap:6px;">
+                                <div class="cal-cell on">月</div>
+                                <div class="cal-cell on">火</div>
+                                <div class="cal-cell on">水</div>
+                                <div class="cal-cell">木</div>
+                                <div class="cal-cell off">金</div>
+                            </div>
+                            <div style="position:absolute;top:256px;left:188px;display:flex;gap:8px;">
+                                <div class="stat-pill"><b>168h</b><span>稼働時間</span></div>
+                                <div class="stat-pill"><b>¥420</b><span>残業代/h</span></div>
+                            </div>
+                            <div class="net-line" style="width:60px;top:92px;left:260px;transform:rotate(20deg);background:rgba(95,211,138,.3);"></div>
+                            <div class="net-line" style="width:40px;top:230px;left:120px;transform:rotate(-30deg);"></div>
                         </div>
                     </div>
 
@@ -596,6 +663,13 @@ router.get("/login", (req, res) => {
                             </div>
 
                             <div class="sticky-note" style="top:4px;left:8px;">✓ 承認済 12件</div>
+
+                            <div class="rank-card" style="bottom:-6px;right:4px;width:150px;">
+                                <div class="rank-row"><span class="rk-num">A</span><div class="rk-bar"><i style="width:88%;background:#ffbd2e;"></i></div><span class="rk-pct">88%</span></div>
+                                <div class="rank-row"><span class="rk-num">B</span><div class="rk-bar"><i style="width:63%;background:#8fb4ff;"></i></div><span class="rk-pct">63%</span></div>
+                            </div>
+                            <div class="net-line" style="width:50px;top:60px;left:120px;transform:rotate(40deg);"></div>
+                            <div class="net-line" style="width:70px;top:200px;left:260px;transform:rotate(-25deg);background:rgba(143,180,255,.3);"></div>
                         </div>
                     </div>
                 </div>
