@@ -619,13 +619,13 @@ router.get("/login", (req, res) => {
                             </div>
                             <div class="ico-badge glow" style="width:40px;height:40px;top:-8px;left:124px;background:#1f8a4c;"><i class="fa-solid fa-umbrella-beach" style="font-size:16px;"></i></div>
                             <div class="ico-badge" style="width:34px;height:34px;top:46px;left:4px;background:#2d5bb9;"><i class="fa-solid fa-fingerprint" style="font-size:14px;"></i></div>
-                            <div class="ico-badge" style="width:30px;height:30px;top:242px;left:356px;background:#ffbd2e;color:#2a2208;"><i class="fa-solid fa-bell" style="font-size:13px;"></i></div>
+                            <div class="ico-badge" style="width:30px;height:30px;top:266px;left:388px;background:#ffbd2e;color:#2a2208;"><i class="fa-solid fa-bell" style="font-size:13px;"></i></div>
                             <div class="mini-ring" style="--p:82;--c:#8fb4ff;top:152px;left:48px;"><span>82%</span></div>
                             <div class="particle" style="top:4px;left:4px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
                             <div class="particle" style="top:296px;left:44px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
                             <div class="particle" style="top:240px;left:414px;"></div>
 
-                            <div class="app-window" style="top:76px;left:168px;width:210px;height:184px;">
+                            <div class="app-window" style="top:62px;left:172px;width:236px;height:222px;">
                                 <div class="app-titlebar">
                                     <span class="app-tdot r"></span><span class="app-tdot y"></span><span class="app-tdot g"></span>
                                     <span class="app-url">app.nokori.io/payroll</span>
@@ -640,27 +640,32 @@ router.get("/login", (req, res) => {
                                     <div class="app-content">
                                         <div class="payslip-card">
                                 <div class="ps-head"><span>11月分 給与明細</span><i class="fa-solid fa-sack-dollar" style="color:#ffbd2e;font-size:14px;"></i></div>
+                                <div style="display:flex;justify-content:space-between;font-size:9px;color:rgba(255,255,255,.35);margin-bottom:8px;">
+                                    <span>振込予定日</span><span style="color:rgba(255,255,255,.6);">11/25(水)</span>
+                                </div>
                                 <div class="payslip-line"></div>
                                 <div class="payslip-line short"></div>
                                 <div class="payslip-line" style="width:40%;background:#5fd38a;"></div>
-                                <div style="display:flex;justify-content:space-between;margin-top:9px;font-size:10px;color:rgba(255,255,255,.4);">
-                                    <span>支給総額</span><span style="color:#5fd38a;font-weight:700;">¥328,000</span>
+                                <div class="payslip-line" style="width:30%;background:#ff6159;"></div>
+                                <div style="display:flex;justify-content:space-between;margin-top:9px;padding-top:8px;border-top:1px dashed rgba(255,255,255,.12);font-size:10px;color:rgba(255,255,255,.4);">
+                                    <span>差引支給額</span><span style="color:#5fd38a;font-weight:700;font-size:13px;">¥328,000</span>
                                 </div>
-                                <div class="fc-spark"><span style="height:50%"></span><span style="height:80%"></span><span style="height:35%"></span><span style="height:65%"></span><span style="height:90%"></span></div>
+                                <div style="font-size:7.5px;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:.4px;margin-top:10px;margin-bottom:4px;">残業時間推移（6ヶ月）</div>
+                                <div class="fc-spark"><span style="height:50%"></span><span style="height:80%"></span><span style="height:35%"></span><span style="height:65%"></span><span style="height:45%"></span><span style="height:90%"></span></div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="notif-badge" style="top:68px;left:170px;">2</div>
+                            <div class="notif-badge" style="top:54px;left:174px;">2</div>
 
-                            <div class="float-card" style="top:222px;left:4px;width:168px;">
+                            <div class="float-card" style="top:238px;left:4px;width:168px;">
                                 <span class="fc-tag blue">休暇申請</span>
                                 <div class="fc-title"><i class="fa-regular fa-calendar" style="margin-right:5px;"></i>有給休暇 (2日)</div>
                                 <div class="fc-sub">田中 — 承認待ち</div>
                             </div>
 
-                            <div class="dash-line" style="width:78px;top:68px;left:170px;transform:rotate(-12deg);"></div>
+                            <div class="dash-line" style="width:78px;top:60px;left:168px;transform:rotate(-8deg);"></div>
 
                             <div class="avatar-stack" style="top:4px;right:52px;">
                                 <div class="av" style="background:#8fb4ff;">山</div>
@@ -668,18 +673,18 @@ router.get("/login", (req, res) => {
                                 <div class="av" style="background:#5fd38a;">+5</div>
                             </div>
 
-                            <div style="position:absolute;top:272px;left:176px;display:flex;gap:7px;">
+                            <div style="position:absolute;top:292px;left:166px;display:flex;gap:7px;">
                                 <div class="cal-cell on">月</div>
                                 <div class="cal-cell on">火</div>
                                 <div class="cal-cell on">水</div>
                                 <div class="cal-cell">木</div>
                                 <div class="cal-cell off">金</div>
                             </div>
-                            <div style="position:absolute;top:308px;left:176px;display:flex;gap:9px;">
+                            <div style="position:absolute;top:300px;left:320px;display:flex;gap:9px;">
                                 <div class="stat-pill"><b>168h</b><span>稼働時間</span></div>
                                 <div class="stat-pill"><b>¥420</b><span>残業代/h</span></div>
                             </div>
-                            <div class="net-line" style="width:66px;top:60px;left:286px;transform:rotate(20deg);background:rgba(95,211,138,.3);"></div>
+                            <div class="net-line" style="width:40px;top:258px;left:316px;transform:rotate(90deg);background:rgba(95,211,138,.3);"></div>
                             <div class="net-line" style="width:44px;top:252px;left:132px;transform:rotate(-30deg);"></div>
                         </div>
                     </div>
