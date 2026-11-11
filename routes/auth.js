@@ -113,7 +113,7 @@ router.get("/login", (req, res) => {
                 .illus-stage {
                     position: relative;
                     width: 100%; max-width: 460px;
-                    height: 350px;
+                    height: 390px;
                     margin-top: 20px;
                 }
                 .illus-stage::before {
@@ -560,23 +560,22 @@ router.get("/login", (req, res) => {
                                 </div>
                             </div>
 
-                            <div class="ico-badge glow" style="width:46px;height:46px;top:6px;right:46px;background:#1c2435;border:1px solid rgba(255,255,255,.15);"><i class="fa-brands fa-github" style="font-size:18px;"></i></div>
-                            <div class="notif-badge" style="top:-4px;right:36px;">3</div>
-                            <div class="ico-badge" style="width:38px;height:38px;bottom:86px;right:8px;background:#2d5bb9;"><i class="fa-solid fa-code-branch" style="font-size:15px;"></i></div>
-                            <div class="ico-badge" style="width:34px;height:34px;top:74px;right:4px;background:#0052cc;"><i class="fa-brands fa-jira" style="font-size:14px;"></i></div>
-                            <div class="ico-badge" style="width:28px;height:28px;bottom:26px;right:78px;background:#24292e;"><i class="fa-solid fa-code-pull-request" style="font-size:12px;"></i></div>
+                            <div class="ico-badge glow" style="width:46px;height:46px;top:92px;left:366px;background:#1c2435;border:1px solid rgba(255,255,255,.15);"><i class="fa-brands fa-github" style="font-size:18px;"></i></div>
+                            <div class="notif-badge" style="top:86px;left:400px;">3</div>
+                            <div class="ico-badge" style="width:38px;height:38px;top:190px;left:404px;background:#2d5bb9;"><i class="fa-solid fa-code-branch" style="font-size:15px;"></i></div>
+                            <div class="ico-badge" style="width:34px;height:34px;top:146px;left:372px;background:#0052cc;"><i class="fa-brands fa-jira" style="font-size:14px;"></i></div>
+                            <div class="ico-badge" style="width:28px;height:28px;top:236px;left:366px;background:#24292e;"><i class="fa-solid fa-code-pull-request" style="font-size:12px;"></i></div>
 
-                            <div class="dash-line" style="width:44px;top:24px;right:82px;transform:rotate(35deg);"></div>
-                            <div class="dash-line" style="width:54px;bottom:76px;right:12px;transform:rotate(-70deg);"></div>
-                            <div class="particle" style="top:34px;left:44px;"></div>
-                            <div class="particle" style="top:280px;left:366px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
-                            <div class="particle" style="top:210px;left:400px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
+                            <div class="dash-line" style="width:44px;top:76px;left:360px;transform:rotate(35deg);"></div>
+                            <div class="dash-line" style="width:40px;top:230px;left:378px;transform:rotate(-70deg);"></div>
+                            <div class="particle" style="top:10px;left:250px;"></div>
+                            <div class="particle" style="top:322px;left:230px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
+                            <div class="particle" style="top:60px;left:330px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
 
-                            <div class="float-card" style="bottom:72px;left:234px;width:176px;">
+                            <div class="float-card" style="top:268px;left:292px;width:168px;">
                                 <span class="fc-tag green">完了</span>
                                 <div class="fc-title"><i class="fa-solid fa-circle-check" style="color:#5fd38a;margin-right:5px;"></i>API設計 #182</div>
                                 <div class="fc-sub">佐藤 → レビュー済み</div>
-                                <div class="fc-spark"><span style="height:40%"></span><span style="height:70%"></span><span style="height:30%"></span><span style="height:90%"></span><span style="height:55%"></span><span style="height:80%"></span></div>
                                 <div class="avatar-stack" style="position:static;margin-top:8px;">
                                     <div class="av" style="background:#8fb4ff;">田</div>
                                     <div class="av" style="background:#c4b5fd;">佐</div>
@@ -584,22 +583,18 @@ router.get("/login", (req, res) => {
                                 </div>
                             </div>
 
-                            <div class="sticky-note" style="bottom:4px;left:66px;">🔥 今週の優先タスク</div>
-                            <div class="mini-ring" style="--p:68;--c:#5fd38a;bottom:2px;left:4px;"><span>68%</span></div>
+                            <div class="sticky-note" style="top:352px;left:6px;">🔥 今週の優先タスク</div>
+                            <div class="mini-ring" style="--p:68;--c:#5fd38a;top:350px;left:150px;"><span>68%</span></div>
 
-                            <div class="code-card" style="top:325px;left:212px;width:188px;">
+                            <div class="code-card" style="top:268px;left:6px;width:188px;">
                                 <div class="cl3">// recent commits</div>
                                 <div class="commit-row"><span class="cm-dot" style="background:#5fd38a;"></span><span class="cm-txt"><span class="cl2">fix:</span> 勤怠API修正</span></div>
                                 <div class="commit-row"><span class="cm-dot" style="background:#8fb4ff;"></span><span class="cm-txt"><span class="cl1">feat:</span> 承認フロー追加</span></div>
-                                <div class="commit-row"><span class="cm-dot" style="background:#ffbd2e;"></span><span class="cm-txt">chore: 依存更新</span></div>
                             </div>
-                            <div class="rank-card" style="top:-8px;left:2px;width:168px;">
+                            <div class="rank-card" style="top:0px;left:300px;width:150px;">
                                 <div class="rank-row"><span class="rk-num">1</span><div class="rk-bar"><i style="width:92%;background:#5fd38a;"></i></div><span class="rk-pct">92%</span></div>
                                 <div class="rank-row"><span class="rk-num">2</span><div class="rk-bar"><i style="width:74%;background:#8fb4ff;"></i></div><span class="rk-pct">74%</span></div>
-                                <div class="rank-row"><span class="rk-num">3</span><div class="rk-bar"><i style="width:55%;background:#ffbd2e;"></i></div><span class="rk-pct">55%</span></div>
                             </div>
-                            <div class="net-line" style="width:76px;top:296px;left:128px;transform:rotate(-6deg);"></div>
-                            <div class="net-line" style="width:54px;top:176px;left:394px;transform:rotate(60deg);"></div>
                         </div>
                     </div>
 
@@ -619,7 +614,7 @@ router.get("/login", (req, res) => {
                             </div>
                             <div class="ico-badge glow" style="width:40px;height:40px;top:-8px;left:124px;background:#1f8a4c;"><i class="fa-solid fa-umbrella-beach" style="font-size:16px;"></i></div>
                             <div class="ico-badge" style="width:34px;height:34px;top:46px;left:4px;background:#2d5bb9;"><i class="fa-solid fa-fingerprint" style="font-size:14px;"></i></div>
-                            <div class="ico-badge" style="width:30px;height:30px;top:266px;left:388px;background:#ffbd2e;color:#2a2208;"><i class="fa-solid fa-bell" style="font-size:13px;"></i></div>
+                            <div class="ico-badge" style="width:30px;height:30px;top:302px;left:416px;background:#ffbd2e;color:#2a2208;"><i class="fa-solid fa-bell" style="font-size:13px;"></i></div>
                             <div class="mini-ring" style="--p:82;--c:#8fb4ff;top:152px;left:48px;"><span>82%</span></div>
                             <div class="particle" style="top:4px;left:4px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
                             <div class="particle" style="top:296px;left:44px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
@@ -673,18 +668,17 @@ router.get("/login", (req, res) => {
                                 <div class="av" style="background:#5fd38a;">+5</div>
                             </div>
 
-                            <div style="position:absolute;top:292px;left:166px;display:flex;gap:7px;">
+                            <div style="position:absolute;top:296px;left:280px;display:flex;gap:7px;">
                                 <div class="cal-cell on">月</div>
                                 <div class="cal-cell on">火</div>
                                 <div class="cal-cell on">水</div>
                                 <div class="cal-cell">木</div>
                                 <div class="cal-cell off">金</div>
                             </div>
-                            <div style="position:absolute;top:300px;left:320px;display:flex;gap:9px;">
+                            <div style="position:absolute;top:336px;left:300px;display:flex;gap:9px;">
                                 <div class="stat-pill"><b>168h</b><span>稼働時間</span></div>
                                 <div class="stat-pill"><b>¥420</b><span>残業代/h</span></div>
                             </div>
-                            <div class="net-line" style="width:40px;top:258px;left:316px;transform:rotate(90deg);background:rgba(95,211,138,.3);"></div>
                             <div class="net-line" style="width:44px;top:252px;left:132px;transform:rotate(-30deg);"></div>
                         </div>
                     </div>
@@ -711,7 +705,7 @@ router.get("/login", (req, res) => {
 
                             <div class="mini-ring" style="--p:92;--c:#ffbd2e;top:158px;left:66px;"><span>92%</span></div>
                             <div class="notif-badge" style="top:126px;left:180px;">5</div>
-                            <div class="ico-badge glow" style="width:34px;height:34px;bottom:78px;right:16px;background:#2d5bb9;"><i class="fa-solid fa-chart-line" style="font-size:14px;"></i></div>
+                            <div class="ico-badge glow" style="width:34px;height:34px;top:304px;left:410px;background:#2d5bb9;"><i class="fa-solid fa-chart-line" style="font-size:14px;"></i></div>
                             <div class="particle" style="top:224px;left:332px;background:#ffbd2e;box-shadow:0 0 8px 2px rgba(255,189,46,.6);"></div>
                             <div class="particle" style="top:44px;left:322px;background:#5fd38a;box-shadow:0 0 8px 2px rgba(95,211,138,.6);"></div>
                             <div class="particle" style="top:296px;left:12px;"></div>
