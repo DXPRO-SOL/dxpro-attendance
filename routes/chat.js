@@ -75,6 +75,15 @@ const oid = (id) => {
   }
 };
 
+// アバター丸（登録写真があれば画像、なければイニシャル）
+function avatarInner(name, photo) {
+  if (photo) {
+    const safeName = String(name || "").replace(/"/g, "&quot;");
+    return `<img src="${photo}" alt="${safeName}">`;
+  }
+  return String(name || "?").charAt(0).toUpperCase();
+}
+
 function escHtml(s) {
   return String(s || "")
     .replace(/&/g, "&amp;")
@@ -134,7 +143,7 @@ async function buildSidebarData(myId) {
     User.find({ _id: { $ne: myId } })
       .select("username chatStatus lastSeenAt")
       .lean(),
-    Employee.find({}).select("userId name department").lean(),
+    Employee.find({}).select("userId name department photo").lean(),
     ChatMessage.aggregate([
       {
         $match: {
@@ -471,7 +480,7 @@ router.get("/chat", requireLogin, async (req, res) => {
       const [[cu, myEmp], sideData] = await Promise.all([
         Promise.all([
           User.findById(myId).select("chatStatus").lean(),
-          Employee.findOne({ userId: myId }).select("name").lean(),
+          Employee.findOne({ userId: myId }).select("name photo").lean(),
         ]),
         buildSidebarData(myId),
       ]);
@@ -486,6 +495,7 @@ router.get("/chat", requireLogin, async (req, res) => {
           myId: String(myId),
           myName,
           myInitial: (myName || "?").charAt(0).toUpperCase(),
+          myPhoto: myEmp ? myEmp.photo || "" : "",
           myStatus: cu ? cu.chatStatus : "offline",
           ...sideData,
         }),
@@ -517,9 +527,9 @@ router.get("/chat/dm/:userId", requireLogin, async (req, res) => {
     const [targetUser, targetEmp, myEmp, cu, sideData] = await Promise.all([
       User.findById(targetId).select("username chatStatus lastSeenAt").lean(),
       Employee.findOne({ userId: targetId })
-        .select("name department position")
+        .select("name department position photo")
         .lean(),
-      Employee.findOne({ userId: myId }).select("name").lean(),
+      Employee.findOne({ userId: myId }).select("name photo").lean(),
       User.findById(myId).select("chatStatus").lean(),
       buildSidebarData(myId),
     ]);
@@ -553,12 +563,14 @@ router.get("/chat/dm/:userId", requireLogin, async (req, res) => {
         myId: String(myId),
         myName,
         myInitial: (myName || "?").charAt(0).toUpperCase(),
+        myPhoto: myEmp ? myEmp.photo || "" : "",
         myStatus: cu ? cu.chatStatus : "offline",
         targetId: String(targetId),
         targetName,
         targetStatus: targetUser.chatStatus || "offline",
         targetDept: targetEmp ? targetEmp.department || "" : "",
         targetPos: targetEmp ? targetEmp.position || "" : "",
+        targetPhoto: targetEmp ? targetEmp.photo || "" : "",
         messages,
         hasMore,
         ...sideData,
@@ -591,14 +603,14 @@ router.get("/chat/room/:roomId", requireLogin, async (req, res) => {
           .limit(100)
           .lean()
           .then((r) => r.reverse()),
-        Employee.findOne({ userId: myId }).select("name").lean(),
+        Employee.findOne({ userId: myId }).select("name photo").lean(),
         User.findById(myId).select("chatStatus").lean(),
         buildSidebarData(myId),
         User.find({ _id: { $in: room.members } })
           .select("username chatStatus")
           .lean(),
         Employee.find({ userId: { $in: room.members } })
-          .select("userId name department")
+          .select("userId name department photo")
           .lean(),
       ]);
     const memEmpMap = {};
@@ -621,6 +633,7 @@ router.get("/chat/room/:roomId", requireLogin, async (req, res) => {
         myId: String(myId),
         myName,
         myInitial: (myName || "?").charAt(0).toUpperCase(),
+        myPhoto: myEmp ? myEmp.photo || "" : "",
         myStatus: cu ? cu.chatStatus : "offline",
         roomId: String(room._id),
         roomName: room.name,
@@ -1780,6 +1793,7 @@ function buildPage(data) {
     myId,
     myName,
     myInitial,
+    myPhoto,
     myStatus,
     recentDMs,
     roomList,
@@ -1790,13 +1804,18 @@ function buildPage(data) {
     myId,
     myName,
     myInitial,
+    myPhoto: myPhoto || "",
     myStatus,
     allUsers: allUsers.map((u) => ({
       _id: String(u._id),
       username: u.username,
       chatStatus: u.chatStatus || "offline",
       emp: u.emp
-        ? { name: u.emp.name, department: u.emp.department || "" }
+        ? {
+            name: u.emp.name,
+            department: u.emp.department || "",
+            photo: u.emp.photo || "",
+          }
         : null,
     })),
     roomIds: roomList.map((r) => String(r._id)),
@@ -1806,6 +1825,7 @@ function buildPage(data) {
       targetId: data.targetId,
       targetName: data.targetName,
       targetStatus: data.targetStatus,
+      targetPhoto: data.targetPhoto || "",
       hasMore: !!data.hasMore,
     });
   }
@@ -1820,7 +1840,11 @@ function buildPage(data) {
         username: m.username,
         chatStatus: m.chatStatus || "offline",
         emp: m.emp
-          ? { name: m.emp.name, department: m.emp.department || "" }
+          ? {
+              name: m.emp.name,
+              department: m.emp.department || "",
+              photo: m.emp.photo || "",
+            }
           : null,
       })),
     });
@@ -1864,6 +1888,7 @@ function buildSidebarHtml(d) {
   const {
     myName,
     myInitial,
+    myPhoto,
     myStatus,
     recentDMs,
     roomList,
@@ -1882,7 +1907,7 @@ function buildSidebarHtml(d) {
             : "";
           const active = mode === "dm" && String(u._id) === targetId;
           return `<a href="/chat/dm/${u._id}" class="sc-nav-row${active ? " active" : ""}" data-userid="${u._id}">
-            <div class="sc-av-wrap sm"><div class="sc-av sm">${name.charAt(0).toUpperCase()}</div>
+            <div class="sc-av-wrap sm"><div class="sc-av sm">${avatarInner(name, u.emp && u.emp.photo)}</div>
             <span class="sc-pip ${STATUS_CLS[u.chatStatus || "offline"]}" data-uid="${u._id}"></span></div>
             <div class="sc-nav-info"><span class="sc-nav-name">${escHtml(name)}</span>
             <span class="sc-nav-sub">${dept ? escHtml(dept) : preview}</span></div>
@@ -1913,7 +1938,7 @@ function buildSidebarHtml(d) {
         <span class="sc-ws-name">DXPRO SOLUTIONS</span>
     </div>
     <div class="sc-me-row">
-        <div class="sc-av-wrap sm"><div class="sc-av sm sc-av-me">${myInitial}</div>
+        <div class="sc-av-wrap sm"><div class="sc-av sm sc-av-me">${avatarInner(myName, myPhoto)}</div>
         <span class="sc-pip ${STATUS_CLS[myStatus || "offline"]}" id="my-pip"></span></div>
         <div class="sc-me-info">
             <span class="sc-me-name">${escHtml(myName)}</span>
@@ -1949,12 +1974,11 @@ function buildMainHtml(data) {
           ? escHtml(u.lastMsg.slice(0, 30)) + (u.lastMsg.length > 30 ? "…" : "")
           : "メッセージを送る";
         const pip = STATUS_CLS[u.chatStatus || "offline"];
-        const initial = (name || "?").charAt(0).toUpperCase();
         const unread = u.unread
           ? `<span class="ch-badge">${u.unread}</span>`
           : "";
         return `<a href="/chat/dm/${u._id}" class="ch-card">
-                <div class="ch-av-wrap"><div class="ch-av">${initial}</div><span class="ch-pip ${pip}"></span></div>
+                <div class="ch-av-wrap"><div class="ch-av">${avatarInner(name, u.emp && u.emp.photo)}</div><span class="ch-pip ${pip}"></span></div>
                 <div class="ch-info">
                     <div class="ch-name">${escHtml(name)}${dept ? `<span class="ch-dept">${escHtml(dept)}</span>` : ""}</div>
                     <div class="ch-preview">${preview}</div>
@@ -1990,9 +2014,8 @@ function buildMainHtml(data) {
       ? onlineUsers
           .map((u) => {
             const name = u.emp ? u.emp.name : u.username;
-            const initial = (name || "?").charAt(0).toUpperCase();
             return `<a href="/chat/dm/${u._id}" class="ch-online-chip" title="${escHtml(name)}">
-                <div class="ch-av sm">${initial}</div>
+                <div class="ch-av sm">${avatarInner(name, u.emp && u.emp.photo)}</div>
                 <span>${escHtml(name)}</span>
             </a>`;
           })
@@ -2106,11 +2129,10 @@ function buildMainHtml(data) {
             </div>
         </div>`
     : `<div class="sc-main-hd">
-            <div class="sc-hd-left"><button class="sc-mobile-back" onclick="openChatSidebar()" title="チャンネル一覧"><i class="fa-solid fa-bars"></i></button><div class="sc-av-wrap"><div class="sc-av sc-av-target">${escHtml(
-              data.targetName || "?",
-            )
-              .charAt(0)
-              .toUpperCase()}</div>
+            <div class="sc-hd-left"><button class="sc-mobile-back" onclick="openChatSidebar()" title="チャンネル一覧"><i class="fa-solid fa-bars"></i></button><div class="sc-av-wrap"><div class="sc-av sc-av-target">${avatarInner(
+              data.targetName,
+              data.targetPhoto,
+            )}</div>
             <span class="sc-pip ${STATUS_CLS[data.targetStatus || "offline"]}" id="target-pip"></span></div>
             <div><div class="sc-hd-name">${escHtml(data.targetName || "")}</div>
             <div class="sc-hd-sub" id="target-sub">${STATUS_LABEL[data.targetStatus || "offline"]}</div>
@@ -2174,8 +2196,7 @@ function buildMainHtml(data) {
 
 function buildThreadStart(data) {
   if (data.mode === "dm") {
-    const initial = (data.targetName || "?").charAt(0).toUpperCase();
-    return `<div class="sc-thread-start"><div class="sc-av sc-av-lg sc-av-target">${initial}</div>
+    return `<div class="sc-thread-start"><div class="sc-av sc-av-lg sc-av-target">${avatarInner(data.targetName, data.targetPhoto)}</div>
         <div class="sc-thread-name">${escHtml(data.targetName || "")}</div>
         <div class="sc-thread-sub">${data.targetDept ? escHtml(data.targetDept) : ""}${data.targetPos ? " · " + escHtml(data.targetPos) : ""}</div>
         <p class="sc-thread-desc">${escHtml(data.targetName || "")} とのダイレクトメッセージです。</p></div>`;
@@ -2192,7 +2213,7 @@ function buildMemberPanel(data) {
       const name = m.emp ? m.emp.name : m.username;
       const dept = m.emp ? m.emp.department || "" : "";
       return `<div class="sc-member-row">
-            <div class="sc-av-wrap sm"><div class="sc-av sm">${name.charAt(0).toUpperCase()}</div>
+            <div class="sc-av-wrap sm"><div class="sc-av sm">${avatarInner(name, m.emp && m.emp.photo)}</div>
             <span class="sc-pip ${STATUS_CLS[m.chatStatus || "offline"]}" data-uid="${m._id}"></span></div>
             <div class="sc-nav-info"><span class="sc-nav-name">${escHtml(name)}</span>${dept ? '<span class="sc-nav-sub">' + escHtml(dept) + "</span>" : ""}</div>
             ${data.isRoomAdmin && String(m._id) !== data.myId ? '<button class="sc-member-kick" onclick="chatApp.kickMember(\'' + m._id + "','" + escHtml(name) + '\')" title="除外">×</button>' : ""}
@@ -2815,7 +2836,8 @@ html, body { overflow: hidden !important; }
 /* ── Avatars ── */
 .sc-av-wrap{position:relative;flex-shrink:0;width:36px;height:36px}
 .sc-av-wrap.sm{width:28px;height:28px}
-.sc-av{width:36px;height:36px;border-radius:50%;background:#374151;color:#f9fafb;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.875rem;flex-shrink:0;user-select:none;letter-spacing:-.01em}
+.sc-av{width:36px;height:36px;border-radius:50%;background:#374151;color:#f9fafb;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.875rem;flex-shrink:0;user-select:none;letter-spacing:-.01em;overflow:hidden}
+.sc-av img{width:100%;height:100%;object-fit:cover;display:block}
 .sc-av.sm,.sc-av.sm2{width:28px;height:28px;font-size:.74rem}
 .sc-av-me{background:#4f46e5!important;color:#e0e7ff!important}
 .sc-av-target{background:#0f766e!important;color:#ccfbf1!important}
@@ -2845,7 +2867,8 @@ html, body { overflow: hidden !important; }
 .ch-card{display:flex;align-items:center;gap:12px;padding:12px 14px;background:#fff;border:1px solid var(--c-border);border-radius:var(--radius-lg);text-decoration:none;color:inherit;transition:.18s;position:relative;box-shadow:var(--shadow-sm)}
 .ch-card:hover{border-color:var(--c-accent);box-shadow:0 4px 16px rgba(99,102,241,.12);transform:translateY(-1px)}
 .ch-av-wrap{position:relative;flex-shrink:0}
-.ch-av{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:.875rem;font-weight:700;display:flex;align-items:center;justify-content:center}
+.ch-av{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:.875rem;font-weight:700;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.ch-av img{width:100%;height:100%;object-fit:cover;display:block}
 .ch-av.sm{width:28px;height:28px;font-size:.75rem}
 .ch-pip{position:absolute;bottom:0;right:0;width:9px;height:9px;border-radius:50%;border:2px solid var(--c-main-surface)}
 .ch-room-icon{width:38px;height:38px;border-radius:var(--radius-md);background:linear-gradient(135deg,#e0e7ff,#c7d2fe);display:flex;align-items:center;justify-content:center;font-size:1.15rem;flex-shrink:0}
@@ -3032,6 +3055,8 @@ html, body { overflow: hidden !important; }
 .sc-member-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--radius-sm);cursor:pointer;border:1.5px solid transparent;transition:background .12s,border-color .12s;user-select:none}
 .sc-member-row:hover{background:#f5f3ff;border-color:#ede9fe}
 .sc-member-cb{display:none}
+.sc-member-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:.8rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden}
+.sc-member-avatar img{width:100%;height:100%;object-fit:cover;display:block}
 .sc-member-info{flex:1;min-width:0}
 .sc-member-name{font-size:.84rem;font-weight:600;color:var(--c-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sc-member-dept{font-size:.71rem;color:var(--c-text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}

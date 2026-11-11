@@ -1651,6 +1651,11 @@
     "dashboard_alert_desc": "Vui lòng đăng ký và xác thực địa chỉ email để nhận thông báo.",
     "dashboard_alert_btn": "Đăng ký"
   },
+  "profile": {
+    "photo_alert_title": "Vui lòng tải lên ảnh đại diện của bạn",
+    "photo_alert_desc": "Thêm ảnh đại diện để hiển thị trên thanh bên và trang chủ.",
+    "photo_alert_btn": "Tải ảnh lên"
+  },
   "error": {
     "user_not_found": "Không tìm thấy người dùng",
     "invalid_password": "Mật khẩu không chính xác",

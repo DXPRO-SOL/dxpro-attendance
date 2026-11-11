@@ -14,15 +14,37 @@
   const MY_ID = C.myId;
   const MY_NAME = C.myName;
   const MY_INIT = C.myInitial;
+  const MY_PHOTO = C.myPhoto || "";
   const ALL_USERS = C.allUsers || [];
   const ROOM_IDS = C.roomIds || [];
   // DM用
   const TARGET_ID = C.targetId || null;
   const TARGET_NAME = C.targetName || "";
+  const TARGET_PHOTO = C.targetPhoto || "";
   // Room用
   const ROOM_ID = C.roomId || null;
   const ROOM_NAME = C.roomName || "";
   let ROOM_MEMBERS = C.members || [];
+
+  // アバター丸：登録写真があれば画像、なければイニシャル
+  function avatarHtml(name, photo) {
+    if (photo) {
+      return (
+        '<img src="' + esc(photo) + '" alt="' + esc(name || "") + '">'
+      );
+    }
+    return esc((name || "?").charAt(0).toUpperCase());
+  }
+  // ユーザーIDから写真を解決（自分／DM相手／ルームメンバー）
+  function photoForUser(userId) {
+    if (String(userId) === String(MY_ID)) return MY_PHOTO;
+    if (MODE === "dm") return TARGET_PHOTO;
+    if (MODE === "room") {
+      const m = ROOM_MEMBERS.find((x) => String(x._id) === String(userId));
+      return m && m.emp ? m.emp.photo || "" : "";
+    }
+    return "";
+  }
 
   let replyToId = null;
   let editingMsgId = null;
@@ -359,7 +381,6 @@
       const senderNameS = isMineS
         ? MY_NAME
         : msg.senderName || TARGET_NAME || "ユーザー";
-      const initialS = (senderNameS || "?").charAt(0).toUpperCase();
       const colorIdxS = isMineS
         ? 0
         : MODE === "room"
@@ -384,7 +405,7 @@
         '<div class="sc-av sc-av-c' +
         colorIdxS +
         '">' +
-        initialS +
+        avatarHtml(senderNameS, photoForUser(msg.fromUserId)) +
         "</div>" +
         '<div class="sc-msg-right"><div class="sc-msg-meta"><span class="sc-sender">' +
         esc(senderNameS) +
@@ -413,7 +434,6 @@
     const senderName = isMine
       ? MY_NAME
       : msg.senderName || TARGET_NAME || "ユーザー";
-    const initial = (senderName || "?").charAt(0).toUpperCase();
     const colorIdx = isMine
       ? 0
       : MODE === "room"
@@ -489,7 +509,7 @@
         '<div class="sc-av sc-av-c' +
         colorIdx +
         '">' +
-        initial +
+        avatarHtml(senderName, photoForUser(msg.fromUserId)) +
         "</div>" +
         '<div class="sc-msg-right"><div class="sc-msg-meta"><span class="sc-sender">' +
         esc(senderName) +
@@ -1136,7 +1156,7 @@
                 u._id +
                 '" class="sc-nav-row">' +
                 '<div class="sc-av-wrap sm"><div class="sc-av sm">' +
-                name.charAt(0).toUpperCase() +
+                avatarHtml(name, u.emp && u.emp.photo) +
                 "</div>" +
                 '<span class="sc-pip ' +
                 scls +
@@ -1383,14 +1403,13 @@
         .map((u) => {
           const name = u.emp ? u.emp.name : u.username;
           const dept = u.emp ? u.emp.department || "" : "";
-          const initial = (name || "?").charAt(0);
           return (
             '<label class="sc-member-row">' +
             '<input type="checkbox" name="add-member" class="sc-member-cb" value="' +
             u._id +
             '" onchange="chatApp.updateAddSelCount()">' +
             '<div class="sc-member-avatar">' +
-            initial +
+            avatarHtml(name, u.emp && u.emp.photo) +
             "</div>" +
             '<div class="sc-member-info">' +
             '<div class="sc-member-name">' +
@@ -1862,7 +1881,6 @@
         const isMineS = m.fromUserId === MY_ID;
         const senderNameS =
           m.senderName || (isMineS ? MY_NAME : TARGET_NAME) || "?";
-        const initialS = senderNameS.charAt(0).toUpperCase();
         const colorIdxS = isMineS ? 0 : 1;
         const dtS = new Date(m.createdAt);
         const dateStrS = dtS.toLocaleDateString("ja-JP", {
@@ -1878,7 +1896,7 @@
         });
         html += `<div class="sc-date-div"><span>${dateStrS}</span></div>`;
         html += `<div class="sc-msg${isMineS ? " sc-msg-mine" : ""}" data-id="${id}" data-at="${at}">`;
-        html += `<div class="sc-av sc-av-c${colorIdxS}">${initialS}</div>`;
+        html += `<div class="sc-av sc-av-c${colorIdxS}">${avatarHtml(senderNameS, photoForUser(m.fromUserId))}</div>`;
         html += `<div class="sc-msg-right"><div class="sc-msg-meta"><span class="sc-sender">${esc(senderNameS)}</span><span class="sc-ts">${timeStrS}</span></div>`;
         html += `<div class="sc-sticker-wrap"><img class="sc-sticker-img" src="${esc(m.stickerUrl)}" alt="${esc(m.stickerName || "スタンプ")}" title="${esc(m.stickerName || "スタンプ")}" loading="lazy"></div>`;
         html += `</div></div>`;
@@ -1887,7 +1905,6 @@
       const isMine = m.fromUserId === MY_ID;
       const senderName =
         m.senderName || (isMine ? MY_NAME : TARGET_NAME) || "?";
-      const initial = senderName.charAt(0).toUpperCase();
       const colorIdx = isMine ? 0 : 1;
       const dt = new Date(m.createdAt);
       const dateStr = dt.toLocaleDateString("ja-JP", {
@@ -1905,7 +1922,7 @@
       const attHtml = buildAttachHtml(m.attachments || [], id);
       html += `<div class="sc-date-div"><span>${dateStr}</span></div>`;
       html += `<div class="sc-msg" data-id="${id}" data-at="${at}">`;
-      html += `<div class="sc-av sc-av-c${colorIdx}">${initial}</div>`;
+      html += `<div class="sc-av sc-av-c${colorIdx}">${avatarHtml(senderName, photoForUser(m.fromUserId))}</div>`;
       html += `<div class="sc-msg-right"><div class="sc-msg-meta"><span class="sc-sender">${senderName}</span><span class="sc-ts">${timeStr}</span></div>`;
       html += `<div class="sc-msg-text">${content}</div>${attHtml}</div></div>`;
     }

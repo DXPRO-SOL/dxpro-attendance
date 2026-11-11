@@ -205,6 +205,11 @@
     "dashboard_alert_desc": "各種通知を受信するためにメールアドレスの登録・認証をお願いします。",
     "dashboard_alert_btn": "登録する"
   },
+  "profile": {
+    "photo_alert_title": "プロフィール写真を登録してください",
+    "photo_alert_desc": "サイドバーやダッシュボードに表示されるプロフィール写真を登録しましょう。",
+    "photo_alert_btn": "写真を登録する"
+  },
   "dashboard": {
     "greeting_morning": "おはようございます",
     "greeting_afternoon": "こんにちは",

@@ -3,6 +3,9 @@
 // ==============================
 const router = require("express").Router();
 const moment = require("moment-timezone");
+const path = require("path");
+const fs = require("fs");
+const multer = require("multer");
 const {
   User,
   Employee,
@@ -16,6 +19,29 @@ const {
 const { requireLogin } = require("../middleware/auth");
 const { escapeHtml } = require("../lib/helpers");
 const { renderPage } = require("../lib/renderPage");
+const { t } = require("../lib/i18n");
+
+// ── プロフィール写真アップロード設定 ──────────────────────
+const PHOTO_UPLOAD_DIR = path.join(__dirname, "..", "uploads", "profile-photos");
+if (!fs.existsSync(PHOTO_UPLOAD_DIR))
+  fs.mkdirSync(PHOTO_UPLOAD_DIR, { recursive: true });
+
+const photoStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, PHOTO_UPLOAD_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || "").toLowerCase() || ".jpg";
+    cb(null, `${req.session.userId}-${Date.now()}${ext}`);
+  },
+});
+const photoUpload = multer({
+  storage: photoStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error("対応していない画像形式です"));
+  },
+});
 
 const ROLE_LABEL = {
   admin: "管理者",
@@ -34,13 +60,15 @@ const PROFILE_STYLE = `
     /* ── ヘッダーバー（会社色の細帯＋氏名） ── */
     .corp-header{background:#fff;border:1px solid #dde3ec;border-radius:4px;margin-bottom:18px;overflow:hidden}
     .corp-header-band{height:6px;background:#1c3d6e}
-    .corp-header-body{display:flex;align-items:center;gap:20px;padding:22px 28px;flex-wrap:wrap}
+    .corp-header-body{display:flex;align-items:center;gap:26px;padding:26px 32px;flex-wrap:wrap}
     .corp-photo{
-        width:76px;height:76px;border-radius:4px;flex-shrink:0;
-        background:#eef1f6;border:1px solid #d7dde6;
+        width:128px;height:128px;border-radius:20px;flex-shrink:0;
+        background:linear-gradient(135deg,#eef1f6,#e4e9f5);
         display:flex;align-items:center;justify-content:center;
-        font-size:28px;font-weight:700;color:#5c6b82
+        font-size:42px;font-weight:700;color:#5c6b82;overflow:hidden;
+        box-shadow:0 12px 28px -10px rgba(28,61,110,.35), 0 0 0 4px #fff, 0 0 0 6px rgba(28,61,110,.18)
     }
+    .corp-photo img{width:100%;height:100%;object-fit:cover;display:block}
     .corp-header-info{flex:1;min-width:220px}
     .corp-name-row{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px}
     .corp-name{font-size:21px;font-weight:700;color:#111827;letter-spacing:.01em}
@@ -128,6 +156,7 @@ const PROFILE_STYLE = `
 
     @media(max-width:600px){
         .corp-header-body{padding:18px 20px}
+        .corp-photo{width:80px;height:80px;font-size:28px;border-radius:16px}
         .corp-stat-strip{grid-template-columns:1fr 1fr}
         .corp-stat{border-bottom:1px solid #eaeef4}
         .corp-header-actions{width:100%}
@@ -135,6 +164,15 @@ const PROFILE_STYLE = `
     }
 </style>
 `;
+
+// プロフィール写真HTML（登録済みなら画像、未登録ならイニシャル）
+function avatarHtml(employee) {
+  const initial = escapeHtml((employee.name || "?").charAt(0));
+  if (employee.photo) {
+    return `<img src="${escapeHtml(employee.photo)}" alt="${initial}">`;
+  }
+  return initial;
+}
 
 // 機能連携リンク（プロフィールから他機能へジャンプ）
 function buildLinkedNav() {
@@ -215,7 +253,7 @@ router.get("/profile", requireLogin, async (req, res) => {
             <div class="corp-header">
                 <div class="corp-header-band"></div>
                 <div class="corp-header-body">
-                    <div class="corp-photo">${escapeHtml((employee.name || "?").charAt(0))}</div>
+                    <div class="corp-photo">${avatarHtml(employee)}</div>
                     <div class="corp-header-info">
                         <div class="corp-name-row">
                             <span class="corp-name">${escapeHtml(employee.name)}</span>
@@ -324,7 +362,7 @@ router.get("/profile/edit", requireLogin, async (req, res) => {
             <div class="corp-header">
                 <div class="corp-header-band"></div>
                 <div class="corp-header-body">
-                    <div class="corp-photo">${escapeHtml((employee.name || "?").charAt(0))}</div>
+                    <div class="corp-photo">${avatarHtml(employee)}</div>
                     <div class="corp-header-info">
                         <div class="corp-name-row"><span class="corp-name">プロフィール編集</span></div>
                         <div class="corp-meta-line"><span>${escapeHtml(employee.name)}</span></div>
@@ -342,7 +380,15 @@ router.get("/profile/edit", requireLogin, async (req, res) => {
             <div class="corp-panel" style="max-width:640px">
                 <div class="corp-panel-head">登録情報</div>
                 <div style="padding:20px 22px">
-                    <form action="/profile/edit" method="POST">
+                    <form action="/profile/edit" method="POST" enctype="multipart/form-data">
+                        <div class="corp-form-field">
+                            <label>プロフィール写真</label>
+                            <div style="display:flex;align-items:center;gap:14px">
+                                <div class="corp-photo" style="width:96px;height:96px;font-size:34px">${avatarHtml(employee)}</div>
+                                <input type="file" name="photo" accept="image/jpeg,image/png,image/webp,image/gif" style="flex:1;padding:8px 10px;border:1px solid #cdd5e0;border-radius:3px;font-size:12.5px;background:#fff">
+                            </div>
+                            <div class="corp-form-hint">JPG/PNG/WEBP/GIF、5MBまで。他の社員にもサイドバーやダッシュボードに表示されます。</div>
+                        </div>
                         <div class="corp-form-field">
                             <label>氏名 <span class="corp-badge-locked"><i class="fa-solid fa-lock"></i> 管理者のみ変更可</span></label>
                             <input value="${escapeHtml(employee.name)}" disabled>
@@ -372,17 +418,30 @@ router.get("/profile/edit", requireLogin, async (req, res) => {
   renderPage(req, res, "マイプロフィール編集", "プロフィール編集", html);
 });
 
-router.post("/profile/edit", requireLogin, async (req, res) => {
+router.post("/profile/edit", requireLogin, (req, res, next) => {
+  photoUpload.single("photo")(req, res, (err) => {
+    if (err) {
+      console.error("写真アップロードエラー:", err.message);
+      return res.redirect("/profile/edit?error=photo");
+    }
+    next();
+  });
+}, async (req, res) => {
   try {
     const employee = await Employee.findOne({ userId: req.session.userId });
     if (!employee) return res.redirect("/dashboard");
     const { contact, email } = req.body;
-    await Employee.findByIdAndUpdate(employee._id, {
-      $set: {
-        contact: contact || "",
-        email: email || "",
-      },
-    });
+    const update = {
+      contact: contact || "",
+      email: email || "",
+    };
+    if (req.file) {
+      update.photo = `/uploads/profile-photos/${req.file.filename}`;
+    }
+    await Employee.findByIdAndUpdate(employee._id, { $set: update });
+    // セッション上のemployee情報も更新（サイドバー等の即時反映のため）
+    const refreshed = await Employee.findById(employee._id);
+    req.session.employee = refreshed;
     res.redirect("/profile");
   } catch (error) {
     console.error("プロフィール更新エラー:", error);

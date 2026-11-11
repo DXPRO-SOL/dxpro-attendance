@@ -205,6 +205,11 @@
     "dashboard_alert_desc": "Please register and verify your email address to receive notifications.",
     "dashboard_alert_btn": "Register"
   },
+  "profile": {
+    "photo_alert_title": "Please upload your profile photo",
+    "photo_alert_desc": "Add a profile photo to be shown in the sidebar and dashboard.",
+    "photo_alert_btn": "Upload photo"
+  },
   "dashboard": {
     "greeting_morning": "Good morning",
     "greeting_afternoon": "Good afternoon",

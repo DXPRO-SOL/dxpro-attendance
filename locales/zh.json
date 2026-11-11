@@ -1648,6 +1648,11 @@
     "dashboard_alert_desc": "请注册并验证您的邮箱地址以接收通知。",
     "dashboard_alert_btn": "去注册"
   },
+  "profile": {
+    "photo_alert_title": "请上传您的个人资料照片",
+    "photo_alert_desc": "添加个人资料照片以显示在侧边栏和主页中。",
+    "photo_alert_btn": "上传照片"
+  },
   "error": {
     "user_not_found": "找不到该用户",
     "invalid_password": "密码错误",

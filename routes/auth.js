@@ -597,7 +597,7 @@ router.get("/login", (req, res) => {
 
                 .form-head { margin-bottom: 26px; }
                 .form-head .welcome { font-size: 11.5px; font-weight: 700; color: var(--blue); letter-spacing: 1.5px; text-transform: uppercase; }
-                .form-head h1 { font-size: 23px; font-weight: 800; color: var(--text); margin-top: 8px; letter-spacing: .1px; }
+                .form-head h1 { font-size: 26px; font-weight: 900; color: var(--text); margin-top: 8px; letter-spacing: .1px; }
                 .form-head p { font-size: 13px; color: var(--text-muted); margin-top: 6px; }
 
                 .form-group { margin-bottom: 17px; }

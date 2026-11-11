@@ -733,6 +733,7 @@ const EmployeeSchema = new mongoose.Schema({
   },
   reportsTo: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" }, // 上司
   concurrentDepts: [{ type: String }], // 兼務部署名リスト
+  photo: { type: String }, // プロフィール写真（/uploads配下の相対パス）
   // 契約社員向け：時間休暇制度
   // 正社員は有給休暇（LeaveBalance.paid）を使用、契約社員は契約時間内の「時間休暇」を使用
   employmentType: {
