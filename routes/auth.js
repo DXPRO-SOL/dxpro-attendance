@@ -198,6 +198,69 @@ router.get("/login", (req, res) => {
                 .m-row .r-tag.wait { background: rgba(255,189,46,.14); color: #ffbd2e; }
                 .m-row .r-tag.info { background: rgba(143,180,255,.14); color: #8fb4ff; }
 
+                /* ══ スライド2用：ドーナツ進捗 + ランキング ══ */
+                .m-donuts { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
+                .donut {
+                    position: relative; width: 64px; height: 64px; border-radius: 50%;
+                    display: flex; align-items: center; justify-content: center;
+                    flex-shrink: 0;
+                }
+                .donut::before {
+                    content: ''; position: absolute; inset: 0; border-radius: 50%;
+                    background: conic-gradient(#8fb4ff calc(var(--p) * 1%), rgba(255,255,255,.08) 0);
+                    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+                    mask: radial-gradient(farthest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+                }
+                .donut .d-val { position: relative; z-index: 1; font-size: 13px; font-weight: 800; color: #fff; }
+                .donut-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+                .donut-col .d-label { font-size: 9px; color: rgba(255,255,255,.45); }
+
+                .m-rank { display: flex; flex-direction: column; gap: 9px; }
+                .r-item { display: flex; align-items: center; gap: 10px; }
+                .r-item .r-num {
+                    width: 18px; height: 18px; border-radius: 5px; flex-shrink: 0;
+                    display: flex; align-items: center; justify-content: center;
+                    background: rgba(255,255,255,.08); color: rgba(255,255,255,.55);
+                    font-size: 9.5px; font-weight: 700;
+                }
+                .r-item.gold .r-num { background: rgba(255,189,46,.2); color: #ffbd2e; }
+                .r-item .r-name { flex: 1; font-size: 11px; color: rgba(255,255,255,.85); }
+                .r-item .r-bar { width: 70px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
+                .r-item .r-bar span { display: block; height: 100%; background: #8fb4ff; border-radius: 3px; }
+                .r-item .r-score { font-size: 10px; color: rgba(255,255,255,.4); width: 28px; text-align: right; font-variant-numeric: tabular-nums; }
+
+                /* ══ スライド3用：カンバンボード ══ */
+                .kanban { display: flex; gap: 8px; }
+                .kcol { flex: 1; min-width: 0; background: rgba(255,255,255,.03); border-radius: 7px; padding: 8px; }
+                .kcol .kcol-head {
+                    display: flex; align-items: center; justify-content: space-between;
+                    font-size: 9.5px; font-weight: 700; color: rgba(255,255,255,.5);
+                    margin-bottom: 8px; text-transform: uppercase; letter-spacing: .3px;
+                }
+                .kcol .kcol-head .kcount {
+                    background: rgba(255,255,255,.1); color: rgba(255,255,255,.6);
+                    border-radius: 8px; padding: 1px 6px; font-size: 9px;
+                }
+                .kcard {
+                    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.07);
+                    border-radius: 6px; padding: 8px 9px; margin-bottom: 7px;
+                }
+                .kcard .kc-tag {
+                    display: inline-block; font-size: 8px; font-weight: 700; padding: 1px 6px;
+                    border-radius: 6px; margin-bottom: 5px;
+                }
+                .kcard .kc-tag.purple { background: rgba(167,139,250,.18); color: #c4b5fd; }
+                .kcard .kc-tag.blue { background: rgba(143,180,255,.18); color: #8fb4ff; }
+                .kcard .kc-tag.green { background: rgba(95,211,138,.18); color: #5fd38a; }
+                .kcard .kc-title { font-size: 10.5px; color: rgba(255,255,255,.85); line-height: 1.4; }
+                .kcard .kc-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 7px; }
+                .kcard .kc-avatar {
+                    width: 16px; height: 16px; border-radius: 50%; font-size: 7.5px; font-weight: 700;
+                    display: flex; align-items: center; justify-content: center;
+                    background: rgba(143,180,255,.25); color: #fff;
+                }
+                .kcard .kc-date { font-size: 8.5px; color: rgba(255,255,255,.35); }
+
                 .slide-dots {
                     position: relative; z-index: 2; flex-shrink: 0;
                     display: flex; gap: 7px; margin-top: 18px;
@@ -407,21 +470,16 @@ router.get("/login", (req, res) => {
                                     <div class="sico"><i class="fa-solid fa-gear"></i></div>
                                 </div>
                                 <div class="app-main">
-                                    <div class="m-head"><span class="m-title">目標進捗 — Q4</span><span class="m-badge">LIVE</span></div>
-                                    <div class="m-kpis">
-                                        <div class="m-kpi"><div class="k-label">個人目標</div><div class="k-val">75<small>%</small></div></div>
-                                        <div class="m-kpi"><div class="k-label">チーム平均</div><div class="k-val">58<small>%</small></div></div>
-                                        <div class="m-kpi"><div class="k-label">評価完了</div><div class="k-val">90<small>%</small></div></div>
+                                    <div class="m-head"><span class="m-title">目標進捗 — Q4評価</span><span class="m-badge">LIVE</span></div>
+                                    <div class="m-donuts">
+                                        <div class="donut-col"><div class="donut" style="--p:75"><span class="d-val">75%</span></div><span class="d-label">個人目標</span></div>
+                                        <div class="donut-col"><div class="donut" style="--p:58"><span class="d-val">58%</span></div><span class="d-label">チーム平均</span></div>
+                                        <div class="donut-col"><div class="donut" style="--p:90"><span class="d-val">90%</span></div><span class="d-label">評価完了</span></div>
                                     </div>
-                                    <div class="m-chart">
-                                        <div class="cbar" style="height:40%"></div><div class="cbar" style="height:60%"></div>
-                                        <div class="cbar dim" style="height:25%"></div><div class="cbar" style="height:95%"></div>
-                                        <div class="cbar" style="height:70%"></div><div class="cbar dim" style="height:50%"></div>
-                                        <div class="cbar" style="height:85%"></div>
-                                    </div>
-                                    <div class="m-list">
-                                        <div class="m-row"><span class="r-ico"><i class="fa-solid fa-star"></i></span><span class="r-text">営業部 — 四半期目標</span><span class="r-tag ok">達成</span></div>
-                                        <div class="m-row"><span class="r-ico"><i class="fa-solid fa-star"></i></span><span class="r-text">開発部 — スキル評価</span><span class="r-tag info">進行中</span></div>
+                                    <div class="m-rank">
+                                        <div class="r-item gold"><span class="r-num">1</span><span class="r-name">営業部 — 鈴木</span><span class="r-bar"><span style="width:96%"></span></span><span class="r-score">96</span></div>
+                                        <div class="r-item"><span class="r-num">2</span><span class="r-name">開発部 — 高橋</span><span class="r-bar"><span style="width:88%"></span></span><span class="r-score">88</span></div>
+                                        <div class="r-item"><span class="r-num">3</span><span class="r-name">人事部 — 伊藤</span><span class="r-bar"><span style="width:81%"></span></span><span class="r-score">81</span></div>
                                     </div>
                                 </div>
                             </div>
@@ -439,26 +497,42 @@ router.get("/login", (req, res) => {
                             <div class="app-body">
                                 <div class="app-sidebar">
                                     <div class="sico"><i class="fa-solid fa-gauge"></i></div>
-                                    <div class="sico"><i class="fa-solid fa-file-signature"></i></div>
-                                    <div class="sico on"><i class="fa-solid fa-comments"></i></div>
+                                    <div class="sico"><i class="fa-solid fa-chart-column"></i></div>
+                                    <div class="sico on"><i class="fa-solid fa-file-signature"></i></div>
                                     <div class="sico"><i class="fa-solid fa-gear"></i></div>
                                 </div>
                                 <div class="app-main">
-                                    <div class="m-head"><span class="m-title">申請状況</span><span class="m-badge">LIVE</span></div>
-                                    <div class="m-kpis">
-                                        <div class="m-kpi"><div class="k-label">承認待ち</div><div class="k-val">12<small>件</small></div></div>
-                                        <div class="m-kpi"><div class="k-label">承認率</div><div class="k-val">95<small>%</small></div></div>
-                                        <div class="m-kpi"><div class="k-label">チャット</div><div class="k-val">48<small>件</small></div></div>
-                                    </div>
-                                    <div class="m-chart">
-                                        <div class="cbar" style="height:70%"></div><div class="cbar dim" style="height:35%"></div>
-                                        <div class="cbar" style="height:55%"></div><div class="cbar" style="height:88%"></div>
-                                        <div class="cbar dim" style="height:28%"></div><div class="cbar" style="height:62%"></div>
-                                        <div class="cbar" style="height:95%"></div>
-                                    </div>
-                                    <div class="m-list">
-                                        <div class="m-row"><span class="r-ico"><i class="fa-solid fa-file-signature"></i></span><span class="r-text">経費精算 — 第3営業部</span><span class="r-tag wait">承認待ち</span></div>
-                                        <div class="m-row"><span class="r-ico"><i class="fa-solid fa-file-signature"></i></span><span class="r-text">契約書 — 業務委託</span><span class="r-tag ok">承認済</span></div>
+                                    <div class="m-head"><span class="m-title">承認ワークフロー</span><span class="m-badge">LIVE</span></div>
+                                    <div class="kanban">
+                                        <div class="kcol">
+                                            <div class="kcol-head">申請中 <span class="kcount">4</span></div>
+                                            <div class="kcard">
+                                                <span class="kc-tag purple">経費</span>
+                                                <div class="kc-title">出張交通費精算</div>
+                                                <div class="kc-foot"><span class="kc-avatar">田</span><span class="kc-date">11/10</span></div>
+                                            </div>
+                                            <div class="kcard">
+                                                <span class="kc-tag blue">契約</span>
+                                                <div class="kc-title">業務委託契約更新</div>
+                                                <div class="kc-foot"><span class="kc-avatar">佐</span><span class="kc-date">11/11</span></div>
+                                            </div>
+                                        </div>
+                                        <div class="kcol">
+                                            <div class="kcol-head">承認待ち <span class="kcount">12</span></div>
+                                            <div class="kcard">
+                                                <span class="kc-tag purple">経費</span>
+                                                <div class="kc-title">第3営業部 経費精算</div>
+                                                <div class="kc-foot"><span class="kc-avatar">鈴</span><span class="kc-date">11/12</span></div>
+                                            </div>
+                                        </div>
+                                        <div class="kcol">
+                                            <div class="kcol-head">承認済 <span class="kcount">95%</span></div>
+                                            <div class="kcard">
+                                                <span class="kc-tag green">稟議</span>
+                                                <div class="kc-title">新規設備購入稟議</div>
+                                                <div class="kc-foot"><span class="kc-avatar">高</span><span class="kc-date">11/09</span></div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
