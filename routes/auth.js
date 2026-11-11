@@ -3,6 +3,7 @@
 // ==============================
 const router = require("express").Router();
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const { User, Employee } = require("../models");
 const { requireLogin } = require("../middleware/auth");
 const {
@@ -12,6 +13,44 @@ const {
 const { buildPageShell } = require("../lib/renderPage");
 const { t } = require("../lib/i18n");
 const { writeAuditLog } = require("../lib/auditLog");
+const { sendMail } = require("../config/mailer");
+
+const DEVICE_COOKIE = "nokori_device";
+const DEVICE_MAX_AGE = 90 * 24 * 60 * 60 * 1000; // 90日
+const TWOFA_CODE_TTL = 10 * 60 * 1000; // 10分
+const TWOFA_MAX_ATTEMPTS = 5;
+
+function parseCookies(req) {
+  const header = req.headers.cookie || "";
+  const out = {};
+  header.split(";").forEach((pair) => {
+    const idx = pair.indexOf("=");
+    if (idx === -1) return;
+    const key = pair.slice(0, idx).trim();
+    const val = pair.slice(idx + 1).trim();
+    if (key) out[key] = decodeURIComponent(val);
+  });
+  return out;
+}
+
+function hashDeviceToken(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function generateTwoFactorCode() {
+  return String(crypto.randomInt(100000, 1000000)); // 6桁
+}
+
+async function establishSession(req, user) {
+  req.session.userId = user._id;
+  req.session.isAdmin = user.isAdmin;
+  req.session.username = user.username;
+  // Issue #19: orgRoleをセッションに保存
+  req.session.orgRole = user.role || (user.isAdmin ? "admin" : "employee");
+  req.session.isTestUser = user.role === "test_user";
+  // 多言語対応: DBの優先言語 → ログイン前に選択した言語 → デフォルト日本語
+  req.session.lang = user.preferredLang || req.session.lang || "ja";
+}
 
 router.get("/", requireLogin, (req, res) => {
   res.redirect("/attendance-main");
@@ -1028,28 +1067,291 @@ router.post("/login", async (req, res) => {
       return res.redirect("/login?error=invalid_password");
     }
 
-    // セッションにユーザー情報保存
-    req.session.userId = user._id;
-    req.session.isAdmin = user.isAdmin;
-    req.session.username = user.username;
-    // Issue #19: orgRoleをセッションに保存
-    req.session.orgRole = user.role || (user.isAdmin ? "admin" : "employee");
-    req.session.isTestUser = user.role === "test_user";
-    // 多言語対応: DBの優先言語 → ログイン前に選択した言語 → デフォルト日本語
-    req.session.lang = user.preferredLang || req.session.lang || "ja";
+    // ── 2段階認証（2FA）: 信頼済みデバイスかどうかを確認 ──
+    const cookies = parseCookies(req);
+    const deviceToken = cookies[DEVICE_COOKIE];
+    let isTrustedDevice = false;
+    if (deviceToken && Array.isArray(user.trustedDevices) && user.trustedDevices.length) {
+      const tokenHash = hashDeviceToken(deviceToken);
+      const match = user.trustedDevices.find((d) => d.tokenHash === tokenHash);
+      if (match) {
+        isTrustedDevice = true;
+        match.lastUsedAt = new Date();
+        await user.save();
+      }
+    }
+
+    if (isTrustedDevice) {
+      // 認証済み端末 → 1重認証でそのままログイン
+      await establishSession(req, user);
+      await writeAuditLog(req, {
+        action: "login",
+        category: "auth",
+        detail: `ログイン成功（信頼済み端末 / 管理者: ${user.isAdmin ? "はい" : "いいえ"}）`,
+        userId: user._id,
+        username: user.username,
+      });
+      console.log("ログイン成功（信頼済み端末）:", user.username);
+      return res.redirect("/dashboard");
+    }
+
+    if (!user.email) {
+      // メールアドレス未登録の場合は2FAを実施できないため、通常どおりログイン
+      await establishSession(req, user);
+      await writeAuditLog(req, {
+        action: "login",
+        category: "auth",
+        detail: `ログイン成功（メール未登録のため2FAスキップ / 管理者: ${user.isAdmin ? "はい" : "いいえ"}）`,
+        userId: user._id,
+        username: user.username,
+      });
+      console.log("ログイン成功（2FAスキップ・メール未登録）:", user.username);
+      return res.redirect("/dashboard");
+    }
+
+    // 未認証端末 → ワンタイムコードを発行してメール送信
+    const code = generateTwoFactorCode();
+    user.twoFactorCode = code;
+    user.twoFactorExpires = new Date(Date.now() + TWOFA_CODE_TTL);
+    user.twoFactorAttempts = 0;
+    await user.save();
+
+    try {
+      await sendMail({
+        to: user.email,
+        subject: "【NOKORI】ログイン確認コード",
+        text: `ログイン確認コード: ${code}\n（有効期限：10分）\n\n心当たりがない場合はこのメールを無視してください。`,
+        html: `<div style="font-family:sans-serif;padding:20px;"><h2 style="color:#2d5bb9;">NOKORI ログイン確認コード</h2><p>以下の6桁のコードをログイン画面に入力してください（有効期限：10分）。</p><div style="font-size:32px;font-weight:800;letter-spacing:6px;background:#f4f5f7;padding:16px 24px;border-radius:10px;display:inline-block;margin:12px 0;">${code}</div><p style="color:#5f6672;font-size:13px;">心当たりがない場合はこのメールを無視してください。</p></div>`,
+      });
+    } catch (mailErr) {
+      console.error("2FAメール送信エラー:", mailErr.message);
+      // メール送信に失敗した場合は2FAをスキップしてログインさせる（ロックアウト防止）
+      await establishSession(req, user);
+      await writeAuditLog(req, {
+        action: "login",
+        category: "auth",
+        detail: `ログイン成功（2FAメール送信失敗のためスキップ / 管理者: ${user.isAdmin ? "はい" : "いいえ"}）`,
+        userId: user._id,
+        username: user.username,
+      });
+      return res.redirect("/dashboard");
+    }
+
+    req.session.pending2FA = {
+      userId: String(user._id),
+      username: user.username,
+      maskedEmail: user.email.replace(/^(.{2}).*(@.*)$/, "$1***$2"),
+    };
+    await writeAuditLog(req, {
+      action: "login_2fa_sent",
+      category: "auth",
+      detail: `2段階認証コードを送信しました`,
+      userId: user._id,
+      username: user.username,
+    });
+    console.log("2FAコード送信:", user.username);
+    return res.redirect("/login/verify");
+  } catch (error) {
+    console.error("ログインエラー:", error);
+    res.redirect("/login?error=server_error");
+  }
+});
+
+router.get("/login/verify", (req, res) => {
+  const pending = req.session.pending2FA;
+  if (!pending) return res.redirect("/login");
+  const lang = req.session.lang || "ja";
+  const errorMap = {
+    invalid_code: "確認コードが正しくありません。",
+    expired: "確認コードの有効期限が切れました。再送信してください。",
+    too_many_attempts: "試行回数の上限に達しました。コードを再送信してください。",
+  };
+  const errorMsg = req.query.error ? errorMap[req.query.error] || "エラーが発生しました。" : null;
+  const resent = req.query.resent === "1";
+
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="${lang}">
+    <head>
+        <meta charset="UTF-8">
+        <title>2段階認証 - NOKORI</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+        <style>
+            * { margin:0; padding:0; box-sizing:border-box; }
+            body {
+                font-family:'Inter','Noto Sans JP',sans-serif;
+                min-height:100vh; display:flex; align-items:center; justify-content:center;
+                background: linear-gradient(165deg,#10213f 0%,#16305c 100%);
+                padding: 20px;
+            }
+            .vf-card {
+                background:#fff; border-radius:16px; padding:40px 36px 32px;
+                width:100%; max-width:400px;
+                box-shadow: 0 30px 60px rgba(0,0,0,.35);
+            }
+            .vf-icon {
+                width:56px; height:56px; border-radius:14px; background:#eff6ff;
+                display:flex; align-items:center; justify-content:center;
+                font-size:24px; color:#2d5bb9; margin:0 auto 18px;
+            }
+            .vf-title { text-align:center; font-size:21px; font-weight:800; color:#1f2328; margin-bottom:6px; }
+            .vf-sub { text-align:center; font-size:13px; color:#5f6672; line-height:1.6; margin-bottom:24px; }
+            .vf-sub b { color:#2d5bb9; }
+            .code-input {
+                width:100%; font-size:26px; font-weight:800; letter-spacing:10px; text-align:center;
+                padding:14px 10px 14px 20px; border:1.5px solid #d4d7dc; border-radius:10px;
+                margin-bottom:16px; color:#1f2328;
+            }
+            .code-input:focus { outline:none; border-color:#2d5bb9; box-shadow:0 0 0 3px rgba(45,91,185,.15); }
+            .remember-row { display:flex; align-items:center; gap:8px; margin-bottom:18px; font-size:13px; color:#374151; }
+            .remember-row input { width:16px; height:16px; accent-color:#2d5bb9; }
+            .btn-verify {
+                width:100%; padding:13px; border:none; border-radius:9px; cursor:pointer;
+                background: linear-gradient(135deg,#2d5bb9,#1f4694); color:#fff; font-size:15px; font-weight:700;
+                display:flex; align-items:center; justify-content:center; gap:8px;
+                box-shadow: 0 10px 24px rgba(45,91,185,.35);
+            }
+            .btn-verify:hover { filter:brightness(1.08); }
+            .vf-error {
+                background:#fdecea; color:#c0392b; border:1px solid #f5c6cb; border-radius:8px;
+                padding:10px 14px; font-size:12.5px; margin-bottom:16px; display:flex; align-items:center; gap:8px;
+            }
+            .vf-resent {
+                background:#eafaf0; color:#1f8a4c; border:1px solid #c5ebd6; border-radius:8px;
+                padding:10px 14px; font-size:12.5px; margin-bottom:16px; display:flex; align-items:center; gap:8px;
+            }
+            .vf-links { display:flex; justify-content:space-between; margin-top:18px; font-size:12.5px; }
+            .vf-links a, .vf-links button {
+                color:#2d5bb9; text-decoration:none; background:none; border:none; cursor:pointer; font-size:12.5px; padding:0;
+            }
+            .vf-links a:hover, .vf-links button:hover { text-decoration:underline; }
+        </style>
+    </head>
+    <body>
+        <div class="vf-card">
+            <div class="vf-icon"><i class="fa-solid fa-shield-halved"></i></div>
+            <div class="vf-title">2段階認証</div>
+            <div class="vf-sub"><b>${pending.maskedEmail}</b> 宛に送信した<br>6桁の確認コードを入力してください。</div>
+
+            ${errorMsg ? `<div class="vf-error"><i class="fa-solid fa-circle-exclamation"></i>${errorMsg}</div>` : ""}
+            ${resent ? `<div class="vf-resent"><i class="fa-solid fa-circle-check"></i>確認コードを再送信しました。</div>` : ""}
+
+            <form action="/login/verify" method="POST">
+                <input type="text" name="code" class="code-input" maxlength="6" inputmode="numeric" pattern="[0-9]*" placeholder="------" autofocus required>
+                <label class="remember-row">
+                    <input type="checkbox" name="remember" value="1" checked>
+                    この端末を記憶して、次回から2段階認証を省略する
+                </label>
+                <button type="submit" class="btn-verify">認証する <i class="fa-solid fa-arrow-right"></i></button>
+            </form>
+            <div class="vf-links">
+                <form action="/login/verify/resend" method="POST" style="margin:0;"><button type="submit">コードを再送信</button></form>
+                <a href="/login">ログイン画面に戻る</a>
+            </div>
+        </div>
+    </body>
+    </html>
+  `);
+});
+
+router.post("/login/verify", async (req, res) => {
+  const pending = req.session.pending2FA;
+  if (!pending) return res.redirect("/login");
+  try {
+    const user = await User.findById(pending.userId);
+    if (!user) {
+      req.session.pending2FA = null;
+      return res.redirect("/login");
+    }
+
+    if (!user.twoFactorCode || !user.twoFactorExpires || user.twoFactorExpires < new Date()) {
+      return res.redirect("/login/verify?error=expired");
+    }
+    if (user.twoFactorAttempts >= TWOFA_MAX_ATTEMPTS) {
+      return res.redirect("/login/verify?error=too_many_attempts");
+    }
+
+    const submitted = String(req.body.code || "").trim();
+    if (submitted !== user.twoFactorCode) {
+      user.twoFactorAttempts += 1;
+      await user.save();
+      await writeAuditLog(req, {
+        action: "login_2fa_failed",
+        category: "auth",
+        detail: "2段階認証コード不一致",
+        userId: user._id,
+        username: user.username,
+        result: "failure",
+      });
+      return res.redirect("/login/verify?error=invalid_code");
+    }
+
+    // 認証成功 → コードをクリアし、必要なら端末を信頼登録
+    user.twoFactorCode = "";
+    user.twoFactorExpires = null;
+    user.twoFactorAttempts = 0;
+
+    if (req.body.remember) {
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = hashDeviceToken(rawToken);
+      const ua = String(req.headers["user-agent"] || "").slice(0, 120);
+      user.trustedDevices.push({ tokenHash, label: ua, createdAt: new Date(), lastUsedAt: new Date() });
+      // 端末登録数の上限（古いものから削除）
+      if (user.trustedDevices.length > 10) {
+        user.trustedDevices = user.trustedDevices.slice(-10);
+      }
+      res.cookie(DEVICE_COOKIE, rawToken, {
+        httpOnly: true,
+        secure: req.secure,
+        sameSite: "lax",
+        maxAge: DEVICE_MAX_AGE,
+      });
+    }
+    await user.save();
+
+    await establishSession(req, user);
+    req.session.pending2FA = null;
 
     await writeAuditLog(req, {
       action: "login",
       category: "auth",
-      detail: `ログイン成功 (管理者: ${user.isAdmin ? "はい" : "いいえ"})`,
+      detail: `ログイン成功（2段階認証完了 / 管理者: ${user.isAdmin ? "はい" : "いいえ"}）`,
       userId: user._id,
       username: user.username,
     });
-    console.log("ログイン成功:", user.username, "管理者:", user.isAdmin);
+    console.log("ログイン成功（2段階認証）:", user.username);
     return res.redirect("/dashboard");
   } catch (error) {
-    console.error("ログインエラー:", error);
-    res.redirect("/login?error=server_error");
+    console.error("2段階認証エラー:", error);
+    return res.redirect("/login/verify?error=invalid_code");
+  }
+});
+
+router.post("/login/verify/resend", async (req, res) => {
+  const pending = req.session.pending2FA;
+  if (!pending) return res.redirect("/login");
+  try {
+    const user = await User.findById(pending.userId);
+    if (!user || !user.email) return res.redirect("/login");
+
+    const code = generateTwoFactorCode();
+    user.twoFactorCode = code;
+    user.twoFactorExpires = new Date(Date.now() + TWOFA_CODE_TTL);
+    user.twoFactorAttempts = 0;
+    await user.save();
+
+    await sendMail({
+      to: user.email,
+      subject: "【NOKORI】ログイン確認コード（再送信）",
+      text: `ログイン確認コード: ${code}\n（有効期限：10分）`,
+      html: `<div style="font-family:sans-serif;padding:20px;"><h2 style="color:#2d5bb9;">NOKORI ログイン確認コード</h2><div style="font-size:32px;font-weight:800;letter-spacing:6px;background:#f4f5f7;padding:16px 24px;border-radius:10px;display:inline-block;margin:12px 0;">${code}</div></div>`,
+    });
+    return res.redirect("/login/verify?resent=1");
+  } catch (error) {
+    console.error("2FA再送信エラー:", error);
+    return res.redirect("/login/verify?error=invalid_code");
   }
 });
 

@@ -11,6 +11,22 @@ const UserSchema = new mongoose.Schema({
   emailVerificationCode: { type: String, default: "" }, // 認証コード
   emailVerificationExpires: { type: Date, default: null }, // 認証コード有効期限
   emailVerifiedAt: { type: Date, default: null }, // 認証完了日時
+  // ログイン2段階認証（2FA）
+  twoFactorCode: { type: String, default: "" }, // ログイン時のワンタイムコード
+  twoFactorExpires: { type: Date, default: null }, // コード有効期限
+  twoFactorAttempts: { type: Number, default: 0 }, // コード入力失敗回数
+  trustedDevices: {
+    type: [
+      {
+        tokenHash: { type: String, required: true }, // デバイストークンのハッシュ値
+        label: { type: String, default: "" }, // ブラウザ/OS情報
+        createdAt: { type: Date, default: Date.now },
+        lastUsedAt: { type: Date, default: Date.now },
+      },
+    ],
+    default: [],
+  },
+
   // Issue #19: 中間ロール拡張
   // 'admin' | 'manager' | 'team_leader' | 'employee'
   role: {
