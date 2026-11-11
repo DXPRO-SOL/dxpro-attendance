@@ -100,12 +100,13 @@ router.get("/login", (req, res) => {
                     --line: rgba(255,255,255,.12);
                 }
                 * { margin: 0; padding: 0; box-sizing: border-box; }
-                html, body { height: 100%; }
+                html, body { height: 100%; overflow-x: hidden; }
                 body {
                     font-family: 'Inter', 'Noto Sans JP', sans-serif;
                     color: var(--text);
                     min-height: 100vh;
                     display: flex;
+                    flex-wrap: wrap;
                 }
 
                 /* ══════════ 左パネル：プロダクトショーケース（スライド） ══════════ */
@@ -513,6 +514,7 @@ router.get("/login", (req, res) => {
                 }
                 .login-notice .ln-track {
                     flex: 1;
+                    min-width: 0;
                     overflow: hidden;
                     white-space: nowrap;
                     position: relative;
@@ -641,11 +643,35 @@ router.get("/login", (req, res) => {
 
                 @media (max-width: 920px) {
                     .brand-panel { display: none; }
+                    .form-panel { min-height: 100vh; }
+                }
+                @media (max-width: 600px) {
+                    .form-panel { padding: 16px; }
+                    .login-notice { max-width: 100%; }
+                    .login-card { max-width: 100%; padding: 26px 20px 22px; border-radius: 14px; }
+                    .card-top-row { margin-bottom: 14px; }
+                    .card-mark { width: 34px; height: 34px; font-size: 14px; border-radius: 9px; }
+                    .lang-trigger { padding: 5px 10px; font-size: 11px; }
+                    .lang-menu { right: auto; left: 0; min-width: 140px; }
+                    .form-head { margin-bottom: 20px; }
+                    .form-head h1 { font-size: 20px; }
+                    .form-head p { font-size: 12.5px; }
+                    .form-group { margin-bottom: 14px; }
+                    .form-control { padding: 11px 12px 11px 38px; font-size: 16px; }
+                    .btn-login { padding: 12px; font-size: 14px; }
+                    .divider { margin: 20px 0; }
+                    .links a { padding: 9px 14px; font-size: 12.5px; }
+                    .current-time { font-size: 10px; margin-top: 18px; }
                 }
                 @media (max-width: 480px) {
-                    .form-panel { padding: 20px; }
-                    .login-card { padding: 30px 24px 26px; }
+                    .form-panel { padding: 14px; }
+                    .login-card { padding: 22px 16px 18px; }
                     .form-head h1 { font-size: 19px; }
+                    .login-notice .ln-text { font-size: 11px; }
+                }
+                @media (max-width: 360px) {
+                    .card-top-row { flex-wrap: wrap; gap: 8px; }
+                    .lang-dropdown { order: 2; }
                 }
             </style>
         </head>
