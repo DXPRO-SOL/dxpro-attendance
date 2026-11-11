@@ -607,14 +607,14 @@ router.get("/login", (req, res) => {
                                 <div class="av" style="background:#5fd38a;">+5</div>
                             </div>
 
-                            <div style="position:absolute;top:188px;left:188px;display:flex;gap:7px;">
+                            <div style="position:absolute;top:264px;left:172px;display:flex;gap:7px;">
                                 <div class="cal-cell on">月</div>
                                 <div class="cal-cell on">火</div>
                                 <div class="cal-cell on">水</div>
                                 <div class="cal-cell">木</div>
                                 <div class="cal-cell off">金</div>
                             </div>
-                            <div style="position:absolute;top:282px;left:206px;display:flex;gap:9px;">
+                            <div style="position:absolute;top:300px;left:172px;display:flex;gap:9px;">
                                 <div class="stat-pill"><b>168h</b><span>稼働時間</span></div>
                                 <div class="stat-pill"><b>¥420</b><span>残業代/h</span></div>
                             </div>
