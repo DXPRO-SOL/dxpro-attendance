@@ -1629,8 +1629,22 @@ router.post("/hr/edit/:id", requireLogin, async (req, res) => {
 
 // 社員削除
 router.get("/hr/delete/:id", requireLogin, async (req, res) => {
-  await Employee.findByIdAndDelete(req.params.id);
-  res.redirect("/hr");
+  try {
+    const employee = await Employee.findById(req.params.id);
+    if (!employee) {
+      return res.redirect("/hr");
+    }
+    // 紐づくログインアカウント(User)も合わせて削除し、
+    // 削除済み社員がユーザー一覧（チャット等）に残り続ける問題を防ぐ
+    if (employee.userId) {
+      await User.findByIdAndDelete(employee.userId);
+    }
+    await Employee.findByIdAndDelete(req.params.id);
+    res.redirect("/hr");
+  } catch (error) {
+    console.error("社員削除エラー:", error);
+    res.redirect("/hr");
+  }
 });
 
 // 統計

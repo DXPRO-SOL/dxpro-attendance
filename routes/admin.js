@@ -359,8 +359,14 @@ router.get(
       const month = parseInt(req.query.month) || new Date().getMonth() + 1;
       const department = req.query.department || "";
 
-      const startDate = new Date(year, month - 1, 1);
-      const endDate = new Date(year, month, 0);
+      const startDate = moment
+        .tz(`${year}-${month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+        .startOf("day")
+        .toDate();
+      const endDate = moment
+        .tz(`${year}-${month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+        .endOf("month")
+        .toDate();
 
       const query = department ? { department } : {};
       const employees = await Employee.find(query).populate("userId");
@@ -691,9 +697,15 @@ router.post(
         });
       }
 
-      // 該当月の勤怠を承認済みに更新
-      const startDate = new Date(year, month - 1, 1);
-      const endDate = new Date(year, month, 0);
+      // 該当月の勤怠を承認済みに更新（JST基準で範囲計算）
+      const startDate = moment
+        .tz(`${year}-${month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+        .startOf("day")
+        .toDate();
+      const endDate = moment
+        .tz(`${year}-${month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+        .endOf("month")
+        .toDate();
 
       await Attendance.updateMany(
         {
@@ -763,8 +775,14 @@ router.get(
         return res.status(404).send("従業員が見つかりません");
       }
 
-      const startDate = new Date(year, month - 1, 1);
-      const endDate = new Date(year, month, 0);
+      const startDate = moment
+        .tz(`${year}-${month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+        .startOf("day")
+        .toDate();
+      const endDate = moment
+        .tz(`${year}-${month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+        .endOf("month")
+        .toDate();
 
       const attendances = await Attendance.find({
         userId: employee.userId,
@@ -1141,9 +1159,15 @@ router.post(
           .json({ success: false, message: "リクエストが見つかりません" });
       }
 
-      // 해당 월의 근태 기록 확정 상태 해제
-      const startDate = new Date(request.year, request.month - 1, 1);
-      const endDate = new Date(request.year, request.month, 0);
+      // 해당 월의 근태 기록 확정 상태 해제（JST基準で範囲計算）
+      const startDate = moment
+        .tz(`${request.year}-${request.month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+        .startOf("day")
+        .toDate();
+      const endDate = moment
+        .tz(`${request.year}-${request.month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+        .endOf("month")
+        .toDate();
 
       await Attendance.updateMany(
         {
@@ -1206,9 +1230,15 @@ router.get(
         return res.redirect("/admin/approval-requests");
       }
 
-      // 해당 월의 모든 근태 기록을 확정 상태로 변경
-      const startDate = new Date(request.year, request.month - 1, 1);
-      const endDate = new Date(request.year, request.month, 0);
+      // 해당 월의 모든 근태 기록을 확정 상태로 변경（JST基準で範囲計算）
+      const startDate = moment
+        .tz(`${request.year}-${request.month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+        .startOf("day")
+        .toDate();
+      const endDate = moment
+        .tz(`${request.year}-${request.month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+        .endOf("month")
+        .toDate();
 
       await Attendance.updateMany(
         {
@@ -1481,8 +1511,14 @@ router.get(
         return res.status(404).send("従業員情報が見つかりません");
       }
 
-      const startDate = new Date(year, month - 1, 1);
-      const endDate = new Date(year, month, 0);
+      const startDate = moment
+        .tz(`${year}-${month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+        .startOf("day")
+        .toDate();
+      const endDate = moment
+        .tz(`${year}-${month}-01`, "YYYY-M-DD", "Asia/Tokyo")
+        .endOf("month")
+        .toDate();
 
       const attendances = await Attendance.find({
         userId: userId,

@@ -1832,6 +1832,7 @@ function buildPage(data) {
     <div class="sc-main" id="sc-main">${buildMainHtml(data)}</div>
 </div>
 ${buildGroupCreateModal(allUsers)}
+${mode === "room" ? buildAddMemberModal() : ""}
 ${buildRoomSettingsModal()}
 ${buildStampPickerModal()}
 ${buildStampManagerModal()}
@@ -2624,6 +2625,34 @@ function buildReactHtml(m, myId) {
   );
 }
 
+function buildAddMemberModal() {
+  return `<div class="sc-overlay" id="sc-modal-add-member" style="display:none" onclick="if(event.target===this)chatApp.closeModal('sc-modal-add-member')">
+    <div class="sc-modal sc-modal-create-w">
+        <div class="sc-modal-hd">
+            <div class="sc-modal-hd-inner"><span class="sc-modal-hd-icon">👤</span><h3>メンバーを追加</h3></div>
+            <button class="sc-modal-close" onclick="chatApp.closeModal('sc-modal-add-member')"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="sc-modal-body">
+            <div class="sc-form-row">
+                <div class="sc-members-hd">
+                    <label>追加するメンバーを選択</label>
+                    <span class="sc-sel-count" id="sc-add-sel-count" style="display:none">0人を選択中</span>
+                </div>
+                <div class="sc-search-field-wrap">
+                    <i class="fa-solid fa-magnifying-glass sc-search-ico"></i>
+                    <input type="text" id="add-member-search" class="sc-member-search" placeholder="名前・部署で検索..." oninput="chatApp.filterAddMemberUsers(this.value)">
+                </div>
+                <div class="sc-modal-user-list" id="sc-modal-add-member-list"></div>
+            </div>
+        </div>
+        <div class="sc-modal-ft">
+            <button class="sc-btn-cancel" onclick="chatApp.closeModal('sc-modal-add-member')">キャンセル</button>
+            <button class="sc-btn-primary sc-btn-create" onclick="chatApp.submitAddMember()"><i class="fa-solid fa-user-plus"></i> 追加する</button>
+        </div>
+    </div>
+</div>`;
+}
+
 function buildGroupCreateModal(allUsers) {
   const opts = allUsers
     .map((u) => {
@@ -2997,6 +3026,7 @@ html, body { overflow: hidden !important; }
 .sc-search-ico{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#9ca3af;font-size:.73rem;pointer-events:none}
 .sc-member-search{width:100%;box-sizing:border-box;padding:8px 12px 8px 30px;border:1.5px solid var(--c-input-border);border-radius:var(--radius-md);font-size:.84rem;outline:none;transition:.2s;color:var(--c-text-primary)}
 .sc-member-search:focus{border-color:var(--c-accent);box-shadow:0 0 0 3px rgba(99,102,241,.1)}
+.sc-form-row input[type=text].sc-member-search{padding:8px 12px 8px 30px}
 .sc-modal-user-list{max-height:240px;overflow-y:auto;border:1.5px solid var(--c-border);border-radius:var(--radius-md);padding:6px;display:flex;flex-direction:column;gap:2px}
 .sc-modal-user-list::-webkit-scrollbar{width:4px}.sc-modal-user-list::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:4px}
 .sc-member-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--radius-sm);cursor:pointer;border:1.5px solid transparent;transition:background .12s,border-color .12s;user-select:none}

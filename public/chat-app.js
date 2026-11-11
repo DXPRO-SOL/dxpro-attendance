@@ -22,6 +22,7 @@
   // Room用
   const ROOM_ID = C.roomId || null;
   const ROOM_NAME = C.roomName || "";
+  let ROOM_MEMBERS = C.members || [];
 
   let replyToId = null;
   let editingMsgId = null;
@@ -1369,20 +1370,108 @@
   }
 
   function openAddMember() {
-    // 簡易実装：全ユーザーから選択
-    const selected = prompt(
-      "追加するユーザーIDをカンマ区切りで入力してください（管理者向け）:",
-    );
-    if (!selected) return;
-    const ids = selected
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    fetch("/api/chat/room/" + ROOM_ID + "/members", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userIds: ids }),
-    }).then(() => location.reload());
+    if (!ROOM_ID) return;
+    const existingIds = new Set(ROOM_MEMBERS.map((m) => m._id));
+    const candidates = ALL_USERS.filter((u) => !existingIds.has(u._id));
+    const listEl = document.getElementById("sc-modal-add-member-list");
+    if (!listEl) return;
+    if (candidates.length === 0) {
+      listEl.innerHTML =
+        '<div style="padding:16px;text-align:center;color:#9ca3af;font-size:13px">追加できるユーザーがいません</div>';
+    } else {
+      listEl.innerHTML = candidates
+        .map((u) => {
+          const name = u.emp ? u.emp.name : u.username;
+          const dept = u.emp ? u.emp.department || "" : "";
+          const initial = (name || "?").charAt(0);
+          return (
+            '<label class="sc-member-row">' +
+            '<input type="checkbox" name="add-member" class="sc-member-cb" value="' +
+            u._id +
+            '" onchange="chatApp.updateAddSelCount()">' +
+            '<div class="sc-member-avatar">' +
+            initial +
+            "</div>" +
+            '<div class="sc-member-info">' +
+            '<div class="sc-member-name">' +
+            esc(name) +
+            "</div>" +
+            (dept
+              ? '<div class="sc-member-dept">' + esc(dept) + "</div>"
+              : "") +
+            "</div>" +
+            '<span class="sc-member-check"><i class="fa-solid fa-check"></i></span>' +
+            "</label>"
+          );
+        })
+        .join("");
+    }
+    const searchEl = document.getElementById("add-member-search");
+    if (searchEl) searchEl.value = "";
+    const cnt = document.getElementById("sc-add-sel-count");
+    if (cnt) cnt.style.display = "none";
+    openModal("sc-modal-add-member");
+  }
+
+  function filterAddMemberUsers(q) {
+    q = (q || "").toLowerCase();
+    const list = document.getElementById("sc-modal-add-member-list");
+    if (!list) return;
+    list.querySelectorAll(".sc-member-row").forEach((row) => {
+      const name =
+        (row.querySelector(".sc-member-name") || {}).textContent || "";
+      const dept =
+        (row.querySelector(".sc-member-dept") || {}).textContent || "";
+      row.style.display =
+        !q || name.toLowerCase().includes(q) || dept.toLowerCase().includes(q)
+          ? ""
+          : "none";
+    });
+  }
+
+  function updateAddSelCount() {
+    setTimeout(() => {
+      const count = document.querySelectorAll(
+        "#sc-modal-add-member-list .sc-member-cb:checked",
+      ).length;
+      const el = document.getElementById("sc-add-sel-count");
+      if (!el) return;
+      if (count > 0) {
+        el.style.display = "inline";
+        el.textContent = count + "人を選択中";
+      } else {
+        el.style.display = "none";
+      }
+    }, 0);
+  }
+
+  async function submitAddMember() {
+    if (!ROOM_ID) return;
+    const ids = [
+      ...document.querySelectorAll(
+        "#sc-modal-add-member-list .sc-member-cb:checked",
+      ),
+    ].map((cb) => cb.value);
+    if (ids.length === 0) {
+      alert("追加するメンバーを選択してください");
+      return;
+    }
+    try {
+      const r = await fetch("/api/chat/room/" + ROOM_ID + "/members", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userIds: ids }),
+      });
+      const j = await r.json();
+      if (j.ok) {
+        closeModal("sc-modal-add-member");
+        location.reload();
+      } else {
+        alert("追加に失敗しました: " + (j.error || ""));
+      }
+    } catch (e) {
+      alert("追加に失敗しました");
+    }
   }
 
   // ── モーダル ──────────────────────────────────────────────
@@ -4119,6 +4208,9 @@
     toggleMemberPanel,
     kickMember,
     openAddMember,
+    filterAddMemberUsers,
+    updateAddSelCount,
+    submitAddMember,
     openModal,
     closeModal,
     openStampPicker,
