@@ -32,7 +32,13 @@ const transporter = nodemailer.createTransport({
     auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS
-    }
+    },
+    // 一時的なネットワーク断・応答遅延による誤送信失敗を減らすための設定
+    pool: true,
+    maxConnections: 3,
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 20000,
 });
 
 // --- HTTPSでREST APIを呼び出す共通関数 ---
@@ -137,9 +143,23 @@ async function sendMail({ to, from, subject, text, html, attachments } = {}) {
         return;
     }
 
-    // 4) SMTP フォールバック
-    const info = await transporter.sendMail({ from: senderEmail, to, subject, text, html, attachments });
-    console.log('SMTP: メール送信成功', to, 'messageId=', info && info.messageId);
+    // 4) SMTP フォールバック（一時的な接続断の場合は1回だけ自動リトライ）
+    const mailOptions = { from: senderEmail, to, subject, text, html, attachments };
+    try {
+        const info = await transporter.sendMail(mailOptions);
+        console.log('SMTP: メール送信成功', to, 'messageId=', info && info.messageId);
+        return;
+    } catch (e) {
+        const transientCodes = ['ECONNRESET', 'ETIMEDOUT', 'ESOCKET', 'ECONNECTION'];
+        if (transientCodes.includes(e.code)) {
+            console.warn('SMTP: 一時的なエラーのため再送信します', to, e.code);
+            await new Promise((r) => setTimeout(r, 1500));
+            const info = await transporter.sendMail(mailOptions);
+            console.log('SMTP: メール送信成功（リトライ）', to, 'messageId=', info && info.messageId);
+            return;
+        }
+        throw e;
+    }
 }
 
 module.exports = { sendMail, transporter };
